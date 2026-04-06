@@ -9,10 +9,19 @@
   proto/MarketplaceAPI
 
   (fetch-orders [this date-from date-to]
-    (t/->orders (api/orders this date-from :flag 1)))
+    ;; flag=0: all changes since date-from (up to 100k rows)
+    ;; WB API ignores date-to for this endpoint — filtering done client-side
+    (->> (api/orders this date-from :flag 0)
+         t/->orders
+         (filterv #(and (<= (compare date-from (subs (:date %) 0 10)) 0)
+                        (>= (compare date-to   (subs (:date %) 0 10)) 0)))))
 
   (fetch-sales [this date-from date-to]
-    (t/->sales (api/sales this date-from :flag 1)))
+    ;; flag=0: all changes since date-from
+    (->> (api/sales this date-from :flag 0)
+         t/->sales
+         (filterv #(and (<= (compare date-from (subs (:date %) 0 10)) 0)
+                        (>= (compare date-to   (subs (:date %) 0 10)) 0)))))
 
   (fetch-stocks [this]
     (t/->stocks (api/stocks this)))
