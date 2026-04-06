@@ -7,20 +7,44 @@
 
 (defn calculate
   "Calculate unit economics from finance data.
-   Cost prices are resolved by barcode at the finance line level
-   (inside finance/by-article), so total-cost is already computed."
+   Full chain: revenue → -commission → -logistics → -storage → -penalties = for_pay → -cost = profit
+
+   Fields from finance/by-article:
+     :revenue      — розничная выручка (retail_amount по продажам)
+     :commission   — комиссия WB
+     :logistics    — логистика (доставка + возвраты)
+     :storage      — хранение на складе WB
+     :acceptance   — платная приёмка
+     :penalties    — штрафы
+     :for-pay      — к выплате от WB (revenue - все удержания)
+     :total-cost   — себестоимость (из 1С, по баркоду)
+
+   Profit = for_pay - total_cost"
   [finance-data]
   (let [by-art (finance/by-article finance-data)]
     (->> by-art
-         (map (fn [{:keys [sales-qty returns-qty for-pay total-cost] :as row}]
-                (let [net-qty         (max 1 (- sales-qty returns-qty))
-                      profit          (- for-pay total-cost)
-                      profit-per-unit (math/round2 (math/safe-div profit net-qty))
-                      margin-pct      (math/percentage profit (+ for-pay total-cost))]
+         (map (fn [{:keys [sales-qty returns-qty revenue commission logistics
+                           storage acceptance penalties for-pay total-cost] :as row}]
+                (let [net-qty          (max 1 (- sales-qty returns-qty))
+                      total-deductions (+ (Math/abs (or commission 0))
+                                         (or logistics 0)
+                                         (or storage 0)
+                                         (or acceptance 0)
+                                         (or penalties 0))
+                      profit           (- for-pay total-cost)
+                      profit-per-unit  (math/round2 (math/safe-div profit net-qty))
+                      margin-pct       (math/percentage profit revenue)
+                      logistics-per-unit (math/round2 (math/safe-div logistics (+ sales-qty returns-qty)))
+                      storage-per-unit   (math/round2 (math/safe-div storage net-qty))
+                      cost-per-unit      (math/round2 (math/safe-div total-cost sales-qty))]
                   (assoc row
-                         :profit          (math/round2 profit)
-                         :profit-per-unit profit-per-unit
-                         :margin-pct      margin-pct))))
+                         :total-deductions (math/round2 total-deductions)
+                         :profit           (math/round2 profit)
+                         :profit-per-unit  profit-per-unit
+                         :margin-pct       margin-pct
+                         :logistics-per-unit logistics-per-unit
+                         :storage-per-unit   storage-per-unit
+                         :cost-per-unit      cost-per-unit))))
          (sort-by :profit >))))
 
 (defn totals [ue-data]
@@ -38,7 +62,10 @@
      :total-logistics  (math/round2 total-logistics)
      :total-storage    (math/round2 total-storage)
      :total-commission (math/round2 total-commission)
-     :margin-pct       (math/percentage total-profit (+ total-for-pay total-cost))
+     :total-acceptance (math/round2 (reduce + 0.0 (map :acceptance ue-data)))
+     :total-penalties  (math/round2 (reduce + 0.0 (map :penalties ue-data)))
+     :total-deductions (math/round2 (reduce + 0.0 (map :total-deductions ue-data)))
+     :margin-pct       (math/percentage total-profit total-revenue)
      :cost-loaded      (pos? total-cost)}))
 
 (defn report
@@ -59,20 +86,22 @@
 
     (table/print-summary
      "ЮНИТ-ЭКОНОМИКА"
-     [["Выручка"           (:total-revenue summary)]
-      ["К выплате от WB"   (:total-for-pay summary)]
-      ["Себестоимость"     (:total-cost summary)]
-      ["Комиссия WB"       (:total-commission summary)]
-      ["Логистика"         (:total-logistics summary)]
-      ["Хранение"          (:total-storage summary)]
-      ["Прибыль"           (:total-profit summary)]
-      ["Маржинальность"    (str (:margin-pct summary) "%")]])
+     [["Выручка (розница)"    (:total-revenue summary)]
+      ["— Комиссия WB"        (:total-commission summary)]
+      ["— Логистика"          (:total-logistics summary)]
+      ["— Хранение"           (:total-storage summary)]
+      ["— Приёмка"            (:total-acceptance summary)]
+      ["— Штрафы"             (:total-penalties summary)]
+      ["= К выплате от WB"    (:total-for-pay summary)]
+      ["— Себестоимость"      (:total-cost summary)]
+      ["= ПРИБЫЛЬ"            (:total-profit summary)]
+      ["  Маржинальность"     (str (:margin-pct summary) "%")]])
 
     (println "\n── Топ-20 по прибыли ──")
     (table/print-table
-     [[:article "Артикул"] [:sales-qty "Прод."] [:for-pay "От WB"]
-      [:total-cost "Себест."] [:logistics "Логист."] [:storage "Хранение"]
-      [:profit "Прибыль"] [:profit-per-unit "На ед."] [:margin-pct "Маржа%"]]
+     [[:article "Артикул"] [:sales-qty "Прод."] [:revenue "Выручка"]
+      [:cost-per-unit "Себ/шт"] [:logistics-per-unit "Лог/шт"] [:storage-per-unit "Скл/шт"]
+      [:for-pay "От WB"] [:profit "Прибыль"] [:profit-per-unit "На ед."] [:margin-pct "Маржа%"]]
      (take 20 ue-data))
 
     (println "\n── Убыточные артикулы ──")
@@ -91,12 +120,14 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private ue-export-cols
-  [[:article "Артикул"] [:brand "Бренд"] [:subject "Предмет"]
-   [:sales-qty "Продажи шт"] [:returns-qty "Возвраты шт"]
-   [:revenue "Выручка"] [:total-cost "Себестоимость"] [:commission "Комиссия"]
-   [:logistics "Логистика"] [:storage "Хранение"]
-   [:for-pay "К выплате"] [:profit "Прибыль"]
-   [:profit-per-unit "Прибыль/ед"] [:margin-pct "Маржа%"]])
+  [[:article "Article"] [:brand "Brand"] [:subject "Subject"]
+   [:sales-qty "Sales qty"] [:returns-qty "Returns qty"]
+   [:revenue "Revenue"] [:cost-per-unit "COGS/unit"] [:total-cost "COGS total"]
+   [:commission "Commission"] [:logistics "Logistics"] [:logistics-per-unit "Logistics/unit"]
+   [:storage "Storage"] [:storage-per-unit "Storage/unit"]
+   [:acceptance "Acceptance"] [:penalties "Penalties"]
+   [:for-pay "WB Payout"] [:profit "Profit"]
+   [:profit-per-unit "Profit/unit"] [:margin-pct "Margin%"]])
 
 (defn export-excel [period path & opts]
   (let [fin-data (apply finance/fetch-finance period opts)
