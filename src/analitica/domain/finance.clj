@@ -2,6 +2,7 @@
   (:require [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.registry :as registry]
             [analitica.db :as db]
+            [analitica.domain.cost-price :as cost-price]
             [analitica.report.table :as table]
             [analitica.report.export :as export]
             [analitica.util.time :as t]
@@ -28,12 +29,24 @@
 ;; Aggregation
 ;; ---------------------------------------------------------------------------
 
+(defn- line-cost
+  "Get cost price for a finance line via barcode lookup."
+  [line]
+  (let [barcode (or (:barcode line) (:barcode line))]
+    (or (when barcode (cost-price/get-price nil barcode))
+        (cost-price/get-price (:article line))
+        0.0)))
+
 (defn by-article [finance-data]
   (->> finance-data
        (group-by :article)
        (map (fn [[article lines]]
               (let [sales-lines  (filter #(= "Продажа" (:operation %)) lines)
-                    return-lines (filter #(= "Возврат" (:operation %)) lines)]
+                    return-lines (filter #(= "Возврат" (:operation %)) lines)
+                    ;; Себестоимость по баркодам каждой строки продажи
+                    total-cost   (reduce + 0.0
+                                   (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
+                                        sales-lines))]
                 {:article     article
                  :brand       (or (:brand (first lines)) (:brand-name (first lines)))
                  :subject     (or (:subject (first lines)) (:subject-name (first lines)))
@@ -49,7 +62,9 @@
                  :additional  (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
                  :storage     (math/round2 (reduce + 0.0 (map #(or (:storage-fee %) 0) lines)))
                  :acceptance  (math/round2 (reduce + 0.0 (map #(or (:acceptance %) 0) lines)))
-                 :for-pay     (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))})))
+                 :for-pay     (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))
+                 :cost-price  (math/round2 (line-cost (first sales-lines)))
+                 :total-cost  (math/round2 total-cost)})))
        (sort-by :for-pay >)))
 
 (defn totals [finance-data]
