@@ -164,12 +164,20 @@
 (defn set-price! [article price]
   (swap! cost-prices assoc article price))
 
+(defn average-price
+  "Average cost price across all loaded articles."
+  []
+  (let [prices (vals @cost-prices)]
+    (when (seq prices)
+      (/ (reduce + prices) (count prices)))))
+
 (defn get-price
-  "Get cost price by article. Falls back to barcode lookup."
+  "Get cost price by article. Falls back to barcode, then to average."
   ([article] (get @cost-prices article))
   ([article barcode]
    (or (get @cost-prices article)
-       (when barcode (get @cost-by-barcode barcode)))))
+       (when barcode (get @cost-by-barcode barcode))
+       (average-price))))
 
 (defn all-prices [] @cost-prices)
 (defn all-barcodes [] @cost-by-barcode)
