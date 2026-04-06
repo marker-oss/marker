@@ -8,3 +8,5 @@ target/
 .lsp/
 .clj-kondo/
 data/
+*.db
+reports/

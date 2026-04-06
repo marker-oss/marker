@@ -1,5 +1,7 @@
 (ns analitica.core
   (:require [analitica.config :as config]
+            [analitica.db :as db]
+            [analitica.sync :as sync]
             [analitica.marketplace.registry :as registry]
             [analitica.marketplace.wb.client :as wb-client]
             [analitica.marketplace.wb.impl]
@@ -17,18 +19,19 @@
             [com.brunobonacci.mulog :as mu]))
 
 (defn start!
-  "Initialize the system. Loads config, creates marketplace clients."
+  "Initialize the system: config, DB, marketplace clients."
   []
   (config/load-config)
+  (db/init!)
   (mu/start-publisher! {:type :console})
   (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
     (registry/register! :wb (wb-client/make-client wb-cfg)))
   (println "=== Analitica started ===")
   (println "Registered marketplaces:" (vec (registry/registered)))
-  (println "Try (help) for available commands."))
+  (sync/status)
+  (println "\nTry (help) for available commands."))
 
 (defn mp
-  "Get marketplace client. Defaults to :wb."
   ([] (mp :wb))
   ([key] (registry/get-marketplace key)))
 
@@ -36,39 +39,37 @@
   (println "
 === ANALITICA ===
 
-  (start!)                              -- initialize system
+  (start!)                              -- init system (config + DB + WB client)
 
-  SALES:
+  SYNC (API -> SQLite):
+  (sync/sync! :sales :last-30-days)     -- sync sales
+  (sync/sync! :orders :last-30-days)    -- sync orders
+  (sync/sync! :finance :last-30-days)   -- sync financial report
+  (sync/sync! :stocks)                  -- sync stock levels
+  (sync/sync! :1c)                      -- load cost prices from 1C
+  (sync/sync! :all :last-30-days)       -- sync everything
+  (sync/status)                         -- row counts per table
+
+  REPORTS (from SQLite by default, :source :api for live):
   (sales/dashboard :last-7-days)
-  (sales/dashboard :last-30-days)
-  (sales/dashboard {:from \"2026-03-01\" :to \"2026-03-31\"})
-
-  FINANCE:
   (finance/report :last-30-days)
-  (finance/report {:from \"2026-03-01\" :to \"2026-03-31\"})
-
-  STOCK:
-  (stock/overview)                      -- current stock levels
-  (stock/risk 14)                       -- items running out in 14 days
-
-  UNIT ECONOMICS:
-  (ue/report :last-30-days)             -- profit per article
-  (cost-price/load-from-csv \"data/cost-prices.csv\")
-  (cost-price/set-price! \"article\" 500.0)
-
-  ABC ANALYSIS:
-  (abc/report :last-30-days)            -- by revenue (default)
-  (abc/report :last-30-days :by :for-pay)
-
-  RETURNS:
+  (stock/overview)
+  (stock/risk 14)
+  (ue/report :last-30-days)
+  (abc/report :last-30-days)
   (returns/report :last-30-days)
+  (ads/overview :last-7-days :source :api)
+  (prices/current)
 
-  ADS / FUNNEL:
-  (ads/overview :last-7-days)           -- views, cart, orders, buyouts
+  EXPORT:
+  (sales/export-csv :last-30-days \"reports/sales.csv\")
+  (sales/export-excel :last-30-days \"reports/sales.xlsx\")
+  (finance/export-excel :last-30-days \"reports/finance.xlsx\")
+  (stock/export-excel \"reports/stock.xlsx\")
 
-  PRICES:
-  (prices/current)                      -- all prices and discounts
-  (prices/high-discount 50)             -- items with >50% discount
+  COST PRICES:
+  (cost-price/load-from-1c)             -- load from 1c/units.csv
+  (cost-price/set-price! \"art\" 500.0)
 
   PERIODS: :today :yesterday :last-7-days :last-30-days :this-week :this-month
            {:from \"2026-03-01\" :to \"2026-03-31\"}

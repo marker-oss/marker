@@ -1,35 +1,47 @@
 (ns analitica.domain.sales
   (:require [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.registry :as registry]
+            [analitica.db :as db]
             [analitica.report.table :as table]
+            [analitica.report.export :as export]
             [analitica.util.time :as t]
             [analitica.util.math :as math]))
 
 ;; ---------------------------------------------------------------------------
-;; Data fetching
+;; Data fetching (DB or API)
 ;; ---------------------------------------------------------------------------
 
 (defn- get-mp [marketplace]
   (registry/get-marketplace (or marketplace :wb)))
 
+(defn- resolve-dates [period]
+  (if (keyword? period)
+    (t/period period)
+    [(:from period) (:to period)]))
+
+(defn- db-sales [from to]
+  (->> (db/query ["SELECT * FROM sales WHERE date >= ? AND date <= ? ORDER BY date"
+                   from (str to "T23:59:59")])
+       (mapv #(-> %
+                  (update :type keyword)
+                  (assoc :marketplace :wb)))))
+
 (defn fetch-sales
-  "Fetch sales for a period. Period can be:
-   - keyword like :last-30-days, :last-7-days, :this-month
-   - map {:from \"2026-03-01\" :to \"2026-03-31\"}"
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
-  (let [mp   (get-mp marketplace)
-        [from to] (if (keyword? period)
-                    (t/period period)
-                    [(:from period) (:to period)])]
-    (proto/fetch-sales mp from to)))
+  "Fetch sales for a period. Reads from DB by default, :source :api for live."
+  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  (let [[from to] (resolve-dates period)]
+    (case source
+      :db  (db-sales from to)
+      :api (proto/fetch-sales (get-mp marketplace) from to))))
 
 (defn fetch-orders
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
-  (let [mp   (get-mp marketplace)
-        [from to] (if (keyword? period)
-                    (t/period period)
-                    [(:from period) (:to period)])]
-    (proto/fetch-orders mp from to)))
+  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  (let [[from to] (resolve-dates period)]
+    (case source
+      :db  (->> (db/query ["SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY date"
+                            from (str to "T23:59:59")])
+                (mapv #(-> % (update :status keyword) (assoc :marketplace :wb))))
+      :api (proto/fetch-orders (get-mp marketplace) from to))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregation helpers
@@ -58,39 +70,25 @@
 ;; Reports
 ;; ---------------------------------------------------------------------------
 
-(defn by-day
-  "Aggregate sales by day."
-  [sales-data]
+(defn by-day [sales-data]
   (group-and-sum sales-data #(parse-date-str (:date %))))
 
-(defn by-article
-  "Aggregate sales by supplier article."
-  [sales-data]
+(defn by-article [sales-data]
   (group-and-sum sales-data :article))
 
-(defn by-category
-  "Aggregate sales by category."
-  [sales-data]
+(defn by-category [sales-data]
   (group-and-sum sales-data :subject))
 
-(defn by-brand
-  "Aggregate sales by brand."
-  [sales-data]
+(defn by-brand [sales-data]
   (group-and-sum sales-data :brand))
 
-(defn by-warehouse
-  "Aggregate sales by warehouse."
-  [sales-data]
+(defn by-warehouse [sales-data]
   (group-and-sum sales-data :warehouse))
 
-(defn by-region
-  "Aggregate sales by region."
-  [sales-data]
+(defn by-region [sales-data]
   (group-and-sum sales-data :region))
 
-(defn totals
-  "Calculate total summary from sales data."
-  [sales-data]
+(defn totals [sales-data]
   (let [sales   (filter #(= :sale (:type %)) sales-data)
         returns (filter #(= :return (:type %)) sales-data)]
     {:total-sales    (count sales)
@@ -103,29 +101,23 @@
      :unique-skus    (count (distinct (map :article sales-data)))}))
 
 ;; ---------------------------------------------------------------------------
-;; Dashboard (main entry point)
+;; Dashboard
 ;; ---------------------------------------------------------------------------
 
 (defn dashboard
-  "Print sales dashboard.
-   Usage:
-     (dashboard :last-7-days)
-     (dashboard :last-30-days)
-     (dashboard {:from \"2026-03-01\" :to \"2026-03-31\"})
-     (dashboard :last-30-days :marketplace :wb)"
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (println "\nЗагрузка данных продаж...")
-  (let [data    (fetch-sales period :marketplace marketplace)
+  (let [data    (fetch-sales period :marketplace marketplace :source source)
         summary (totals data)]
 
     (table/print-summary
      (str "ПРОДАЖИ — " (if (keyword? period) (name period) (str (:from period) " — " (:to period))))
-     [["Продажи"         (:total-sales summary)]
-      ["Возвраты"        (:total-returns summary)]
+     [["Продажи"            (:total-sales summary)]
+      ["Возвраты"           (:total-returns summary)]
       ["Выручка (к оплате)" (:total-revenue summary)]
-      ["Средний чек"     (:avg-price summary)]
-      ["% возвратов"     (str (:return-rate summary) "%")]
-      ["Уникальных SKU"  (:unique-skus summary)]])
+      ["Средний чек"        (:avg-price summary)]
+      ["% возвратов"        (str (:return-rate summary) "%")]
+      ["Уникальных SKU"     (:unique-skus summary)]])
 
     (println "\n── По дням ──")
     (table/print-table
@@ -152,3 +144,28 @@
      (by-warehouse data))
 
     summary))
+
+;; ---------------------------------------------------------------------------
+;; Export
+;; ---------------------------------------------------------------------------
+
+(def ^:private sales-export-cols
+  [[:group "Артикул"] [:sales-count "Продажи"] [:returns-count "Возвраты"]
+   [:revenue "Выручка"] [:avg-price "Ср. чек"]])
+
+(defn export-csv [period path & opts]
+  (let [data (apply fetch-sales period opts)]
+    (export/to-csv path sales-export-cols (by-article data))))
+
+(defn export-excel [period path & opts]
+  (let [data (apply fetch-sales period opts)]
+    (export/to-excel path
+                     [{:name "По артикулам" :cols sales-export-cols :rows (by-article data)}
+                      {:name "По дням"
+                       :cols [[:group "Дата"] [:sales-count "Продажи"] [:returns-count "Возвраты"]
+                              [:revenue "Выручка"] [:avg-price "Ср. чек"]]
+                       :rows (by-day data)}
+                      {:name "По категориям"
+                       :cols [[:group "Категория"] [:sales-count "Продажи"] [:returns-count "Возвраты"]
+                              [:revenue "Выручка"]]
+                       :rows (by-category data)}])))

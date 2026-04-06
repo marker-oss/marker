@@ -1,8 +1,10 @@
 (ns analitica.domain.stock
   (:require [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.registry :as registry]
+            [analitica.db :as db]
             [analitica.domain.sales :as sales]
             [analitica.report.table :as table]
+            [analitica.report.export :as export]
             [analitica.util.time :as t]
             [analitica.util.math :as math]))
 
@@ -10,8 +12,10 @@
   (registry/get-marketplace (or marketplace :wb)))
 
 (defn fetch-stocks
-  [& {:keys [marketplace] :or {marketplace :wb}}]
-  (proto/fetch-stocks (get-mp marketplace)))
+  [& {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  (case source
+    :db  (db/query ["SELECT * FROM stocks ORDER BY article"])
+    :api (proto/fetch-stocks (get-mp marketplace))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregation
@@ -142,4 +146,22 @@
         [:daily-rate "В день"] [:days-left "Дней осталось"]]
        at-risk))
 
+;; ---------------------------------------------------------------------------
+;; Export
+;; ---------------------------------------------------------------------------
+
+(defn export-excel [path & opts]
+  (let [stocks (apply fetch-stocks opts)]
+    (export/to-excel path
+                     [{:name "По артикулам"
+                       :cols [[:article "Артикул"] [:subject "Предмет"] [:quantity "Доступно"]
+                              [:quantity-full "Всего"] [:in-way-to "К клиенту"]
+                              [:in-way-from "От клиента"] [:warehouses "Складов"]]
+                       :rows (by-article stocks)}
+                      {:name "По складам"
+                       :cols [[:warehouse "Склад"] [:articles "Артикулов"]
+                              [:quantity "Доступно"] [:quantity-full "Всего"]]
+                       :rows (by-warehouse stocks)}])))
+
     at-risk))
+

@@ -1,94 +1,90 @@
 (ns analitica.domain.finance
   (:require [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.registry :as registry]
+            [analitica.db :as db]
             [analitica.report.table :as table]
+            [analitica.report.export :as export]
             [analitica.util.time :as t]
             [analitica.util.math :as math]))
 
 (defn- get-mp [marketplace]
   (registry/get-marketplace (or marketplace :wb)))
 
+(defn- resolve-dates [period]
+  (if (keyword? period) (t/period period) [(:from period) (:to period)]))
+
+(defn- db-finance [from to]
+  (db/query ["SELECT * FROM finance WHERE date_from >= ? AND date_to <= ? ORDER BY rrd_id"
+             from to]))
+
 (defn fetch-finance
-  "Fetch financial report for period."
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
-  (let [mp      (get-mp marketplace)
-        [from to] (if (keyword? period)
-                    (t/period period)
-                    [(:from period) (:to period)])]
-    (proto/fetch-finance-report mp from to)))
+  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  (let [[from to] (resolve-dates period)]
+    (case source
+      :db  (db-finance from to)
+      :api (proto/fetch-finance-report (get-mp marketplace) from to))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregation
 ;; ---------------------------------------------------------------------------
 
-(defn by-article
-  "Group financial report by article with totals."
-  [finance-data]
+(defn by-article [finance-data]
   (->> finance-data
        (group-by :article)
        (map (fn [[article lines]]
-              (let [sales-lines   (filter #(= "Продажа" (:operation %)) lines)
-                    return-lines  (filter #(= "Возврат" (:operation %)) lines)
-                    delivery-lines (filter #(some-> (:operation %) (.contains "Логистика")) lines)]
-                {:article        article
-                 :brand          (:brand (first lines))
-                 :subject        (:subject (first lines))
-                 :sales-qty      (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
-                 :returns-qty    (reduce + 0 (map #(or (:quantity %) 0) return-lines))
-                 :revenue        (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
-                 :commission     (math/round2 (reduce + 0.0 (map #(let [ra (or (:retail-amount %) 0)
-                                                                        fp (or (:for-pay %) 0)]
-                                                                    (- ra fp))
-                                                                 sales-lines)))
-                 :logistics      (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
-                 :penalties      (math/round2 (reduce + 0.0 (map #(or (:penalty %) 0) lines)))
-                 :additional     (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
-                 :storage        (math/round2 (reduce + 0.0 (map #(or (:storage-fee %) 0) lines)))
-                 :acceptance     (math/round2 (reduce + 0.0 (map #(or (:acceptance %) 0) lines)))
-                 :for-pay        (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))})))
+              (let [sales-lines  (filter #(= "Продажа" (:operation %)) lines)
+                    return-lines (filter #(= "Возврат" (:operation %)) lines)]
+                {:article     article
+                 :brand       (or (:brand (first lines)) (:brand-name (first lines)))
+                 :subject     (or (:subject (first lines)) (:subject-name (first lines)))
+                 :sales-qty   (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
+                 :returns-qty (reduce + 0 (map #(or (:quantity %) 0) return-lines))
+                 :revenue     (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
+                 :commission  (math/round2 (reduce + 0.0 (map #(let [ra (or (:retail-amount %) 0)
+                                                                      fp (or (:for-pay %) 0)]
+                                                                  (- ra fp))
+                                                               sales-lines)))
+                 :logistics   (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
+                 :penalties   (math/round2 (reduce + 0.0 (map #(or (:penalty %) 0) lines)))
+                 :additional  (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
+                 :storage     (math/round2 (reduce + 0.0 (map #(or (:storage-fee %) 0) lines)))
+                 :acceptance  (math/round2 (reduce + 0.0 (map #(or (:acceptance %) 0) lines)))
+                 :for-pay     (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))})))
        (sort-by :for-pay >)))
 
-(defn totals
-  "Compute totals from finance data."
-  [finance-data]
+(defn totals [finance-data]
   (let [articles (by-article finance-data)]
-    {:total-revenue    (math/round2 (reduce + 0.0 (map :revenue articles)))
-     :total-commission (math/round2 (reduce + 0.0 (map :commission articles)))
-     :total-logistics  (math/round2 (reduce + 0.0 (map :logistics articles)))
-     :total-penalties  (math/round2 (reduce + 0.0 (map :penalties articles)))
-     :total-storage    (math/round2 (reduce + 0.0 (map :storage articles)))
-     :total-acceptance (math/round2 (reduce + 0.0 (map :acceptance articles)))
-     :total-additional (math/round2 (reduce + 0.0 (map :additional articles)))
-     :total-for-pay   (math/round2 (reduce + 0.0 (map :for-pay articles)))
-     :total-sales-qty  (reduce + 0 (map :sales-qty articles))
+    {:total-revenue     (math/round2 (reduce + 0.0 (map :revenue articles)))
+     :total-commission  (math/round2 (reduce + 0.0 (map :commission articles)))
+     :total-logistics   (math/round2 (reduce + 0.0 (map :logistics articles)))
+     :total-penalties   (math/round2 (reduce + 0.0 (map :penalties articles)))
+     :total-storage     (math/round2 (reduce + 0.0 (map :storage articles)))
+     :total-acceptance  (math/round2 (reduce + 0.0 (map :acceptance articles)))
+     :total-additional  (math/round2 (reduce + 0.0 (map :additional articles)))
+     :total-for-pay    (math/round2 (reduce + 0.0 (map :for-pay articles)))
+     :total-sales-qty   (reduce + 0 (map :sales-qty articles))
      :total-returns-qty (reduce + 0 (map :returns-qty articles))
-     :articles-count   (count articles)}))
+     :articles-count    (count articles)}))
 
-(defn by-report-id
-  "Group by weekly report ID."
-  [finance-data]
+(defn by-report-id [finance-data]
   (->> finance-data
-       (group-by :report-id)
+       (group-by (fn [r] (or (:report-id r) (:report_id r))))
        (map (fn [[id lines]]
-              {:report-id  id
-               :date-from  (:date-from (first lines))
-               :date-to    (:date-to (first lines))
-               :lines      (count lines)
-               :for-pay    (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))}))
+              {:report-id id
+               :date-from (or (:date-from (first lines)) (:date_from (first lines)))
+               :date-to   (or (:date-to (first lines)) (:date_to (first lines)))
+               :lines     (count lines)
+               :for-pay   (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) lines)))}))
        (sort-by :date-from)))
 
 ;; ---------------------------------------------------------------------------
-;; Report (main entry point)
+;; Report
 ;; ---------------------------------------------------------------------------
 
 (defn report
-  "Print weekly financial report.
-   Usage:
-     (report {:from \"2026-03-24\" :to \"2026-03-30\"})
-     (report :last-7-days)"
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (println "\nЗагрузка финансового отчёта...")
-  (let [data    (fetch-finance period :marketplace marketplace)
+  (let [data    (fetch-finance period :marketplace marketplace :source source)
         summary (totals data)]
 
     (table/print-summary
@@ -121,3 +117,27 @@
          reports)))
 
     summary))
+
+;; ---------------------------------------------------------------------------
+;; Export
+;; ---------------------------------------------------------------------------
+
+(def ^:private finance-export-cols
+  [[:article "Артикул"] [:brand "Бренд"] [:subject "Предмет"]
+   [:sales-qty "Продажи шт"] [:returns-qty "Возвраты шт"]
+   [:revenue "Выручка"] [:commission "Комиссия"] [:logistics "Логистика"]
+   [:storage "Хранение"] [:acceptance "Приёмка"] [:penalties "Штрафы"]
+   [:additional "Доплаты"] [:for-pay "К выплате"]])
+
+(defn export-csv [period path & opts]
+  (let [data (apply fetch-finance period opts)]
+    (export/to-csv path finance-export-cols (by-article data))))
+
+(defn export-excel [period path & opts]
+  (let [data (apply fetch-finance period opts)]
+    (export/to-excel path
+                     [{:name "По артикулам" :cols finance-export-cols :rows (by-article data)}
+                      {:name "По отчётам"
+                       :cols [[:report-id "ID"] [:date-from "С"] [:date-to "По"]
+                              [:lines "Строк"] [:for-pay "К выплате"]]
+                       :rows (by-report-id data)}])))
