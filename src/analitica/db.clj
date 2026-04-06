@@ -70,16 +70,27 @@
       subject            TEXT,
       brand              TEXT,
       operation          TEXT,
+      doc_type           TEXT,
       quantity           INTEGER,
+      retail_price       REAL,
       retail_amount      REAL,
+      sale_percent       REAL,
+      commission_pct     REAL,
+      wb_commission      REAL,
+      wb_reward          REAL,
+      wb_kvw_prc         REAL,
+      spp_prc            REAL,
+      price_with_disc    REAL,
+      delivery_amount    INTEGER,
+      return_amount      INTEGER,
       delivery_cost      REAL,
       for_pay            REAL,
       penalty            REAL,
       storage_fee        REAL,
       acceptance         REAL,
       additional_payment REAL,
-      commission_pct     REAL,
-      price_with_disc    REAL,
+      deduction          REAL,
+      acquiring_fee      REAL,
       marketplace        TEXT DEFAULT 'wb',
       synced_at          TEXT
     )"
@@ -111,6 +122,65 @@
       quantity_1c   REAL,
       updated_at    TEXT,
       PRIMARY KEY (article, barcode)
+    )"
+
+   "CREATE TABLE IF NOT EXISTS product_stats (
+      nm_id         INTEGER NOT NULL,
+      article       TEXT,
+      date_from     TEXT NOT NULL,
+      date_to       TEXT NOT NULL,
+      views         INTEGER,
+      add_to_cart   INTEGER,
+      orders        INTEGER,
+      orders_sum    REAL,
+      buyouts       INTEGER,
+      buyouts_sum   REAL,
+      cancel_count  INTEGER,
+      cancel_sum    REAL,
+      synced_at     TEXT,
+      PRIMARY KEY (nm_id, date_from)
+    )"
+
+   "CREATE TABLE IF NOT EXISTS prices (
+      nm_id         INTEGER PRIMARY KEY,
+      article       TEXT,
+      price         REAL,
+      discount      INTEGER,
+      club_discount INTEGER,
+      synced_at     TEXT
+    )"
+
+   "CREATE TABLE IF NOT EXISTS ad_stats (
+      campaign_id   INTEGER NOT NULL,
+      date          TEXT NOT NULL,
+      views         INTEGER,
+      clicks        INTEGER,
+      ctr           REAL,
+      cpc           REAL,
+      spend         REAL,
+      atbs          INTEGER,
+      orders        INTEGER,
+      cr            REAL,
+      shks          INTEGER,
+      sum_price     REAL,
+      nm_id         INTEGER,
+      synced_at     TEXT,
+      PRIMARY KEY (campaign_id, date)
+    )"
+
+   "CREATE TABLE IF NOT EXISTS region_sales (
+      nm_id         INTEGER,
+      article       TEXT,
+      region        TEXT,
+      city          TEXT,
+      country       TEXT,
+      fo            TEXT,
+      qty           INTEGER,
+      sum_price     REAL,
+      sum_price_prc REAL,
+      date_from     TEXT,
+      date_to       TEXT,
+      synced_at     TEXT
     )"
 
    ;; Indexes

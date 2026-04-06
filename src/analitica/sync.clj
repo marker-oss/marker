@@ -3,10 +3,13 @@
             [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.registry :as registry]
             [analitica.domain.cost-price :as cost-price]
+            [analitica.marketplace.wb.api :as wb-api]
             [analitica.util.time :as t]
             [clojure.string :as str])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
+
+(declare status)
 
 (defn- now-str []
   (.format (LocalDateTime/now) (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss")))
@@ -76,16 +79,25 @@
 (defn- finance->row [f]
   [(:rrd-id f) (:report-id f) (:date-from f) (:date-to f)
    (:article f) (:nm-id f) (:barcode f) (:subject f) (:brand f)
-   (:operation f) (:quantity f) (:retail-amount f) (:delivery-cost f)
+   (:operation f) (:doc-type f) (:quantity f)
+   (:retail-price f) (:retail-amount f) (:sale-percent f)
+   (:commission-pct f) (:wb-commission f) (:wb-reward f)
+   (:wb-kvw-prc f) (:spp-prc f) (:price-with-disc f)
+   (:delivery-amount f) (:return-amount f) (:delivery-cost f)
    (:for-pay f) (:penalty f) (:storage-fee f) (:acceptance f)
-   (:additional-payment f) (:commission-pct f) (:price-with-disc f)
+   (:additional-payment f) (:deduction f) (:acquiring-fee f)
    (name (or (:marketplace f) :wb)) (now-str)])
 
 (def ^:private finance-columns
   [:rrd_id :report_id :date_from :date_to :article :nm_id :barcode
-   :subject :brand :operation :quantity :retail_amount :delivery_cost
-   :for_pay :penalty :storage_fee :acceptance :additional_payment
-   :commission_pct :price_with_disc :marketplace :synced_at])
+   :subject :brand :operation :doc_type :quantity
+   :retail_price :retail_amount :sale_percent
+   :commission_pct :wb_commission :wb_reward
+   :wb_kvw_prc :spp_prc :price_with_disc
+   :delivery_amount :return_amount :delivery_cost
+   :for_pay :penalty :storage_fee :acceptance
+   :additional_payment :deduction :acquiring_fee
+   :marketplace :synced_at])
 
 (defn sync-finance!
   [period & {:keys [marketplace] :or {marketplace :wb}}]
@@ -123,6 +135,75 @@
       cnt)))
 
 ;; ---------------------------------------------------------------------------
+;; Product stats sync
+;; ---------------------------------------------------------------------------
+
+(defn sync-product-stats!
+  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  (let [[from to] (resolve-period period)
+        mp        (get-mp marketplace)
+        data      (proto/fetch-product-stats mp from to)
+        ts        (now-str)
+        rows      (mapv (fn [p]
+                          [(:nm-id p) (:article p) from to
+                           (:views p) (:add-to-cart p) (:orders p) (:orders-sum p)
+                           (:buyouts p) (:buyouts-sum p) (:cancel-count p) (:cancel-sum p)
+                           ts])
+                        data)
+        cnt       (db/insert-batch! :product_stats
+                    [:nm_id :article :date_from :date_to
+                     :views :add_to_cart :orders :orders_sum
+                     :buyouts :buyouts_sum :cancel_count :cancel_sum :synced_at]
+                    rows)]
+    (println (str "Синхронизировано товарной статистики: " cnt))
+    cnt))
+
+;; ---------------------------------------------------------------------------
+;; Prices sync (full replace)
+;; ---------------------------------------------------------------------------
+
+(defn sync-prices!
+  [& {:keys [marketplace] :or {marketplace :wb}}]
+  (let [mp   (get-mp marketplace)
+        data (proto/fetch-prices mp)
+        ts   (now-str)]
+    (db/clear-table! :prices)
+    (let [rows (mapv (fn [p]
+                       [(:nm-id p) (:article p) (:price p)
+                        (:discount p) (:club-disc p) ts])
+                     data)
+          cnt  (db/insert-batch! :prices
+                 [:nm_id :article :price :discount :club_discount :synced_at]
+                 rows)]
+      (println (str "Синхронизировано цен: " cnt))
+      cnt)))
+
+;; ---------------------------------------------------------------------------
+;; Region sales sync
+;; ---------------------------------------------------------------------------
+
+(defn sync-regions!
+  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  (let [[from to] (resolve-period period)
+        mp        (get-mp marketplace)
+        data      (analitica.marketplace.wb.api/region-sales mp from to)
+        ts        (now-str)]
+    (when (seq data)
+      (let [rows (mapv (fn [r]
+                         [(or (:nmID r) (:nm-id r))
+                          (or (:sa r) (:article r))
+                          (:regionName r) (:cityName r) (:countryName r) (:foName r)
+                          (:saleItemInvoiceQty r) (:saleInvoiceCostPrice r) (:saleInvoiceCostPricePerc r)
+                          from to ts])
+                       data)
+            cnt  (db/insert-batch! :region_sales
+                   [:nm_id :article :region :city :country :fo
+                    :qty :sum_price :sum_price_prc :date_from :date_to :synced_at]
+                   rows)]
+        (println (str "Синхронизировано регионов: " cnt))
+        cnt))))
+
+;; ---------------------------------------------------------------------------
 ;; 1C cost prices sync
 ;; ---------------------------------------------------------------------------
 
@@ -155,26 +236,29 @@
      (sync! :all :last-30-days)"
   [what & [period & {:keys [marketplace] :or {marketplace :wb} :as opts}]]
   (case what
-    :sales   (sync-sales! period :marketplace marketplace)
-    :orders  (sync-orders! period :marketplace marketplace)
-    :finance (sync-finance! period :marketplace marketplace)
-    :stocks  (sync-stocks! :marketplace marketplace)
-    :1c      (sync-1c!)
-    :all     (do
-               (println "\n=== Полная синхронизация ===")
-               (sync-sales! (or period :last-30-days) :marketplace marketplace)
-               (sync-orders! (or period :last-30-days) :marketplace marketplace)
-               (sync-finance! (or period :last-30-days) :marketplace marketplace)
-               (sync-stocks! :marketplace marketplace)
-               (println "=== Синхронизация завершена ===\n")
-               (println "  sales:"   (db/count-rows :sales))
-               (println "  orders:"  (db/count-rows :orders))
-               (println "  finance:" (db/count-rows :finance))
-               (println "  stocks:"  (db/count-rows :stocks)))))
+    :sales    (sync-sales! period :marketplace marketplace)
+    :orders   (sync-orders! period :marketplace marketplace)
+    :finance  (sync-finance! period :marketplace marketplace)
+    :stocks   (sync-stocks! :marketplace marketplace)
+    :stats    (sync-product-stats! period :marketplace marketplace)
+    :prices   (sync-prices! :marketplace marketplace)
+    :regions  (sync-regions! period :marketplace marketplace)
+    :1c       (sync-1c!)
+    :all      (do
+                (println "\n=== Полная синхронизация ===")
+                (let [p (or period :last-30-days)]
+                  (sync-sales! p :marketplace marketplace)
+                  (sync-orders! p :marketplace marketplace)
+                  (sync-finance! p :marketplace marketplace)
+                  (sync-stocks! :marketplace marketplace)
+                  (sync-product-stats! p :marketplace marketplace)
+                  (sync-prices! :marketplace marketplace))
+                (println "=== Синхронизация завершена ===")
+                (status))))
 
 (defn status
   "Show sync status — row counts per table."
   []
   (println "\n=== Статус БД ===")
-  (doseq [t [:sales :orders :finance :stocks :cost_prices]]
+  (doseq [t [:sales :orders :finance :stocks :product_stats :prices :ad_stats :region_sales :cost_prices]]
     (println (format "  %-15s %d записей" (name t) (db/count-rows t)))))

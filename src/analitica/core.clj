@@ -15,6 +15,10 @@
             [analitica.domain.ads :as ads]
             [analitica.domain.prices :as prices]
             [analitica.domain.cost-price :as cost-price]
+            [analitica.domain.pnl :as pnl]
+            [analitica.domain.geography :as geo]
+            [analitica.domain.trends :as trends]
+            [analitica.domain.buyout :as buyout]
             [analitica.util.time :as t]
             [com.brunobonacci.mulog :as mu]))
 
@@ -39,37 +43,51 @@
   (println "
 === ANALITICA ===
 
-  (start!)                              -- init system (config + DB + WB client)
+  (start!)                              -- init system
 
   SYNC (API -> SQLite):
-  (sync/sync! :sales :last-30-days)     -- sync sales
-  (sync/sync! :orders :last-30-days)    -- sync orders
-  (sync/sync! :finance :last-30-days)   -- sync financial report
-  (sync/sync! :stocks)                  -- sync stock levels
-  (sync/sync! :1c)                      -- load cost prices from 1C
   (sync/sync! :all :last-30-days)       -- sync everything
-  (sync/status)                         -- row counts per table
+  (sync/sync! :sales :last-30-days)     -- sales
+  (sync/sync! :orders :last-30-days)    -- orders
+  (sync/sync! :finance :last-30-days)   -- financial report
+  (sync/sync! :stocks)                  -- stock levels
+  (sync/sync! :stats :last-30-days)     -- product stats (funnel)
+  (sync/sync! :prices)                  -- current prices
+  (sync/sync! :regions :last-30-days)   -- geography
+  (sync/sync! :1c)                      -- cost prices from 1C
+  (sync/status)                         -- DB row counts
 
-  REPORTS (from SQLite by default, :source :api for live):
-  (sales/dashboard :last-7-days)
-  (finance/report :last-30-days)
-  (stock/overview)
-  (stock/risk 14)
-  (ue/report :last-30-days)
-  (abc/report :last-30-days)
-  (returns/report :last-30-days)
-  (ads/overview :last-7-days :source :api)
-  (prices/current)
+  REPORTS:
+  (sales/dashboard :last-7-days)        -- sales by day/article/category
+  (finance/report :last-30-days)        -- WB financial report breakdown
+  (ue/report :last-30-days)             -- unit economics per SKU
+  (abc/report :last-30-days)            -- ABC analysis
+  (returns/report :last-30-days)        -- return rate analysis
+  (stock/overview)                      -- stock by warehouse/article
+  (stock/risk 14)                       -- out-of-stock risk
+  (pnl/report :last-30-days)            -- P&L report
+  (geo/report :last-30-days)            -- geography of sales
+  (trends/wow)                          -- week-over-week
+  (trends/mom)                          -- month-over-month
+  (trends/daily :last-30-days)          -- daily dynamics
+  (buyout/report :last-30-days)         -- buyout rate analysis
+  (ads/overview :last-7-days :source :api)  -- sales funnel
+  (prices/current)                      -- prices & discounts
 
   EXPORT:
-  (sales/export-csv :last-30-days \"reports/sales.csv\")
-  (sales/export-excel :last-30-days \"reports/sales.xlsx\")
-  (finance/export-excel :last-30-days \"reports/finance.xlsx\")
-  (stock/export-excel \"reports/stock.xlsx\")
+  (sales/export-excel period path)
+  (finance/export-excel period path)
+  (ue/export-excel period path)
+  (pnl/export-excel period path)
+  (stock/export-excel path)
+  (geo/export-excel period path)
+  (buyout/export-excel period path)
 
-  COST PRICES:
-  (cost-price/load-from-1c)             -- load from 1c/units.csv
-  (cost-price/set-price! \"art\" 500.0)
+  CLI (from terminal):
+  clojure -M -m analitica.cli sync all -p last-30-days
+  clojure -M -m analitica.cli report pnl -f 2026-03-01 -t 2026-03-31
+  clojure -M -m analitica.cli report sales -e reports/sales.xlsx
+  clojure -M -m analitica.cli status
 
   PERIODS: :today :yesterday :last-7-days :last-30-days :this-week :this-month
            {:from \"2026-03-01\" :to \"2026-03-31\"}
