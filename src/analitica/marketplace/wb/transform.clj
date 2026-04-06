@@ -110,6 +110,10 @@
    :retail-amount     (:retail_amount raw)
    :sale-percent      (:sale_percent raw)
    :commission-pct    (:commission_percent raw)
+   :wb-commission     (:ppvz_sales_commission raw)  ;; комиссия WB (руб)
+   :wb-reward         (:ppvz_reward raw)            ;; вознаграждение WB
+   :wb-kvw-prc        (:ppvz_kvw_prc raw)           ;; % комиссии WB
+   :spp-prc           (:ppvz_spp_prc raw)            ;; % СПП
    :operation         (:supplier_oper_name raw)
    :price-with-disc   (:retail_price_withdisc_rub raw)
    :delivery-amount   (:delivery_amount raw)
@@ -118,8 +122,10 @@
    :for-pay           (:ppvz_for_pay raw)
    :penalty           (:penalty raw)
    :additional-payment (:additional_payment raw)
+   :deduction         (:deduction raw)
    :storage-fee       (:storage_fee raw)
    :acceptance        (:acceptance raw)
+   :acquiring-fee     (:acquiring_fee raw)           ;; эквайринг
    :subject           (:subject_name raw)
    :brand             (:brand_name raw)})
 

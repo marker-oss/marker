@@ -53,10 +53,11 @@
                  :sales-qty   (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
                  :returns-qty (reduce + 0 (map #(or (:quantity %) 0) return-lines))
                  :revenue     (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
-                 :commission  (math/round2 (reduce + 0.0 (map #(let [ra (or (:retail-amount %) 0)
-                                                                      fp (or (:for-pay %) 0)]
-                                                                  (- ra fp))
-                                                               sales-lines)))
+                 :wb-reward   (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
+                 :wb-commission (math/round2 (reduce + 0.0 (map #(or (:wb-commission %) 0) sales-lines)))
+                 :acquiring   (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
+                 :spp-amount  (math/round2 (- (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines))
+                                              (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines))))
                  :logistics   (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
                  :penalties   (math/round2 (reduce + 0.0 (map #(or (:penalty %) 0) lines)))
                  :additional  (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
@@ -70,7 +71,9 @@
 (defn totals [finance-data]
   (let [articles (by-article finance-data)]
     {:total-revenue     (math/round2 (reduce + 0.0 (map :revenue articles)))
-     :total-commission  (math/round2 (reduce + 0.0 (map :commission articles)))
+     :total-wb-reward   (math/round2 (reduce + 0.0 (map :wb-reward articles)))
+     :total-acquiring   (math/round2 (reduce + 0.0 (map :acquiring articles)))
+     :total-spp         (math/round2 (reduce + 0.0 (map :spp-amount articles)))
      :total-logistics   (math/round2 (reduce + 0.0 (map :logistics articles)))
      :total-penalties   (math/round2 (reduce + 0.0 (map :penalties articles)))
      :total-storage     (math/round2 (reduce + 0.0 (map :storage articles)))
@@ -107,7 +110,8 @@
      [["Продажи (шт)"     (:total-sales-qty summary)]
       ["Возвраты (шт)"    (:total-returns-qty summary)]
       ["Выручка"          (:total-revenue summary)]
-      ["Комиссия WB"      (:total-commission summary)]
+      ["Вознаграждение WB" (:total-wb-reward summary)]
+      ["Компенс. С��П"    (:total-spp summary)]
       ["Логистика"        (:total-logistics summary)]
       ["Хранение"         (:total-storage summary)]
       ["Приёмка"          (:total-acceptance summary)]

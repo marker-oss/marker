@@ -23,10 +23,10 @@
   [finance-data]
   (let [by-art (finance/by-article finance-data)]
     (->> by-art
-         (map (fn [{:keys [sales-qty returns-qty revenue commission logistics
+         (map (fn [{:keys [sales-qty returns-qty revenue wb-reward logistics
                            storage acceptance penalties for-pay total-cost] :as row}]
                 (let [net-qty          (max 1 (- sales-qty returns-qty))
-                      total-deductions (+ (Math/abs (or commission 0))
+                      total-deductions (+ (or wb-reward 0)
                                          (or logistics 0)
                                          (or storage 0)
                                          (or acceptance 0)
@@ -54,14 +54,14 @@
         total-logistics (reduce + 0.0 (map :logistics ue-data))
         total-storage   (reduce + 0.0 (map :storage ue-data))
         total-revenue   (reduce + 0.0 (map :revenue ue-data))
-        total-commission (reduce + 0.0 (map :commission ue-data))]
+        total-wb-reward  (reduce + 0.0 (map :wb-reward ue-data))]
     {:total-revenue    (math/round2 total-revenue)
      :total-for-pay   (math/round2 total-for-pay)
      :total-cost       (math/round2 total-cost)
      :total-profit     (math/round2 total-profit)
      :total-logistics  (math/round2 total-logistics)
      :total-storage    (math/round2 total-storage)
-     :total-commission (math/round2 total-commission)
+     :total-wb-reward  (math/round2 total-wb-reward)
      :total-acceptance (math/round2 (reduce + 0.0 (map :acceptance ue-data)))
      :total-penalties  (math/round2 (reduce + 0.0 (map :penalties ue-data)))
      :total-deductions (math/round2 (reduce + 0.0 (map :total-deductions ue-data)))
@@ -87,7 +87,7 @@
     (table/print-summary
      "ЮНИТ-ЭКОНОМИКА"
      [["Выручка (розница)"    (:total-revenue summary)]
-      ["— Комиссия WB"        (:total-commission summary)]
+      ["— Вознаграждение WB"  (:total-wb-reward summary)]
       ["— Логистика"          (:total-logistics summary)]
       ["— Хранение"           (:total-storage summary)]
       ["— Приёмка"            (:total-acceptance summary)]
