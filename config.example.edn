@@ -1,0 +1,12 @@
+{:marketplaces
+ {:wb {:api-token "YOUR_WB_API_TOKEN_HERE"
+       :rate-limits {:statistics 10
+                     :analytics  2
+                     :advert     5
+                     :marketplace 5
+                     :content    2
+                     :prices     2}}}
+
+ :cost-prices
+ {:source :edn
+  :path   "data/cost-prices.edn"}}

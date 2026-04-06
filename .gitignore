@@ -1,0 +1,9 @@
+config.edn
+.cpcache/
+.nrepl-port
+target/
+*.class
+*.jar
+.lsp/
+.clj-kondo/
+data/
