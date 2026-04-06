@@ -1,3 +1,4 @@
+.env
 config.edn
 .cpcache/
 .nrepl-port

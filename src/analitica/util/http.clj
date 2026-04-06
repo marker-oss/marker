@@ -9,22 +9,23 @@
 ;; ---------------------------------------------------------------------------
 
 (defn make-rate-limiter
-  "Creates a rate limiter that allows `rps` requests per second.
+  "Creates a rate limiter that allows `rpm` requests per minute.
    Returns a fn that blocks until a slot is available."
-  [rps]
-  (let [permits  (max 1 (int rps))
-        sem      (Semaphore. permits true)
-        refiller (doto (Thread.
-                        (fn []
-                          (while (not (Thread/interrupted))
-                            (try
-                              (Thread/sleep (long (/ 1000 permits)))
-                              (when (< (.availablePermits sem) permits)
-                                (.release sem))
-                              (catch InterruptedException _
-                                (.interrupt (Thread/currentThread)))))))
-                   (.setDaemon true)
-                   (.start))]
+  [rpm]
+  (let [interval-ms (long (/ 60000 (max 1 (double rpm))))
+        permits     (max 1 (min (int rpm) 10))
+        sem         (Semaphore. permits true)
+        refiller    (doto (Thread.
+                          (fn []
+                            (while (not (Thread/interrupted))
+                              (try
+                                (Thread/sleep interval-ms)
+                                (when (< (.availablePermits sem) permits)
+                                  (.release sem))
+                                (catch InterruptedException _
+                                  (.interrupt (Thread/currentThread)))))))
+                     (.setDaemon true)
+                     (.start))]
     (fn wait-for-slot []
       (.acquire sem)
       nil)))
@@ -56,11 +57,11 @@
   [f max-retries]
   (loop [attempt 0]
     (let [result (try
-                   {:ok (f)}
+                   {:ok true :value (f)}
                    (catch Exception e
-                     {:error e :attempt attempt}))]
+                     {:ok false :error e :attempt attempt}))]
       (if (:ok result)
-        (:ok result)
+        (:value result)
         (if (>= (inc attempt) max-retries)
           (throw (:error result))
           (do
@@ -73,23 +74,23 @@
    Options:
      :method       - :get or :post (default :get)
      :url          - full URL
-     :token        - Bearer token
+     :token        - API token (sent as-is in Authorization header)
      :query-params - map of query params
      :body         - request body (will be JSON-encoded if map)
      :limiter-key  - key for rate limiter
-     :limiter-rps  - requests per second for this limiter
+     :limiter-rpm  - requests per minute for this limiter
      :max-retries  - max retry attempts (default 3)"
-  [{:keys [method url token query-params body limiter-key limiter-rps max-retries]
+  [{:keys [method url token query-params body limiter-key limiter-rpm max-retries]
     :or   {method :get max-retries 3}}]
-  (when (and limiter-key limiter-rps)
-    (let [limiter (get-limiter limiter-key limiter-rps)]
+  (when (and limiter-key limiter-rpm)
+    (let [limiter (get-limiter limiter-key limiter-rpm)]
       (limiter)))
   (mu/log ::request :method method :url url)
   (retry-with-backoff
    (fn []
      (let [opts (cond-> {:http-client  client
                          :headers      (cond-> {"Accept" "application/json"}
-                                         token (assoc "Authorization" (str "Bearer " token)))
+                                         token (assoc "Authorization" token))
                          :as           :string}
                   query-params (assoc :query-params query-params)
                   (and body (map? body))

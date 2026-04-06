@@ -10,7 +10,7 @@
    :analytics   "https://seller-analytics-api.wildberries.ru"
    :advert      "https://advert-api.wildberries.ru"
    :marketplace "https://marketplace-api.wildberries.ru"
-   :content     "https://suppliers-api.wildberries.ru"
+   :content     "https://content-api.wildberries.ru"
    :prices      "https://discounts-prices-api.wildberries.ru"
    :feedbacks   "https://feedbacks-api.wildberries.ru"
    :returns     "https://returns-api.wildberries.ru"})
@@ -26,7 +26,13 @@
   [{:keys [api-token rate-limits]}]
   (when-not api-token
     (throw (ex-info "WB API token is required" {})))
-  (->WBClient api-token (or rate-limits {:statistics 10 :analytics 2 :advert 5})))
+  (->WBClient api-token (or rate-limits
+                                        {:statistics  1     ;; 1 req/min
+                                         :analytics   3     ;; 3 req/min (nm-report)
+                                         :advert      300   ;; 5 req/sec
+                                         :marketplace 300   ;; 5 req/sec
+                                         :content     100   ;; 100 req/min
+                                         :prices      100})));; 10 req/6sec ≈ 100 rpm
 
 ;; ---------------------------------------------------------------------------
 ;; Request helpers
@@ -43,7 +49,7 @@
                  :token        (:token client)
                  :query-params query-params
                  :limiter-key  (keyword "wb" (name section))
-                 :limiter-rps  (get (:rate-limits client) section 5)}))
+                 :limiter-rpm  (get (:rate-limits client) section 5)}))
 
 (defn post-request
   "POST request to WB API."
@@ -54,4 +60,4 @@
                  :body         body
                  :query-params query-params
                  :limiter-key  (keyword "wb" (name section))
-                 :limiter-rps  (get (:rate-limits client) section 5)}))
+                 :limiter-rpm  (get (:rate-limits client) section 5)}))

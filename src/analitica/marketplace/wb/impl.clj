@@ -2,9 +2,10 @@
   (:require [analitica.marketplace.protocol :as proto]
             [analitica.marketplace.wb.api :as api]
             [analitica.marketplace.wb.transform :as t]
-            [analitica.marketplace.wb.client :as c]))
+            [analitica.marketplace.wb.client])
+  (:import [analitica.marketplace.wb.client WBClient]))
 
-(extend-type c/WBClient
+(extend-type WBClient
   proto/MarketplaceAPI
 
   (fetch-orders [this date-from date-to]

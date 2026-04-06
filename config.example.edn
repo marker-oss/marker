@@ -1,11 +1,11 @@
 {:marketplaces
  {:wb {:api-token "YOUR_WB_API_TOKEN_HERE"
-       :rate-limits {:statistics 10
-                     :analytics  2
-                     :advert     5
-                     :marketplace 5
-                     :content    2
-                     :prices     2}}}
+       :rate-limits {:statistics  1      ;; 1 req/min
+                     :analytics   3      ;; 3 req/min
+                     :advert      300    ;; 5 req/sec
+                     :marketplace 300    ;; 5 req/sec
+                     :content     100    ;; 100 req/min
+                     :prices      100}}} ;; ~100 req/min
 
  :cost-prices
  {:source :edn
