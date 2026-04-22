@@ -2,9 +2,15 @@
   (:require [analitica.config :as config]
             [analitica.db :as db]
             [analitica.sync :as sync]
+            [analitica.ingest :as ingest]
+            [analitica.materialize :as materialize]
             [analitica.marketplace.registry :as registry]
             [analitica.marketplace.wb.client :as wb-client]
             [analitica.marketplace.wb.impl]
+            [analitica.marketplace.ozon.client :as ozon-client]
+            [analitica.marketplace.ozon.impl]
+            [analitica.marketplace.ym.client :as ym-client]
+            [analitica.marketplace.ym.impl]
             [analitica.marketplace.protocol :as proto]
             [analitica.domain.sales :as sales]
             [analitica.domain.finance :as finance]
@@ -30,6 +36,16 @@
   (mu/start-publisher! {:type :console})
   (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
     (registry/register! :wb (wb-client/make-client wb-cfg)))
+  (when-let [ozon-cfg (config/ozon-config)]
+    (try
+      (registry/register! :ozon (ozon-client/make-client ozon-cfg))
+      (catch Exception e
+        (println "Warning: Could not register Ozon:" (.getMessage e)))))
+  (when-let [ym-cfg (config/ym-config)]
+    (try
+      (registry/register! :ym (ym-client/make-client ym-cfg))
+      (catch Exception e
+        (println "Warning: Could not register YM:" (.getMessage e)))))
   (println "=== Analitica started ===")
   (println "Registered marketplaces:" (vec (registry/registered)))
   (sync/status)
@@ -45,16 +61,19 @@
 
   (start!)                              -- init system
 
-  SYNC (API -> SQLite):
-  (sync/sync! :all :last-30-days)       -- sync everything
-  (sync/sync! :sales :last-30-days)     -- sales
-  (sync/sync! :orders :last-30-days)    -- orders
-  (sync/sync! :finance :last-30-days)   -- financial report
-  (sync/sync! :stocks)                  -- stock levels
-  (sync/sync! :stats :last-30-days)     -- product stats (funnel)
-  (sync/sync! :prices)                  -- current prices
-  (sync/sync! :regions :last-30-days)   -- geography
-  (sync/sync! :1c)                      -- cost prices from 1C
+  INGEST (API -> raw_data):
+  (ingest/ingest! :all :period :last-30-days)           -- fetch everything
+  (ingest/ingest! :finance :period :last-30-days)       -- fetch finance report
+  (ingest/ingest! :stocks :marketplace :ozon)           -- fetch stock snapshot
+
+  MATERIALIZE (raw_data -> analytical tables):
+  (materialize/materialize! :all :period :last-30-days) -- rebuild everything
+  (materialize/rebuild! :finance :period :last-30-days) -- clear+rebuild finance
+
+  COST PRICES:
+  (sync/sync-1c!)                       -- load 1C CSV into cost_prices
+
+  STATUS:
   (sync/status)                         -- DB row counts
 
   REPORTS:
@@ -84,7 +103,8 @@
   (buyout/export-excel period path)
 
   CLI (from terminal):
-  clojure -M -m analitica.cli sync all -p last-30-days
+  clojure -M -m analitica.cli ingest all -p last-30-days
+  clojure -M -m analitica.cli rebuild all -p last-30-days
   clojure -M -m analitica.cli report pnl -f 2026-03-01 -t 2026-03-31
   clojure -M -m analitica.cli report sales -e reports/sales.xlsx
   clojure -M -m analitica.cli status
