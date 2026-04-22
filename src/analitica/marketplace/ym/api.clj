@@ -37,12 +37,15 @@
 
 (defn- order-stats-page
   [client date-from date-to page-token statuses]
+  ;; YM expects `page_token` as a query-parameter, not a body field. Passing
+  ;; it in the body is silently ignored and the server returns page 1 on every
+  ;; call, producing an infinite pagination loop on multi-page result sets.
   (client/post-request client
     (str "/campaigns/" (:campaign-id client) "/stats/orders")
+    :query-params (when page-token {:page_token page-token})
     :body (cond-> {:dateFrom date-from
                    :dateTo   date-to}
-            page-token       (assoc :pageToken page-token)
-            (seq statuses)   (assoc :statuses (vec statuses)))))
+            (seq statuses) (assoc :statuses (vec statuses)))))
 
 (defn order-stats
   "Fetch order statistics with commission breakdown.
