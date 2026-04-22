@@ -7,4 +7,9 @@
           ;; `:skip` alone does not prevent namespace loading (and loading
           ;; fails with ClassNotFound). Once spec 001 work lands, this
           ;; restriction can be relaxed back to the default "-test$" pattern.
-          :ns-patterns ["^(?!.*schema\\.performance-test$).*-test$"]}]}
+          :ns-patterns ["^(?!.*schema\\.performance-test$).*-test$"]
+          ;; Skip tests tagged ^:integration by default. These require an
+          ;; isolated test database (ANALITICA_DB=test-analitica.db) and
+          ;; populated fixtures. Run with `--no-skip-meta :integration` to
+          ;; include them.
+          :skip-meta   [:integration]}]}
