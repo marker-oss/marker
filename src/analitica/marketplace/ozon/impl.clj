@@ -37,12 +37,20 @@
 
 (defn sync-sku-map!
   "Build and persist {sku → offer_id} mapping from Ozon product catalog.
-   Fetches product list, then product info to extract fbo_sku/fbs_sku."
+   Fetches product list, then product info to extract fbo_sku/fbs_sku.
+
+   /v3/product/info/list caps each request at ~1000 offer_ids, so
+   we batch accordingly."
   [client]
-  (let [items     (api/product-list client)
-        offer-ids (mapv #(get % :offer_id) items)
-        resp      (api/product-info client offer-ids)
-        products  (get-in resp [:result :items] [])
+  (let [items      (api/product-list client)
+        offer-ids  (mapv #(get % :offer_id) items)
+        batch-size 500
+        products   (mapcat (fn [batch]
+                             ;; v3 returns {:items [...]} at top level,
+                             ;; not wrapped in :result.
+                             (get (api/product-info client (vec batch))
+                                  :items []))
+                           (partition-all batch-size offer-ids))
         pairs     (->> products
                        (mapcat (fn [p]
                                  (let [offer-id (get p :offer_id)]

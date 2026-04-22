@@ -173,9 +173,12 @@
 ;; ---------------------------------------------------------------------------
 
 (defn product-info
-  "Fetch product info for a list of offer-ids."
+  "Fetch product info for a list of offer-ids.
+
+   Uses /v3/product/info/list — /v2/product/info/list was deprecated by
+   Ozon (returns 404 as of April 2026)."
   [client offer-ids]
-  (c/post-request client "/v2/product/info/list"
+  (c/post-request client "/v3/product/info/list"
                   :body {"offer_id" offer-ids}))
 
 (defn product-info-by-sku
