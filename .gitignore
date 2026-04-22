@@ -10,3 +10,12 @@ target/
 data/
 *.db
 reports/
+.kiro/
+tmp_*
+check_*.clj
+test_safety_check*.clj
+start_web*.clj
+restore_data.clj
+
+# Local-only API spec cache (committed on auto-adaptation branch, not here)
+resources/schemas/ozon/swagger.json

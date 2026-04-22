@@ -1,0 +1,55 @@
+{:endpoint/id          :ozon/transaction-list
+ :endpoint/marketplace :ozon
+ :endpoint/api-path    "/v3/finance/transaction/list"
+ :endpoint/method      :post
+ :endpoint/description "Per-operation finance audit trail. Paginated 1000/page, transaction_type='all'. Response {:result {:operations [{...}] :page_count :row_count}}. src/analitica/marketplace/ozon/api.clj/finance-report concatenates operations across pages and returns the flat vector — schema reflects that flat list. Reserved for Ozon hybrid architecture (see specs/002-calculation-audit/verdicts.md §B-005 postscript): per-article logistics/last-mile/dropoff services live inside operations[].services[] of orders/returns-bucket operations, NOT in separate services-bucket."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T16:15:00Z"
+  :reference-url "https://docs.ozon.ru/api/seller/"
+  :source-file   "resources/schemas/ozon/swagger.json (local cache, gitignored — full spec committed on auto-adaptation branch)"
+  :notes         "Extracted from local swagger.json components/schemas: FinanceTransactionListV3ResponseOperation + OperationItem + OperationPosting + OperationService. All response fields optional per upstream spec (no `required` list). When hybrid ingest is implemented, the schema guards against type drift in posting/items/services — the fields we rely on for per-article attribution."}
+
+ :contract/response-schema
+ ;; NOTE: finance-report unwraps {:result {:operations [...]}} and concatenates
+ ;; operations across all pages before returning — downstream sees a flat
+ ;; vector of operation maps. Schema reflects that unwrapped shape.
+ [:sequential
+  [:map
+   [:operation_id        {:optional true} [:maybe :int]]
+   [:operation_date      {:optional true} [:maybe :string]]
+   [:operation_type      {:optional true} [:maybe :string]]
+   [:operation_type_name {:optional true} [:maybe :string]]
+   [:type
+    ;; "all" is filter-level; responses carry one of the bucket types
+    {:optional true} [:maybe [:enum "all" "orders" "returns" "services" "compensation" "transferDelivery" "other"]]]
+   [:amount                 {:optional true} [:maybe number?]]
+   [:accruals_for_sale      {:optional true} [:maybe number?]]
+   [:sale_commission        {:optional true} [:maybe number?]]
+   [:delivery_charge        {:optional true} [:maybe number?]]
+   [:return_delivery_charge {:optional true} [:maybe number?]]
+   [:posting
+    {:optional true}
+    [:maybe
+     [:map
+      [:posting_number  {:optional true} [:maybe :string]]
+      [:order_date      {:optional true} [:maybe :string]]
+      [:warehouse_id    {:optional true} [:maybe :int]]
+      [:delivery_schema {:optional true} [:maybe :string]]]]]
+   [:items
+    {:optional true}
+    [:sequential
+     [:map
+      [:sku  {:optional true} [:maybe :int]]
+      [:name {:optional true} [:maybe :string]]]]]
+   [:services
+    {:optional true}
+    [:sequential
+     [:map
+      [:name  {:optional true} [:maybe :string]]
+      [:price {:optional true} [:maybe number?]]]]]]]
+
+ :contract/notes   "Used only if Ozon hybrid ingest is back-ported (see verdicts.md §B-005 postscript). Until then, this endpoint is not called in ingest.clj — no with-validation site active. Registering the contract ahead of time means `schema list` shows full coverage and `schema diff` can be run against stored raw_data with `entity_type=:transactions` if such data gets re-collected. Field `posting.posting_number + items[].sku` is what enables per-article attribution: 100% coverage for orders/returns buckets, 95% for services bucket (5% account-level: FBO storage, DefectFines, SellerCorrection — remain in cash_flow_periods). Don't mark any field :required — upstream spec declares none, and different operation_type buckets omit different fields (services-bucket ops often lack posting/items)."
+ :contract/version 1}
