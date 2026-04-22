@@ -147,23 +147,30 @@
       (println (str "Materialized Ozon finance from realization: " cnt))
       cnt)))
 
-;; Forward declaration: materialize-ozon-services! is defined below but
-;; is referenced from materialize-finance!'s :ozon branch.
+;; Forward declarations: both functions are defined below but are
+;; referenced from materialize-finance!'s :ozon branch.
 (declare materialize-ozon-services!)
+(declare materialize-ozon-orphan-services!)
 
 (defn materialize-finance!
   [period & {:keys [marketplace] :or {marketplace :wb}}]
   (let [[from to] (resolve-period period)]
     (case marketplace
       :ozon
-      ;; Two-step Ozon pipeline (spec 003 US3B):
+      ;; Three-step Ozon pipeline (spec 003 US3B + T047 B-009 fix):
       ;;   1. realization → finance rows (for-pay, retail, commission).
-      ;;   2. transaction/list services[] merge → cost fields per article.
-      ;; Step 2 is optional and silently no-ops when no :transactions raw_data
-      ;; has been ingested for the period.
+      ;;   2. transaction/list services[] merge → cost fields per article
+      ;;      (UPDATE existing rows).
+      ;;   3. orphan-service INSERT (T047): service-only rows for articles
+      ;;      without a sale-row in the realization window — closes SC-003
+      ;;      reconciliation gap. Reuses :orphan-aggregates from step 2 to
+      ;;      avoid recomputing.
+      ;; Steps 2–3 are optional and silently no-op when no :transactions
+      ;; raw_data exists for the period.
       (let [cnt (materialize-ozon-finance-from-realization! from to)]
         (when (seq (db/get-raw-range "ozon" :transactions from to))
-          (materialize-ozon-services! [from to]))
+          (let [{:keys [orphan-aggregates]} (materialize-ozon-services! [from to])]
+            (materialize-ozon-orphan-services! [from to] orphan-aggregates)))
         cnt)
       (let [source    (name marketplace)
             raw-items (load-raw source :finance from to)
@@ -320,7 +327,11 @@
    `period` is a [from to] vector of ISO dates, a period keyword, or a
    {:from :to} map (see `resolve-period`).
 
-   Returns a summary map: {:updates N :orphans M :service-rows K}."
+   Returns a summary map: {:updates N :orphans M :service-rows K
+                           :orphan-aggregates {[article month field] amount}}.
+   `:orphan-aggregates` is consumed by `materialize-ozon-orphan-services!`
+   (T047) to INSERT service-only rows for articles that lack a sale row in
+   the current window."
   [period]
   (let [[from to]      (resolve-period period)
         article-lookup (build-article-lookup from to)
@@ -329,7 +340,8 @@
                                         operations))
         agg            (aggregate-service-contributions service-rows)
         orphans        (atom 0)
-        updates        (atom 0)]
+        updates        (atom 0)
+        orphan-agg     (atom {})]
     (jdbc/with-transaction [tx (db/ds)]
       (doseq [[[article month field] amount] agg]
         (let [col (ozon-cost-field->column field)
@@ -337,6 +349,7 @@
           (if (pos? n)
             (swap! updates inc)
             (do (swap! orphans inc)
+                (swap! orphan-agg assoc [article month field] amount)
                 (mu/log ::orphan-posting
                         :marketplace :ozon
                         :article     article
@@ -347,9 +360,138 @@
                   @orphans " orphans, "
                   (count service-rows) " service-rows from "
                   (count operations) " operations"))
-    {:updates      @updates
-     :orphans      @orphans
-     :service-rows (count service-rows)}))
+    {:updates           @updates
+     :orphans           @orphans
+     :service-rows      (count service-rows)
+     :orphan-aggregates @orphan-agg}))
+
+;; ---------------------------------------------------------------------------
+;; Ozon orphan-service INSERT (T047 / B-009 fix)
+;;
+;; After `materialize-ozon-services!` runs (UPDATE-only), some service-rows
+;; have no target sale/return row in the realization path — typically return
+;; logistics for items sold in prior months. Those contributions were logged
+;; as ::orphan-posting but their ₽ amounts never reached `finance`, producing
+;; the ~20% SC-003 reconciliation gap measured in B-009.
+;;
+;; This function re-computes the aggregation, picks the orphan keys (those
+;; for which `pick-target-rrd-id` returns nil), and INSERTs ONE service-only
+;; finance row per (article, month, field) triple.
+;;
+;; Invariants:
+;;   - `operation = "service"` (new canonical value; domain/finance.clj
+;;     filters sales/returns by operation so revenue aggregations are not
+;;     disturbed; cost-field aggregations naturally pick up these rows).
+;;   - `for_pay = 0` — B-005 holds: SUM(for_pay on sale rows) unchanged.
+;;   - `retail_amount = 0`, `retail_price = 0`, `quantity = 0`.
+;;   - `rrd_id` is deterministic via `String.hashCode` so re-runs hit the
+;;     same natural-key (marketplace, rrd_id) and INSERT OR REPLACE is a
+;;     no-op (idempotent).
+;; ---------------------------------------------------------------------------
+
+(defn- month-bounds
+  "Given `YYYY-MM-01` first-of-month, return [first-of-month last-of-month]."
+  [month-first]
+  (let [year  (Integer/parseInt (subs month-first 0 4))
+        mon   (Integer/parseInt (subs month-first 5 7))
+        ym    (java.time.YearMonth/of year mon)
+        first (.atDay ym 1)
+        last  (.atEndOfMonth ym)]
+    [(.toString first) (.toString last)]))
+
+(defn- orphan-rrd-id
+  "Deterministic rrd_id for an orphan service-row. Same (article, month, field)
+   always hashes to the same value → natural-key PK guards duplicates."
+  [article month field]
+  (Math/abs (long (.hashCode (str ":ozon-orphan-" article "-" month "-" (name field))))))
+
+(defn- build-orphan-finance-row
+  "Build a FinanceRow map for one orphan (article, month, field) triple."
+  [article month field amount]
+  (let [[date-from date-to] (month-bounds month)
+        base {:marketplace  :ozon
+              :rrd-id       (orphan-rrd-id article month field)
+              :report-id    nil
+              :date-from    date-from
+              :date-to      date-to
+              :article      article
+              :nm-id        nil
+              :barcode      nil
+              :subject      nil
+              :brand        nil
+              :operation    "service"
+              :doc-type     nil
+              :quantity     0
+              :retail-price 0.0
+              :retail-amount 0.0
+              :for-pay      0.0}]
+    (assoc base field (double amount))))
+
+(defn materialize-ozon-orphan-services!
+  "After `materialize-ozon-services!` runs (UPDATE-only), INSERT a service-only
+   finance-row for each (article, month, field) triple whose target sale-row
+   didn't exist in the realization window. Closes B-009 / SC-003 gap.
+
+   Optionally accepts `orphan-aggregates` to skip recomputation when the
+   caller has the map from `materialize-ozon-services!`. Defaults to running
+   the aggregation again so the function can stand alone.
+
+   Returns {:inserted N :skipped-existing M :orphan-fields K}.
+   Idempotent: re-running yields identical DB state."
+  ([period]
+   (materialize-ozon-orphan-services! period nil))
+  ([period orphan-aggregates]
+   (let [[from to]      (resolve-period period)
+         aggregates     (or orphan-aggregates
+                            ;; Recompute orphans from raw data
+                            (let [article-lookup (build-article-lookup from to)
+                                  operations     (load-transactions-operations from to)
+                                  service-rows   (into [] (mapcat #(ozon-t/tx-op->service-rows % article-lookup)
+                                                                  operations))
+                                  agg            (aggregate-service-contributions service-rows)]
+                              (jdbc/with-transaction [tx (db/ds)]
+                                (reduce-kv
+                                  (fn [acc [article month field] amount]
+                                    (if (pick-target-rrd-id tx article month)
+                                      acc
+                                      (assoc acc [article month field] amount)))
+                                  {}
+                                  agg))))
+         inserted       (atom 0)
+         skipped        (atom 0)]
+     (when (seq aggregates)
+       (jdbc/with-transaction [tx (db/ds)]
+         (doseq [[[article month field] amount] aggregates]
+           (let [rrd (orphan-rrd-id article month field)
+                 existing (jdbc/execute-one!
+                            tx
+                            ["SELECT rrd_id FROM finance
+                              WHERE marketplace='ozon' AND rrd_id = ?"
+                             rrd])]
+             (if existing
+               (swap! skipped inc)
+               (let [finance-row (build-orphan-finance-row article month field amount)
+                     row-vec     (sync/finance->row finance-row)
+                     col-names   (clojure.string/join "," (map name sync/finance-columns))
+                     ph          (clojure.string/join "," (repeat (count sync/finance-columns) "?"))]
+                 (jdbc/execute-one!
+                   tx
+                   (into [(str "INSERT INTO finance (" col-names ") VALUES (" ph ")")]
+                         row-vec))
+                 (swap! inserted inc)
+                 (mu/log ::orphan-service-inserted
+                         :marketplace :ozon
+                         :article     article
+                         :period      month
+                         :field       field
+                         :amount      amount
+                         :rrd-id      rrd)))))))
+     (println (str "Materialized Ozon orphan services: " @inserted " INSERTs, "
+                   @skipped " skipped (already present), "
+                   (count aggregates) " orphan-fields"))
+     {:inserted         @inserted
+      :skipped-existing @skipped
+      :orphan-fields    (count aggregates)})))
 
 ;; ---------------------------------------------------------------------------
 ;; Storage (paid storage)
