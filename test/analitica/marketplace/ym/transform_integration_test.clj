@@ -55,3 +55,17 @@
         (str "all fixture-derived rows must satisfy FinanceRow; bad rows:\n"
              (frow/summarize-bad bad)))
     (is (= (count rows) (count ok)))))
+
+;; ---------------------------------------------------------------------------
+;; US2: SC-002 reconciliation — SUM(:ad-cost) ≈ SUM(raw bidFee) within ±1 ₽.
+;; Expected per fixture: ~88,357 ₽ bidFee sum for March 2026 (probe 2026-04-22).
+;; ---------------------------------------------------------------------------
+
+(deftest ad-cost-sum-matches-fixture-bidfee
+  (let [orders          (load-fixture)
+        rows            (transform/->finance-from-order-stats orders)
+        actual-ad-cost  (double (reduce + 0 (keep :ad-cost rows)))
+        expected-bidfee (double (reduce + 0 (keep :bidFee (mapcat :items orders))))]
+    (is (< (Math/abs (- actual-ad-cost expected-bidfee)) 1.0)
+        (format "SUM :ad-cost (%.2f) != SUM bidFee (%.2f), delta %.2f"
+                actual-ad-cost expected-bidfee (- actual-ad-cost expected-bidfee)))))

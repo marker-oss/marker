@@ -170,7 +170,12 @@
   delivery_commission.amount — all three mean \"netto to seller after fees\"):
 
       for-pay = BUYER − FEE − AGENCY − DELIVERY_TO_CUSTOMER
-                      − PAYMENT_TRANSFER − AUCTION_PROMOTION"
+                      − PAYMENT_TRANSFER − AUCTION_PROMOTION − bidFee
+
+  Per-item bidFee is extracted to :ad-cost and subtracted from :for-pay
+  without redistribution (FR-005/006/019). CANCELLED_BEFORE_PROCESSING
+  orders still carry bidFee — seller paid for the ad even if the order
+  never shipped, so :for-pay turns negative (matching real cash impact)."
   [order]
   (let [order-id    (get order :id)
         date        (get order :creationDate)
@@ -193,7 +198,10 @@
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   qty         (or (get item :count) 1)
-                  net-pay     (- (or buyer-price 0) all-comm)]
+                  ;; FR-006/019: bidFee strictly per-item, no redistribution
+                  bid-fee     (or (:bidFee item) 0)
+                  ;; FR-005: :for-pay = BUYER − Σcommissions − bidFee
+                  net-pay     (- (or buyer-price 0) all-comm bid-fee)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
                :report-id          nil
@@ -225,7 +233,8 @@
                :acceptance         nil
                :additional-payment nil
                :deduction          nil
-               :acquiring-fee      acquiring}))
+               :acquiring-fee      acquiring
+               :ad-cost            bid-fee}))
           items)))
 
 (defn ->finance-from-order-stats

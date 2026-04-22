@@ -119,3 +119,36 @@
           rows (transform/->finance-from-order-stats [order])]
       (is (= 2 (count rows)))
       (is (every? #(= "cancelled" (:operation %)) rows)))))
+
+;; ---------------------------------------------------------------------------
+;; US2: bidFee → :ad-cost extraction + :for-pay formula update
+;; See specs/003-finance-row-completeness/data-model.md §5, spec.md FR-005/006/019.
+;; ---------------------------------------------------------------------------
+
+(deftest bidfee-extracted-per-item
+  (testing "multi-item order → each FinanceRow gets its own bidFee (no redistribution)"
+    (let [order {:id 1 :status "DELIVERED" :creationDate "2026-03-01"
+                 :commissions [{:type "FEE" :actual 60}]
+                 :items [{:shopSku "A" :bidFee 100 :prices [{:type "BUYER" :total 500}]}
+                         {:shopSku "B" :bidFee 200 :prices [{:type "BUYER" :total 800}]}]}
+          rows (transform/->finance-from-order-stats [order])]
+      (is (= 2 (count rows)))
+      (is (= 100 (:ad-cost (first rows))) "FR-019: item A keeps its own bidFee")
+      (is (= 200 (:ad-cost (second rows))) "FR-019: item B keeps its own bidFee")
+      ;; FR-005: per-item :for-pay = BUYER − commission_share (60/2=30) − bidFee
+      (is (= 370.0 (:for-pay (first rows))) "500 − 30 − 100")
+      (is (= 570.0 (:for-pay (second rows))) "800 − 30 − 200"))))
+
+(deftest cancelled-before-processing-bidfee-produces-negative-for-pay
+  (testing "CANCELLED_BEFORE_PROCESSING with bidFee → seller still owes ad-cost (negative :for-pay)"
+    (let [order {:id 2 :status "CANCELLED_BEFORE_PROCESSING" :creationDate "2026-03-01"
+                 :commissions []
+                 :payments []
+                 :items [{:shopSku "X" :bidFee 500
+                          :prices [{:type "BUYER" :total 0}]}]}
+          rows (transform/->finance-from-order-stats [order])
+          row (first rows)]
+      (is (= "cancelled" (:operation row)))
+      (is (= 500 (:ad-cost row)) "bidFee preserved even when order cancelled")
+      (is (neg? (:for-pay row)) "no revenue, only ad cost → negative for-pay")
+      (is (= -500.0 (:for-pay row)) "0 − 0 − 500 = -500"))))
