@@ -27,6 +27,7 @@
             [analitica.audit.rule-impl :as audit-rule-impl]
             [analitica.audit.core :as audit-core]
             [analitica.audit.bank :as audit-bank]
+            [analitica.audit.kpi :as audit-kpi]
             [analitica.util.time :as util-time]
             [analitica.schema.infer :as schema-infer]
             [analitica.schema.loader :as schema-loader]
@@ -440,9 +441,241 @@ Currently registered rules:")
           (println "audit reconcile crashed:" (.getMessage t))
           5)))))
 
+;; ---------------------------------------------------------------------------
+;; audit kpi
+;; ---------------------------------------------------------------------------
+
+(def ^:private kpi-measure-cli-options
+  ;; Global -p/-f/-t/-m are re-declared here for the same reason as in
+  ;; reconcile-cli-options: top-level parse-opts is :in-order true.
+  [["-p" "--period PERIOD" "Period keyword (last-30-days, this-month, ...)"
+    :default "last-30-days"]
+   ["-f" "--from DATE" "Start date: 2026-03-01"]
+   ["-t" "--to DATE" "End date: 2026-03-31"]
+   ["-m" "--marketplace MP" "Marketplace (MVP only supports wb)"
+    :default "wb"]
+   [nil "--bank-sum N" "Total bank payout sum for the period (required if no --bank-csv)"
+    :parse-fn #(try (Double/parseDouble %) (catch Exception _ nil))]
+   [nil "--bank-csv PATH" "Bank payouts CSV (auto-detects ',' or ';' delimiter)"]
+   [nil "--excel-sum N" "Secondary reference — sum from manual excel reconciliation"
+    :parse-fn #(try (Double/parseDouble %) (catch Exception _ nil))]
+   [nil "--excel-by-article PATH" "CSV article,expected_for_pay for detailed reference"]
+   [nil "--skus S1,S2,..." "Explicit SKU list (overrides top-30 selection)"
+    :parse-fn (fn [s] (mapv str/trim (str/split s #",")))]
+   [nil "--captured-by NAME" "Operator name (default: $USER env var)"]])
+
+(def ^:private kpi-list-cli-options
+  [[nil "--marketplace MP" "Filter by marketplace (wb|ozon|ym)"]
+   [nil "--mp MP" "Alias for --marketplace"]
+   [nil "--limit N" "Max rows to show (default 20)"
+    :default 20
+    :parse-fn parse-long]])
+
+(defn- resolve-kpi-period
+  "Build {:from :to} from CLI options. Same rule as reconcile."
+  [opts]
+  (cond
+    (and (:from opts) (:to opts))
+    {:from (:from opts) :to (:to opts)}
+    (:period opts)
+    (let [[from to] (util-time/period (keyword (:period opts)))]
+      {:from from :to to})
+    :else
+    (throw (ex-info "audit kpi measure requires -f/-t or -p" {:opts opts}))))
+
+(defn- parse-kpi-bank-input
+  "Build :bank-input from --bank-sum or --bank-csv. Returns nil if neither
+   is supplied so the caller can emit the canonical error message."
+  [{:keys [bank-sum bank-csv]} period]
+  (cond
+    (number? bank-sum) {:sum bank-sum}
+    (seq bank-csv)     (audit-bank/parse-bank-csv bank-csv period)
+    :else              nil))
+
+(defn- fmt-delta-pct [pct]
+  (format "%+.2f%%" (double (or pct 0.0))))
+
+(defn- fmt-num [n]
+  (format "%,.2f" (double (or n 0.0))))
+
+(defn- render-kpi-measurement-line
+  "Render one measurement as a single-line table row for `audit kpi list`."
+  [{:keys [kpi-id captured-at marketplace period-from period-to
+           delta-rel-pct verdict]}]
+  (format "  %-36s  %-19s  %-4s  %s..%s  delta=%s  %s"
+          kpi-id
+          (or captured-at "—")
+          (or marketplace "—")
+          (or period-from "—")
+          (or period-to "—")
+          (fmt-delta-pct delta-rel-pct)
+          (or verdict "—")))
+
+(defn- render-kpi-measurement-detail
+  "Render one measurement in full, for `audit kpi show <id>`."
+  [m]
+  (let [{:keys [kpi-id captured-at captured-by marketplace
+                period-from period-to sku-list sku-selection-method
+                reference-bank-sum reference-excel-sum
+                reference-excel-by-article measured-value
+                delta-abs-rub delta-rel-pct verdict breakdown report-id]} m]
+    (str
+      "KPI measurement " kpi-id "\n"
+      "  captured-at:   " (or captured-at "—") "\n"
+      "  captured-by:   " (or captured-by "—") "\n"
+      "  marketplace:   " (or marketplace "—") "\n"
+      "  period:        " (or period-from "—") " .. " (or period-to "—") "\n"
+      "  SKUs:          " (count (or sku-list [])) " article(s), selection="
+      (or sku-selection-method "—") "\n"
+      "    " (clojure.string/join ", " (take 10 (or sku-list [])))
+      (when (> (count (or sku-list [])) 10) " …") "\n"
+      "  bank-sum:      " (fmt-num reference-bank-sum) "\n"
+      (when reference-excel-sum
+        (str "  excel-sum:     " (fmt-num reference-excel-sum) "\n"))
+      (when reference-excel-by-article
+        (str "  excel-map:     "
+             (count reference-excel-by-article) " article(s)\n"))
+      "  measured:      " (fmt-num measured-value) "\n"
+      "  delta:         " (fmt-num delta-abs-rub)
+      " (" (fmt-delta-pct delta-rel-pct) ")\n"
+      "  verdict:       " (or verdict "—") "\n"
+      (when breakdown
+        (str "  breakdown:\n"
+             (with-out-str (pp/pprint breakdown))))
+      "  report-id:     " (or report-id "—") "\n")))
+
+(defn- handle-audit-kpi-measure
+  "Execute `audit kpi measure` and return an exit code."
+  [rest-args global-options]
+  (let [{:keys [options errors]}
+        (parse-opts rest-args kpi-measure-cli-options :in-order false)
+        merged (merge global-options options)]
+    (cond
+      errors
+      (do (doseq [e errors] (println "Error:" e))
+          3)
+      :else
+      (try
+        (let [period      (resolve-kpi-period merged)
+              marketplace (keyword (:marketplace merged "wb"))]
+          (cond
+            (not= :wb marketplace)
+            (do (println (str "Error: KPI measurement is MVP-gated to WB; got "
+                              marketplace ". Use `audit reconcile` for other marketplaces."))
+                3)
+
+            :else
+            (let [bank-input (try
+                               (parse-kpi-bank-input merged period)
+                               (catch Throwable t
+                                 (println "Error reading bank reference:" (.getMessage t))
+                                 ::bank-error))]
+              (cond
+                (= ::bank-error bank-input)
+                3
+
+                (nil? bank-input)
+                (do (println "Error: Bank reference required for KPI measurement. Use --bank-sum N or --bank-csv PATH.")
+                    3)
+
+                :else
+                (try
+                  (let [tolerance   (config/audit-tolerance)
+                        captured-by (or (:captured-by merged)
+                                        (System/getenv "USER")
+                                        "unknown")
+                        kpi-id (audit-kpi/measure!
+                                 {:marketplace marketplace
+                                  :period      period
+                                  :tolerance   tolerance
+                                  :bank-input  bank-input
+                                  :skus        (:skus merged)
+                                  :excel-sum   (:excel-sum merged)
+                                  :captured-by captured-by})
+                        row (audit-kpi/show-measurement kpi-id)]
+                    (println (render-kpi-measurement-detail row))
+                    (case (keyword (:verdict row))
+                      :meets-kpi 0
+                      :misses-kpi 1
+                      0))
+                  (catch clojure.lang.ExceptionInfo e
+                    (let [data (ex-data e)]
+                      (case (:type data)
+                        :incomplete-bank-reference
+                        (do (println (.getMessage e))
+                            (println "Refusing to record baseline (FR-011).")
+                            4)
+                        :kpi-mvp-gated-to-wb
+                        (do (println (.getMessage e)) 3)
+                        (do (println "audit kpi measure failed:" (.getMessage e))
+                            3)))))))))
+        (catch Throwable t
+          (println "audit kpi measure crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-kpi-list
+  "Execute `audit kpi list` and return an exit code."
+  [rest-args _global-options]
+  (let [{:keys [options errors]}
+        (parse-opts rest-args kpi-list-cli-options :in-order false)]
+    (cond
+      errors
+      (do (doseq [e errors] (println "Error:" e))
+          3)
+      :else
+      (try
+        (let [mp   (or (:marketplace options) (:mp options))
+              opts (cond-> {:limit (:limit options)}
+                     mp (assoc :marketplace (keyword mp)))
+              rows (audit-kpi/list-measurements opts)]
+          (if (empty? rows)
+            (println (str "No KPI measurements recorded"
+                          (when mp (str " for marketplace=" mp))
+                          "."))
+            (do
+              (println (format "KPI measurements (%d):" (count rows)))
+              (println (format "  %-36s  %-19s  %-4s  %s  %s  %s"
+                               "kpi-id" "captured-at" "mp" "period" "Δrel" "verdict"))
+              (doseq [row rows]
+                (println (render-kpi-measurement-line row)))))
+          0)
+        (catch Throwable t
+          (println "audit kpi list crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-kpi-show
+  "Execute `audit kpi show <id>` and return an exit code."
+  [rest-args _global-options]
+  (let [kpi-id (first rest-args)]
+    (cond
+      (nil? kpi-id)
+      (do (println "Usage: audit kpi show <kpi-id>") 3)
+      :else
+      (try
+        (if-let [row (audit-kpi/show-measurement kpi-id)]
+          (do (println (render-kpi-measurement-detail row)) 0)
+          (do (println (str "No KPI measurement with kpi-id=" kpi-id))
+              3))
+        (catch Throwable t
+          (println "audit kpi show crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-kpi
+  "Dispatch for `audit kpi` subcommand. Delegates to measure/list/show."
+  [rest-args global-options]
+  (let [sub (first rest-args)]
+    (case sub
+      nil       (do (println "Usage: audit kpi measure|list|show [options]") 3)
+      "measure" (handle-audit-kpi-measure (rest rest-args) global-options)
+      "list"    (handle-audit-kpi-list    (rest rest-args) global-options)
+      "show"    (handle-audit-kpi-show    (rest rest-args) global-options)
+      (do (println "Unknown audit kpi subcommand:" sub)
+          (println "Usage: audit kpi measure|list|show [options]")
+          3))))
+
 (defn handle-audit
   "Dispatch audit subcommand. Scaffold — real implementations are landed
-   incrementally in later tasks (T036 kpi, T041 verdict, T048 fixture).
+   incrementally in later tasks (T041 verdict, T048 fixture).
 
    Returns an exit code; `-main` promotes it to `System/exit` only for
    non-zero values (keeps test runs non-destructive)."
@@ -454,7 +687,7 @@ Currently registered rules:")
       "--help"   (do (audit-help) 0)
       "-h"       (do (audit-help) 0)
       "reconcile" (handle-audit-reconcile (rest rest-args) options)
-      "kpi"      (do (println "audit kpi — not yet implemented (T036)") 3)
+      "kpi"      (handle-audit-kpi (rest rest-args) options)
       "verdict"  (do (println "audit verdict — not yet implemented (T041)") 3)
       "fixture"  (do (println "audit fixture — not yet implemented (T048)") 3)
       (do (println "Unknown audit subcommand:" sub)
