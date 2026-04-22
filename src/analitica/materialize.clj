@@ -217,22 +217,33 @@
    :ad-cost            :ad_cost})
 
 (defn- build-article-lookup
-  "Scan all realization raw_data rows for the [from..to] window and build
-   a merged {sku offer_id} map. SKUs may be either Long (from Ozon API)
-   or String (after normalization) — we keep them as originally parsed."
+  "Build a merged {sku offer_id} map from two sources:
+   1. Realization raw_data rows for [from..to] — covers only items sold/returned
+      in the window (~100–200 SKUs for one month).
+   2. The persistent `ozon_sku_map` populated by `sync-sku-map!` — covers the
+      full product catalog (all FBO/FBS/SDS SKUs across the shop).
+
+   The catalog map is loaded as a base, then realization entries are merged on
+   top (realization is authoritative for the window's actual items). Without the
+   catalog fallback, service-rows for SKUs not present in the window's
+   realization are dropped — e.g. return-logistics for items sold months ago,
+   or cross-border logistics legs that reference warehouse SKUs."
   [from to]
-  (let [batches (db/get-raw-range "ozon" :realization from to)]
-    (reduce
-      (fn [acc {:keys [data]}]
-        (reduce (fn [m rrow]
-                  (let [item    (get rrow :item)
-                        sku     (get item :sku)
-                        article (get item :offer_id)]
-                    (if (and sku article) (assoc m sku article) m)))
-                acc
-                (get data :rows [])))
-      {}
-      batches)))
+  (let [catalog (try (db/ozon-sku-map) (catch Exception _ nil))
+        batches (db/get-raw-range "ozon" :realization from to)
+        from-realization
+        (reduce
+          (fn [acc {:keys [data]}]
+            (reduce (fn [m rrow]
+                      (let [item    (get rrow :item)
+                            sku     (get item :sku)
+                            article (get item :offer_id)]
+                        (if (and sku article) (assoc m sku article) m)))
+                    acc
+                    (get data :rows [])))
+          {}
+          batches)]
+    (merge (or catalog {}) from-realization)))
 
 (defn- load-transactions-operations
   "Collect all operations from raw_data rows of entity_type=:transactions
