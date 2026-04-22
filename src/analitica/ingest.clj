@@ -218,6 +218,29 @@
                         (count rows) " per-article rows")))))
     @total))
 
+(defn- ingest-ozon-transactions!
+  "Fetch /v3/finance/transaction/list operations for [from..to], wrap in
+   `:ozon/transaction-list` schema-validation, and persist as raw_data
+   with `entity_type = :transactions` (distinct from legacy `:finance`
+   and the canonical `:realization` ingest).
+
+   Per US3B (spec 003): this raw is the audit-trail source for per-article
+   service attribution. The downstream materialize step reads this raw
+   back and merges service costs into realization-derived finance-rows."
+  [client from to]
+  (let [ops (schema-validator/with-validation
+              :ozon/transaction-list
+              #(ozon-api/finance-report client from to)
+              (fn [operations]
+                ;; finance-report returns a flat vector of operations; store the
+                ;; wrapped shape {:operations [...]} so the materialize layer can
+                ;; read it back with a known key.
+                (db/insert-raw! :ozon :transactions from to
+                                {:operations (vec operations)})))
+        cnt (count ops)]
+    (println (str "  Ingested Ozon transactions " from " .. " to ": " cnt " operations"))
+    cnt))
+
 (defn- ingest-ozon-storage-chunk! [client chunk-from chunk-to]
   (let [report-id (ozon-api/storage-report-create client chunk-from chunk-to)]
     (when-not report-id
@@ -252,7 +275,10 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- ingest-ym-orders! [client from to]
-  (let [data (ym-api/orders client from to)]
+  ;; YM API only exposes `order-stats` (see US1 trim — ym/api.clj kept the
+  ;; authoritative /stats/orders endpoint). Orders and sales both derive
+  ;; from this response in downstream materialize.
+  (let [data (ym-api/order-stats client from to)]
     (db/insert-raw! :ym :orders from to data)
     (println (str "  Ingested YM orders: " (count data) " items"))
     (count data)))
@@ -263,25 +289,18 @@
     (println (str "  Ingested YM finance: " (count data) " items"))
     (count data)))
 
-(defn- ingest-ym-stocks! [client]
-  (let [today (today-str)
-        data  (ym-api/stocks client)]
-    (db/insert-raw! :ym :stocks today today data)
-    (println (str "  Ingested YM stocks: " (count data) " items"))
-    (count data)))
+;; YM API surface was trimmed (US1, commit 1de89e6) to only the
+;; authoritative /stats/orders endpoint. Stocks/sku-stats/prices no
+;; longer have wrappers on this branch; stub-throw keeps compilation
+;; healthy and gives callers a clear error if they ever dispatch here.
+(defn- ingest-ym-stocks! [_client]
+  (throw (ex-info "YM stocks ingest is not available on this branch" {})))
 
-(defn- ingest-ym-product-stats! [client from to]
-  (let [data (ym-api/sku-stats client from to)]
-    (db/insert-raw! :ym :product_stats from to data)
-    (println "  Ingested YM product stats")
-    1))
+(defn- ingest-ym-product-stats! [_client _from _to]
+  (throw (ex-info "YM product-stats ingest is not available on this branch" {})))
 
-(defn- ingest-ym-prices! [client]
-  (let [today (today-str)
-        data  (ym-api/prices client)]
-    (db/insert-raw! :ym :prices today today data)
-    (println (str "  Ingested YM prices: " (count data) " items"))
-    (count data)))
+(defn- ingest-ym-prices! [_client]
+  (throw (ex-info "YM prices ingest is not available on this branch" {})))
 
 ;; ---------------------------------------------------------------------------
 ;; Public API
@@ -316,16 +335,22 @@
     (println (str "Ingesting finance for " (name marketplace) " " from " .. " to))
     (case marketplace
       :ozon
-      ;; Ozon finance now uses /v2/finance/realization (monthly, per-article).
-      ;; The old /v3/finance/transaction/list data is kept for audit trail only
-      ;; and is not refreshed by this command — see specs/002-calculation-audit
-      ;; verdicts.md §B-005 for the rationale.
+      ;; Ozon finance uses /v2/finance/realization (monthly, per-article)
+      ;; as the canonical for-pay/retail source (B-005). Spec 003 US3B then
+      ;; layers /v3/finance/transaction/list on top to enable per-article
+      ;; logistics/acquiring/storage attribution — ingest both raw shapes
+      ;; here so the materialize step has everything it needs.
       (do (println "  Building Ozon SKU map...")
           (ingest-ozon-sku-map! client)
           (try
             (ingest-ozon-realization! client from to)
             (catch Exception e
               (println (str "  ERROR ingesting Ozon realization: " (.getMessage e)))
+              0))
+          (try
+            (ingest-ozon-transactions! client from to)
+            (catch Exception e
+              (println (str "  ERROR ingesting Ozon transactions: " (.getMessage e)))
               0)))
       ;; WB and YM keep their existing per-chunk pipeline.
       (reduce (fn [acc [chunk-from chunk-to]]
@@ -386,10 +411,7 @@
                                      (db/insert-raw! :ozon :product_stats chunk-from chunk-to data)
                                      (println (str "  Ingested Ozon product stats " chunk-from " .. " chunk-to))
                                      1))
-                         :ym   (do (let [data (ym-api/sku-stats client chunk-from chunk-to)]
-                                     (db/insert-raw! :ym :product_stats chunk-from chunk-to data)
-                                     (println (str "  Ingested YM product stats " chunk-from " .. " chunk-to))
-                                     1))))
+                         :ym   (throw (ex-info "YM product-stats ingest is not available on this branch" {}))))
                 (catch Exception e
                   (println (str "  ERROR " chunk-from ".." chunk-to ": " (.getMessage e)))
                   acc)))

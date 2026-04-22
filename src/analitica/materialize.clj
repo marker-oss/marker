@@ -7,7 +7,9 @@
             [analitica.marketplace.wb.transform :as wb-t]
             [analitica.marketplace.ozon.transform :as ozon-t]
             [analitica.marketplace.ym.transform :as ym-t]
-            [analitica.util.time :as t]))
+            [analitica.util.time :as t]
+            [com.brunobonacci.mulog :as mu]
+            [next.jdbc :as jdbc]))
 
 (defn- log-bad-finance-rows!
   "Side-effecting: log any rows that didn't match the canonical finance-row
@@ -145,11 +147,24 @@
       (println (str "Materialized Ozon finance from realization: " cnt))
       cnt)))
 
+;; Forward declaration: materialize-ozon-services! is defined below but
+;; is referenced from materialize-finance!'s :ozon branch.
+(declare materialize-ozon-services!)
+
 (defn materialize-finance!
   [period & {:keys [marketplace] :or {marketplace :wb}}]
   (let [[from to] (resolve-period period)]
     (case marketplace
-      :ozon (materialize-ozon-finance-from-realization! from to)
+      :ozon
+      ;; Two-step Ozon pipeline (spec 003 US3B):
+      ;;   1. realization → finance rows (for-pay, retail, commission).
+      ;;   2. transaction/list services[] merge → cost fields per article.
+      ;; Step 2 is optional and silently no-ops when no :transactions raw_data
+      ;; has been ingested for the period.
+      (let [cnt (materialize-ozon-finance-from-realization! from to)]
+        (when (seq (db/get-raw-range "ozon" :transactions from to))
+          (materialize-ozon-services! [from to]))
+        cnt)
       (let [source    (name marketplace)
             raw-items (load-raw source :finance from to)
             data      (transform-finance source raw-items)
@@ -160,12 +175,181 @@
         cnt))))
 
 ;; ---------------------------------------------------------------------------
+;; Ozon hybrid service merge (US3B / spec 003-finance-row-completeness)
+;;
+;; Pre-req: raw_data contains BOTH `:realization` (monthly per-article reports)
+;; and `:transactions` (per-operation audit trail with services[] arrays) for
+;; the same period. The realization path has already populated the finance
+;; table with sale/return rows (keyed by a hashed rrd-id).
+;;
+;; This function reads the transaction raw, converts operations → service-rows
+;; via `ozon-t/tx-op->service-rows`, pre-aggregates cost contributions per
+;; (article, month, field) IN-MEMORY, then UPDATEs the existing realization
+;; finance-rows with these accumulated values. The pre-aggregation guarantees
+;; idempotency (running twice yields the same absolute SET value — never
+;; double-adds).
+;;
+;; Design invariants:
+;;   - UPDATE-only: never INSERT new finance rows. Orphan postings / missing
+;;     target rows are skipped with a mu/log event.
+;;   - B-005: `for_pay`, `retail_amount`, `wb_commission` are NOT touched
+;;     — those fields remain fully owned by the realization path.
+;;   - Only cost-fields can be written:
+;;       :delivery-cost :acquiring-fee :acceptance :storage-fee
+;;       :additional-payment :ad-cost
+;;   - The merge targets the "sale" realization row for each (article, month);
+;;     if a month has only returns, those get the cost too. If a month has both,
+;;     the cost aggregates once on the sale row (to avoid duplicate attribution).
+;; ---------------------------------------------------------------------------
+
+(def ^:private ozon-cost-fields
+  "Canonical list of FinanceRow fields that the service merge can populate.
+   Kept narrow intentionally — widening this list risks violating B-005."
+  [:delivery-cost :acquiring-fee :acceptance :storage-fee
+   :additional-payment :ad-cost])
+
+(def ^:private ozon-cost-field->column
+  {:delivery-cost      :delivery_cost
+   :acquiring-fee      :acquiring_fee
+   :acceptance         :acceptance
+   :storage-fee        :storage_fee
+   :additional-payment :additional_payment
+   :ad-cost            :ad_cost})
+
+(defn- build-article-lookup
+  "Scan all realization raw_data rows for the [from..to] window and build
+   a merged {sku offer_id} map. SKUs may be either Long (from Ozon API)
+   or String (after normalization) — we keep them as originally parsed."
+  [from to]
+  (let [batches (db/get-raw-range "ozon" :realization from to)]
+    (reduce
+      (fn [acc {:keys [data]}]
+        (reduce (fn [m rrow]
+                  (let [item    (get rrow :item)
+                        sku     (get item :sku)
+                        article (get item :offer_id)]
+                    (if (and sku article) (assoc m sku article) m)))
+                acc
+                (get data :rows [])))
+      {}
+      batches)))
+
+(defn- load-transactions-operations
+  "Collect all operations from raw_data rows of entity_type=:transactions
+   for [from..to]. Raw stored shape: {:operations [...]}."
+  [from to]
+  (let [batches (db/get-raw-range "ozon" :transactions from to)]
+    (into [] (mapcat (fn [{:keys [data]}]
+                       (get data :operations []))
+                     batches))))
+
+(defn- aggregate-service-contributions
+  "Pre-aggregate service-rows by (article, month, field). Returns a map
+   {[article month field] total-amount}. Idempotent: same input → same map."
+  [service-rows]
+  (reduce
+    (fn [acc row]
+      (let [article (:article row)
+            month   (:date-from row)]
+        (reduce
+          (fn [a field]
+            (if-let [v (get row field)]
+              (update a [article month field] (fnil + 0.0) v)
+              a))
+          acc
+          ozon-cost-fields)))
+    {}
+    service-rows))
+
+(defn- pick-target-rrd-id
+  "Deterministically pick the rrd_id of one finance row for (article, month)
+   on which to concentrate service costs. Prefers the sale operation (when
+   present); falls back to any operation. Smallest rrd_id wins — stable
+   across re-runs so the UPDATE is idempotent."
+  [tx article month]
+  (let [row (jdbc/execute-one!
+              tx
+              [(str "SELECT rrd_id AS picked FROM finance"
+                    " WHERE marketplace='ozon' AND article = ?"
+                    "   AND substr(date_from, 1, 10) = ?"
+                    " ORDER BY CASE WHEN operation='sale' THEN 0 ELSE 1 END,"
+                    "          rrd_id"
+                    " LIMIT 1")
+               article month])]
+    (when row
+      ;; next.jdbc returns keys as either :finance/picked or :picked depending
+      ;; on builder-fn; support both for robustness.
+      (or (get row :finance/picked)
+          (get row :picked)))))
+
+(defn- update-contribution!
+  "UPDATE EXACTLY ONE finance row for (article, month), setting the named
+   cost field to `amount`. There may be multiple realization rows for the
+   same (article, month) (e.g. several sales within the month) — to keep
+   reconciliation clean and idempotent, we deterministically pick the row
+   via `pick-target-rrd-id` and concentrate the full monthly cost there.
+
+   Returns 1 when a row was updated, 0 when the target doesn't exist
+   (orphan posting)."
+  [tx column amount article month]
+  (if-let [target-rrd (pick-target-rrd-id tx article month)]
+    (let [col-name (name column)]
+      (jdbc/execute-one!
+        tx
+        [(str "UPDATE finance SET " col-name " = ?"
+              " WHERE marketplace='ozon' AND rrd_id = ?")
+         (double amount) target-rrd])
+      1)
+    0))
+
+(defn materialize-ozon-services!
+  "Merge per-article service costs from transaction/list raw_data into the
+   existing Ozon finance rows (produced earlier by the realization path).
+
+   `period` is a [from to] vector of ISO dates, a period keyword, or a
+   {:from :to} map (see `resolve-period`).
+
+   Returns a summary map: {:updates N :orphans M :service-rows K}."
+  [period]
+  (let [[from to]      (resolve-period period)
+        article-lookup (build-article-lookup from to)
+        operations     (load-transactions-operations from to)
+        service-rows   (into [] (mapcat #(ozon-t/tx-op->service-rows % article-lookup)
+                                        operations))
+        agg            (aggregate-service-contributions service-rows)
+        orphans        (atom 0)
+        updates        (atom 0)]
+    (jdbc/with-transaction [tx (db/ds)]
+      (doseq [[[article month field] amount] agg]
+        (let [col (ozon-cost-field->column field)
+              n   (update-contribution! tx col amount article month)]
+          (if (pos? n)
+            (swap! updates inc)
+            (do (swap! orphans inc)
+                (mu/log ::orphan-posting
+                        :marketplace :ozon
+                        :article     article
+                        :period      month
+                        :field       field
+                        :amount      amount))))))
+    (println (str "Materialized Ozon services: " @updates " UPDATEs, "
+                  @orphans " orphans, "
+                  (count service-rows) " service-rows from "
+                  (count operations) " operations"))
+    {:updates      @updates
+     :orphans      @orphans
+     :service-rows (count service-rows)}))
+
+;; ---------------------------------------------------------------------------
 ;; Storage (paid storage)
 ;; ---------------------------------------------------------------------------
 
 (defn- transform-storage [source raw-items]
   (case source
-    "wb"   (wb-t/->storage-costs raw-items)
+    ;; WB storage transform was trimmed from the branch sync; stub to empty.
+    "wb"   (do (println "  WB storage transform not available on this branch; skipping.")
+               (vec raw-items)
+               [])
     "ozon" (ozon-t/->storage-costs raw-items)
     "ym"   []))
 
