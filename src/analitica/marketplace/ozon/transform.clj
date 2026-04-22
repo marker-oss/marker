@@ -1,6 +1,8 @@
 (ns analitica.marketplace.ozon.transform
   "Transform raw Ozon Seller API responses into the common domain model.
-   All functions return nil for missing/null fields and never throw exceptions.")
+   All functions return nil for missing/null fields and never throw exceptions."
+  (:require [clojure.string :as str]
+            [com.brunobonacci.mulog :as mu]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -274,6 +276,200 @@
         date-from  (get header :start_date)
         date-to    (get header :stop_date)]
     (into [] (mapcat #(realization-row->finance-rows % date-from date-to) rows))))
+
+;; ---------------------------------------------------------------------------
+;; US3A: Hybrid transform — transaction/list operations[].services[] → FinanceRow
+;;
+;; Each Ozon /v3/finance/transaction/list operation can carry 0..N services
+;; (logistics, acquiring, packaging, storage, …). A service amount attributes
+;; to one or more items in the same operation; the cascade is:
+;;
+;;   operation.items[].sku  →  article-lookup[sku]  →  offer_id (:article)
+;;
+;; where article-lookup is built from realization raw_data (US3B concern).
+;;
+;; Output rows carry ONE cost field populated (per service classification) and
+;; are intended for merge into the existing FinanceRow space keyed by article
+;; + date-from. They do NOT touch :for-pay / :retail-amount — those are owned
+;; by the realization path (B-005).
+;; ---------------------------------------------------------------------------
+
+(def ^:const ozon-service-mapping
+  "Ozon transaction-list operations[].services[].name → FinanceRow field.
+   Last updated: 2026-04-22 based on live data (1754 services / 18 types).
+   See specs/003-finance-row-completeness/data-model.md §3."
+  {"MarketplaceServiceItemDirectFlowLogistic"            :delivery-cost
+   "MarketplaceServiceItemRedistributionLastMileCourier" :delivery-cost
+   "MarketplaceServiceItemReturnFlowLogistic"            :delivery-cost
+   "MarketplaceServiceItemRedistributionReturnsPVZ"      :delivery-cost
+   "MarketplaceServiceItemDropoffSC"                     :delivery-cost
+   "MarketplaceServiceItemDropoffPVZ"                    :delivery-cost
+   "MarketplaceServiceItemRedistributionDropOffApvz"     :delivery-cost
+   "MarketplaceServiceItemDeliveryToHandoverPlaceOzon"   :delivery-cost
+   "MarketplaceServiceItemPackageRedistribution"         :delivery-cost
+   "MarketplaceServiceProductMovementFromWarehouse"      :delivery-cost
+   "MarketplaceRedistributionOfAcquiringOperation"       :acquiring-fee
+   "MarketplaceServiceItemPackageMaterialsProvision"     :acceptance
+   "MarketplaceServiceItemTemporaryStorageRedistribution" :storage-fee
+   "ItemAgentServiceStarsMembership"                     :additional-payment
+   "MarketplaceServiceSellerReturnsCargoAssortment"      :additional-payment
+   "MarketplaceServiceItemReturnNotDelivToCustomer"      :additional-payment
+   "MarketplaceServiceItemReturnAfterDelivToCustomer"    :additional-payment
+   "MarketplaceServiceItemReturnPartGoodsCustomer"       :additional-payment})
+
+(def ^:const ozon-operation-mapping
+  "Top-level operation_type → FinanceRow field (when service-level isn't used).
+   For ops like MarketplaceMarketingActionCostOperation where the amount itself
+   (not services[]) is attributed per-article."
+  {"MarketplaceMarketingActionCostOperation" :ad-cost})
+
+(defn classify-ozon-service
+  "Map Ozon service name to FinanceRow field. Unknown → :additional-payment + mu/log."
+  [service-name]
+  (or (ozon-service-mapping service-name)
+      (do (mu/log ::ozon-unknown-service :name service-name)
+          :additional-payment)))
+
+(defn- op-date->month-first
+  "Convert operation_date \"2026-03-15 10:00:00\" → \"2026-03-01\" (month first day).
+   Returns nil when input nil or too short to slice YYYY-MM."
+  [op-date]
+  (when (and (string? op-date) (>= (count op-date) 7))
+    (str (subs op-date 0 7) "-01")))
+
+(defn- distribute-service-amount
+  "Distribute a service.price across products proportional to price × quantity.
+   Fallback to equal split when total weight is 0. Sign of service-price is
+   ignored — returned weights are always non-negative (abs).
+
+   Args:
+     service-price  number (can be negative — sign stripped via Math/abs)
+     products       seq of maps (may contain :price and :quantity)
+
+   Returns a vector of non-negative allocations, same length as products,
+   summing to |service-price|. Returns [] when products is empty."
+  [service-price products]
+  (let [n         (count products)
+        abs-price (Math/abs (double (or service-price 0)))]
+    (if (zero? n)
+      []
+      (let [weights (mapv #(* (double (or (:price %) 0))
+                              (double (or (:quantity %) 1)))
+                          products)
+            total   (reduce + 0.0 weights)]
+        (if (pos? total)
+          (mapv (fn [w] (* abs-price (/ w total))) weights)
+          (vec (repeat n (/ abs-price n))))))))
+
+(defn service-rrd-id
+  "Stable hash for a service-row natural key (operation-id, sku, service-name).
+   Deterministic across runs — uses String.hashCode which is stable per JLS."
+  [operation-id sku service-name]
+  (Math/abs (long (.hashCode (str operation-id "-" sku "-" service-name)))))
+
+(defn- normalize-lookup
+  "sku may arrive as Long from the API or String from normalized tables.
+   Try direct lookup first, then String coercion for robustness."
+  [article-lookup sku]
+  (or (get article-lookup sku)
+      (get article-lookup (str sku))))
+
+(defn- services-rows
+  "Build rows for each (item × service) pair using per-service classification."
+  [operation items article-lookup month-first op-id]
+  (let [services (get operation :services [])]
+    (for [svc  services
+          :let [svc-name   (get svc :name)
+                svc-price  (get svc :price)
+                field      (classify-ozon-service svc-name)
+                allocs     (distribute-service-amount svc-price items)]
+          [item alloc] (map vector items allocs)
+          :let [sku     (get item :sku)
+                article (normalize-lookup article-lookup sku)]
+          :when article]
+      {:marketplace :ozon
+       :rrd-id      (service-rrd-id op-id sku svc-name)
+       :article     article
+       :nm-id       sku
+       :date-from   month-first
+       :date-to     month-first
+       :operation   "sale"
+       field        alloc})))
+
+(defn- op-level-rows
+  "Build rows when the operation_type itself maps to a field (e.g. Marketing).
+   Uses |operation.amount| distributed across items by price×quantity weights."
+  [operation items article-lookup month-first field op-id]
+  (let [amount (get operation :amount 0)
+        allocs (distribute-service-amount amount items)]
+    (for [[item alloc] (map vector items allocs)
+          :let  [sku     (get item :sku)
+                 article (normalize-lookup article-lookup sku)]
+          :when article]
+      {:marketplace :ozon
+       :rrd-id      (service-rrd-id op-id sku (get operation :operation_type))
+       :article     article
+       :nm-id       sku
+       :date-from   month-first
+       :date-to     month-first
+       :operation   "sale"
+       field        alloc})))
+
+(defn tx-op->service-rows
+  "Transform ONE transaction/list operation into 0..N FinanceRow contribution
+   maps (one per item × service, or one per item for operation-level mapping).
+
+   Skip conditions (return []):
+     - operation :type = \"compensation\"
+     - missing posting.posting_number (account-level → handled via cash_flow_periods)
+     - empty items[]
+     - empty services[] AND operation_type has no ozon-operation-mapping entry
+     - orphan: items whose sku does not resolve via article-lookup (per-item
+       drop, with a mu/log event)
+
+   Args:
+     operation       one raw operation map (see /v3/finance/transaction/list)
+     article-lookup  {sku offer_id} map — sku may be Long or String
+
+   Each returned row carries :marketplace :ozon, a deterministic :rrd-id,
+   :article, :date-from / :date-to (first day of operation month), and exactly
+   ONE cost field populated according to the mapping table. The row does NOT
+   set :for-pay or :retail-amount — the US3B merge path only applies cost-
+   fields to existing finance-rows."
+  [operation article-lookup]
+  (let [op-type      (get operation :operation_type)
+        posting-num  (get-in operation [:posting :posting_number])
+        items        (get operation :items [])
+        services     (get operation :services [])
+        op-field     (ozon-operation-mapping op-type)
+        month-first  (op-date->month-first (get operation :operation_date))
+        op-id        (get operation :operation_id)]
+    (cond
+      (= "compensation" (get operation :type))
+      []
+
+      (or (nil? posting-num) (str/blank? posting-num))
+      []
+
+      (empty? items)
+      []
+
+      ;; Orphan: posting not in lookup → drop all items with mu/log
+      (not-any? #(normalize-lookup article-lookup (get % :sku)) items)
+      (do (mu/log ::orphan-posting
+                  :posting-number posting-num
+                  :operation-id   op-id
+                  :skus           (mapv :sku items))
+          [])
+
+      op-field
+      (vec (op-level-rows operation items article-lookup month-first op-field op-id))
+
+      (empty? services)
+      []
+
+      :else
+      (vec (services-rows operation items article-lookup month-first op-id)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Product stats (analytics-data response)
