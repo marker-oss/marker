@@ -23,23 +23,27 @@
 
    Priority matrix (see specs/003-finance-row-completeness/data-model.md §4):
 
-     itemStatus RETURNED               → \"return\"   (incl. post-delivery)
+     itemStatus RETURNED | PARTIALLY_RETURNED → \"return\"   (incl. post-delivery)
      itemStatus REJECTED               → \"cancelled\"
      order.status DELIVERED | PARTIALLY_DELIVERED → \"sale\"
      order.status CANCELLED_*          → \"cancelled\"
-     order.status RETURNED             → \"return\"   (fallback when items lack :details)
-     anything else                     → \"sale\"     (safe default + mu/log)"
+     order.status RETURNED | PARTIALLY_RETURNED → \"return\"   (fallback when items lack :details)
+     anything else                     → \"sale\"     (safe default + mu/log)
+
+   PARTIALLY_RETURNED is included for parity with legacy `ym-sale-type`;
+   data-model.md §4 does not enumerate it but YM may emit it and we
+   want to classify as return, not unknown."
   [order item]
   (let [item-status  (get-in item [:details 0 :itemStatus])
         order-status (:status order)]
     (cond
-      (= "RETURNED" item-status) "return"
+      (#{"RETURNED" "PARTIALLY_RETURNED"} item-status) "return"
       (= "REJECTED" item-status) "cancelled"
       (#{"DELIVERED" "PARTIALLY_DELIVERED"} order-status) "sale"
       (#{"CANCELLED_BEFORE_PROCESSING"
          "CANCELLED_IN_PROCESSING"
          "CANCELLED_IN_DELIVERY"} order-status) "cancelled"
-      (= "RETURNED" order-status) "return"
+      (#{"RETURNED" "PARTIALLY_RETURNED"} order-status) "return"
       :else (do
               (mu/log ::ym-unknown-status
                       :order-status order-status

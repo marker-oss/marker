@@ -1,20 +1,21 @@
 (ns analitica.marketplace.ym.transform-integration-test
   "Integration test: exercise `->finance-from-order-stats` on the captured
-   fixture `test/resources/fixtures/ym-orders-2026-03.edn` (100 real YM orders,
-   all statuses).
+   fixture `fixtures/ym-orders-2026-03.edn` (100 real YM orders, all statuses),
+   loaded from the classpath so the test is runnable from any cwd.
 
    Validates US1 FR-003/FR-004/FR-007/FR-015 — status distribution, post-delivery
    return edge, and FinanceRow schema compliance."
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [analitica.marketplace.ym.transform :as transform]
             [analitica.domain.finance-row :as frow]))
 
-(def ^:private fixture-path
-  "test/resources/fixtures/ym-orders-2026-03.edn")
+(def ^:private fixture-resource
+  "fixtures/ym-orders-2026-03.edn")
 
 (defn- load-fixture []
-  (-> fixture-path slurp edn/read-string :orders))
+  (-> (io/resource fixture-resource) slurp edn/read-string :orders))
 
 (deftest fixture-transforms-to-at-least-100-rows
   (let [orders (load-fixture)
