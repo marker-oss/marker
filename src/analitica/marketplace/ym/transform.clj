@@ -1,15 +1,50 @@
 (ns analitica.marketplace.ym.transform
   "Transform raw Yandex Market API responses into the common domain model.
-   All functions return nil for missing/null fields and never throw exceptions.")
+   All functions return nil for missing/null fields and never throw exceptions."
+  (:require [com.brunobonacci.mulog :as mu]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- ym-sale-type [status]
+(defn- ym-sale-type
+  "Legacy order-level classification. Kept for `->sale` / `->sales`
+   which operate on raw orders without item-level details. FinanceRow
+   paths use `classify-item-operation` instead (see data-model.md §4)."
+  [status]
   (if (#{"RETURNED" "PARTIALLY_RETURNED"} status)
     :return
     :sale))
+
+(defn- classify-item-operation
+  "Per-item :operation classification: item-level status from
+   `item.details[0].itemStatus` takes priority over order-level
+   `order.status`. Returns \"sale\", \"return\", or \"cancelled\".
+
+   Priority matrix (see specs/003-finance-row-completeness/data-model.md §4):
+
+     itemStatus RETURNED               → \"return\"   (incl. post-delivery)
+     itemStatus REJECTED               → \"cancelled\"
+     order.status DELIVERED | PARTIALLY_DELIVERED → \"sale\"
+     order.status CANCELLED_*          → \"cancelled\"
+     order.status RETURNED             → \"return\"   (fallback when items lack :details)
+     anything else                     → \"sale\"     (safe default + mu/log)"
+  [order item]
+  (let [item-status  (get-in item [:details 0 :itemStatus])
+        order-status (:status order)]
+    (cond
+      (= "RETURNED" item-status) "return"
+      (= "REJECTED" item-status) "cancelled"
+      (#{"DELIVERED" "PARTIALLY_DELIVERED"} order-status) "sale"
+      (#{"CANCELLED_BEFORE_PROCESSING"
+         "CANCELLED_IN_PROCESSING"
+         "CANCELLED_IN_DELIVERY"} order-status) "cancelled"
+      (= "RETURNED" order-status) "return"
+      :else (do
+              (mu/log ::ym-unknown-status
+                      :order-status order-status
+                      :item-status item-status)
+              "sale"))))
 
 (defn- commission-value
   "Extract commission amount by type from commissions list."
@@ -165,7 +200,7 @@
                :barcode            nil
                :subject            nil
                :brand              nil
-               :operation          (if (= "DELIVERED" status) "sale" "return")
+               :operation          (classify-item-operation order item)
                :doc-type           status
                :quantity           qty
                :retail-price       (or buyer-price 0)
