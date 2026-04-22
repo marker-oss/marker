@@ -29,6 +29,7 @@
             [analitica.audit.bank :as audit-bank]
             [analitica.audit.kpi :as audit-kpi]
             [analitica.audit.verdict :as audit-verdict]
+            [analitica.audit.fixture :as audit-fixture]
             [analitica.util.time :as util-time]
             [analitica.schema.infer :as schema-infer]
             [analitica.schema.loader :as schema-loader]
@@ -339,7 +340,7 @@ Subcommands:
                         (list supports --conclusion :confirmed|:refuted|:fixed|:confirmed-deferred|:not-yet-verdicted)
   fixture capture|list|verify
                         Manage ground-truth fixtures under specs/.../fixtures/
-                        (not yet implemented — US4)
+                        (see specs/002-calculation-audit/contracts/cli-audit.md)
 
 Exit codes:
   0  success, no suspicious discrepancies
@@ -764,6 +765,211 @@ Currently registered rules:")
           (println "Usage: audit verdict list|show [options]")
           3))))
 
+;; ---------------------------------------------------------------------------
+;; audit fixture
+;; ---------------------------------------------------------------------------
+
+(def ^:private fixture-capture-cli-options
+  [["-p" "--period PERIOD" "Period keyword (last-30-days, this-month, ...)"]
+   ["-f" "--from DATE" "Start date: 2026-03-01"]
+   ["-t" "--to DATE" "End date: 2026-03-31"]
+   ["-m" "--marketplace MP" "Marketplace: wb, ozon, ym"
+    :default "wb"]
+   [nil "--from-report ID" "Optional: attach an existing report-id to :fixture/source"]
+   [nil "--fixtures-dir PATH" "Override fixtures directory (default: specs/002-.../fixtures/)"]
+   [nil "--notes TEXT" "Free-form operator notes — why this period is clean"]])
+
+(defn- resolve-fixture-period
+  "Build {:from :to} from CLI options. Requires -f/-t or -p."
+  [opts]
+  (cond
+    (and (:from opts) (:to opts))
+    {:from (:from opts) :to (:to opts)}
+    (:period opts)
+    (let [[from to] (util-time/period (keyword (:period opts)))]
+      {:from from :to to})
+    :else
+    (throw (ex-info "audit fixture capture requires -f/-t or -p" {:opts opts}))))
+
+(defn- render-fixture-list-row
+  "One-line table row for `audit fixture list`."
+  [{:fixture/keys [id marketplace period captured-at row-count source]}]
+  (format "  %-20s  %-5s  %s..%s  rows=%-6d  captured=%-19s  src=%s"
+          (or id "—")
+          (str (or marketplace "—"))
+          (or (:from period) "—")
+          (or (:to period) "—")
+          (long (or row-count 0))
+          (or captured-at "—")
+          (str (get source :report-id "—"))))
+
+(defn- handle-audit-fixture-capture
+  "Execute `audit fixture capture <id>`. Exit 0 on success, 3 on error."
+  [rest-args global-options]
+  (let [fixture-id (first rest-args)
+        flag-args  (rest rest-args)]
+    (cond
+      (nil? fixture-id)
+      (do (println "Usage: audit fixture capture <fixture-id> [-f ... -t ... -m ...] [--from-report ID] [--notes TEXT]")
+          3)
+
+      :else
+      (let [{:keys [options errors]}
+            (parse-opts flag-args fixture-capture-cli-options :in-order false)
+            merged (merge global-options options)]
+        (cond
+          errors
+          (do (doseq [e errors] (println "Error:" e)) 3)
+
+          :else
+          (try
+            (let [period      (resolve-fixture-period merged)
+                  marketplace (keyword (:marketplace merged "wb"))
+                  fix-dir     (:fixtures-dir merged)
+                  captured-by (or (:captured-by merged)
+                                  (System/getenv "USER")
+                                  "unknown")
+                  args        (cond-> {:id           fixture-id
+                                       :marketplace  marketplace
+                                       :period       period
+                                       :captured-by  captured-by}
+                                (:from-report merged) (assoc :from-report (:from-report merged))
+                                (:notes merged)       (assoc :notes (:notes merged))
+                                fix-dir               (assoc :fixtures-dir fix-dir))
+                  fixture     (audit-fixture/capture-fixture! args)]
+              (println (format "Captured fixture %s" fixture-id))
+              (println (format "  marketplace:    %s" (name marketplace)))
+              (println (format "  period:         %s .. %s"
+                               (:from period) (:to period)))
+              (println (format "  rows:           %d" (:fixture/row-count fixture)))
+              (println (format "  sha256 (first): %s"
+                               (subs (:fixture/sha256-of-rows fixture) 0 16)))
+              (println (format "  captured-at:    %s" (:fixture/captured-at fixture)))
+              (when-let [rep (get-in fixture [:fixture/source :report-id])]
+                (println (format "  source:         %s" rep)))
+              (println)
+              (println "  expected.pnl:")
+              (doseq [[k v] (sort-by key (get-in fixture [:fixture/expected :pnl]))]
+                (println (format "    %-20s %s" (str k) v)))
+              (println (format "  expected.unit-economics: %d article(s)"
+                               (count (get-in fixture [:fixture/expected :unit-economics]))))
+              (println (format "  expected.sales-qty.total: %s"
+                               (get-in fixture [:fixture/expected :sales-qty :total])))
+              (println)
+              (println (str "Tip: run `audit reconcile` BEFORE `capture` to confirm the period is clean."))
+              0)
+            (catch clojure.lang.ExceptionInfo e
+              (println "audit fixture capture failed:" (.getMessage e))
+              3)
+            (catch Throwable t
+              (println "audit fixture capture crashed:" (.getMessage t))
+              5)))))))
+
+(defn- handle-audit-fixture-list
+  "Execute `audit fixture list`. Exit always 0 (empty list is valid)."
+  [rest-args _global-options]
+  (let [fix-dir (->> rest-args (drop-while #(not= "--fixtures-dir" %)) second)]
+    (try
+      (let [rows (if fix-dir
+                   (audit-fixture/list-fixtures :fixtures-dir fix-dir)
+                   (audit-fixture/list-fixtures))]
+        (if (empty? rows)
+          (println (str "No fixtures found in " (or fix-dir audit-fixture/default-fixtures-dir) "."))
+          (do
+            (println (format "Ground-truth fixtures (%d):" (count rows)))
+            (println (format "  %-20s  %-5s  %-23s  %-10s  %-19s  %s"
+                             "id" "mp" "period" "row-count" "captured-at" "source"))
+            (doseq [row rows]
+              (println (render-fixture-list-row row)))))
+        0)
+      (catch Throwable t
+        (println "audit fixture list crashed:" (.getMessage t))
+        5))))
+
+(defn- render-fixture-diff-details
+  "Pretty-print pnl-diff + ue-diff + sales-qty-diff from verify-fixture!.
+   Called only when verdict = :diff."
+  [{:keys [pnl-diff ue-diff sales-qty-diff]}]
+  (when (seq pnl-diff)
+    (println "  PnL diff:")
+    (doseq [[k {:keys [expected actual]}] (sort-by key pnl-diff)]
+      (println (format "    %-25s expected=%s  actual=%s"
+                       (str k) expected actual))))
+  (when (seq ue-diff)
+    (println (format "  Unit-economics diff (%d article(s)):" (count ue-diff)))
+    (doseq [[art d] (sort-by key ue-diff)]
+      (if (= :missing-in-current-db d)
+        (println (format "    %-20s missing from current DB" art))
+        (do (println (format "    %s:" art))
+            (doseq [[k {:keys [expected actual]}] (sort-by key d)]
+              (println (format "      %-20s expected=%s  actual=%s"
+                               (str k) expected actual)))))))
+  (when sales-qty-diff
+    (println (format "  sales-qty.total: expected=%s  actual=%s"
+                     (:expected sales-qty-diff)
+                     (:actual sales-qty-diff)))))
+
+(defn- handle-audit-fixture-verify
+  "Execute `audit fixture verify <id>`. Exit 0 if :match, 1 if :diff, 3 if
+   :not-found / :sha-mismatch."
+  [rest-args _global-options]
+  (let [fixture-id (first rest-args)
+        flag-args  (rest rest-args)
+        fix-dir    (->> flag-args (drop-while #(not= "--fixtures-dir" %)) second)]
+    (cond
+      (nil? fixture-id)
+      (do (println "Usage: audit fixture verify <fixture-id> [--fixtures-dir PATH]") 3)
+
+      :else
+      (try
+        (let [result (if fix-dir
+                       (audit-fixture/verify-fixture! fixture-id :fixtures-dir fix-dir)
+                       (audit-fixture/verify-fixture! fixture-id))]
+          (case (:verdict result)
+            :match
+            (do (println (format "Fixture %s: MATCH (no regression)" fixture-id)) 0)
+
+            :diff
+            (do (println (format "Fixture %s: DIFF — formulas changed" fixture-id))
+                (render-fixture-diff-details result)
+                1)
+
+            :sha-mismatch
+            (do (println (format "Fixture %s: SHA mismatch (DB drift)" fixture-id))
+                (println (format "  fixture sha256: %s" (:fixture-sha result)))
+                (println (format "  current sha256: %s" (:current-sha result)))
+                (println (format "  row-count: fixture=%d  current=%d"
+                                 (get-in result [:row-count :fixture])
+                                 (get-in result [:row-count :current])))
+                (println "  The DB has drifted from the snapshot — expected values are stale.")
+                (println "  Re-run `audit fixture capture` after confirming the new state is clean.")
+                3)
+
+            :not-found
+            (do (println (format "Fixture %s not found at %s"
+                                 fixture-id (:path result)))
+                3)
+
+            (do (println (format "Unexpected verdict for %s: %s"
+                                 fixture-id (pr-str result)))
+                5)))
+        (catch Throwable t
+          (println "audit fixture verify crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-fixture
+  "Dispatch for `audit fixture` subcommand. Delegates to capture/list/verify."
+  [rest-args global-options]
+  (let [sub (first rest-args)]
+    (case sub
+      nil        (do (println "Usage: audit fixture capture|list|verify [options]") 3)
+      "capture"  (handle-audit-fixture-capture (rest rest-args) global-options)
+      "list"     (handle-audit-fixture-list    (rest rest-args) global-options)
+      "verify"   (handle-audit-fixture-verify  (rest rest-args) global-options)
+      (do (println "Unknown audit fixture subcommand:" sub)
+          (println "Usage: audit fixture capture|list|verify [options]")
+          3))))
+
 (defn handle-audit
   "Dispatch audit subcommand. Scaffold — real implementations are landed
    incrementally in later tasks (T041 verdict, T048 fixture).
@@ -780,7 +986,7 @@ Currently registered rules:")
       "reconcile" (handle-audit-reconcile (rest rest-args) options)
       "kpi"      (handle-audit-kpi (rest rest-args) options)
       "verdict"  (handle-audit-verdict (rest rest-args))
-      "fixture"  (do (println "audit fixture — not yet implemented (T048)") 3)
+      "fixture"  (handle-audit-fixture (rest rest-args) options)
       (do (println "Unknown audit subcommand:" sub)
           (audit-help)
           3))))
