@@ -43,3 +43,20 @@
 
 (defn wb-rate-limits []
   (get-in (config) [:marketplaces :wb :rate-limits]))
+
+(defn ozon-config []
+  (get-in (config) [:marketplaces :ozon]))
+
+(defn ym-config []
+  (get-in (config) [:marketplaces :ym]))
+
+(def ^:private default-audit-tolerance
+  {:rel 0.01 :abs 10.0})
+
+(defn audit-tolerance
+  "Tolerance thresholds for reconciliation discrepancy classification.
+   Falls back to defaults when :audit/:tolerance is absent from config
+   (so a stale config.edn does not break the audit CLI)."
+  []
+  (merge default-audit-tolerance
+         (get-in (config) [:audit :tolerance])))

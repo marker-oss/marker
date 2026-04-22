@@ -24,6 +24,10 @@
             [analitica.domain.buyout :as buyout]
             [analitica.audit.rules :as audit-rules]
             [analitica.audit.report :as audit-report]
+            [analitica.audit.rule-impl :as audit-rule-impl]
+            [analitica.audit.core :as audit-core]
+            [analitica.audit.bank :as audit-bank]
+            [analitica.util.time :as util-time]
             [analitica.schema.infer :as schema-infer]
             [analitica.schema.loader :as schema-loader]
             [analitica.schema.regenerate :as schema-regenerate]
@@ -182,7 +186,8 @@
   (let [{:keys [loaded errors]} (schema-loader/load-all!)]
     (println (str "Registered " loaded " API schemas from resources/schemas/"))
     (doseq [{:keys [file message]} errors]
-      (println (str "  Warning: " file " failed to load: " message)))))
+      (println (str "  Warning: " file " failed to load: " message))))
+  (audit-rule-impl/register-all!))
 
 (defn- resolve-period [{:keys [from to period]}]
   (if (and from to)
@@ -345,29 +350,116 @@ Currently registered rules:")
   (when (empty? (audit-rules/all-rules))
     (println "  (no rules registered yet — implementations arrive in T018..T022)")))
 
+;; ---------------------------------------------------------------------------
+;; audit reconcile
+;; ---------------------------------------------------------------------------
+
+(def ^:private reconcile-cli-options
+  ;; Global CLI options (-p/-f/-t/-m) are re-declared here because top-level
+  ;; parse-opts runs with :in-order true (to avoid rejecting subcommand
+  ;; flags like --bank-sum) and therefore doesn't consume them itself.
+  [["-p" "--period PERIOD" "Period keyword (last-30-days, this-month, ...)"
+    :default "last-30-days"]
+   ["-f" "--from DATE" "Start date: 2026-03-01"]
+   ["-t" "--to DATE" "End date: 2026-03-31"]
+   ["-m" "--marketplace MP" "Marketplace: wb, ozon, ym"
+    :default "wb"]
+   [nil "--bank-sum N" "Total bank payout sum for the period (scalar reference)"
+    :parse-fn #(try (Double/parseDouble %) (catch Exception _ nil))]
+   [nil "--bank-csv PATH" "Bank payouts CSV (auto-detects ',' or ';' delimiter)"]
+   [nil "--out PATH" "Path to write EDN report"]
+   [nil "--rules R1,R2,..." "Comma-separated rule-ids to restrict execution"
+    :parse-fn (fn [s] (mapv keyword (clojure.string/split s #",")))]
+   [nil "--top-n N" "Number of top causes to show in stdout summary"
+    :default 10
+    :parse-fn parse-long]])
+
+(defn- resolve-reconcile-period
+  "Build {:from :to} from global options. Requires -f/-t or -p."
+  [opts]
+  (cond
+    (and (:from opts) (:to opts))
+    {:from (:from opts) :to (:to opts)}
+    (:period opts)
+    (let [[from to] (util-time/period (keyword (:period opts)))]
+      {:from from :to to})
+    :else
+    (throw (ex-info "audit reconcile requires -f/-t or -p" {:opts opts}))))
+
+(defn- parse-reconcile-bank-input
+  "Build :bank-input map from --bank-sum or --bank-csv options, or nil."
+  [{:keys [bank-sum bank-csv]} period]
+  (cond
+    (number? bank-sum) {:sum bank-sum}
+    (seq bank-csv)     (audit-bank/parse-bank-csv bank-csv period)
+    :else              nil))
+
+(defn- handle-audit-reconcile
+  "Dispatch for `audit reconcile` subcommand. Returns exit code (not
+   System/exit — caller promotes). Parses subcommand-specific flags, builds
+   context, runs the pipeline, prints stdout, optionally writes EDN."
+  [rest-args global-options]
+  (let [{:keys [options errors]}
+        (parse-opts rest-args reconcile-cli-options :in-order false)
+        ;; Merge global CLI options (-f/-t/-p/-m) with subcommand-local ones
+        ;; (--bank-sum, --bank-csv, --out, --rules, --top-n)
+        merged-options (merge global-options options)]
+    (cond
+      errors
+      (do (doseq [e errors] (println "Error:" e))
+          3)
+      :else
+      (try
+        (let [period (resolve-reconcile-period merged-options)
+              marketplace (keyword (:marketplace merged-options "wb"))
+              tolerance   (config/audit-tolerance)
+              bank-input  (try
+                            (parse-reconcile-bank-input merged-options period)
+                            (catch Throwable t
+                              (println "Error reading bank reference:" (.getMessage t))
+                              ::bank-error))]
+          (if (= ::bank-error bank-input)
+            3
+            (let [{:keys [report exit-code rendered]}
+                  (audit-core/run-reconcile!
+                    {:marketplace marketplace
+                     :period      period
+                     :tolerance   tolerance
+                     :bank-input  bank-input
+                     :rules       (:rules merged-options)
+                     :top-n       (:top-n merged-options)})]
+              (println rendered)
+              (when-let [out (:out merged-options)]
+                (audit-report/write-edn! report out)
+                (println (str "Wrote report EDN: " out)))
+              (long (or exit-code 0)))))
+        (catch clojure.lang.ExceptionInfo e
+          (println "audit reconcile failed:" (.getMessage e))
+          3)
+        (catch Throwable t
+          (println "audit reconcile crashed:" (.getMessage t))
+          5)))))
+
 (defn handle-audit
   "Dispatch audit subcommand. Scaffold — real implementations are landed
-   incrementally in later tasks (T026 reconcile, T036 kpi, T041 verdict,
-   T048 fixture)."
-  [rest-args _options]
+   incrementally in later tasks (T036 kpi, T041 verdict, T048 fixture).
+
+   Returns an exit code; `-main` promotes it to `System/exit` only for
+   non-zero values (keeps test runs non-destructive)."
+  [rest-args options]
   (let [sub (first rest-args)]
     (case sub
-      nil        (audit-help)
-      "help"     (audit-help)
-      "--help"   (audit-help)
-      "-h"       (audit-help)
-      "reconcile" (do (println "audit reconcile — not yet implemented (T026)")
-                      (println "See specs/002-calculation-audit/contracts/cli-audit.md")
-                      (System/exit 3))
-      "kpi"      (do (println "audit kpi — not yet implemented (T036)")
-                     (System/exit 3))
-      "verdict"  (do (println "audit verdict — not yet implemented (T041)")
-                     (System/exit 3))
-      "fixture"  (do (println "audit fixture — not yet implemented (T048)")
-                     (System/exit 3))
+      nil        (do (audit-help) 0)
+      "help"     (do (audit-help) 0)
+      "--help"   (do (audit-help) 0)
+      "-h"       (do (audit-help) 0)
+      "reconcile" (handle-audit-reconcile (rest rest-args) options)
+      "kpi"      (do (println "audit kpi — not yet implemented (T036)") 3)
+      "verdict"  (do (println "audit verdict — not yet implemented (T041)") 3)
+      "fixture"  (do (println "audit fixture — not yet implemented (T048)") 3)
       (do (println "Unknown audit subcommand:" sub)
           (audit-help)
-          (System/exit 3)))))
+          3))))
 
 (defn- schema-help []
   (println "
@@ -555,7 +647,7 @@ Currently registered schemas:")
           3))))
 
 (defn -main [& args]
-  (let [{:keys [options arguments errors]} (parse-opts args cli-options)
+  (let [{:keys [options arguments errors]} (parse-opts args cli-options :in-order true)
         command (first arguments)
         rest-args (rest arguments)]
     (cond
@@ -570,7 +662,9 @@ Currently registered schemas:")
           "materialize" (handle-materialize rest-args options)
           "rebuild"     (handle-rebuild rest-args options)
           "report"      (handle-report rest-args options)
-          "audit"       (handle-audit rest-args options)
+          "audit"       (let [code (handle-audit rest-args options)]
+                          (when (and (integer? code) (not (zero? code)))
+                            (System/exit code)))
           "schema"      (let [code (handle-schema rest-args options)]
                           (when (and (integer? code) (not (zero? code)))
                             (System/exit code)))
