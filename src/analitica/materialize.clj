@@ -9,7 +9,8 @@
             [analitica.marketplace.ym.transform :as ym-t]
             [analitica.util.time :as t]
             [com.brunobonacci.mulog :as mu]
-            [next.jdbc :as jdbc]))
+            [next.jdbc :as jdbc]
+            [next.jdbc.result-set :as rs]))
 
 (defn- log-bad-finance-rows!
   "Side-effecting: log any rows that didn't match the canonical finance-row
@@ -147,10 +148,12 @@
       (println (str "Materialized Ozon finance from realization: " cnt))
       cnt)))
 
-;; Forward declarations: both functions are defined below but are
-;; referenced from materialize-finance!'s :ozon branch.
+;; Forward declarations: functions defined later in the file that are
+;; referenced from materialize-finance!'s dispatch branches.
 (declare materialize-ozon-services!)
 (declare materialize-ozon-orphan-services!)
+(declare materialize-wb-ad-stats!)
+(declare materialize-wb-ad-cost!)
 
 (defn materialize-finance!
   [period & {:keys [marketplace] :or {marketplace :wb}}]
@@ -172,6 +175,30 @@
           (let [{:keys [orphan-aggregates]} (materialize-ozon-services! [from to])]
             (materialize-ozon-orphan-services! [from to] orphan-aggregates)))
         cnt)
+
+      :wb
+      ;; Two-step WB pipeline (spec 003 US5 T039):
+      ;;   1. finance report → finance rows (same as other marketplaces).
+      ;;   2. IF ad_stats raw_data exists for the period → populate
+      ;;      finance.ad_cost per B-003 proportional-to-revenue rule.
+      ;; Step 2 is silently no-op when no ad_stats raw_data is present, so
+      ;; this change is a pure superset of the old WB behaviour.
+      (let [source    "wb"
+            raw-items (load-raw source :finance from to)
+            data      (transform-finance source raw-items)
+            _         (log-bad-finance-rows! data source)
+            rows      (mapv sync/finance->row data)
+            cnt       (db/insert-batch! :finance sync/finance-columns rows)]
+        (println (str "Materialized finance: " cnt))
+        (when (seq (db/get-raw-range source :ad_stats from to))
+          ;; ad_stats raw exists → make sure it's flattened into the
+          ;; `ad_stats` table first (idempotent), then allocate per-article
+          ;; ad-cost onto the newly materialized WB finance rows.
+          (materialize-wb-ad-stats! [from to])
+          (materialize-wb-ad-cost! [from to]))
+        cnt)
+
+      ;; Default path (e.g. :ym): plain finance materialize.
       (let [source    (name marketplace)
             raw-items (load-raw source :finance from to)
             data      (transform-finance source raw-items)
@@ -759,6 +786,266 @@
       (or cnt 0))))
 
 ;; ---------------------------------------------------------------------------
+;; WB :ad-cost migration (spec 003 US5, T039)
+;;
+;; Populate `finance.ad_cost` for WB rows from the `ad_stats` table, per the
+;; B-003 proportional-to-revenue rule.
+;;
+;; Allocation algorithm (per (campaign_id, date) group):
+;;
+;;   1. Separate ad_stats rows into "per-nm_id" (nm_id > 0) and "campaign-only"
+;;      (nm_id = 0 sentinel) buckets.
+;;   2. Per-nm_id rows attribute their spend directly to the matching nm_id's
+;;      finance rows on the same date (nm_id ↔ article is 1:1 for WB per B-003
+;;      evidence; spend is SUMed into finance.ad_cost for every finance row
+;;      with that (nm_id, date_from)).
+;;   3. Campaign-only rows (nm_id=0 sentinel → multi-article campaigns without
+;;      apps breakdown) are allocated:
+;;         - Primary: proportional to `finance.retail_amount` across WB rows on
+;;           the same date that are NOT already covered by a per-nm_id row for
+;;           this campaign-day.
+;;         - Fallback (zero-revenue): equal-split across WB rows on the same
+;;           date (still restricted to rows not covered by per-nm_id).
+;;   4. Edge case — a campaign-only row with no candidate finance rows on that
+;;      date: logged as ::wb-ad-cost-unallocated, spend stays uncredited
+;;      (not distributed elsewhere) — conservative, preserves conservation
+;;      property when allocation is well-defined.
+;;
+;; IMPORTANT semantics:
+;;   - This is an absolute SET per finance row: pre-aggregate ALL contributions
+;;     in-memory first, then UPDATE finance.ad_cost = computed_value (not +=).
+;;     Running twice yields the same DB state (idempotent).
+;;   - Resets `finance.ad_cost` to 0 for WB rows in the period BEFORE applying,
+;;     so re-runs after ad_stats rows are deleted correctly clear stale values.
+;;   - B-005 invariant preserved — `for_pay` is never touched.
+;;   - YM and Ozon rows are NOT touched — only marketplace='wb'.
+;;
+;; See specs/002-calculation-audit/verdicts.md §B-003 for the full rule derivation.
+;; ---------------------------------------------------------------------------
+
+(defn- load-wb-finance-for-ad-cost
+  "Load WB finance rows in [from..to] that are candidates for ad-cost
+   attribution. Returns a map {(date-substring) [{:rrd-id :nm-id :retail-amount}]}."
+  [tx from to]
+  (let [rows (jdbc/execute!
+               tx
+               ["SELECT rrd_id, nm_id, substr(date_from, 1, 10) AS d, retail_amount
+                 FROM finance
+                 WHERE marketplace='wb'
+                   AND substr(date_from, 1, 10) >= ?
+                   AND substr(date_from, 1, 10) <= ?"
+                from to]
+               {:builder-fn rs/as-unqualified-kebab-maps})]
+    (group-by :d rows)))
+
+(defn- wb-ad-stats-by-campaign-day
+  "Load ad_stats rows within [from..to], grouped by (campaign_id, date).
+   Each value is {:per-nm-id {nm-id spend} :campaign-only spend-sum-of-nm0}.
+   spend values are always positive WB /adv/v2/fullstats `sum`."
+  [tx from to]
+  (let [rows (jdbc/execute!
+               tx
+               ["SELECT campaign_id, date, nm_id, spend
+                 FROM ad_stats
+                 WHERE date >= ? AND date <= ?"
+                from to]
+               {:builder-fn rs/as-unqualified-kebab-maps})]
+    (reduce
+      (fn [acc {:keys [campaign-id date nm-id spend]}]
+        (let [k [campaign-id date]
+              spend (double (or spend 0.0))]
+          (if (zero? (or nm-id 0))
+            (update-in acc [k :campaign-only] (fnil + 0.0) spend)
+            (update-in acc [k :per-nm-id nm-id] (fnil + 0.0) spend))))
+      {}
+      rows)))
+
+(defn- allocate-campaign-day
+  "For one (campaign_id, date) group, compute per-rrd_id ad-cost contributions.
+
+   Returns a map {rrd-id cost}. Uses proportional-to-retail-amount over the
+   finance rows for `date` that are NOT already covered by this campaign's
+   per-nm-id rows. Falls back to equal-split when the uncovered subset has
+   zero total retail.
+
+   `covered-nm-ids` — set of nm_ids already attributed via per-nm-id on the
+   same date (spend went straight to their rows, so they are excluded from
+   the campaign-only residual)."
+  [spend covered-nm-ids finance-rows-on-date]
+  (let [candidates       (filterv #(not (contains? covered-nm-ids (:nm-id %)))
+                                  finance-rows-on-date)]
+    (cond
+      ;; No candidate rows → spend stays unallocated (caller logs)
+      (empty? candidates)
+      {}
+
+      :else
+      (let [total-revenue (reduce + 0.0 (keep :retail-amount candidates))]
+        (if (pos? total-revenue)
+          ;; Revenue-proportional
+          (into {}
+                (map (fn [{:keys [rrd-id retail-amount]}]
+                       [rrd-id (* spend (/ (double (or retail-amount 0.0))
+                                           total-revenue))]))
+                candidates)
+          ;; Equal-split fallback (zero-revenue campaign / date)
+          (let [share (/ spend (count candidates))]
+            (into {}
+                  (map (fn [{:keys [rrd-id]}] [rrd-id share]))
+                  candidates)))))))
+
+(defn- compute-wb-ad-cost-contributions
+  "Produce {rrd-id cost} map summing contributions from all (campaign, date)
+   groups. Handles per-nm-id direct attribution AND campaign-only allocation.
+
+   `ad-stats-by-day`: map as produced by `wb-ad-stats-by-campaign-day`.
+   `finance-by-date`: map from `load-wb-finance-for-ad-cost`."
+  [ad-stats-by-day finance-by-date]
+  (reduce-kv
+    (fn [acc [_campaign-id date] {:keys [per-nm-id campaign-only]}]
+      (let [rows-on-date (get finance-by-date date [])
+            ;; Per-nm_id: direct attribution — spend goes to every finance row
+            ;; matching (nm_id, date). For WB, nm_id ↔ article is 1:1 (B-003)
+            ;; so this is typically a single row per nm_id, but if there are
+            ;; multiple we SPLIT spend proportionally across them by retail.
+            acc-per-nm
+            (reduce-kv
+              (fn [a nm-id spend]
+                (let [matching (filterv #(= nm-id (:nm-id %)) rows-on-date)
+                      total-r  (reduce + 0.0 (keep :retail-amount matching))]
+                  (cond
+                    (empty? matching) a
+                    (pos? total-r)
+                    (reduce (fn [b {:keys [rrd-id retail-amount]}]
+                              (update b rrd-id (fnil + 0.0)
+                                      (* spend
+                                         (/ (double (or retail-amount 0.0))
+                                            total-r))))
+                            a matching)
+                    :else  ;; equal-split fallback when matching rows have 0 revenue
+                    (let [share (/ spend (count matching))]
+                      (reduce (fn [b {:keys [rrd-id]}]
+                                (update b rrd-id (fnil + 0.0) share))
+                              a matching)))))
+              acc
+              (or per-nm-id {}))
+            ;; Campaign-only: distribute residual spend across rows not
+            ;; already covered by per-nm_id for this campaign-day.
+            covered-nm-ids (into #{} (keys (or per-nm-id {})))
+            acc-total
+            (if (and campaign-only (pos? (double campaign-only)))
+              (let [alloc (allocate-campaign-day campaign-only
+                                                 covered-nm-ids
+                                                 rows-on-date)]
+                (reduce-kv (fn [m rrd-id cost]
+                             (update m rrd-id (fnil + 0.0) cost))
+                           acc-per-nm
+                           alloc))
+              acc-per-nm)]
+        acc-total))
+    {}
+    ad-stats-by-day))
+
+(defn materialize-wb-ad-cost!
+  "Populate `finance.ad_cost` for WB rows in [from..to] from `ad_stats`.
+
+   Reads:
+     - `finance` rows (marketplace='wb', date_from in period)
+     - `ad_stats` rows (date in period)
+
+   Writes:
+     - `finance.ad_cost` (absolute SET per row, WB only)
+
+   Idempotency is absolute: the function first resets ad_cost=0 for all WB
+   rows in the period, then SETs the computed contribution per rrd_id. Running
+   twice yields identical state.
+
+   B-005 preserved: only `ad_cost` is written; `for_pay` and other cost fields
+   are untouched. YM and Ozon rows are never updated.
+
+   Returns {:updates N :covered-rrd-ids K :total-spend-allocated ₽
+            :unallocated-count M}.
+
+   See specs/002-calculation-audit/verdicts.md §B-003 for the allocation rule."
+  [period]
+  (let [[from to] (resolve-period period)]
+    (jdbc/with-transaction [tx (db/ds)]
+      (let [finance-by-date (load-wb-finance-for-ad-cost tx from to)
+            ad-stats-by-day (wb-ad-stats-by-campaign-day tx from to)
+            contributions   (compute-wb-ad-cost-contributions
+                              ad-stats-by-day finance-by-date)
+            ;; Count ad_stats rows whose spend had no eligible finance row
+            ;; (logged once per orphan).
+            unallocated     (atom 0)]
+        ;; Count unallocated: for each campaign-day with no rows in finance-by-date,
+        ;; any per-nm-id or campaign-only spend is unallocated.
+        (reduce-kv
+          (fn [_ [campaign-id date] {:keys [per-nm-id campaign-only]}]
+            (let [rows-on-date (get finance-by-date date [])]
+              (when (empty? rows-on-date)
+                (when (or (seq per-nm-id)
+                          (and campaign-only (pos? (double campaign-only))))
+                  (swap! unallocated inc)
+                  (mu/log ::wb-ad-cost-unallocated
+                          :campaign-id campaign-id
+                          :date        date
+                          :per-nm-id   per-nm-id
+                          :campaign-only campaign-only))))
+            nil)
+          nil
+          ad-stats-by-day)
+
+        ;; Reset all WB ad_cost in the period to 0, then SET per-rrd contribution.
+        (jdbc/execute! tx
+          ["UPDATE finance SET ad_cost = 0
+            WHERE marketplace='wb'
+              AND substr(date_from, 1, 10) >= ?
+              AND substr(date_from, 1, 10) <= ?"
+           from to])
+
+        (doseq [[rrd-id cost] contributions]
+          (jdbc/execute! tx
+            ["UPDATE finance SET ad_cost = ?
+              WHERE marketplace='wb' AND rrd_id = ?"
+             (double cost) rrd-id]))
+
+        (let [total-allocated (reduce + 0.0 (vals contributions))
+              ;; T041 SC-009 migration assertion log — compare new path to
+              ;; legacy ad-spend-by-article. `new ≥ legacy` is the target
+              ;; invariant; any positive delta is "newly captured
+              ;; multi-campaign allocation" (null-nm_id rows that the
+              ;; legacy INNER JOIN silently dropped).
+              legacy (try
+                       (->> (jdbc/execute!
+                              tx
+                              ["SELECT COALESCE(SUM(a.spend), 0) AS spend
+                                FROM ad_stats a
+                                JOIN (SELECT DISTINCT nm_id, article, marketplace FROM finance
+                                      WHERE article IS NOT NULL AND article != ''
+                                        AND marketplace = 'wb') f
+                                  ON a.nm_id = f.nm_id
+                                WHERE a.date >= ? AND a.date <= ?"
+                               from to]
+                              {:builder-fn rs/as-unqualified-kebab-maps})
+                            first :spend double)
+                       (catch Exception _ 0.0))
+              delta  (- total-allocated (or legacy 0.0))
+              covg   (if (pos? total-allocated)
+                       (* 100.0 (/ (- total-allocated delta) total-allocated))
+                       0.0)]
+          (println (str "Materialized WB ad_cost: " (count contributions)
+                        " rows updated, " (format "%.2f" total-allocated) " ₽ allocated, "
+                        @unallocated " unallocated campaign-days"))
+          (println (format "Ad-spend migration: legacy=%.2f, new=%.2f, delta=%+.2f (%.1f%% legacy-match)"
+                           (double (or legacy 0.0)) total-allocated delta covg))
+          {:updates               (count contributions)
+           :covered-rrd-ids       (count contributions)
+           :total-spend-allocated total-allocated
+           :legacy-ad-spend       (double (or legacy 0.0))
+           :delta                 delta
+           :unallocated-count     @unallocated})))))
+
+;; ---------------------------------------------------------------------------
 ;; Cash flow periods (Ozon)
 ;; ---------------------------------------------------------------------------
 
@@ -825,6 +1112,8 @@
     :regions  (materialize-regions! period :marketplace marketplace)
     :ad-stats (materialize-wb-ad-stats! period :marketplace marketplace)
     :ad_stats (materialize-wb-ad-stats! period :marketplace marketplace)
+    :ad-cost  (materialize-wb-ad-cost! period)
+    :ad_cost  (materialize-wb-ad-cost! period)
     :cashflow (materialize-cashflow! period :marketplace marketplace)
     :all      (let [p (or period :last-30-days)]
                 (materialize-orders! p :marketplace marketplace)
