@@ -28,6 +28,7 @@
             [analitica.audit.core :as audit-core]
             [analitica.audit.bank :as audit-bank]
             [analitica.audit.kpi :as audit-kpi]
+            [analitica.audit.verdict :as audit-verdict]
             [analitica.util.time :as util-time]
             [analitica.schema.infer :as schema-infer]
             [analitica.schema.loader :as schema-loader]
@@ -330,13 +331,15 @@ Analitica CLI — audit subcommands
 
 Usage: clojure -M -m analitica.cli audit <subcommand> [options]
 
-Subcommands (scaffold; implementations arrive in later tasks):
+Subcommands:
   reconcile             Build reconciliation report for a period/marketplace
                         (see specs/002-calculation-audit/contracts/cli-audit.md)
   kpi measure|list|show Measure / inspect Accuracy KPI baseline (WB-only in MVP)
   verdict list|show     Read bug-hypothesis verdicts from verdicts.md
+                        (list supports --conclusion :confirmed|:refuted|:fixed|:confirmed-deferred|:not-yet-verdicted)
   fixture capture|list|verify
                         Manage ground-truth fixtures under specs/.../fixtures/
+                        (not yet implemented — US4)
 
 Exit codes:
   0  success, no suspicious discrepancies
@@ -673,6 +676,94 @@ Currently registered rules:")
           (println "Usage: audit kpi measure|list|show [options]")
           3))))
 
+;; ---------------------------------------------------------------------------
+;; audit verdict
+;; ---------------------------------------------------------------------------
+
+(def ^:private verdict-list-cli-options
+  [[nil "--conclusion K" "Filter by conclusion keyword (:confirmed, :refuted, :fixed, :confirmed-deferred, :not-yet-verdicted)"
+    :parse-fn (fn [s]
+                (let [trimmed (str/trim s)
+                      raw     (if (str/starts-with? trimmed ":")
+                                (subs trimmed 1)
+                                trimmed)]
+                  (keyword raw)))]])
+
+(defn- truncate-middle
+  "Clip `s` to at most `n` characters, appending `…` when clipped."
+  [s n]
+  (let [s (or s "")]
+    (if (<= (count s) n)
+      s
+      (str (subs s 0 (max 0 (- n 1))) "…"))))
+
+(defn- render-verdict-list-row
+  [{:verdict/keys [id title conclusion linked-ticket]}]
+  (format "  %-6s  %-50s  %-20s  %s"
+          (or id "—")
+          (truncate-middle title 50)
+          (str (or conclusion "—"))
+          (truncate-middle (or linked-ticket "—") 50)))
+
+(defn- handle-audit-verdict-list
+  "Execute `audit verdict list`. Returns exit code (always 0 unless parse error)."
+  [rest-args]
+  (let [{:keys [options errors]}
+        (parse-opts rest-args verdict-list-cli-options :in-order false)]
+    (cond
+      errors
+      (do (doseq [e errors] (println "Error:" e))
+          3)
+      :else
+      (try
+        (let [rows (audit-verdict/verdicts-list
+                     :conclusion-filter (:conclusion options))]
+          (if (empty? rows)
+            (println (str "No verdicts found"
+                          (when-let [c (:conclusion options)]
+                            (str " for conclusion=" c))
+                          "."))
+            (do
+              (println (format "Bug-hypothesis verdicts (%d):" (count rows)))
+              (println (format "  %-6s  %-50s  %-20s  %s"
+                               "id" "title" "conclusion" "linked-ticket"))
+              (doseq [row rows]
+                (println (render-verdict-list-row row)))))
+          0)
+        (catch Throwable t
+          (println "audit verdict list crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-verdict-show
+  "Execute `audit verdict show <id>`. Exit 0 if found, 3 if not found."
+  [rest-args]
+  (let [id (first rest-args)]
+    (cond
+      (nil? id)
+      (do (println "Usage: audit verdict show <verdict-id>") 3)
+      :else
+      (try
+        (if-let [md (audit-verdict/verdict-show id)]
+          (do (println md) 0)
+          (do (println (str "No verdict with id=" id))
+              (println "Use `audit verdict list` to see available verdicts.")
+              3))
+        (catch Throwable t
+          (println "audit verdict show crashed:" (.getMessage t))
+          5)))))
+
+(defn- handle-audit-verdict
+  "Dispatch for `audit verdict` subcommand. Delegates to list/show."
+  [rest-args]
+  (let [sub (first rest-args)]
+    (case sub
+      nil     (do (println "Usage: audit verdict list|show [options]") 3)
+      "list"  (handle-audit-verdict-list (rest rest-args))
+      "show"  (handle-audit-verdict-show (rest rest-args))
+      (do (println "Unknown audit verdict subcommand:" sub)
+          (println "Usage: audit verdict list|show [options]")
+          3))))
+
 (defn handle-audit
   "Dispatch audit subcommand. Scaffold — real implementations are landed
    incrementally in later tasks (T041 verdict, T048 fixture).
@@ -688,7 +779,7 @@ Currently registered rules:")
       "-h"       (do (audit-help) 0)
       "reconcile" (handle-audit-reconcile (rest rest-args) options)
       "kpi"      (handle-audit-kpi (rest rest-args) options)
-      "verdict"  (do (println "audit verdict — not yet implemented (T041)") 3)
+      "verdict"  (handle-audit-verdict (rest rest-args))
       "fixture"  (do (println "audit fixture — not yet implemented (T048)") 3)
       (do (println "Unknown audit subcommand:" sub)
           (audit-help)
