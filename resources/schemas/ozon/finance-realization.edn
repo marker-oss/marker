@@ -1,0 +1,74 @@
+{:endpoint/id          :ozon/finance-realization
+ :endpoint/marketplace :ozon
+ :endpoint/api-path    "/v2/finance/realization"
+ :endpoint/method      :post
+ :endpoint/description "Monthly per-article realization report. Primary source for Ozon P&L since 2026-04-22 (see verdicts.md §B-005). One POST per (year, month). Response structured as {:result {:header {…} :rows [{…per-article…}]}}."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T18:00:00Z"
+  :reference-url "https://docs.ozon.ru/api/seller/"
+  :notes         "Verified via Context7 MCP /websites/ozon_ru_api_seller 2026-04-22 + live sample (133 rows for March 2026). Field names and types match actual response; :total/:bonus/:bank_coinvestment/etc. are the commission-breakdown components we use in src/analitica/marketplace/ozon/transform.clj/realization-row->finance-rows."}
+
+ :contract/response-schema
+ ;; NOTE: src/analitica/marketplace/ozon/api.clj/finance-realization unwraps
+ ;; :result before returning — downstream code (and raw_data) see the inner
+ ;; map directly. Schema reflects that unwrapped shape.
+ [:map
+  [:header
+   [:map
+    [:number :string]
+    [:contract_number :string]
+    [:contract_date :string]
+    [:start_date :string]
+    [:stop_date :string]
+    [:doc_date :string]
+    [:currency_sys_name :string]
+    [:payer_inn :string]
+    [:payer_kpp {:optional true} [:maybe :string]]
+    [:payer_name :string]
+    [:receiver_inn :string]
+    [:receiver_kpp {:optional true} [:maybe :string]]
+    [:receiver_name :string]]]
+  [:rows
+   [:sequential
+    [:map
+     [:rowNumber :int]
+     [:seller_price_per_instance number?]
+     [:item
+      [:map
+       [:offer_id :string]
+       [:sku :int]
+       [:barcode :string]
+       [:name :string]]]
+     [:delivery_commission
+      [:map
+       [:amount number?]
+       [:bonus {:optional true} number?]
+       [:commission {:optional true} number?]
+       [:compensation {:optional true} number?]
+       [:price_per_instance number?]
+       [:quantity :int]
+       [:standard_fee number?]
+       [:bank_coinvestment {:optional true} number?]
+       [:stars {:optional true} number?]
+       [:pick_up_point_coinvestment {:optional true} number?]
+       [:total number?]]]
+     [:return_commission
+      [:map
+       [:amount number?]
+       [:bonus {:optional true} number?]
+       [:commission {:optional true} number?]
+       [:compensation {:optional true} number?]
+       [:price_per_instance number?]
+       [:quantity :int]
+       [:standard_fee number?]
+       [:bank_coinvestment {:optional true} number?]
+       [:stars {:optional true} number?]
+       [:pick_up_point_coinvestment {:optional true} number?]
+       [:total number?]]]
+     [:commission_ratio number?]]]]]
+
+ :contract/notes   "Replaced /v3/finance/transaction/list as primary Ozon finance source on 2026-04-22 — transaction/list has 83% account-level service ops that can't be mapped to single articles. Live-verified: 133 rows/March, sales.amount SUM=266,994₽ matches cash_flow.orders_amount - returns - commissions within tolerance. See specs/002-calculation-audit/verdicts.md §B-005."
+ :contract/version 1}

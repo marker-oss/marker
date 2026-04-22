@@ -1,0 +1,10 @@
+#kaocha/v1
+{:tests [{:id          :unit
+          :test-paths  ["test"]
+          ;; Exclude analitica.schema.performance-test via ns-patterns —
+          ;; it requires analitica.schema.registry / validator namespaces
+          ;; from spec 001 which are not present on this branch. Using
+          ;; `:skip` alone does not prevent namespace loading (and loading
+          ;; fails with ClassNotFound). Once spec 001 work lands, this
+          ;; restriction can be relaxed back to the default "-test$" pattern.
+          :ns-patterns ["^(?!.*schema\\.performance-test$).*-test$"]}]}

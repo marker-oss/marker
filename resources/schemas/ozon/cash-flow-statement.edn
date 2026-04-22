@@ -1,0 +1,76 @@
+{:endpoint/id          :ozon/cash-flow-statement
+ :endpoint/marketplace :ozon
+ :endpoint/api-path    "/v1/finance/cash-flow-statement/list"
+ :endpoint/method      :post
+ :endpoint/description "Period-level cash flow statement (~1st-15th, 16th-31st). Used as validation reference for Ozon article-level data — see verdicts.md §B-005 for cross-check context."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T18:00:00Z"
+  :reference-url "https://docs.ozon.ru/api/seller/"
+  :notes         "Based on Context7 MCP /websites/ozon_ru_api_seller 2026-04-22. Response has :result {:cash_flows [...] :details {...} :page_count int}. The :details block is nested (delivery/return/services/others/rfbs) — schema describes the pass-through that our existing integration uses."}
+
+ :contract/response-schema
+ [:map
+  [:result
+   [:map
+    [:cash_flows
+     [:sequential
+      [:map
+       [:period
+        [:map
+         [:id :int]
+         [:begin :string]
+         [:end :string]]]
+       [:orders_amount number?]
+       [:returns_amount number?]
+       [:commission_amount number?]
+       [:services_amount {:optional true} number?]
+       [:item_delivery_and_return_amount {:optional true} number?]
+       [:currency_code :string]]]]
+    [:details {:optional true}
+     [:map
+      [:period {:optional true}
+       [:map [:id :int] [:begin :string] [:end :string]]]
+      [:begin_balance_amount {:optional true} number?]
+      [:end_balance_amount   {:optional true} number?]
+      [:invoice_transfer     {:optional true} number?]
+      [:loan                 {:optional true} number?]
+      [:payments             {:optional true}
+       [:sequential [:map [:payment number?] [:currency_code :string]]]]
+      ;; :delivery / :return — we consume :amount and :*_services.total as numerics.
+      ;; Other sub-fields (e.g. breakdown tables) remain loose via open map semantics.
+      [:delivery             {:optional true}
+       [:map
+        [:amount {:optional true} [:maybe number?]]
+        [:delivery_services {:optional true}
+         [:map [:total {:optional true} [:maybe number?]]]]]]
+      [:return               {:optional true}
+       [:map
+        [:amount {:optional true} [:maybe number?]]
+        [:return_services {:optional true}
+         [:map [:total {:optional true} [:maybe number?]]]]]]
+      ;; :rfbs — not consumed by ->cash-flow-period; leave loose until we read it.
+      [:rfbs                 {:optional true} [:maybe any?]]
+      ;; :services / :others — we iterate items[] by :name/:price; total is summed.
+      [:services             {:optional true}
+       [:map
+        [:total {:optional true} [:maybe number?]]
+        [:items {:optional true}
+         [:sequential
+          [:map
+           [:name  {:optional true} [:maybe :string]]
+           [:price {:optional true} [:maybe number?]]]]]]]
+      [:others               {:optional true}
+       [:map
+        [:total {:optional true} [:maybe number?]]
+        [:items {:optional true}
+         [:sequential
+          [:map
+           [:name  {:optional true} [:maybe :string]]
+           [:price {:optional true} [:maybe number?]]]]]]]]]
+    [:page_count {:optional true} :int]]]]
+
+ :contract/notes   "The :details sub-trees are narrowed to the shapes we actually consume in transform.clj:->cash-flow-period: :delivery/:return have {:amount, :*_services.total}; :services/:others have {:total, :items[]{:name, :price}}. :rfbs remains loose (any?) as it is not yet read. Additional fields from Ozon appear as map extras (warnings), not blockers."
+ :contract/version 1}

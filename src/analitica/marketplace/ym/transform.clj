@@ -1,15 +1,54 @@
 (ns analitica.marketplace.ym.transform
   "Transform raw Yandex Market API responses into the common domain model.
-   All functions return nil for missing/null fields and never throw exceptions.")
+   All functions return nil for missing/null fields and never throw exceptions."
+  (:require [com.brunobonacci.mulog :as mu]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- ym-sale-type [status]
+(defn- ym-sale-type
+  "Legacy order-level classification. Kept for `->sale` / `->sales`
+   which operate on raw orders without item-level details. FinanceRow
+   paths use `classify-item-operation` instead (see data-model.md §4)."
+  [status]
   (if (#{"RETURNED" "PARTIALLY_RETURNED"} status)
     :return
     :sale))
+
+(defn- classify-item-operation
+  "Per-item :operation classification: item-level status from
+   `item.details[0].itemStatus` takes priority over order-level
+   `order.status`. Returns \"sale\", \"return\", or \"cancelled\".
+
+   Priority matrix (see specs/003-finance-row-completeness/data-model.md §4):
+
+     itemStatus RETURNED | PARTIALLY_RETURNED → \"return\"   (incl. post-delivery)
+     itemStatus REJECTED               → \"cancelled\"
+     order.status DELIVERED | PARTIALLY_DELIVERED → \"sale\"
+     order.status CANCELLED_*          → \"cancelled\"
+     order.status RETURNED | PARTIALLY_RETURNED → \"return\"   (fallback when items lack :details)
+     anything else                     → \"sale\"     (safe default + mu/log)
+
+   PARTIALLY_RETURNED is included for parity with legacy `ym-sale-type`;
+   data-model.md §4 does not enumerate it but YM may emit it and we
+   want to classify as return, not unknown."
+  [order item]
+  (let [item-status  (get-in item [:details 0 :itemStatus])
+        order-status (:status order)]
+    (cond
+      (#{"RETURNED" "PARTIALLY_RETURNED"} item-status) "return"
+      (= "REJECTED" item-status) "cancelled"
+      (#{"DELIVERED" "PARTIALLY_DELIVERED"} order-status) "sale"
+      (#{"CANCELLED_BEFORE_PROCESSING"
+         "CANCELLED_IN_PROCESSING"
+         "CANCELLED_IN_DELIVERY"} order-status) "cancelled"
+      (#{"RETURNED" "PARTIALLY_RETURNED"} order-status) "return"
+      :else (do
+              (mu/log ::ym-unknown-status
+                      :order-status order-status
+                      :item-status item-status)
+              "sale"))))
 
 (defn- commission-value
   "Extract commission amount by type from commissions list."
@@ -131,7 +170,12 @@
   delivery_commission.amount — all three mean \"netto to seller after fees\"):
 
       for-pay = BUYER − FEE − AGENCY − DELIVERY_TO_CUSTOMER
-                      − PAYMENT_TRANSFER − AUCTION_PROMOTION"
+                      − PAYMENT_TRANSFER − AUCTION_PROMOTION − bidFee
+
+  Per-item bidFee is extracted to :ad-cost and subtracted from :for-pay
+  without redistribution (FR-005/006/019). CANCELLED_BEFORE_PROCESSING
+  orders still carry bidFee — seller paid for the ad even if the order
+  never shipped, so :for-pay turns negative (matching real cash impact)."
   [order]
   (let [order-id    (get order :id)
         date        (get order :creationDate)
@@ -154,7 +198,10 @@
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   qty         (or (get item :count) 1)
-                  net-pay     (- (or buyer-price 0) all-comm)]
+                  ;; FR-006/019: bidFee strictly per-item, no redistribution
+                  bid-fee     (or (:bidFee item) 0)
+                  ;; FR-005: :for-pay = BUYER − Σcommissions − bidFee
+                  net-pay     (- (or buyer-price 0) all-comm bid-fee)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
                :report-id          nil
@@ -165,7 +212,7 @@
                :barcode            nil
                :subject            nil
                :brand              nil
-               :operation          (if (= "DELIVERED" status) "sale" "return")
+               :operation          (classify-item-operation order item)
                :doc-type           status
                :quantity           qty
                :retail-price       (or buyer-price 0)
@@ -186,7 +233,8 @@
                :acceptance         nil
                :additional-payment nil
                :deduction          nil
-               :acquiring-fee      acquiring}))
+               :acquiring-fee      acquiring
+               :ad-cost            bid-fee}))
           items)))
 
 (defn ->finance-from-order-stats

@@ -49,3 +49,18 @@
 
 (defn days-between [^LocalDate a ^LocalDate b]
   (.between ChronoUnit/DAYS a b))
+
+(defn date-chunks
+  "Split [from to] into chunks of at most max-days each.
+   Returns a vec of [chunk-from chunk-to] date-string pairs."
+  [from-str to-str max-days]
+  (let [start (parse-date from-str)
+        end   (parse-date to-str)]
+    (loop [cur start
+           chunks []]
+      (if (.isAfter cur end)
+        chunks
+        (let [chunk-end (let [ce (.plusDays cur (dec max-days))]
+                          (if (.isAfter ce end) end ce))]
+          (recur (.plusDays chunk-end 1)
+                 (conj chunks [(format-date cur) (format-date chunk-end)])))))))

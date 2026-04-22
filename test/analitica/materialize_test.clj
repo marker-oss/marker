@@ -1,0 +1,250 @@
+(ns analitica.materialize-test
+  "Unit tests for `materialize-ozon-services!` — the Ozon hybrid merge
+   path (US3B, T027).
+
+   Covered scenarios:
+     - T022 UPSERT idempotent: running materialize twice with the same
+       fixtures yields the same cost fields, and never double-adds.
+     - B-005 invariant: `for_pay` on the existing realization-derived
+       finance-row MUST NOT change during service merge.
+     - Orphan handling: service-rows whose sku isn't in article-lookup
+       are dropped (no new INSERT happens).
+
+   These are in-memory (temp-file) SQLite tests with a fresh DB per
+   test via `with-temp-db`."
+  (:require [clojure.test :refer [deftest testing is use-fixtures]]
+            [analitica.db :as db]
+            [analitica.materialize :as mat]
+            [analitica.sync :as sync])
+  (:import [java.io File]
+           [java.nio.file Files]
+           [java.nio.file.attribute FileAttribute]))
+
+;; ---------------------------------------------------------------------------
+;; Temp-file SQLite DB fixture (mirrors test/analitica/db_test.clj).
+;; ---------------------------------------------------------------------------
+
+(def ^:dynamic *test-db-path* nil)
+
+(defn- fresh-temp-db-path []
+  (let [path (Files/createTempFile "analitica-mat-test-"
+                                   ".db"
+                                   (make-array FileAttribute 0))
+        f    (.toFile path)]
+    (.delete f)
+    (.getAbsolutePath f)))
+
+(defn- delete-test-db! [path]
+  (doseq [suffix ["" "-shm" "-wal"]]
+    (let [f (File. (str path suffix))]
+      (when (.exists f) (.delete f)))))
+
+(defn with-temp-db [f]
+  (let [path      (fresh-temp-db-path)
+        orig-spec (deref #'db/db-spec)]
+    (try
+      (alter-var-root #'db/db-spec (constantly {:dbtype "sqlite" :dbname path}))
+      (binding [*test-db-path* path]
+        (db/init!)
+        (f))
+      (finally
+        (alter-var-root #'db/db-spec (constantly orig-spec))
+        (reset! @#'db/datasource nil)
+        (delete-test-db! path)))))
+
+(use-fixtures :each with-temp-db)
+
+;; ---------------------------------------------------------------------------
+;; Fixtures / helpers
+;; ---------------------------------------------------------------------------
+
+(defn- seed-finance-row!
+  "INSERT an Ozon realization-style finance-row for testing."
+  [{:keys [rrd-id article date-from for-pay delivery-cost operation]
+    :or   {operation "sale"
+           for-pay   500.0
+           delivery-cost 0}}]
+  (let [row (sync/finance->row {:rrd-id        rrd-id
+                                :date-from     date-from
+                                :date-to       date-from
+                                :article       article
+                                :operation     operation
+                                :for-pay       for-pay
+                                :delivery-cost delivery-cost
+                                :marketplace   :ozon})]
+    (db/insert-batch! :finance sync/finance-columns [row])))
+
+(defn- seed-realization-raw!
+  "Minimal realization raw_data so that article-lookup can be built."
+  [article sku date-from date-to]
+  (db/insert-raw! :ozon :realization date-from date-to
+                  {:header {:start_date date-from :stop_date date-to}
+                   :rows   [{:rowNumber 1
+                             :seller_price_per_instance 500
+                             :item {:sku sku :offer_id article}
+                             :delivery_commission {:quantity 1
+                                                   :amount 500
+                                                   :standard_fee 0}}]}))
+
+(defn- seed-transactions-raw!
+  "Insert transaction operations raw_data."
+  [operations date-from date-to]
+  (db/insert-raw! :ozon :transactions date-from date-to
+                  {:operations operations}))
+
+(defn- finance-row-by-article [article]
+  (first
+    (db/query
+      ["SELECT article, for_pay, delivery_cost, acquiring_fee,
+               acceptance, storage_fee, additional_payment, ad_cost
+        FROM finance WHERE marketplace='ozon' AND article = ?" article])))
+
+;; ---------------------------------------------------------------------------
+;; T022 — UPSERT idempotency (sale scenario)
+;; ---------------------------------------------------------------------------
+
+(deftest materialize-services-updates-delivery-cost
+  (testing "single-service operation merges into the existing finance-row"
+    (seed-finance-row! {:rrd-id 1 :article "ART-A"
+                        :date-from "2026-03-01"
+                        :for-pay 500.0
+                        :delivery-cost 0})
+    (seed-realization-raw! "ART-A" 10 "2026-03-01" "2026-03-31")
+    (seed-transactions-raw!
+      [{:operation_id 101
+        :operation_type "OperationAgentDeliveredToCustomer"
+        :operation_date "2026-03-15 10:00:00"
+        :type "services"
+        :amount -50
+        :items [{:sku 10 :name "A" :price 500 :quantity 1}]
+        :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -50}]
+        :posting {:posting_number "P1" :delivery_schema "FBO"}}]
+      "2026-03-01" "2026-03-31")
+
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+
+    (let [row (finance-row-by-article "ART-A")]
+      (is (some? row))
+      (is (= 50.0 (:delivery-cost row))
+          "delivery_cost accumulated from the service")
+      (is (= 500.0 (:for-pay row))
+          "B-005 invariant: for_pay unchanged"))))
+
+(deftest materialize-services-is-idempotent
+  (testing "running materialize-ozon-services! twice does NOT double-add"
+    (seed-finance-row! {:rrd-id 1 :article "ART-A"
+                        :date-from "2026-03-01"
+                        :for-pay 500.0
+                        :delivery-cost 0})
+    (seed-realization-raw! "ART-A" 10 "2026-03-01" "2026-03-31")
+    (seed-transactions-raw!
+      [{:operation_id 101
+        :operation_type "OperationAgentDeliveredToCustomer"
+        :operation_date "2026-03-15 10:00:00"
+        :type "services"
+        :amount -50
+        :items [{:sku 10 :name "A" :price 500 :quantity 1}]
+        :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -50}]
+        :posting {:posting_number "P1" :delivery_schema "FBO"}}]
+      "2026-03-01" "2026-03-31")
+
+    ;; First materialize
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+    (let [row1 (finance-row-by-article "ART-A")]
+      (is (= 50.0 (:delivery-cost row1))
+          "first run: delivery_cost = 50"))
+
+    ;; Second materialize — identical input, idempotent
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+    (let [row2 (finance-row-by-article "ART-A")]
+      (is (= 50.0 (:delivery-cost row2))
+          "second run: delivery_cost STILL 50 (no double-adding)")
+      (is (= 500.0 (:for-pay row2))
+          "B-005: for_pay still untouched after second run"))))
+
+(deftest materialize-services-multi-field-merge
+  (testing "multiple distinct services map to distinct cost fields"
+    (seed-finance-row! {:rrd-id 1 :article "ART-A"
+                        :date-from "2026-03-01"
+                        :for-pay 500.0
+                        :delivery-cost 0})
+    (seed-realization-raw! "ART-A" 10 "2026-03-01" "2026-03-31")
+    (seed-transactions-raw!
+      [{:operation_id 201
+        :operation_type "OperationAgentDeliveredToCustomer"
+        :operation_date "2026-03-15 10:00:00"
+        :type "services"
+        :amount -60
+        :items [{:sku 10 :name "A" :price 500 :quantity 1}]
+        :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -30}
+                   {:name "MarketplaceRedistributionOfAcquiringOperation" :price -10}
+                   {:name "MarketplaceServiceItemTemporaryStorageRedistribution" :price -5}
+                   {:name "MarketplaceServiceItemPackageMaterialsProvision" :price -15}]
+        :posting {:posting_number "P1" :delivery_schema "FBO"}}]
+      "2026-03-01" "2026-03-31")
+
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+
+    (let [row (finance-row-by-article "ART-A")]
+      (is (= 30.0 (:delivery-cost row)))
+      (is (= 10.0 (:acquiring-fee row)))
+      (is (= 5.0  (:storage-fee row)))
+      (is (= 15.0 (:acceptance row)))
+      (is (= 500.0 (:for-pay row))
+          "B-005: for_pay untouched"))))
+
+(deftest materialize-services-orphan-skipped
+  (testing "service-rows whose sku doesn't resolve skip with no INSERT"
+    (seed-finance-row! {:rrd-id 1 :article "ART-A"
+                        :date-from "2026-03-01"
+                        :for-pay 500.0
+                        :delivery-cost 0})
+    (seed-realization-raw! "ART-A" 10 "2026-03-01" "2026-03-31")
+    (seed-transactions-raw!
+      [{:operation_id 401
+        :operation_type "OperationAgentDeliveredToCustomer"
+        :operation_date "2026-03-15 10:00:00"
+        :type "services"
+        :amount -50
+        :items [{:sku 9999 :name "GHOST" :price 500 :quantity 1}]
+        :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -50}]
+        :posting {:posting_number "P99" :delivery_schema "FBO"}}]
+      "2026-03-01" "2026-03-31")
+
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+
+    (let [count-rows (-> (db/query
+                           ["SELECT COUNT(*) AS cnt FROM finance
+                             WHERE marketplace='ozon'"])
+                         first :cnt)
+          row        (finance-row-by-article "ART-A")]
+      (is (= 1 count-rows)
+          "no new row inserted for the orphan sku")
+      (is (or (nil? (:delivery-cost row))
+              (zero? (:delivery-cost row)))
+          "existing row's delivery_cost remains 0 (no orphan contribution)"))))
+
+(deftest materialize-services-missing-finance-row-skips
+  (testing "service-row for an article with no existing finance-row is skipped"
+    ;; lookup resolves sku → article, but there's no finance-row for that article.
+    (seed-realization-raw! "ART-ORPHAN" 77 "2026-03-01" "2026-03-31")
+    (seed-transactions-raw!
+      [{:operation_id 501
+        :operation_type "OperationAgentDeliveredToCustomer"
+        :operation_date "2026-03-10 00:00:00"
+        :type "services"
+        :amount -50
+        :items [{:sku 77 :name "G" :price 500 :quantity 1}]
+        :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -50}]
+        :posting {:posting_number "P77" :delivery_schema "FBO"}}]
+      "2026-03-01" "2026-03-31")
+
+    ;; Nothing pre-seeded in finance table
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+
+    (let [count-rows (-> (db/query
+                           ["SELECT COUNT(*) AS cnt FROM finance
+                             WHERE marketplace='ozon'"])
+                         first :cnt)]
+      (is (zero? count-rows)
+          "orphan posting (no target finance-row) → no INSERT"))))

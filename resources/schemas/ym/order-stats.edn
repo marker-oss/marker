@@ -1,0 +1,40 @@
+{:endpoint/id          :ym/order-stats
+ :endpoint/marketplace :ym
+ :endpoint/api-path    "/campaigns/{campaignId}/stats/orders"
+ :endpoint/method      :post
+ :endpoint/description "Order-level statistics with commission breakdown. Primary source for YM finance aggregation. API returns wrapped {:result {:orders [...] :paging {...}}} — our ym/api.clj:order-stats extracts and paginates, so raw_data contains the flat orders-seq. Schema describes that flat form."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T18:00:00Z"
+  :reference-url "https://yandex.ru/dev/market/partner-api/doc/en/reference/stats/getOrdersStats"
+  :notes         "Hand-written MVP schema based on observed live responses + src/analitica/marketplace/ym/transform.clj:113-179. Schema is conservative — every field that we actually consume is declared; rest passes as extras (warnings) not blockers. Upgrade to :upstream-openapi once yandex-market-api repo publishes a machine-readable spec we can auto-parse."}
+
+ :contract/response-schema
+ [:sequential
+  [:map
+   [:id     [:or :int :string]]
+   [:creationDate {:optional true} [:maybe :string]]
+   [:status {:optional true} [:maybe :string]]
+   [:items
+    [:sequential
+     [:map
+      [:shopSku   {:optional true} [:maybe :string]]
+      [:marketSku {:optional true} [:maybe [:or :int :string]]]
+      [:count     {:optional true} [:maybe :int]]
+      [:bidFee    {:optional true} [:maybe number?]]
+      [:prices
+       [:sequential
+        [:map
+         [:type  :string]
+         [:costPerItem {:optional true} [:maybe number?]]
+         [:total       {:optional true} [:maybe number?]]]]]]]]
+   [:commissions
+    [:sequential
+     [:map
+      [:type  :string]
+      [:actual {:optional true} [:maybe number?]]]]]]]
+
+ :contract/notes   "The :commissions.type string enum includes FEE, AGENCY, DELIVERY_TO_CUSTOMER, PAYMENT_TRANSFER, AUCTION_PROMOTION (see transform.clj:130-134). Not constrained to :enum here — new commission types from YM should warn (extras), not block."
+ :contract/version 1}
