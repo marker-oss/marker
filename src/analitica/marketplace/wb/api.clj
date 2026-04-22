@@ -69,19 +69,25 @@
   [client date-from date-to]
   (c/get-request client :analytics "/api/v1/paid_storage"
                  :query-params {"dateFrom" date-from
-                                "dateTo"   date-to}))
+                                "dateTo"   date-to}
+                 :limiter-key  :wb/analytics-paid-storage-create
+                 :limiter-rpm  1))
 
 (defn paid-storage-status
   "Check paid storage task status."
   [client task-id]
   (c/get-request client :analytics
-                 (str "/api/v1/paid_storage/tasks/" task-id "/status")))
+                 (str "/api/v1/paid_storage/tasks/" task-id "/status")
+                 :limiter-key :wb/analytics-paid-storage-status
+                 :limiter-rpm 12))
 
 (defn paid-storage-download
   "Download paid storage report."
   [client task-id]
   (c/get-request client :analytics
-                 (str "/api/v1/paid_storage/tasks/" task-id "/download")))
+                 (str "/api/v1/paid_storage/tasks/" task-id "/download")
+                 :limiter-key :wb/analytics-paid-storage-download
+                 :limiter-rpm 1))
 
 (defn region-sales
   "Fetch sales by region."
@@ -112,6 +118,34 @@
   [client & {:keys [status] :or {status [9 11]}}]
   (c/post-request client :advert "/adv/v1/promotion/adverts"
                   :query-params {"status" status}))
+
+(defn fullstats
+  "Fetch per-day per-article ad stats for given campaigns over a date range.
+
+   POST /adv/v2/fullstats with body
+     [{:id cid :dates [from to]}, ...]
+
+   Returns a flat vector of campaign-stats maps:
+     [{:id ..., :days [{:date ..., :apps [{:nm_id ..., :sum ...}]}]} ...]
+
+   Chunks campaign ids into batches of ≤100 per request (WB API limit).
+   Empty campaign list → no HTTP call, returns [].
+
+   NOTE: WB requires ≤31-day ranges per request — callers must chunk
+   longer periods externally (we don't split by month here to keep the
+   wrapper thin)."
+  [client campaign-ids date-from date-to]
+  (if (empty? campaign-ids)
+    []
+    (->> (partition-all 100 campaign-ids)
+         (mapcat
+           (fn [chunk]
+             (let [body (mapv (fn [cid] {:id cid :dates [date-from date-to]})
+                              chunk)
+                   resp (c/post-request client :advert "/adv/v2/fullstats"
+                                        :body body)]
+               (or resp []))))
+         vec)))
 
 ;; ---------------------------------------------------------------------------
 ;; Prices API

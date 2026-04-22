@@ -666,6 +666,99 @@
         cnt))))
 
 ;; ---------------------------------------------------------------------------
+;; WB ad_stats
+;;
+;; Source: raw_data rows with source='wb' and entity_type='ad_stats', each
+;; containing a vector of campaign-stats maps from /adv/v2/fullstats:
+;;
+;;   [{:id cid
+;;     :days [{:date "YYYY-MM-DD"
+;;             :views ... :clicks ... :sum ...
+;;             :apps  [{:nm_id N :views ... :clicks ... :sum ... ...}]}]}
+;;    ...]
+;;
+;; Flattening rule: one `ad_stats` row per (campaign_id × day × app).
+;; When `:apps` is empty or absent we still emit one row per (campaign × day)
+;; with `nm_id = 0` (DB sentinel — the ad_stats PK includes nm_id and SQLite
+;; treats NULLs as distinct, so using 0 keeps INSERT-OR-REPLACE idempotent;
+;; `ad-spend-by-article` naturally ignores 0 via the finance JOIN filter).
+;;
+;; Idempotency: DELETE all rows whose (campaign_id, date) falls in the
+;; covered window BEFORE the INSERT batch. Re-materialising the same raw
+;; yields identical DB state.
+;; ---------------------------------------------------------------------------
+
+(def ^:private ad-stats-columns
+  [:campaign_id :date :views :clicks :ctr :cpc :spend
+   :atbs :orders :cr :shks :sum_price :nm_id :synced_at])
+
+(defn- ad-stats-row
+  "Build a single ad_stats row vector matching `ad-stats-columns`."
+  [campaign-id date nm-id day-or-app ts]
+  [campaign-id
+   date
+   (get day-or-app :views)
+   (get day-or-app :clicks)
+   (get day-or-app :ctr)
+   (get day-or-app :cpc)
+   (get day-or-app :sum)
+   (get day-or-app :atbs)
+   (get day-or-app :orders)
+   (get day-or-app :cr)
+   (get day-or-app :shks)
+   (get day-or-app :sum_price)
+   nm-id
+   ts])
+
+(defn- flatten-ad-campaign
+  "Turn one campaign stats map into a seq of ad_stats row vectors — one per
+   (day, app) pair. When :apps is empty, emit a single (day, nm_id=0) row
+   (sentinel: the ad_stats PK includes nm_id so 0 keeps the PK deterministic)."
+  [campaign ts]
+  (let [cid  (or (:id campaign) (:advertId campaign))]
+    (mapcat
+      (fn [day]
+        (let [date (:date day)
+              apps (:apps day)]
+          (if (seq apps)
+            (mapv (fn [app] (ad-stats-row cid date (or (:nm_id app) 0) app ts)) apps)
+            [(ad-stats-row cid date 0 day ts)])))
+      (:days campaign))))
+
+(defn materialize-wb-ad-stats!
+  "Populate the `ad_stats` table from raw_data rows of
+   source='wb' entity_type='ad_stats' in the given period.
+
+   Flattens each raw campaign → one row per (campaign_id, date, nm_id).
+   Idempotent: existing rows for the covered (campaign, date) pairs are
+   cleared before reinsertion. Caller passes `period` as [from to] vec,
+   period keyword, or {:from :to} map (see `resolve-period`).
+
+   Returns the number of rows inserted."
+  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  (when-not (= marketplace :wb)
+    (throw (ex-info "materialize-wb-ad-stats! supports only :wb"
+                    {:marketplace marketplace})))
+  (let [[from to]  (resolve-period period)
+        raw-items  (load-raw "wb" :ad_stats from to)
+        ts         (sync/now-str)
+        rows       (into [] (mapcat #(flatten-ad-campaign % ts) raw-items))]
+    (when (seq rows)
+      ;; Idempotency: clear existing ad_stats rows for every (campaign, date)
+      ;; we're about to INSERT. PK is (campaign_id, date) so INSERT OR REPLACE
+      ;; would also work — explicit DELETE makes the contract obvious and
+      ;; survives a future widening of the natural key (e.g. adding nm_id).
+      (let [pairs (into #{} (map (fn [r] [(nth r 0) (nth r 1)]) rows))]
+        (jdbc/with-transaction [tx (db/ds)]
+          (doseq [[cid date] pairs]
+            (jdbc/execute! tx
+              ["DELETE FROM ad_stats WHERE campaign_id = ? AND date = ?"
+               cid date])))))
+    (let [cnt (db/insert-batch! :ad_stats ad-stats-columns rows)]
+      (println (str "Materialized WB ad_stats: " (or cnt 0) " rows"))
+      (or cnt 0))))
+
+;; ---------------------------------------------------------------------------
 ;; Cash flow periods (Ozon)
 ;; ---------------------------------------------------------------------------
 
@@ -730,6 +823,8 @@
     :stats    (materialize-product-stats! period :marketplace marketplace)
     :prices   (materialize-prices! :marketplace marketplace)
     :regions  (materialize-regions! period :marketplace marketplace)
+    :ad-stats (materialize-wb-ad-stats! period :marketplace marketplace)
+    :ad_stats (materialize-wb-ad-stats! period :marketplace marketplace)
     :cashflow (materialize-cashflow! period :marketplace marketplace)
     :all      (let [p (or period :last-30-days)]
                 (materialize-orders! p :marketplace marketplace)
@@ -761,13 +856,21 @@
                  :stats    [:product_stats]
                  :prices   [:prices]
                  :regions  [:region_sales]
+                 :ad-stats [:ad_stats]
+                 :ad_stats [:ad_stats]
                  :cashflow [:cash_flow_periods]
                  :all      [:sales :orders :finance :paid_storage :stocks
                             :product_stats :prices :region_sales :cash_flow_periods])]
     (doseq [table tables]
       (println (str "  Clearing " (name table) " for " (name marketplace) "..."))
-      (if (= table :cash_flow_periods)
+      (cond
+        (= table :cash_flow_periods)
         (db/execute! ["DELETE FROM cash_flow_periods WHERE source = ?" (name marketplace)])
+        ;; ad_stats has no `marketplace` column (WB-only currently) —
+        ;; the table gets fully cleared on rebuild.
+        (= table :ad_stats)
+        (db/execute! ["DELETE FROM ad_stats"])
+        :else
         (db/clear-marketplace-rows! table marketplace)))
     (apply materialize! what
            (cond-> [:marketplace marketplace]

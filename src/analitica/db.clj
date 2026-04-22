@@ -155,6 +155,13 @@
       PRIMARY KEY (article, marketplace)
     )"
 
+   ;; PK is (campaign_id, date, nm_id) so multi-article campaigns (one day,
+   ;; multiple nm_ids) can all coexist — needed by spec 003 US5 ad-cost
+   ;; allocation. `nm_id` defaults to 0 (instead of NULL) because SQLite
+   ;; treats NULLs as distinct in PK comparisons, which would defeat
+   ;; INSERT OR REPLACE idempotency when the campaign has no :apps. The
+   ;; ad-spend-by-article JOIN filters out nm_id=0 naturally via the
+   ;; finance sub-SELECT (article IS NOT NULL).
    "CREATE TABLE IF NOT EXISTS ad_stats (
       campaign_id   INTEGER NOT NULL,
       date          TEXT NOT NULL,
@@ -168,9 +175,9 @@
       cr            REAL,
       shks          INTEGER,
       sum_price     REAL,
-      nm_id         INTEGER,
+      nm_id         INTEGER NOT NULL DEFAULT 0,
       synced_at     TEXT,
-      PRIMARY KEY (campaign_id, date)
+      PRIMARY KEY (campaign_id, date, nm_id)
     )"
 
    "CREATE TABLE IF NOT EXISTS region_sales (
@@ -468,6 +475,44 @@
         (jdbc/execute! ds ["DROP TABLE region_sales"])
         (jdbc/execute! ds ["ALTER TABLE region_sales_new RENAME TO region_sales"])
         (println "Migrated region_sales: added PRIMARY KEY (date_from, date_to, nm_id, region, city)")))
+    ;; Migrate ad_stats: widen PK from (campaign_id, date) to
+    ;; (campaign_id, date, nm_id) so multi-article campaigns can store
+    ;; per-nm_id daily rows. See spec 003 US5 — required for accurate
+    ;; :ad-cost attribution. Idempotent: the migration is a no-op if
+    ;; nm_id is already part of the PK.
+    (let [info      (jdbc/execute! ds ["PRAGMA table_info(ad_stats)"]
+                                   {:builder-fn rs/as-unqualified-maps})
+          nm-id-row (first (filter #(= "nm_id" (:name %)) info))
+          needs?    (and (seq info)
+                         (zero? (or (:pk nm-id-row) 0)))]
+      (when needs?
+        (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS ad_stats_new (
+                              campaign_id   INTEGER NOT NULL,
+                              date          TEXT NOT NULL,
+                              views         INTEGER,
+                              clicks        INTEGER,
+                              ctr           REAL,
+                              cpc           REAL,
+                              spend         REAL,
+                              atbs          INTEGER,
+                              orders        INTEGER,
+                              cr            REAL,
+                              shks          INTEGER,
+                              sum_price     REAL,
+                              nm_id         INTEGER NOT NULL DEFAULT 0,
+                              synced_at     TEXT,
+                              PRIMARY KEY (campaign_id, date, nm_id)
+                            )"])
+        (jdbc/execute! ds ["INSERT OR IGNORE INTO ad_stats_new
+                              SELECT campaign_id, date,
+                                     views, clicks, ctr, cpc, spend,
+                                     atbs, orders, cr, shks, sum_price,
+                                     COALESCE(nm_id, 0),
+                                     synced_at
+                              FROM ad_stats"])
+        (jdbc/execute! ds ["DROP TABLE ad_stats"])
+        (jdbc/execute! ds ["ALTER TABLE ad_stats_new RENAME TO ad_stats"])
+        (println "Migrated ad_stats: new PRIMARY KEY (campaign_id, date, nm_id)")))
     ;; Ensure index exists (for both migrated and fresh DBs)
     (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_product_stats_marketplace ON product_stats(marketplace)"])
     (println "SQLite database initialized: analitica.db (WAL mode enabled)")

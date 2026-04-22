@@ -124,6 +124,36 @@
     (println (str "  Ingested WB regions: " (count data) " items"))
     (count data)))
 
+(defn ingest-wb-ad-stats!
+  "Fetch WB ad campaign list + per-day fullstats for [from..to], persist raw.
+
+   1. `wb-api/ad-campaigns` → list of campaigns (we care about :advertId).
+   2. `wb-api/fullstats` for each campaign chunk (≤100 per batch) with the
+      [from..to] window — WB API caps a single request at 31 days, so
+      callers must already chunk by month for longer periods.
+   3. Persist combined response to raw_data with
+      source='wb' entity_type='ad_stats'.
+
+   Returns the number of campaigns ingested (distinct campaign stats
+   entries in the stored response).
+
+   Empty campaign list short-circuits: `fullstats` is NOT invoked and an
+   empty vector is stored so downstream materialize sees a deterministic
+   'nothing to do' state (idempotent with prior no-op runs)."
+  [client date-from date-to]
+  (let [campaigns (wb-api/ad-campaigns client)
+        ;; Each campaign entry has shape {:advertId N :status S :type T ...}
+        ;; Pull ids for fullstats; filter out nil.
+        ids       (into [] (keep #(get % :advertId) campaigns))
+        stats     (if (seq ids)
+                    (wb-api/fullstats client ids date-from date-to)
+                    [])
+        cnt       (count stats)]
+    (db/insert-raw! :wb :ad_stats date-from date-to (vec stats))
+    (println (str "  Ingested WB ad_stats " date-from " .. " date-to
+                  ": " cnt " campaigns (from " (count campaigns) " total)"))
+    cnt))
+
 ;; ---------------------------------------------------------------------------
 ;; Ozon ingest
 ;; ---------------------------------------------------------------------------
