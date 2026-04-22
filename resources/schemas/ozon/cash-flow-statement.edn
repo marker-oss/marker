@@ -39,12 +39,38 @@
       [:loan                 {:optional true} number?]
       [:payments             {:optional true}
        [:sequential [:map [:payment number?] [:currency_code :string]]]]
-      [:delivery             {:optional true} any?]
-      [:return               {:optional true} any?]
-      [:rfbs                 {:optional true} any?]
-      [:services             {:optional true} any?]
-      [:others               {:optional true} any?]]]
+      ;; :delivery / :return — we consume :amount and :*_services.total as numerics.
+      ;; Other sub-fields (e.g. breakdown tables) remain loose via open map semantics.
+      [:delivery             {:optional true}
+       [:map
+        [:amount {:optional true} [:maybe number?]]
+        [:delivery_services {:optional true}
+         [:map [:total {:optional true} [:maybe number?]]]]]]
+      [:return               {:optional true}
+       [:map
+        [:amount {:optional true} [:maybe number?]]
+        [:return_services {:optional true}
+         [:map [:total {:optional true} [:maybe number?]]]]]]
+      ;; :rfbs — not consumed by ->cash-flow-period; leave loose until we read it.
+      [:rfbs                 {:optional true} [:maybe any?]]
+      ;; :services / :others — we iterate items[] by :name/:price; total is summed.
+      [:services             {:optional true}
+       [:map
+        [:total {:optional true} [:maybe number?]]
+        [:items {:optional true}
+         [:sequential
+          [:map
+           [:name  {:optional true} [:maybe :string]]
+           [:price {:optional true} [:maybe number?]]]]]]]
+      [:others               {:optional true}
+       [:map
+        [:total {:optional true} [:maybe number?]]
+        [:items {:optional true}
+         [:sequential
+          [:map
+           [:name  {:optional true} [:maybe :string]]
+           [:price {:optional true} [:maybe number?]]]]]]]]]
     [:page_count {:optional true} :int]]]]
 
- :contract/notes   "The :details sub-trees (delivery/return/rfbs/services/others) are passed through with :any — we extract invoice_transfer and top-level numerics for reconciliation. Refine to strict schema when we start using more fields."
+ :contract/notes   "The :details sub-trees are narrowed to the shapes we actually consume in transform.clj:->cash-flow-period: :delivery/:return have {:amount, :*_services.total}; :services/:others have {:total, :items[]{:name, :price}}. :rfbs remains loose (any?) as it is not yet read. Additional fields from Ozon appear as map extras (warnings), not blockers."
  :contract/version 1}

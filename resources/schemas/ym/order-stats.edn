@@ -23,6 +23,7 @@
       [:shopSku   {:optional true} [:maybe :string]]
       [:marketSku {:optional true} [:maybe [:or :int :string]]]
       [:count     {:optional true} [:maybe :int]]
+      [:bidFee    {:optional true} [:maybe number?]]
       [:prices
        [:sequential
         [:map
