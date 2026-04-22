@@ -1,0 +1,55 @@
+{:endpoint/id          :ym/united-netting
+ :endpoint/marketplace :ym
+ :endpoint/api-path    "/v2/reports/united-netting/generate"
+ :endpoint/method      :post
+ :endpoint/description "Async 'united netting' report: authoritative line-item ledger of every money flow (sales, returns, commissions, advertising bids, promotion write-offs, subsidies, etc.) for a businessId and date range. Generation is async — POST returns {:result {:reportId :estimatedGenerationTime}}; poll /v2/reports/info/{reportId} until status=DONE; download result.file URL (ZIP containing one JSON `transaction_date.json`). Schema describes the unzipped/parsed inner JSON, shape {:rows [per-transaction-map]}. March 2026 live probe: 1672 rows with near-100% shopSku + transactionType presence. See specs/003-finance-row-completeness/spec.md US6 FR-017."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T22:00:00Z"
+  :reference-url "https://yandex.ru/dev/market/partner-api/doc/en/reference/reports/generateUnitedNettingReport"
+  :notes         "Hand-written from live probe: 1672-row fixture for March 2026 captured at test/resources/fixtures/ym-netting-2026-03.json. Every row key observed across 1672 rows is modelled here; all fields optional + nilable because YM fills the ledger-context subset that applies per transactionType (e.g. services ops often lack orderId; sales lack bankOrderId until payout). Only :rows itself is required at the response top level."}
+
+ :contract/response-schema
+ ;; Top-level envelope is the unzipped transaction_date.json: {:rows [...]}.
+ ;; Each row is one ledger line — sign on :transactionSum distinguishes
+ ;; credit/debit; :transactionType string enum distinguishes category.
+ ;; Dates arrive as "dd.MM.yyyy HH:mm" (transactionDate) or "dd.MM.yyyy"
+ ;; (bankOrderDate) — kept as :string; parsing is a transform-layer concern.
+ [:map
+  [:rows
+   [:sequential
+    [:map
+     [:businessId           {:optional true} [:maybe :int]]
+     [:model                {:optional true} [:maybe :string]]
+     [:partnerId            {:optional true} [:maybe :int]]
+     [:shopName             {:optional true} [:maybe :string]]
+     [:inn                  {:optional true} [:maybe :string]]
+     [:placementContract    {:optional true} [:maybe :string]]
+     [:promotionContract    {:optional true} [:maybe :string]]
+     [:transactionDate      {:optional true} [:maybe :string]]
+     [:transactionId        {:optional true} [:maybe [:or :int :string]]]
+     [:orderId              {:optional true} [:maybe [:or :int :string]]]
+     [:shopOrderId          {:optional true} [:maybe :string]]
+     [:orderCreationDate    {:optional true} [:maybe :string]]
+     [:orderDeliveryDate    {:optional true} [:maybe :string]]
+     [:claimNumber          {:optional true} [:maybe [:or :int :string]]]
+     [:orderType            {:optional true} [:maybe :string]]
+     [:shopSku              {:optional true} [:maybe :string]]
+     [:actId                {:optional true} [:maybe [:or :int :string]]]
+     [:actDate              {:optional true} [:maybe :string]]
+     [:offerOrServiceName   {:optional true} [:maybe :string]]
+     [:count                {:optional true} [:maybe :int]]
+     [:transactionSum       {:optional true} [:maybe number?]]
+     [:transactionType      {:optional true} [:maybe :string]]
+     [:transactionSource    {:optional true} [:maybe :string]]
+     [:paymentStatus        {:optional true} [:maybe :string]]
+     [:bonusAccountYearMonth {:optional true} [:maybe :string]]
+     [:comments             {:optional true} [:maybe :string]]
+     [:bankOrderDate        {:optional true} [:maybe :string]]
+     [:bankOrderId          {:optional true} [:maybe [:or :int :string]]]
+     [:bankSum              {:optional true} [:maybe number?]]]]]]
+
+ :contract/notes   "Observed transactionType enum (live 2026-03 data): Начисление (positive income: sales, subsidies), Удержание (negative: commissions, logistics), Возврат (negative: refunds), Списание (negative: promotion costs, bidFee-like), Возврат списания (positive: reversals). Not constrained to :enum so new categories warn (extras), not block. :transactionType + sign of :transactionSum is the classification key for reconciliation in US6."
+ :contract/version 1}

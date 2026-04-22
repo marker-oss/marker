@@ -6,10 +6,17 @@
             [analitica.marketplace.wb.api :as wb-api]
             [analitica.marketplace.ozon.api :as ozon-api]
             [analitica.marketplace.ym.api :as ym-api]
+            [analitica.marketplace.ym.client :as ym-client]
             [analitica.schema.validator :as schema-validator]
-            [analitica.util.time :as t])
-  (:import [java.time LocalDate]
-           [java.time.format DateTimeFormatter]))
+            [analitica.util.time :as t]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
+            [com.brunobonacci.mulog :as mu]
+            [jsonista.core :as j])
+  (:import [java.io ByteArrayOutputStream]
+           [java.time LocalDate]
+           [java.time.format DateTimeFormatter]
+           [java.util.zip ZipInputStream]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -288,6 +295,174 @@
     (db/insert-raw! :ym :finance from to data)
     (println (str "  Ingested YM finance: " (count data) " items"))
     (count data)))
+
+;; ---------------------------------------------------------------------------
+;; YM united-netting ingest (US6 / FR-017)
+;;
+;; The YM /v2/reports/united-netting/generate endpoint is async:
+;;   1. POST with {:businessId N :dateFrom D1 :dateTo D2} and query
+;;      `?format=JSON` → {:result {:reportId UUID :estimatedGenerationTime ms}}
+;;   2. Poll GET /v2/reports/info/{reportId} until status=DONE.
+;;      Observed production wait: 40+ min (estimatedGenerationTime is
+;;      often optimistic). Backoff is long: 30 → 60 → 120 → 300 → 600 …
+;;   3. Download result.file URL. For `format=JSON` the file is a ZIP
+;;      containing one JSON entry (observed name: transaction_date.json).
+;;
+;; Graceful-degrade policy (FR-017): neither timeout nor FAILED raises.
+;; Each outcome is mu/log'd and the fn returns nil so callers keep running.
+;; ---------------------------------------------------------------------------
+
+(def ^:private default-netting-backoff-seq
+  "Sleep seconds between polls. Total cap ≈ 45 min (7 attempts); most
+   production reports finish within the first 300 s entry but we budget
+   for the observed 40+ min outlier."
+  [30 60 120 300 600 600 600])
+
+(defn download-netting-zip
+  "Download the netting ZIP from `url`, extract the first `.json` entry,
+   and parse it. Returns the parsed map. Public so tests can `with-redefs`
+   around the network call."
+  [url]
+  (let [json-mapper (j/object-mapper {:decode-key-fn true})]
+    (with-open [conn-in (io/input-stream url)
+                zip-in  (ZipInputStream. conn-in)]
+      (loop []
+        (if-let [entry (.getNextEntry zip-in)]
+          (if (str/ends-with? (str/lower-case (.getName entry)) ".json")
+            (let [baos (ByteArrayOutputStream.)]
+              (io/copy zip-in baos)
+              (j/read-value
+                (String. (.toByteArray baos) "UTF-8")
+                json-mapper))
+            (recur))
+          (throw (ex-info "Netting ZIP contained no .json entry"
+                          {:url url})))))))
+
+(defn- generate-netting-report!
+  "POST /v2/reports/united-netting/generate → returns reportId (string/UUID)
+   or nil if the call did not yield one."
+  [client date-from date-to]
+  (let [business-id (some-> (:business-id client)
+                            (cond-> (string? (:business-id client))
+                              parse-long))
+        resp (ym-client/post-request client
+               "/v2/reports/united-netting/generate"
+               :query-params {:format "JSON"}
+               :body {:businessId business-id
+                      :dateFrom   date-from
+                      :dateTo     date-to})]
+    (get-in resp [:result :reportId])))
+
+(defn- poll-netting-report
+  "Poll /v2/reports/info/{report-id} using `backoff-seq` (seconds).
+   Returns {:status :done :file URL} on success, {:status :failed} on
+   FAILED, {:status :timeout} if the backoff-seq is exhausted without
+   a terminal state."
+  [client report-id backoff-seq]
+  (loop [[wait & more] backoff-seq]
+    (when wait
+      (Thread/sleep (* 1000 (long wait))))
+    (let [resp   (ym-client/get-request client
+                   (str "/v2/reports/info/" report-id))
+          result (get resp :result {})
+          status (get result :status)]
+      (cond
+        (= "DONE" status)
+        {:status :done :file (get result :file) :raw result}
+
+        (= "FAILED" status)
+        {:status :failed :raw result}
+
+        (seq more)
+        (recur more)
+
+        :else
+        {:status :timeout :raw result}))))
+
+(defn ingest-ym-netting!
+  "Ingest the YM united-netting report for [dateFrom, dateTo].
+
+   Async flow: POST generate → poll info until DONE → download ZIP →
+   extract the single `.json` entry → validate against
+   :ym/united-netting → persist to raw_data with source='ym' and
+   entity_type='netting'.
+
+   On terminal FAILED status or backoff exhaustion, logs via
+   `mu/log` (::netting-failed or ::netting-timeout) and returns nil —
+   the operator's wider ingest pipeline keeps going (FR-017).
+
+   Options:
+     :dateFrom    — ISO date string 'YYYY-MM-DD' (required)
+     :dateTo      — ISO date string 'YYYY-MM-DD' (required)
+     :backoff-seq — vector of seconds between polls. Defaults to
+                    [30 60 120 300 600 600 600]. Tests pass [0 0 …]
+                    to skip actual sleeps."
+  [client & {:keys [dateFrom dateTo backoff-seq]
+             :or   {backoff-seq default-netting-backoff-seq}}]
+  (when-not (and dateFrom dateTo)
+    (throw (ex-info "ingest-ym-netting! requires :dateFrom and :dateTo"
+                    {:dateFrom dateFrom :dateTo dateTo})))
+  (mu/log ::netting-start :date-from dateFrom :date-to dateTo)
+  (let [report-id (try
+                    (generate-netting-report! client dateFrom dateTo)
+                    (catch Throwable t
+                      (mu/log ::netting-generate-error
+                              :error (.getMessage t)
+                              :date-from dateFrom
+                              :date-to dateTo)
+                      nil))]
+    (if-not report-id
+      (do (mu/log ::netting-failed
+                  :reason :no-report-id
+                  :date-from dateFrom
+                  :date-to dateTo)
+          nil)
+      (let [poll (try
+                   (poll-netting-report client report-id backoff-seq)
+                   (catch Throwable t
+                     (mu/log ::netting-poll-error
+                             :error (.getMessage t)
+                             :report-id report-id)
+                     {:status :timeout}))]
+        (case (:status poll)
+          :done
+          (let [file-url (:file poll)]
+            (try
+              (let [parsed (download-netting-zip file-url)
+                    validated (schema-validator/with-validation
+                                :ym/united-netting
+                                (constantly parsed)
+                                #(db/insert-raw! :ym :netting dateFrom dateTo %))
+                    cnt (count (get validated :rows []))]
+                (mu/log ::netting-done
+                        :rows-count cnt
+                        :date-from dateFrom
+                        :date-to dateTo)
+                (println (str "  Ingested YM netting " dateFrom " .. " dateTo
+                              ": " cnt " rows"))
+                {:rows-count cnt})
+              (catch Throwable t
+                (mu/log ::netting-download-error
+                        :error (.getMessage t)
+                        :report-id report-id
+                        :file-url file-url)
+                nil)))
+
+          :failed
+          (do (mu/log ::netting-failed
+                      :report-id report-id
+                      :date-from dateFrom
+                      :date-to dateTo
+                      :raw (:raw poll))
+              nil)
+
+          :timeout
+          (do (mu/log ::netting-timeout
+                      :report-id report-id
+                      :date-from dateFrom
+                      :date-to dateTo
+                      :backoff-seq backoff-seq)
+              nil))))))
 
 ;; YM API surface was trimmed (US1, commit 1de89e6) to only the
 ;; authoritative /stats/orders endpoint. Stocks/sku-stats/prices no
