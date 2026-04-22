@@ -1,0 +1,58 @@
+{:endpoint/id          :wb/report-detail-by-period
+ :endpoint/marketplace :wb
+ :endpoint/api-path    "/api/v5/supplier/reportDetailByPeriod"
+ :endpoint/method      :get
+ :endpoint/description "Detailed financial report by period, paginated via rrdid. Primary source for WB finance aggregation — fields below match those consumed by src/analitica/marketplace/wb/transform.clj and used throughout src/analitica/domain/finance.clj."
+
+ :contract/source
+ {:kind          :manual
+  :author        "repiska"
+  :generated-at  "2026-04-22T18:00:00Z"
+  :reference-url "https://dev.wildberries.ru/openapi/reports"
+  :notes         "Hand-written MVP schema based on observed production responses (Jan-Apr 2026) and src/analitica/marketplace/wb/transform.clj:98-133. Required vs optional chosen conservatively — fields always present across 14,793 live rows are required; fields absent on non-sale/non-return operations are optional. Upgrade to :upstream-openapi once WB publishes a machine-readable spec at dev.wildberries.ru/openapi."}
+
+ :contract/response-schema
+ [:sequential
+  [:map
+   ;; Identity
+   [:rrd_id                  :int]
+   [:realizationreport_id    {:optional true} [:maybe :int]]
+   [:date_from               :string]
+   [:date_to                 :string]
+   ;; Product identification
+   [:sa_name                 {:optional true} [:maybe :string]]
+   [:nm_id                   {:optional true} [:maybe :int]]
+   [:barcode                 {:optional true} [:maybe :string]]
+   [:subject_name            {:optional true} [:maybe :string]]
+   [:brand_name              {:optional true} [:maybe :string]]
+   ;; Operation type
+   [:supplier_oper_name      :string]
+   [:doc_type_name           {:optional true} [:maybe :string]]
+   ;; Volume
+   [:quantity                {:optional true} [:maybe :int]]
+   ;; Pricing
+   [:retail_price            {:optional true} [:maybe number?]]
+   [:retail_amount           {:optional true} [:maybe number?]]
+   [:sale_percent            {:optional true} [:maybe number?]]
+   [:commission_percent      {:optional true} [:maybe number?]]
+   [:retail_price_withdisc_rub {:optional true} [:maybe number?]]
+   ;; WB commissions / rewards
+   [:ppvz_sales_commission   {:optional true} [:maybe number?]]
+   [:ppvz_reward             {:optional true} [:maybe number?]]
+   [:ppvz_kvw_prc            {:optional true} [:maybe number?]]
+   [:ppvz_spp_prc            {:optional true} [:maybe number?]]
+   [:ppvz_for_pay            {:optional true} [:maybe number?]]
+   ;; Returns / delivery
+   [:delivery_amount         {:optional true} [:maybe :int]]
+   [:return_amount           {:optional true} [:maybe :int]]
+   [:delivery_rub            {:optional true} [:maybe number?]]
+   ;; Penalties / fees
+   [:penalty                 {:optional true} [:maybe number?]]
+   [:additional_payment      {:optional true} [:maybe number?]]
+   [:deduction               {:optional true} [:maybe number?]]
+   [:storage_fee             {:optional true} [:maybe number?]]
+   [:acceptance              {:optional true} [:maybe number?]]
+   [:acquiring_fee           {:optional true} [:maybe number?]]]]
+
+ :contract/notes   "Live-verified against production data Jan-Apr 2026: 14,793 finance rows, 826 sales + 130 returns + 13,837 account-level operations (Логистика, Возмещение издержек, Хранение, etc.). See specs/002-calculation-audit/verdicts.md §B-001, §B-002 for empirical audit results."
+ :contract/version 1}
