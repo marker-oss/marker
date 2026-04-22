@@ -3,6 +3,30 @@
   (:require [analitica.marketplace.ym.client :as client]))
 
 ;; ---------------------------------------------------------------------------
+;; Orders — GET /campaigns/{campaignId}/orders
+;; ---------------------------------------------------------------------------
+
+(defn orders
+  "Fetch orders for the given date range.
+   Paginates automatically via page number."
+  [client date-from date-to]
+  (loop [page 1
+         result []]
+    (let [resp  (client/get-request client
+                  (str "/campaigns/" (:campaign-id client) "/orders")
+                  :query-params {:fromDate date-from
+                                 :toDate   date-to
+                                 :page     page
+                                 :pageSize 50})
+          items (get resp :orders [])
+          pager (get resp :pager {})]
+      (let [accumulated (into result items)]
+        (if (and (seq items)
+                 (< page (get pager :pagesCount 1)))
+          (recur (inc page) accumulated)
+          accumulated)))))
+
+;; ---------------------------------------------------------------------------
 ;; Order Stats — POST /campaigns/{campaignId}/stats/orders
 ;; Primary source for commission/cost breakdown per-order.
 ;;
@@ -35,5 +59,65 @@
           next-token (get-in resp [:result :paging :nextPageToken])]
       (let [accumulated (into result items)]
         (if (and (seq next-token) (seq items))
+          (recur next-token accumulated)
+          accumulated)))))
+
+;; ---------------------------------------------------------------------------
+;; Stocks — paginated via nextPageToken
+;; ---------------------------------------------------------------------------
+
+(defn- stocks-page
+  [client page-token]
+  (client/post-request client
+                       (str "/campaigns/" (:campaign-id client) "/offers/stocks")
+                       :query-params (when page-token {:page_token page-token})
+                       :body {}))
+
+(defn stocks
+  "Fetch all stock levels. Paginates automatically via nextPageToken."
+  [client]
+  (loop [page-token nil
+         result     []]
+    (let [resp       (stocks-page client page-token)
+          items      (get-in resp [:result :warehouses] [])
+          next-token (get-in resp [:result :paging :nextPageToken])]
+      (let [accumulated (into result items)]
+        (if (seq next-token)
+          (recur next-token accumulated)
+          accumulated)))))
+
+;; ---------------------------------------------------------------------------
+;; SKU Stats — POST, no pagination
+;; ---------------------------------------------------------------------------
+
+(defn sku-stats
+  "Fetch SKU-level statistics for the given date range."
+  [client date-from date-to]
+  (client/post-request client
+                       (str "/businesses/" (:business-id client) "/stats/skus")
+                       :body {:dateFrom date-from :dateTo date-to}))
+
+;; ---------------------------------------------------------------------------
+;; Prices — paginated via nextPageToken
+;; ---------------------------------------------------------------------------
+
+(defn- prices-page
+  [client page-token]
+  (let [params (cond-> {}
+                 page-token (assoc :page_token page-token))]
+    (client/get-request client
+                        (str "/campaigns/" (:campaign-id client) "/offer-prices")
+                        :query-params params)))
+
+(defn prices
+  "Fetch all offer prices. Paginates automatically via nextPageToken."
+  [client]
+  (loop [page-token nil
+         result     []]
+    (let [resp       (prices-page client page-token)
+          items      (get-in resp [:result :offers] [])
+          next-token (get-in resp [:result :paging :nextPageToken])]
+      (let [accumulated (into result items)]
+        (if (seq next-token)
           (recur next-token accumulated)
           accumulated)))))

@@ -64,3 +64,53 @@
                           (if (.isAfter ce end) end ce))]
           (recur (.plusDays chunk-end 1)
                  (conj chunks [(format-date cur) (format-date chunk-end)])))))))
+
+;; ---------------------------------------------------------------------------
+;; Period parsing for web UI
+;; ---------------------------------------------------------------------------
+
+(defn parse-period
+  "Parse period string from HTTP query parameter.
+   Supported formats:
+   - \"last-week\" → previous complete week (Monday to Sunday)
+   - \"last-7-days\" → last 7 days including today
+   - \"last-30-days\" → last 30 days including today
+   - \"this-month\" → current month from 1st to today
+   - \"YYYY-MM-DD,YYYY-MM-DD\" → custom date range
+   Returns [from to] as string vector, or throws ex-info on invalid input."
+  [s]
+  (cond
+    (nil? s)
+    (throw (ex-info "Period cannot be nil" {:period s}))
+
+    (= s "last-week")
+    (let [t (today)
+          dow (.getValue (.getDayOfWeek t))
+          last-monday (.minusDays t (+ 7 (dec dow)))
+          last-sunday (.plusDays last-monday 6)]
+      [(format-date last-monday) (format-date last-sunday)])
+
+    (= s "last-7-days")
+    (period :last-7-days)
+
+    (= s "last-30-days")
+    (period :last-30-days)
+
+    (= s "this-month")
+    (period :this-month)
+
+    (re-matches #"\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}" s)
+    (let [[from to] (clojure.string/split s #",")]
+      (try
+        (parse-date from)
+        (parse-date to)
+        [from to]
+        (catch Exception e
+          (throw (ex-info (str "Invalid date format in period: " s)
+                          {:period s :error (.getMessage e)})))))
+
+    :else
+    (throw (ex-info (str "Unknown period format: " s)
+                    {:period s
+                     :supported ["last-week" "last-7-days" "last-30-days"
+                                 "this-month" "YYYY-MM-DD,YYYY-MM-DD"]}))))
