@@ -424,6 +424,16 @@
         (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_barcode ON finance(barcode)"])
         (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_marketplace ON finance(marketplace)"])
         (println "Migrated finance: new PRIMARY KEY (marketplace, rrd_id)")))
+    ;; Migration (003-finance-row-completeness US0): add finance.ad_cost column
+    ;; if absent. YM `item.bidFee` and future Ozon promotion services populate
+    ;; this field; WB keeps it nil in MVP. Idempotent via PRAGMA check so
+    ;; init! can run on every app start without raising "duplicate column".
+    (let [info         (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                      {:builder-fn rs/as-unqualified-maps})
+          has-ad-cost? (some #(= "ad_cost" (:name %)) info)]
+      (when-not has-ad-cost?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN ad_cost REAL DEFAULT 0"])
+        (println "Migration: finance.ad_cost column added")))
     ;; Migrate region_sales: old schema had no PK → every rerun duplicated rows.
     ;; Add composite PK so INSERT OR REPLACE folds reruns.
     (let [info    (jdbc/execute! ds ["PRAGMA table_info(region_sales)"]

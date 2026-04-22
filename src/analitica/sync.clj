@@ -50,6 +50,7 @@
    (:delivery-amount f) (:return-amount f) (:delivery-cost f)
    (:for-pay f) (:penalty f) (:storage-fee f) (:acceptance f)
    (:additional-payment f) (:deduction f) (:acquiring-fee f)
+   (:ad-cost f)
    (name (or (:marketplace f) :wb)) (now-str)])
 
 (def finance-columns
@@ -61,6 +62,7 @@
    :delivery_amount :return_amount :delivery_cost
    :for_pay :penalty :storage_fee :acceptance
    :additional_payment :deduction :acquiring_fee
+   :ad_cost
    :marketplace :synced_at])
 
 (defn storage->row [s]
