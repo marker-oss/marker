@@ -43,31 +43,33 @@
        [:barcode :string]
        [:name :string]]]
      [:delivery_commission
-      [:map
-       [:amount number?]
-       [:bonus {:optional true} number?]
-       [:commission {:optional true} number?]
-       [:compensation {:optional true} number?]
-       [:price_per_instance number?]
-       [:quantity :int]
-       [:standard_fee number?]
-       [:bank_coinvestment {:optional true} number?]
-       [:stars {:optional true} number?]
-       [:pick_up_point_coinvestment {:optional true} number?]
-       [:total number?]]]
+      [:maybe
+       [:map
+        [:amount number?]
+        [:bonus {:optional true} number?]
+        [:commission {:optional true} number?]
+        [:compensation {:optional true} number?]
+        [:price_per_instance number?]
+        [:quantity :int]
+        [:standard_fee number?]
+        [:bank_coinvestment {:optional true} number?]
+        [:stars {:optional true} number?]
+        [:pick_up_point_coinvestment {:optional true} number?]
+        [:total number?]]]]
      [:return_commission
-      [:map
-       [:amount number?]
-       [:bonus {:optional true} number?]
-       [:commission {:optional true} number?]
-       [:compensation {:optional true} number?]
-       [:price_per_instance number?]
-       [:quantity :int]
-       [:standard_fee number?]
-       [:bank_coinvestment {:optional true} number?]
-       [:stars {:optional true} number?]
-       [:pick_up_point_coinvestment {:optional true} number?]
-       [:total number?]]]
+      [:maybe
+       [:map
+        [:amount number?]
+        [:bonus {:optional true} number?]
+        [:commission {:optional true} number?]
+        [:compensation {:optional true} number?]
+        [:price_per_instance number?]
+        [:quantity :int]
+        [:standard_fee number?]
+        [:bank_coinvestment {:optional true} number?]
+        [:stars {:optional true} number?]
+        [:pick_up_point_coinvestment {:optional true} number?]
+        [:total number?]]]]
      [:commission_ratio number?]]]]]
 
  :contract/notes   "Replaced /v3/finance/transaction/list as primary Ozon finance source on 2026-04-22 — transaction/list has 83% account-level service ops that can't be mapped to single articles. Live-verified: 133 rows/March, sales.amount SUM=266,994₽ matches cash_flow.orders_amount - returns - commissions within tolerance. See specs/002-calculation-audit/verdicts.md §B-005."
