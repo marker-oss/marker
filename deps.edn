@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
  :jvm-opts ["-Dfile.encoding=UTF-8"]
 
  :deps
