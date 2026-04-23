@@ -12,6 +12,7 @@ data/
 reports/
 .kiro/
 tmp_*
+.superpowers/
 check_*.clj
 test_safety_check*.clj
 start_web*.clj
