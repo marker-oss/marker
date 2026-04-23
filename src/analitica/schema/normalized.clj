@@ -13,9 +13,10 @@
             [analitica.schema.normalized.stocks :as stocks]
             [analitica.schema.normalized.cost-prices :as cost-prices]
             [analitica.schema.normalized.ad-stats :as ad-stats]
-            [analitica.schema.normalized.paid-storage :as paid-storage]))
+            [analitica.schema.normalized.paid-storage :as paid-storage]
+            [analitica.schema.normalized.region-sales :as region-sales]))
 
-(def tables #{:finance :sales :stocks :cost-prices :ad-stats :paid-storage})
+(def tables #{:finance :sales :stocks :cost-prices :ad-stats :paid-storage :region-sales})
 
 (def schemas
   {:finance      finance/FinanceRow
@@ -23,7 +24,8 @@
    :stocks       stocks/StocksRow
    :cost-prices  cost-prices/CostPriceRow
    :ad-stats     ad-stats/AdStatsRow
-   :paid-storage paid-storage/PaidStorageRow})
+   :paid-storage paid-storage/PaidStorageRow
+   :region-sales region-sales/RegionSalesRow})
 
 (defn valid?
   "Dispatch on table keyword. Returns true iff row satisfies the table's schema."
@@ -34,7 +36,8 @@
     :stocks       (stocks/valid? row)
     :cost-prices  (cost-prices/valid? row)
     :ad-stats     (ad-stats/valid? row)
-    :paid-storage (paid-storage/valid? row)))
+    :paid-storage (paid-storage/valid? row)
+    :region-sales (region-sales/valid? row)))
 
 (defn validate-rows
   "Dispatch on table keyword."
@@ -45,4 +48,5 @@
     :stocks       (stocks/validate-rows rows)
     :cost-prices  (cost-prices/validate-rows rows)
     :ad-stats     (ad-stats/validate-rows rows)
-    :paid-storage (paid-storage/validate-rows rows)))
+    :paid-storage (paid-storage/validate-rows rows)
+    :region-sales (region-sales/validate-rows rows)))

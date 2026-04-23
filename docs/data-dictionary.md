@@ -389,3 +389,56 @@ One row = one (date, barcode, warehouse, marketplace) quadruple.
 - **Ozon per-barcode storage doesn't exist** — Ozon storage is reported only at period level in `cash_flow_periods.storage`. This table stays empty for Ozon.
 - **YM has no per-SKU storage API** — same gap. YM storage is fully absent at per-article grain.
 - **Volume units** — raw API returns liters; no conversion documented.
+
+## region_sales
+
+### Purpose
+
+Per-region, per-period sales aggregates. Feeds Geography report.
+This is a pre-aggregated snapshot — one row per (period, article, region, city)
+rather than per-event.
+
+### Grain
+
+One row = one (date_from, date_to, nm_id, region, city) tuple.
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| WB | `/api/v5/supplier/reportSalesByRegion` | `regionName` → `region`, `cityName` → `city`, `countryName` → `country`, `quantity` → `qty`, `priceWithDisc` → `sum-price`, `ppvz_for_pay_sum` → `sum-price-prc`, `nmID` → `nm-id` |
+| Ozon | — | (not currently synced per-region; rows stay empty for Ozon) |
+| YM | — | (not currently synced per-region) |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `nm-id` | int/double | no | — | WB article numeric id (0 = rollup) |
+| `article` | `:string` | no | — | seller article (empty = rollup) |
+| `region` | `:string` | no | — | federal subject name |
+| `city` | `:string` | no | — | city name |
+| `date-from` | `:string` | no | ISO date | period start |
+| `date-to` | `:string` | no | ISO date | period end |
+| `country` | `:string` | yes | — | country (usually `Россия`) |
+| `fo` | `:string` | yes | — | federal district (округ) |
+| `qty` | int/double | yes | units | units sold in region |
+| `sum-price` | int/double | yes | RUB | gross revenue in region |
+| `sum-price-prc` | int/double | yes | RUB | seller payout in region |
+| `synced-at` | `:string` | yes | ISO timestamp | last sync |
+
+### Invariants
+
+- `qty >= 0` when present.
+- PK `(date_from, date_to, nm_id, region, city)`.
+
+### Edge cases
+
+- **Empty region/city rows** exist for period-rollup aggregations.
+- **Cross-period overlaps** — consumer must filter by exact `date_from`/`date_to` match, not range.
+
+### Known gaps
+
+- **Only WB supplies regional data.** Ozon / YM regional cuts would require separate endpoints; currently out of scope.
+- **No marketplace column** — table is implicitly WB-only. Future MP coverage should add this.
+- **No mapping to standardized region codes** (e.g. OKATO); strings are free-form from API.
