@@ -432,4 +432,344 @@ profit_per_sale  := net_profit   / (sales_qty − returns_qty)     — приб�
 - [specs/002-calculation-audit/verdicts.md](../specs/002-calculation-audit/verdicts.md) — история баг-гипотез по формулам, принятые решения.
 - [specs/001-openapi-schemas/](../specs/001-openapi-schemas/) — формализация API-контрактов (Malli + OpenAPI).
 - [docs/vision.md](./vision.md) — границы продукта (особенно §13 про налоги).
+
+---
+
+## Unit Economics
+
+The Unit Economics report decomposes finance-row data **per article** to
+answer: "is this article making or losing money, and where does the
+margin leak?" All metrics build on L1 fields in
+[`data-dictionary.md#finance`](data-dictionary.md#finance),
+[`data-dictionary.md#paid_storage`](data-dictionary.md#paid_storage),
+[`data-dictionary.md#ad_stats`](data-dictionary.md#ad_stats), and
+[`data-dictionary.md#cost_prices`](data-dictionary.md#cost_prices).
+
+Implementation: `src/analitica/domain/unit_economics.clj` `calculate`
+(row-level) and `totals` (aggregate). Verification tests:
+`test/analitica/domain/unit_economics_canon_test.clj`.
+
+Metrics in this section are grouped to avoid duplicating nearly-identical
+block templates. Each group has one 5-point block covering its members.
+
+### UE.1 — Article-level operations and units
+
+**Members:** `sales-qty`, `returns-qty`, `ops`, `net-qty`, `total-ops`.
+
+**Formula**
+
+```
+sales-qty[a]   := SUM(quantity)      WHERE operation ∈ {sale-kind}      AND article=a
+returns-qty[a] := SUM(quantity)      WHERE operation ∈ {return-kind}    AND article=a
+ops[a]         := sales-qty + returns-qty
+net-qty[a]     := max(1, sales-qty − returns-qty)    — clamped lower bound
+total-ops[a]   := max(1, ops)                        — clamped lower bound
+```
+
+**Economic justification.** Buyouts and returns are both physical events
+that cost logistics + storage; both count toward `ops`. `net-qty` (what
+the buyer kept) is the denominator for per-unit amortization of per-sale
+costs (COGS, payout). `total-ops` is the denominator for per-operation
+costs (logistics spread across shipments + returns). Clamping to `max(1, …)`
+preserves non-nan output when an article has only returns or no data.
+
+**Inputs**
+
+- `finance.operation`, `finance.quantity`, `finance.article` — see
+  [`data-dictionary.md#finance`](data-dictionary.md#finance).
+- The `{sale-kind}` / `{return-kind}` sets are defined in
+  [`data-dictionary.md#finance` → Field dictionary → `operation`](data-dictionary.md#finance).
+
+**Edge cases**
+
+- Article with only returns: `sales-qty = 0`, `returns-qty > 0`,
+  `net-qty = 1` (clamped), `total-ops = returns-qty`. Per-unit metrics
+  still return finite values.
+- Ozon per-service rows have `quantity = 0` or `nil`; they contribute 0
+  to these sums and do not distort counts.
+- **Known gap:** Current code clamps `net-qty` using
+  `(max 1 (- sales-qty returns-qty))` which **hides full-return scenarios**
+  — an article where `returns-qty > sales-qty` shows as `net-qty = 1`
+  even though net physical throughput is negative. Documented, not fixed
+  in Phase 2.
+
+**Verification.** `unit_economics_canon_test.clj` ›
+`group-1-qty-and-ops`:
+
+- Given 5 sales + 2 returns for article `A`, asserts
+  `sales-qty = 5, returns-qty = 2, ops = 7, net-qty = 3, total-ops = 7`.
+- Given 0 sales + 0 returns: `net-qty = 1, total-ops = 1` (clamp kicks in).
+
+---
+
+### UE.2 — Per-article monetary pass-throughs
+
+**Members:** `:revenue`, `:wb-commission`, `:wb-reward`, `:logistics`,
+`:storage`, `:acceptance`, `:penalties`, `:acquiring`, `:deduction`,
+`:additional`, `:for-pay`, `:total-cost`, `:spp-amount`.
+
+**Formula.** Each is `SUM(<finance.field>) WHERE article=a` over the period,
+filtered by operation where applicable (see per-field notes below). UE does
+not recompute these — they are pulled directly from `finance/by-article`
+(which applies the same semantics as the §Finance section of this document).
+
+| Metric | Source |
+|---|---|
+| `:revenue`         | `SUM(retail-amount) WHERE operation ∈ sale-kind` |
+| `:wb-commission`   | `SUM(wb-commission)` (all rows, includes returns sign-preserved) |
+| `:wb-reward`       | `SUM(wb-reward)` |
+| `:logistics`       | `SUM(delivery-cost)` |
+| `:storage`         | `SUM(storage-fee) + paid_storage.cost` (merged per article — see §Finance) |
+| `:acceptance`      | `SUM(acceptance)` |
+| `:penalties`       | `SUM(penalty)` |
+| `:acquiring`       | `SUM(acquiring-fee)` |
+| `:deduction`       | `SUM(deduction)` |
+| `:additional`      | `SUM(additional-payment)` |
+| `:for-pay`         | `SUM(for-pay) WHERE sale-kind − SUM(for-pay) WHERE return-kind` — see §mp_payout |
+| `:total-cost`      | `SUM(cost-price × quantity) WHERE operation ∈ sale-kind` |
+| `:spp-amount`      | derived in `finance/by-article` as `for_pay − retail_with_discount` on sales (WB only) |
+
+**Economic justification.** Each pass-through mirrors the Finance section's
+per-article breakdown. UE is a *decomposition* report, not a redefinition:
+it must agree with Finance exactly for these rows.
+
+**Inputs** — see Finance Model §3.2–3.8 in this document; rows from
+[`data-dictionary.md#finance`](data-dictionary.md#finance),
+[`data-dictionary.md#paid_storage`](data-dictionary.md#paid_storage),
+[`data-dictionary.md#cost_prices`](data-dictionary.md#cost_prices).
+
+**Edge cases.** All nil-tolerant: missing field → 0 in the sum.
+`:spp-amount` is nil for Ozon/YM (see Finance §3.4 known gap).
+`:total-cost` is 0 when cost_prices has no entry for `(article, barcode)` —
+the UE report prints a "cost not loaded" warning in this case.
+
+**Verification.** `unit_economics_canon_test.clj` ›
+`group-2-monetary-passthroughs`: on a fixture with 1 sale of 100 at
+commission 15 / logistics 5 / storage 2, asserts UE's per-article totals
+equal the Finance totals byte-for-byte.
+
+---
+
+### UE.3 — Derived total: `total-wb-costs`
+
+**Formula**
+
+```
+total-wb-costs[a] := (wb-reward + logistics + storage +
+                     acceptance + penalties + acquiring + deduction)
+```
+
+*Note:* `:additional` is excluded (it's a CREDIT to the seller, not a
+cost); `:ad-spend` is tracked separately (see UE.5); `:total-cost` is COGS,
+not a marketplace cost.
+
+**Economic justification.** This is the "all marketplace-side bites" figure
+— everything the MP took from the seller in one line. It's the numerator
+of `wb-cost-pct`. Excluding `:additional` prevents double-counting
+(additional reduces the cost, not adds to it).
+
+**Inputs.** All seven UE.2 pass-through fields, all from
+[`data-dictionary.md#finance`](data-dictionary.md#finance).
+
+**Edge cases.** Sum-of-zeros returns 0. No divisor here, so no zero-div
+concerns.
+
+**Verification.** `unit_economics_canon_test.clj` › `group-3-total-mp-cost`:
+asserts `total-wb-costs = wb-reward + logistics + storage + acceptance
++ penalties + acquiring + deduction` on a manually-constructed row with
+each field non-zero.
+
+---
+
+### UE.4 — Article profit (absolute)
+
+**Formula**
+
+```
+profit[a] := for-pay
+           − total-cost
+           − logistics
+           − storage
+           − penalties
+           − acceptance
+           − deduction
+           − ad-spend
+           + additional            ← additional is a credit, add back
+```
+
+**Economic justification.** Profit = cash in (MP payout) − direct variable
+costs. `for-pay` is already net of `:wb-commission`, `:wb-reward`,
+`:acquiring`, `:spp-amount` at the MP side (see canonical Finance Model
+§3.4). Re-subtracting them would double-count. `:total-cost` (COGS) is
+subtracted because it's from the 1C side, not MP side. `:logistics /
+:storage / :penalties / :acceptance / :deduction` are MP costs NOT already
+inside `:for-pay` on WB (they arrive as separate `finance_rows` with
+`for_pay = 0`; see `wb-logistics-on-separate-rows` observation in memory).
+`:additional` is a seller credit (WB occasionally refunds something) —
+added. `:ad-spend` is allocated per article from `ad_stats` (WB) or the
+`ad-cost` column of `finance_rows` (Ozon/YM).
+
+**Inputs.**
+
+- `for-pay` from [`data-dictionary.md#finance`](data-dictionary.md#finance).
+- `total-cost` from [`data-dictionary.md#cost_prices`](data-dictionary.md#cost_prices) × quantity.
+- `ad-spend` from [`data-dictionary.md#ad_stats`](data-dictionary.md#ad_stats) (WB) or `finance.ad-cost` (all MP).
+- Other per-article fields from [`data-dictionary.md#finance`](data-dictionary.md#finance).
+
+**Edge cases.**
+
+- `additional = 0` most of the time; safe nil → 0.
+- `ad-spend` nil when ad_stats not synced → treated as 0; margin over-states.
+- Negative `profit` is valid (loss-making article).
+- **Known gap:** Code computes profit **without subtracting `:acquiring`**.
+  The canonical Finance §3.10 says `gross_profit = mp_payout − cogs −
+  logistics − storage − acceptance − penalties − deduction + additional`.
+  `mp_payout = for_pay_sale − for_pay_return` already subtracts acquiring
+  at the row level via the MP API, so UE is correct not to double-subtract.
+  Verified: UE profit matches P&L net profit on single-article fixtures
+  (see Phase-2 test `profit-matches-pnl-single-article`).
+
+**Verification.** `unit_economics_canon_test.clj` › `group-4-profit`:
+asserts profit formula on a hand-built fixture covering all 9 summands;
+asserts agreement with P&L `net-profit` on a single-article period.
+
+---
+
+### UE.5 — Ad spend allocation
+
+**Formula**
+
+```
+ad-spend[a] := ad-spend-by-article[a] OR 0
+```
+
+where `ad-spend-by-article` is produced by
+`analitica.db/ad-spend-by-article` from `ad_stats` (WB) or `finance.ad-cost`
+(Ozon/YM), allocated per article per the rules in §Finance §3.9.
+
+**Economic justification.** Advertising is a marketing cost attributable
+to the article it drove orders to. For campaigns covering multiple
+articles, the allocation is proportional to revenue per article within the
+campaign (spec 003 US5 migration). If no allocation is available (nil),
+we treat `ad-spend = 0` — this understates costs but is preferable to
+dropping the article from the report.
+
+**Inputs.** `ad_stats` (WB) per
+[`data-dictionary.md#ad_stats`](data-dictionary.md#ad_stats); `finance.ad-cost`
+per [`data-dictionary.md#finance`](data-dictionary.md#finance).
+
+**Edge cases.**
+
+- Article with ads but no sales: appears in UE with `profit = −ad-spend`.
+- Ozon/YM: ad-spend comes from `finance.ad-cost` directly (no per-campaign
+  breakdown stored).
+- **Known gap (B-003, legacy).** Multi-article WB campaigns with unresolved
+  apps[].nm currently go to `nm_id=0` in `ad_stats` — spec 003 US5
+  migrated to proportional-by-revenue, but historical rows may still use
+  first-article allocation.
+
+**Verification.** `unit_economics_canon_test.clj` › `group-5-ad-spend`:
+asserts article with ad-spend-by-article = {A 100} has `ad-spend = 100`,
+no-entry article has `ad-spend = 0`, sum across articles equals total
+ad_stats spend in the period.
+
+---
+
+### UE.6 — Per-unit amortization (families)
+
+**Members:** `:revenue-per-unit`, `:reward-per-unit`, `:cost-per-unit`,
+`:acquiring-per-unit` (denominator = `sales-qty`); `:logistics-per-unit`,
+`:storage-per-unit`, `:accept-per-unit`, `:payout-per-unit`,
+`:profit-per-unit` (denominator = `net-qty`); `:logistics-per-op`
+(denominator = `total-ops`).
+
+**Formula**
+
+```
+per-unit metric := metric-total / denominator        [round to 2 dp]
+```
+
+Denominator depends on the metric's cost category:
+
+| Category | Denominator | Metrics |
+|---|---|---|
+| per-sale amortized | `sales-qty` | revenue, reward, cost, acquiring |
+| per-kept-unit amortized | `net-qty` (sales − returns, clamped ≥1) | logistics, storage, acceptance, payout, profit |
+| per-operation amortized | `total-ops` (sales + returns, clamped ≥1) | logistics-per-op |
+
+All divisions use `math/safe-div` (returns `0` on divide-by-zero) and
+`math/round2`.
+
+**Economic justification.** Different costs attach to different events:
+
+- *Per-sale* — revenue and commissions realize at sale (regardless of
+  later returns). Cost-of-goods commits at sale too (the unit left the
+  warehouse). Acquiring is per-transaction.
+- *Per-kept-unit* — logistics/storage aren't "returned" when a buyer
+  returns; but their per-unit burden on the seller's margin is measured
+  against the *units the buyer kept* (net). Payout per unit and profit
+  per unit use the same denominator because they describe "what you
+  earned per successful delivery."
+- *Per-operation* — "logistics-per-op" answers "what does one shipment
+  (outbound or return) cost me on this article" — useful for benchmarking
+  MP rate cards.
+
+`logistics` intentionally has **two** per-unit views (`-per-op` and
+`-per-unit`) because the question they answer differs.
+
+**Inputs.** All UE.2 pass-throughs + UE.1 counts.
+
+**Edge cases.**
+
+- Division-by-zero prevented by `safe-div` → `0` output (not `nil`).
+- Clamped denominators mean `per-unit` numbers for an empty-article row
+  are 0 / 1 = 0 — safe but meaningless; report consumers should filter.
+- Rounding to 2 dp can mask sub-kopek differences in rec reconcile.
+
+**Verification.** `unit_economics_canon_test.clj` › `group-6-per-unit`:
+asserts each per-unit metric equals its total divided by the correct
+clamped denominator on a fixture with 5 sales / 2 returns / known totals.
+
+---
+
+### UE.7 — Percentage metrics
+
+**Members:** `:buyout-rate`, `:margin-pct`, `:wb-cost-pct`, `:cogs-pct`,
+`:logistics-pct`, `:drr-pct`.
+
+**Formula**
+
+```
+buyout-rate[a]  := sales-qty / ops × 100               (via math/percentage)
+margin-pct[a]   := profit / revenue × 100
+wb-cost-pct[a]  := total-wb-costs / revenue × 100
+cogs-pct[a]     := total-cost / revenue × 100
+logistics-pct[a]:= logistics / revenue × 100
+drr-pct[a]      := ad-spend / revenue × 100
+```
+
+**Economic justification.**
+
+- `buyout-rate` = conversion of ordered to kept. Core marketplace KPI.
+- `margin-pct` = operational margin (post all direct costs and ads).
+- `*-pct` share-of-revenue metrics isolate where margin leaks go.
+- `drr-pct` ("ДРР" — доля рекламных расходов) — marketing spend as %
+  revenue, standard Russian marketplace KPI.
+
+**Inputs.** All derive from UE.1 counts + UE.2 monetary + UE.3/4 totals.
+
+**Edge cases.**
+
+- `ops = 0` → `buyout-rate = nil` (division by zero handled in
+  `math/percentage`).
+- `revenue = 0` → all `*-pct` metrics = nil (meaningful: no denominator).
+- Clamps in UE.1 do not leak here — `percentage` uses raw counts.
+- Negative `profit` yields negative `margin-pct` (valid: loss-making
+  article).
+
+**Verification.** `unit_economics_canon_test.clj` › `group-7-percentages`:
+asserts each %-metric equals numerator / denominator × 100 on a
+non-trivial fixture, and returns nil on zero-denominator fixtures.
+
+---
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
