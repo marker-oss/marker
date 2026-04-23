@@ -57,15 +57,25 @@
     (is (= (count rows) (count ok)))))
 
 ;; ---------------------------------------------------------------------------
-;; US2: SC-002 reconciliation — SUM(:ad-cost) ≈ SUM(raw bidFee) within ±1 ₽.
-;; Expected per fixture: ~88,357 ₽ bidFee sum for March 2026 (probe 2026-04-22).
+;; Ad-cost reconciliation — SUM(:ad-cost) ≈ SUM(AUCTION_PROMOTION commission).
+;;
+;; Historical note: this test used to compare against SUM(bidFee). That was
+;; wrong — bidFee is the seller's bid CAP (max they'd agree to pay), while
+;; the real ad-auction charge is `commissions[AUCTION_PROMOTION].actual`
+;; (Vickrey second-price clearing). On live data bidFee outstrips
+;; AUCTION_PROMOTION ~350×. Corrected 2026-04-24.
 ;; ---------------------------------------------------------------------------
 
-(deftest ad-cost-sum-matches-fixture-bidfee
+(deftest ad-cost-sum-matches-fixture-auction-promotion
   (let [orders          (load-fixture)
         rows            (transform/->finance-from-order-stats orders)
         actual-ad-cost  (double (reduce + 0 (keep :ad-cost rows)))
-        expected-bidfee (double (reduce + 0 (keep :bidFee (mapcat :items orders))))]
-    (is (< (Math/abs (- actual-ad-cost expected-bidfee)) 1.0)
-        (format "SUM :ad-cost (%.2f) != SUM bidFee (%.2f), delta %.2f"
-                actual-ad-cost expected-bidfee (- actual-ad-cost expected-bidfee)))))
+        expected-ap     (double
+                          (reduce + 0
+                            (for [o orders
+                                  c (:commissions o)
+                                  :when (= "AUCTION_PROMOTION" (:type c))]
+                              (or (:actual c) 0))))]
+    (is (< (Math/abs (- actual-ad-cost expected-ap)) 1.0)
+        (format "SUM :ad-cost (%.2f) != SUM AUCTION_PROMOTION (%.2f), delta %.2f"
+                actual-ad-cost expected-ap (- actual-ad-cost expected-ap)))))

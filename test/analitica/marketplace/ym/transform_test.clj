@@ -125,34 +125,44 @@
 ;; See specs/003-finance-row-completeness/data-model.md §5, spec.md FR-005/006/019.
 ;; ---------------------------------------------------------------------------
 
-(deftest bidfee-extracted-per-item
-  (testing "multi-item order → each FinanceRow gets its own bidFee (no redistribution)"
+;; ---------------------------------------------------------------------------
+;; Ad-cost semantic correction (2026-04-24):
+;;   Earlier design mistook `item.bidFee` (seller's bid CAP) for the actual
+;;   ad-auction commission. The true charge is `commissions[AUCTION_PROMOTION]
+;;   .actual`, which is the Vickrey second-price clear — on live data bidFee
+;;   was ~351× larger than AUCTION_PROMOTION. :ad-cost now carries
+;;   AUCTION_PROMOTION split across items, not bidFee.
+;; ---------------------------------------------------------------------------
+
+(deftest ad-commission-split-across-items
+  (testing "AUCTION_PROMOTION commission split evenly across items of an order"
     (let [order {:id 1 :status "DELIVERED" :creationDate "2026-03-01"
-                 :commissions [{:type "FEE" :actual 60}]
+                 :commissions [{:type "FEE" :actual 60}
+                               {:type "AUCTION_PROMOTION" :actual 4.0}]
                  :items [{:shopSku "A" :bidFee 100 :prices [{:type "BUYER" :total 500}]}
                          {:shopSku "B" :bidFee 200 :prices [{:type "BUYER" :total 800}]}]}
           rows (transform/->finance-from-order-stats [order])]
       (is (= 2 (count rows)))
-      (is (= 100 (:ad-cost (first rows))) "FR-019: item A keeps its own bidFee")
-      (is (= 200 (:ad-cost (second rows))) "FR-019: item B keeps its own bidFee")
-      ;; Canonical: :for-pay = BUYER − Σcommissions. bidFee is tracked in
-      ;; :ad-cost and subtracted once via UE.4 profit formula. Earlier
-      ;; design double-subtracted bidFee (here AND via ad-spend-by-article);
-      ;; fixed 2026-04-23 Phase-2 verification.
-      (is (= 470.0 (:for-pay (first rows))) "500 − 30")
+      (is (= 2.0 (:ad-cost (first rows)))  "AUCTION_PROMOTION 4 / 2 items = 2")
+      (is (= 2.0 (:ad-cost (second rows))) "item B gets the other half")
+      ;; :for-pay = BUYER − non-ad commissions (FEE 60 / 2 = 30 each).
+      ;; AUCTION_PROMOTION is NOT in all-comm anymore — stays only in :ad-cost.
+      (is (= 470.0 (:for-pay (first rows)))  "500 − 30 (FEE only, AUCTION_PROMO separate)")
       (is (= 770.0 (:for-pay (second rows))) "800 − 30"))))
 
-(deftest cancelled-before-processing-bidfee-stays-on-ad-cost
-  (testing "CANCELLED_BEFORE_PROCESSING with bidFee → zero for-pay + ad-cost on ad-cost only"
+(deftest cancelled-order-ad-commission-is-zero
+  (testing "Cancelled-before-processing → no AUCTION_PROMOTION commission → ad-cost = 0"
+    ;; Yandex doesn't charge AUCTION_PROMOTION on orders that never got
+    ;; delivered (verified 2026-04-24: 78 CANCELLED_IN_DELIVERY orders had
+    ;; bidFee sum 74,685 but AUCTION_PROMOTION sum 0.00). The item's bidFee
+    ;; is just the reserved bid cap — never charged.
     (let [order {:id 2 :status "CANCELLED_BEFORE_PROCESSING" :creationDate "2026-03-01"
-                 :commissions []
+                 :commissions []      ; no AUCTION_PROMOTION — not charged
                  :payments []
                  :items [{:shopSku "X" :bidFee 500
                           :prices [{:type "BUYER" :total 0}]}]}
           rows (transform/->finance-from-order-stats [order])
           row (first rows)]
       (is (= "cancelled" (:operation row)))
-      (is (= 500 (:ad-cost row)) "bidFee preserved even when order cancelled")
-      ;; for-pay = 0 (BUYER=0 − commissions=0). bidFee lives in :ad-cost;
-      ;; profit impact via UE.4 formula stays at −500.
+      (is (= 0.0 (:ad-cost row)) "no AUCTION_PROMOTION commission ⇒ no ad-cost")
       (is (= 0.0 (:for-pay row)) "0 − 0 = 0"))))

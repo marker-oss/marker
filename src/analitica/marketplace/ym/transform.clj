@@ -207,11 +207,27 @@
         delivery    (/ (or (commission-value commissions "DELIVERY_TO_CUSTOMER") 0) n-items)
         acquiring   (/ (or (commission-value commissions "PAYMENT_TRANSFER") 0) n-items)
         agency      (/ (or (commission-value commissions "AGENCY") 0) n-items)
-        ;; Sum of ALL commission types (known + future) for for-pay netting.
-        ;; Named types above are kept for attribution to specific FinanceRow
-        ;; fields; the generic sum guarantees for-pay stays correct when YM
-        ;; introduces new commission types (e.g. SORTING, seen once in live data).
-        all-comm    (/ (reduce + 0.0 (map #(or (:actual %) 0) commissions)) n-items)
+        ;; AUCTION_PROMOTION is the REAL ad-auction commission (Vickrey
+        ;; second-price clear), usually 2–4 ₽ per order. Keep it out of
+        ;; `all-comm` so that ad-cost isn't subtracted twice (once inside
+        ;; for-pay via commissions, once again as :ad-cost in the profit
+        ;; formula). Attribution: → :ad-cost below.
+        ;;
+        ;; Do NOT use `:bidFee` at the item level for :ad-cost — it's the
+        ;; seller's bid-cap (max they'd pay), not the clearing price. We
+        ;; observed bidFee 196k vs AUCTION_PROMOTION 559 on the same data
+        ;; (351× inflation). Spec-003 mistook the cap for actual charge;
+        ;; corrected here 2026-04-24 after P&L verification.
+        ad-commission (/ (double (or (commission-value commissions "AUCTION_PROMOTION") 0)) n-items)
+        ;; Sum of all commission types EXCEPT AUCTION_PROMOTION for for-pay
+        ;; netting. Other named types above (FEE, DELIVERY, etc) stay in
+        ;; all-comm. Generic sum keeps for-pay correct when YM adds new
+        ;; commission types (e.g. SORTING, seen once in live data).
+        all-comm    (/ (reduce + 0.0
+                         (map #(or (:actual %) 0)
+                              (filter #(not= "AUCTION_PROMOTION" (:type %))
+                                      commissions)))
+                       n-items)
         ;; YM subsidies: Yandex pays seller to cover Yandex-side discounts
         ;; (SUBSIDY type) and cashbacks (YANDEX_CASHBACK). ACCRUAL adds to
         ;; seller payout; DEDUCTION reverses on returns / partial delivery.
@@ -232,13 +248,10 @@
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   qty         (or (get item :count) 1)
-                  ;; FR-006/019: bidFee strictly per-item, no redistribution
-                  bid-fee     (or (:bidFee item) 0)
-                  ;; :for-pay = BUYER − Σcommissions + net_subsidies.
-                  ;; bidFee is NOT subtracted here — it's stored in
-                  ;; :ad-cost and the UE.4 profit formula subtracts
-                  ;; :ad-spend once. Subsidies are Yandex paying seller
-                  ;; to cover Yandex-side discounts (see binding above).
+                  ;; :for-pay = BUYER − Σ(non-ad commissions) + net_subsidies.
+                  ;; AUCTION_PROMOTION (ad) is held separately in :ad-cost
+                  ;; so the UE.4 profit formula subtracts it once; the
+                  ;; other commissions stay inside for-pay.
                   net-pay     (+ (- (or buyer-price 0) all-comm)
                                  subsidy-net)]
               {:marketplace        :ym
@@ -274,7 +287,7 @@
                :additional-payment nil
                :deduction          nil
                :acquiring-fee      acquiring
-               :ad-cost            bid-fee}))
+               :ad-cost            ad-commission}))
           items)))
 
 (defn ->finance-from-order-stats
