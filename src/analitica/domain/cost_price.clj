@@ -1,7 +1,18 @@
 (ns analitica.domain.cost-price
+  "Cost-price lookup with in-memory caches fed by a CostSource.
+
+   Public API:
+     (get-price article)
+     (get-price article barcode)      — with fuzzy fallback (see below)
+     (set-prices-from-rows! rows)     — replace in-memory caches from
+         a canonical row seq. Called by `analitica.costsource/ingest!`.
+     (load-from-1c [path])            — convenience for CLI/boot that
+         delegates to csv1c provider + set-prices-from-rows!. Thin
+         wrapper kept for backward compatibility with existing callers."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.edn :as edn]
+            [analitica.costsource.csv1c :as csv1c]
             [analitica.report.table :as table]))
 
 ;; Two maps: by article (e.g. "3452/Бежевый" -> 1590.0) and by barcode
@@ -9,122 +20,45 @@
 (defonce ^:private cost-by-barcode (atom {}))
 
 ;; ---------------------------------------------------------------------------
-;; 1C CSV parser
+;; Cache population (shared by all providers)
 ;; ---------------------------------------------------------------------------
 
-(defn- parse-russian-number
-  "Parse Russian number format: '1,590' -> 1590.0, '22.000' -> 22.0"
-  [s]
-  (when (and s (not= (str/trim s) ""))
-    (-> s
-        str/trim
-        (str/replace "\"" "")
-        (str/replace " " "")
-        (str/replace "," "")
-        Double/parseDouble)))
-
-(defn- extract-article-number
-  "Extract article number from 1C nomenclature: 'Платье арт. 3452' -> '3452'"
-  [nom]
-  (when nom
-    (let [m (re-find #"арт\.\s*(\S+)" nom)]
-      (when m (second m)))))
-
-(defn- extract-color
-  "Extract color from 1C characteristic: 'Бежевый, 48, 100% Полиэстер' -> 'Бежевый'"
-  [char-str]
-  (when (and char-str (not= (str/trim char-str) ""))
-    (-> char-str
-        str/trim
-        (str/split #",")
-        first
-        str/trim)))
-
-(defn- make-wb-article
-  "Construct WB-style article from 1C data: '3452' + 'Бежевый' -> '3452/Бежевый'"
-  [art-num color]
-  (if (and art-num color (not= color ""))
-    (str art-num "/" color)
-    art-num))
-
-(defn- parse-1c-csv-line
-  "Parse a data line from 1C units.csv.
-   Format: Склад,,,Номенклатура,,Характеристика,Штрихкод,Цена,Остаток
-   Characteristic field may contain commas inside quotes."
-  [line]
-  (when (and line
-             (not (str/starts-with? (str/trim line) "Параметры"))
-             (not (str/starts-with? (str/trim line) "Отбор"))
-             (not (str/starts-with? (str/trim line) "Склад,,,Номенклатура"))
-             (not (str/starts-with? (str/trim line) "Итого"))
-             (not (str/blank? (str/replace line "," ""))))
-    ;; Parse CSV respecting quoted fields
-    (let [parts (loop [s       line
-                       fields  []
-                       current ""]
-                  (if (empty? s)
-                    (conj fields current)
-                    (let [c (first s)]
-                      (cond
-                        (= c \") ; start quoted field
-                        (let [end-idx (str/index-of s "\"" 1)
-                              quoted  (if end-idx (subs s 1 end-idx) (subs s 1))
-                              rest-s  (if end-idx (subs s (inc end-idx)) "")]
-                          ;; skip comma after closing quote
-                          (recur (if (and (seq rest-s) (= (first rest-s) \,))
-                                   (subs rest-s 1) rest-s)
-                                 (conj fields quoted) ""))
-
-                        (= c \,)
-                        (recur (subs s 1) (conj fields current) "")
-
-                        :else
-                        (recur (subs s 1) fields (str current c))))))]
-      (when (>= (count parts) 9)
-        (let [nomenclature (nth parts 3 "")
-              characteristic (nth parts 5 "")
-              barcode      (str/trim (nth parts 6 ""))
-              price-str    (nth parts 7 "")
-              qty-str      (nth parts 8 "")
-              art-num      (extract-article-number nomenclature)
-              color        (extract-color characteristic)
-              wb-article   (make-wb-article art-num color)
-              price        (parse-russian-number price-str)]
-          (when (and art-num price)
-            {:article      wb-article
-             :article-num  art-num
-             :color        color
-             :barcode      barcode
-             :cost-price   price
-             :quantity     (parse-russian-number qty-str)
-             :nomenclature (str/trim nomenclature)
-             :characteristic (str/trim characteristic)}))))))
+(defn set-prices-from-rows!
+  "Replace in-memory caches from a seq of canonical cost-price rows
+   (each carries at least :article, :barcode, :cost-price). Keeps the
+   historical single-price-per-article semantics: when 1C has multiple
+   barcodes for one article, the FIRST row's price wins at article level.
+   Per-barcode detail is preserved in the barcode atom."
+  [rows]
+  (let [by-art (->> rows
+                    (group-by :article)
+                    (map (fn [[art items]]
+                           [art (:cost-price (first items))]))
+                    (into {}))
+        by-bc  (->> rows
+                    (filter #(and (:barcode %) (seq (:barcode %))))
+                    (map (fn [r] [(:barcode r) (:cost-price r)]))
+                    (into {}))]
+    (reset! cost-prices by-art)
+    (reset! cost-by-barcode by-bc)
+    {:articles (count by-art) :barcodes (count by-bc)}))
 
 (defn load-from-1c
-  "Load cost prices from 1C units.csv export.
-   Builds maps by article (WB-style) and by barcode."
+  "Backward-compatible bootstrap: parse a 1C CSV and populate the
+   in-memory caches. Prefer `analitica.costsource/ingest!` with a
+   `csv1c/make-source` for new callers — it additionally upserts into
+   the cost_prices DB table and validates rows."
   ([] (load-from-1c "1c/units.csv"))
   ([path]
-   (let [f (io/file path)]
-     (if (.exists f)
-       (let [lines  (str/split-lines (slurp f :encoding "UTF-8"))
-             parsed (->> lines
-                         (map parse-1c-csv-line)
-                         (remove nil?))
-             by-art (->> parsed
-                         (group-by :article)
-                         (map (fn [[art items]]
-                                [art (:cost-price (first items))]))
-                         (into {}))
-             by-bc  (->> parsed
-                         (filter #(seq (:barcode %)))
-                         (map (fn [r] [(:barcode r) (:cost-price r)]))
-                         (into {}))]
-         (reset! cost-prices by-art)
-         (reset! cost-by-barcode by-bc)
-         (println "Загружено из 1С:" (count by-art) "артикулов," (count by-bc) "баркодов")
-         {:articles (count by-art) :barcodes (count by-bc)})
-       (println "Файл не найден:" path)))))
+   (try
+     (let [rows     (csv1c/parse-file path)
+           {:keys [articles barcodes]} (set-prices-from-rows! rows)]
+       (println "Загружено из 1С:" articles "артикулов," barcodes "баркодов")
+       {:articles articles :barcodes barcodes})
+     (catch clojure.lang.ExceptionInfo e
+       (if (= :file-not-found (:cause (ex-data e)))
+         (println "Файл не найден:" path)
+         (throw e))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Simple loaders

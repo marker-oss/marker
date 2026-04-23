@@ -5,8 +5,9 @@
    Legacy API-to-DB sync functions were removed on 2026-04-22: the canonical
    pipeline is now `ingest!` (API → raw_data) followed by `materialize!`
    (raw_data → analytical tables)."
-  (:require [analitica.db :as db]
-            [analitica.domain.cost-price :as cost-price])
+  (:require [analitica.costsource :as costsource]
+            [analitica.costsource.csv1c :as csv1c]
+            [analitica.db :as db])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
 
@@ -92,20 +93,17 @@
 ;; ---------------------------------------------------------------------------
 
 (defn sync-1c!
-  "Load cost prices from 1C CSV into SQLite."
+  "Load cost prices from a 1C CSV export into SQLite via the canonical
+   CostSource pipeline. Delegates to `analitica.costsource/ingest!` so the
+   ingest path stays identical with future providers (1C API, Мойсклад …).
+
+   Returns the result map from `ingest!`: {:source :loaded :rejected …}."
   ([] (sync-1c! "1c/units.csv"))
   ([path]
-   (cost-price/load-from-1c path)
-   (let [prices (cost-price/all-prices)
-         ts     (now-str)
-         rows   (mapv (fn [[article price]]
-                        [article "" price "" "" 0 ts])
-                      prices)
-         cnt    (db/insert-batch! :cost_prices
-                                  [:article :barcode :cost_price :nomenclature :color :quantity_1c :updated_at]
-                                  rows)]
-     (println (str "Saved cost prices: " cnt " articles"))
-     cnt)))
+   (let [result (costsource/ingest! (csv1c/make-source path))]
+     (println (format "Saved cost prices: %d loaded, %d rejected (source %s)"
+                      (:loaded result) (:rejected result) (name (:source result))))
+     result)))
 
 ;; ---------------------------------------------------------------------------
 ;; Status
