@@ -1,6 +1,8 @@
 (ns analitica.web.report-schemas-test
   (:require [clojure.test :refer [deftest is testing]]
-            [analitica.web.report-schemas :as rs]))
+            [clojure.set :as set]
+            [analitica.web.report-schemas :as rs]
+            [analitica.domain.unit-economics :as ue]))
 
 (deftest schema-registry-test
   (testing "schema exists for :ue"
@@ -40,3 +42,22 @@
       (check-preset :basic)
       (check-preset :per-unit)
       (check-preset :percentages))))
+
+(deftest ^:integration ue-schema-covers-domain-keys-test
+  (testing "every column key in UE schema exists in domain ue/calculate output
+            (prevents drift when canon-audit adds metrics)"
+    (let [;; minimal fixture matching finance-row semantics (one sale)
+          fixture [{:article "A1" :barcode "b1" :operation :sale :quantity 1
+                    :retail-amount 100.0 :wb-reward 15.0 :wb-commission 5.0
+                    :logistics 10.0 :storage 2.0 :acceptance 0.0 :penalties 0.0
+                    :acquiring 1.5 :deduction 0.0 :additional 0.0
+                    :for-pay 80.0 :cost-price 40.0 :spp-amount 0.0}]
+          rows (ue/calculate fixture)
+          domain-keys (set (keys (first rows)))
+          schema-column-keys (set (map :key (:columns (rs/get-schema :ue))))
+          ;; identity cols (brand/subject) come from cost_prices JOIN, not finance/ue output
+          identity-keys #{:brand :subject}
+          checked-keys (set/difference schema-column-keys identity-keys)]
+      (is (every? domain-keys checked-keys)
+          (str "schema has keys not in domain output: "
+               (set/difference checked-keys domain-keys))))))
