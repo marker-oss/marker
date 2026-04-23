@@ -1,7 +1,20 @@
 (ns analitica.marketplace.ym.transform
   "Transform raw Yandex Market API responses into the common domain model.
    All functions return nil for missing/null fields and never throw exceptions."
-  (:require [com.brunobonacci.mulog :as mu]))
+  (:require [com.brunobonacci.mulog :as mu]
+            [clojure.string :as str]))
+
+(defn- extract-barcode
+  "YM items carry a GS1 DataMatrix string in `cisList`, e.g.
+   `(01)04640392784759(21)<serial>`. The `(01)` segment is the 14-digit
+   GTIN; stripping one leading zero yields the 13-digit EAN used in 1C.
+   Returns nil when cisList is missing or malformed."
+  [cis-list]
+  (when-let [cis (first cis-list)]
+    (when-let [[_ gtin14] (re-find #"\(01\)(\d{14})" cis)]
+      (if (str/starts-with? gtin14 "0")
+        (subs gtin14 1)
+        gtin14))))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -236,7 +249,7 @@
                :event-date         event-date
                :article            shop-sku
                :nm-id              (get item :marketSku)
-               :barcode            nil
+               :barcode            (extract-barcode (get item :cisList))
                :subject            nil
                :brand              nil
                :operation          (classify-item-operation order item)
