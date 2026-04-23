@@ -2,7 +2,8 @@
   "Canonical CashFlowPeriodRow — Ozon period-level cash flow statement.
    See docs/data-dictionary.md#cash_flow_periods."
   (:require [malli.core :as m]
-            [malli.error :as me]))
+            [malli.error :as me]
+            [analitica.schema.util :as schema-util]))
 
 (def ^:private num-default-zero [:or :int :double])
 
@@ -42,9 +43,4 @@
 (defn valid? [row] (validator row))
 (defn explain [row] (some-> (explainer row) me/humanize))
 (defn validate-rows [rows]
-  (reduce (fn [{:keys [ok bad] :as acc} row]
-            (if (validator row)
-              (update acc :ok conj row)
-              (update acc :bad conj {:row row :error (explain row)})))
-          {:ok [] :bad []}
-          rows))
+  (schema-util/validate-rows validator explain rows))

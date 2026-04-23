@@ -2,7 +2,8 @@
   "Canonical PaidStorageRow — WB paid-storage daily charge.
    See docs/data-dictionary.md#paid_storage."
   (:require [malli.core :as m]
-            [malli.error :as me]))
+            [malli.error :as me]
+            [analitica.schema.util :as schema-util]))
 
 (def PaidStorageRow
   [:map {:closed false}
@@ -24,9 +25,4 @@
 (defn valid? [row] (validator row))
 (defn explain [row] (some-> (explainer row) me/humanize))
 (defn validate-rows [rows]
-  (reduce (fn [{:keys [ok bad] :as acc} row]
-            (if (validator row)
-              (update acc :ok conj row)
-              (update acc :bad conj {:row row :error (explain row)})))
-          {:ok [] :bad []}
-          rows))
+  (schema-util/validate-rows validator explain rows))

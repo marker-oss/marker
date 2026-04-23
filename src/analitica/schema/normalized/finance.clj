@@ -9,7 +9,8 @@
    drift never silently drops data."
   (:require [malli.core :as m]
             [malli.error :as me]
-            [clojure.string]))
+            [clojure.string]
+            [analitica.schema.util :as schema-util]))
 
 (def FinanceRow
   "Minimal contract every transform must satisfy. Identity + the three
@@ -61,14 +62,8 @@
 
 (defn explain [row] (some-> (explainer row) me/humanize))
 
-(defn validate-rows
-  [rows]
-  (reduce (fn [{:keys [ok bad] :as acc} row]
-            (if (validator row)
-              (update acc :ok conj row)
-              (update acc :bad conj {:row row :error (explain row)})))
-          {:ok [] :bad []}
-          rows))
+(defn validate-rows [rows]
+  (schema-util/validate-rows validator explain rows))
 
 (defn summarize-bad
   [bad]

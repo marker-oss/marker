@@ -2,7 +2,8 @@
   "Canonical CostPriceRow — per-(article, barcode) self-cost from 1C.
    See docs/data-dictionary.md#cost_prices."
   (:require [malli.core :as m]
-            [malli.error :as me]))
+            [malli.error :as me]
+            [analitica.schema.util :as schema-util]))
 
 (def CostPriceRow
   [:map {:closed false}
@@ -21,9 +22,4 @@
 (defn valid? [row] (validator row))
 (defn explain [row] (some-> (explainer row) me/humanize))
 (defn validate-rows [rows]
-  (reduce (fn [{:keys [ok bad] :as acc} row]
-            (if (validator row)
-              (update acc :ok conj row)
-              (update acc :bad conj {:row row :error (explain row)})))
-          {:ok [] :bad []}
-          rows))
+  (schema-util/validate-rows validator explain rows))
