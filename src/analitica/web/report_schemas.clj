@@ -67,8 +67,34 @@
    :chart
    {:type :bar :title "Топ артикулов по прибыли" :x :article :y :profit :limit 20}})
 
+(def ^:private pnl-schema
+  {:report-type       :pnl
+   :title             "P&L"
+   :uses-period?      true
+   :supports-compare? false
+   :rows-mode         :none
+   :tabs              [:chart :drawer]
+
+   :kpi
+   [{:key :revenue      :title "Revenue"     :format :rub}
+    {:key :gross-profit :title "Gross Profit" :format :rub}
+    {:key :net-profit   :title "Net Profit"  :format :rub}
+    {:key :margin-net   :title "Net Margin"  :format :pct}]
+
+   :chart
+   {:type :waterfall
+    :title "P&L Waterfall"
+    :metrics [:revenue :wb-commission :logistics :storage :penalties
+              :ad-spend :total-cost :net-profit]}
+
+   :drawer-metrics
+   [:revenue :wb-commission :wb-reward :logistics :storage :acceptance
+    :penalties :acquiring :deduction :additional :ad-spend :total-cost
+    :gross-profit :net-profit :margin-gross :margin-net]})
+
 (def ^:private registry
-  {:ue ue-schema})
+  {:ue  ue-schema
+   :pnl pnl-schema})
 
 (defn get-schema
   "Return schema map for report-type keyword, or nil if unknown."

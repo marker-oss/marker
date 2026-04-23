@@ -61,3 +61,12 @@
       (is (every? domain-keys checked-keys)
           (str "schema has keys not in domain output: "
                (set/difference checked-keys domain-keys))))))
+
+(deftest pnl-schema-test
+  (testing ":pnl schema has :rows-mode :none and no :table tab"
+    (let [s (rs/get-schema :pnl)]
+      (is (some? s))
+      (is (= :none (:rows-mode s)))
+      (is (false? (:supports-compare? s)))
+      (is (not (contains? (set (:tabs s)) :table)))
+      (is (contains? (set (:tabs s)) :chart)))))
