@@ -18,7 +18,7 @@ populated; other reports list the namespace but defer full canonization.
 | # | Report | Domain ns | Canon section |
 |---|---|---|---|
 | 1 | Finance          | `analitica.domain.finance`         | [§Finance](#finance)                 |
-| 2 | P&L              | `analitica.domain.pnl`             | [§P&L](#pl)                          |
+| 2 | P&L              | `analitica.domain.pnl`             | [§P&L](#pl) *— Phase 3 (2026-04-24)* |
 | 3 | Unit Economics   | `analitica.domain.unit-economics`  | [§Unit Economics](#unit-economics)   |
 | 4 | ABC              | `analitica.domain.abc`             | *Phase 3*                            |
 | 5 | Sales            | `analitica.domain.sales`           | *Phase 3*                            |
@@ -953,6 +953,325 @@ test, then asserts summary equals weighted average of per-article.
   one article on one MP with ad-spend allocated.
 - Reconciliation test: on a 3-article fixture, `SUM UE.profit` equals
   P&L `:net-profit` within 0.1 RUB.
+- Regression coverage: `clojure -M:test` green on the whole suite.
+
+---
+
+## P&L
+
+The P&L report rolls the finance event stream up to period-level cash
+items: gross profit, net profit, margins, and — for Ozon — the
+cash-flow-statement adjustments that account for charges without a
+per-article attribution. All metrics build on L1 fields in
+[`data-dictionary.md#finance`](data-dictionary.md#finance),
+[`data-dictionary.md#ad_stats`](data-dictionary.md#ad_stats),
+[`data-dictionary.md#cost_prices`](data-dictionary.md#cost_prices), and
+[`data-dictionary.md#cash_flow_periods`](data-dictionary.md#cash_flow_periods).
+
+Implementation: `src/analitica/domain/pnl.clj/calculate`. Verification
+tests: `test/analitica/domain/pnl_canon_test.clj`.
+
+Authored 2026-04-24 using the 5-point template from §Unit Economics.
+Uses the same post-2026-04-23 ingest pipeline (event_date filter, Ozon
+`bonus` + `compensation` in for_pay, YM subsidies, WB paid_storage
+single-multiplication fix) — absolute numbers match UE totals within
+the rounding tolerance documented in UE.11 #4.
+
+### P&L.1 — Period monetary aggregates (pass-throughs)
+
+**Members:** `:revenue`, `:wb-reward`, `:logistics`, `:storage`,
+`:acceptance`, `:penalties`, `:deduction`, `:additional`, `:for-pay`,
+`:cogs`.
+
+**Formula**
+
+```
+revenue    := SUM(article.revenue)       across by-article rows
+wb-reward  := SUM(article.wb-reward)
+logistics  := SUM(article.logistics)
+storage    := SUM(article.storage)
+acceptance := SUM(article.acceptance)
+penalties  := SUM(article.penalties)
+deduction  := SUM(article.deduction)
+additional := SUM(article.additional)
+for-pay    := SUM(article.for-pay)       ← already net = sale − return
+cogs       := SUM(article.total-cost)
+```
+
+Each `article.<field>` is the per-article aggregate defined in
+[§Unit Economics UE.2](#ue2--per-article-monetary-pass-throughs).
+P&L never recomputes them — it grand-totals UE's row output. Rounding
+to 2 dp.
+
+**Economic justification.** P&L is the seller-facing period summary;
+keeping it as a sum over the UE decomposition means every cost line on
+P&L can be drilled to the article level. Zero formula divergence — UE
+totals and P&L aggregates are identical by construction.
+
+**Inputs.** All UE.2 per-article fields derived from
+[`data-dictionary.md#finance`](data-dictionary.md#finance). Storage is
+coalesced with [`paid_storage`](data-dictionary.md#paid_storage) via
+`db/storage-by-article` in the UE path.
+
+**Edge cases.**
+
+- Missing fields (nil) are skipped — `reduce + 0.0 … (or (:foo %) 0)`.
+- `:for-pay` on P&L already subtracts returns (UE.2 semantics for WB,
+  Ozon `amount+bonus+compensation+stars`, YM `buyer − commissions +
+  subsidies`).
+- Empty period → all aggregates = 0.0.
+
+**Verification.** `pnl_canon_test.clj` › `group-1-aggregates`: on a
+fixture with known per-article values, asserts each P&L aggregate
+equals the sum across articles.
+
+---
+
+### P&L.2 — Ad spend total
+
+**Formula**
+
+```
+ad-spend := canonical-path OR legacy-fallback
+
+canonical-path := SUM(finance.ad_cost) for period and marketplace
+legacy-fallback := SUM(ad_stats.spend) JOIN finance.nm_id for the same
+
+preference order:
+  YM or Ozon  → canonical only (never legacy)
+  WB or all   → canonical if > 0; otherwise legacy fallback
+```
+
+See pnl.clj lines 59-90 for the dispatch.
+
+**Economic justification.** Rollup of advertising spend for the period.
+Since WB historically stored ad spend in a separate `ad_stats` table,
+the legacy fallback covers pre-spec-003 data. Post-migration periods
+use the canonical `finance.ad_cost` field (populated by spec 003 US5 for
+WB and natively by YM/Ozon ingest) so the number is always MP-filtered
+and consistent with UE.5.
+
+**Inputs.** `finance.ad_cost` for the canonical path;
+[`data-dictionary.md#ad_stats`](data-dictionary.md#ad_stats) via
+nm_id-JOIN for the fallback.
+
+**Edge cases.**
+
+- Canonical SUM = 0 for WB triggers legacy path, even if legacy also
+  returns 0.
+- Both paths filter by marketplace when provided; all-MP queries on the
+  legacy path sum across MPs (behaviour of spec-003 pre-migration).
+- DB-schema drift (missing `ad_cost` column) → canonical returns `nil`,
+  legacy used.
+- Negative ad_spend is never expected; not clamped.
+
+**Verification.** `pnl_canon_test.clj` › `group-2-ad-spend-*`:
+synthetic fixture with preset ad_cost asserts canonical path hit; a
+separate fixture with zero ad_cost on WB plus legacy ad_stats triggers
+fallback.
+
+---
+
+### P&L.3 — Gross profit
+
+**Formula**
+
+```
+gross-profit := for-pay
+              − cogs
+              − logistics
+              − storage
+              − penalties
+              − acceptance
+              − deduction
+              + additional      ← additional is seller credit, add back
+```
+
+**Economic justification.** Direct mirror of UE.4 profit at the period
+level. `for-pay` is already net of MP commission / acquiring / SPP /
+bonus (per UE.2 semantics per MP); UE.4 argues why ad-spend is kept
+outside gross and subtracted only in net (below). P&L inherits that
+separation.
+
+**Inputs.** All P&L.1 aggregates.
+
+**Edge cases.**
+
+- Negative `gross-profit` is legitimate (loss-making period).
+- `additional` is rare in practice for Ozon/YM (usually 0 per UE.10
+  coverage matrix); for WB it's a seller credit (refunds) that increases
+  profit.
+
+**Verification.** `pnl_canon_test.clj` › `group-3-gross-profit`:
+substitute into the formula and assert equality with `pnl/calculate`
+output on a fixture.
+
+---
+
+### P&L.4 — Net profit and margins
+
+**Members:** `:net-profit`, `:margin-gross`, `:margin-net`.
+
+**Formula**
+
+```
+net-profit    := gross-profit − ad-spend
+margin-gross  := gross-profit / revenue × 100
+margin-net    := net-profit   / revenue × 100
+```
+
+**Economic justification.** Advertising isn't a unit cost per se (no
+article directly produces it), so in the canonical break it's
+subtracted once at the period level. `margin-*` as share-of-revenue is
+the standard business KPI. No tax is subtracted — MVP-scope per
+[vision §13](./vision.md#13).
+
+**Inputs.** P&L.3 + P&L.2 + P&L.1 revenue.
+
+**Edge cases.**
+
+- `revenue = 0` → both margins = nil (`math/percentage` handles div-by-0).
+- Negative margins are valid.
+- When `ad-spend` legacy fallback fires with 0 result on WB, margins
+  equal gross margins (no ad cost to subtract).
+
+**Verification.** `pnl_canon_test.clj` › `group-4-net-profit`:
+asserts net = gross − ad-spend, margins = ratios of the corresponding
+profits to revenue.
+
+---
+
+### P&L.5 — Quantity and per-event derivatives
+
+**Members:** `:sales-qty`, `:returns-qty`, `:buyout-rate`, `:avg-check`,
+`:profit-per-sale`, `:articles`.
+
+**Formula**
+
+```
+sales-qty   := SUM(article.sales-qty)
+returns-qty := SUM(article.returns-qty)
+net-qty     := sales-qty − returns-qty       (NOT clamped at summary level)
+buyout-rate := sales-qty / (sales-qty + returns-qty) × 100
+avg-check   := revenue   / sales-qty
+profit-per-sale := net-profit / net-qty
+articles    := count of distinct articles in the period
+```
+
+**Economic justification.** Identical to UE.9 derivations — P&L is UE
+aggregated. `profit-per-sale` uses a non-clamped `net-qty` (may be ≤ 0
+on loss-dominated periods) and then `safe-div` returns 0 in that
+degenerate case, same as UE.
+
+**Inputs.** P&L.1 quantities + P&L.4 net-profit.
+
+**Edge cases.**
+
+- `sales-qty = 0` → `avg-check = 0`, `buyout-rate = nil`.
+- More returns than sales (net-qty ≤ 0) → `profit-per-sale = 0` via
+  safe-div clamp.
+- `:articles` counts articles in by-article after UE's grouping — zero
+  when no finance data for the period.
+
+**Verification.** `pnl_canon_test.clj` › `group-5-quantities`:
+asserts each derivative against the known fixture values.
+
+---
+
+### P&L.6 — Ozon cash-flow adjustments (optional)
+
+**Members** (only present when `cf-adjustments` argument is supplied):
+`:cf-subscription`, `:cf-warehouse`, `:cf-returns-cargo`, `:cf-fines`,
+`:cf-packaging`, `:cf-other-services`, `:cf-corrections`,
+`:cf-compensation`, `:cf-costs`, `:cf-income`, `:cf-total`,
+`:adjusted-gross`, `:adjusted-net`, `:adjusted-margin`.
+
+**Formula**
+
+```
+cf-costs       := cf-subscription + cf-warehouse + cf-returns-cargo
+                + cf-fines + cf-packaging + cf-other-services
+cf-income      := cf-corrections + cf-compensation
+cf-total       := cf-costs + cf-income
+adjusted-gross := gross-profit + cf-total
+adjusted-net   := adjusted-gross − ad-spend
+adjusted-margin:= adjusted-net / revenue × 100
+```
+
+The `cf-*` pass-throughs are read from `cash_flow_periods` via
+`analitica.db/cash-flow-adjustments` and fed in by the report layer
+(pnl.clj `load-cf-adjustments`). `pnl/calculate` treats them as plain
+numbers (sign already applied at the source — costs arrive positive,
+income arrives positive, and the canon sums them directly).
+
+**Economic justification.** Ozon bills account-level services
+(subscriptions, FBO warehouse moves, returns cargo, platform fines,
+packaging, misc services) without per-article attribution. Ignoring
+them understates Ozon's real cost structure by the P&L coverage (UE.11
+already flags this as UE.10 known gap). The cash-flow-statement is
+Ozon's authoritative source for these amounts; we fold them into an
+`adjusted-*` variant alongside the per-article `gross/net` so callers
+can choose the view appropriate for their use case.
+
+**Inputs.**
+[`data-dictionary.md#cash_flow_periods`](data-dictionary.md#cash_flow_periods)
+via `db/cash-flow-adjustments`, scoped to the requested date range.
+
+**Edge cases.**
+
+- For WB / YM the caller should NOT pass `:cf-adjustments` — `report`
+  only loads them when `:marketplace = :ozon`.
+- When the caller passes an empty map `{}` the adjusted-* fields are
+  still emitted (all zeros).
+- `corrections` / `compensation` may be negative in rare cases (Ozon
+  reversing a previously-issued compensation); canon sums algebraically.
+- `:adjusted-margin` returns nil when revenue = 0.
+
+**Verification.** `pnl_canon_test.clj` › `group-6-cf-adjustments`:
+synthetic cf-adjustments map asserts each aggregate; cross-checks that
+`adjusted-gross = gross-profit + cf-total` holds exactly.
+
+---
+
+### P&L.7 — Marketplace coverage matrix
+
+| Metric family | WB | Ozon | YM |
+|---|---|---|---|
+| P&L.1 monetary pass-throughs | ✅ (inherits UE.2 per-MP coverage) |
+| P&L.2 `:ad-spend` canonical  | migrating | ✅ from `finance.ad_cost` | ✅ from `finance.ad_cost` |
+| P&L.2 `:ad-spend` legacy fallback | ✅ when canonical is 0 | ❌ not used | ❌ not used |
+| P&L.3 `:gross-profit`         | ✅ | ✅ | ✅ |
+| P&L.4 `:net-profit`           | ✅ | ✅ | ✅ |
+| P&L.5 quantities              | ✅ | ✅ | ✅ |
+| P&L.6 cf-adjustments          | ❌ (no WB cash-flow endpoint) | ✅ auto-loaded for `:marketplace :ozon` | ❌ (no YM cash-flow endpoint) |
+
+### P&L.8 — Known gaps (inherited + P&L-specific)
+
+All UE.11 gaps apply (they ride the same ingest pipeline). P&L adds:
+
+1. **Legacy ad-spend fallback has no MP filter on the `nil` marketplace
+   path.** When P&L is called with `:marketplace nil` and canonical
+   ad_cost is 0, `legacy-ad-spend-sum` returns a cross-MP `SUM(spend)`.
+   Harmless for single-MP deployments; incorrect for multi-MP P&L
+   sweeps. `pnl/calculate` is almost always called per-MP via
+   `pnl/report`, so real impact is minimal.
+2. **P&L does not subtract `:acquiring`** — acquiring is already inside
+   `for_pay` on WB/Ozon (and rolled into YM commissions) so subtracting
+   it on P&L would double-count. Same semantics as UE.4.
+3. **No tax line.** Out of scope for MVP. Seller applies their own tax
+   rate downstream.
+4. **CF adjustments only for Ozon.** WB has account-level services
+   (subscription, promotional fees, ~0.3% of revenue) that don't reach
+   per-article rows and aren't in any endpoint we ingest. Inherited
+   UE.11 #1 / B-002.
+
+### P&L.9 — Verification summary
+
+- Every P&L.N group has a deftest in
+  `test/analitica/domain/pnl_canon_test.clj`.
+- `group-reconcile-with-ue`: asserts that on a shared fixture,
+  `pnl/calculate` gross-profit matches the UE-formula grand-total
+  within 0.1 RUB.
 - Regression coverage: `clojure -M:test` green on the whole suite.
 
 ---

@@ -90,10 +90,25 @@
         (or (legacy-ad-spend-sum from to marketplace) 0.0)))))
 
 (defn calculate
-  "Build P&L from finance data + cost prices.
-   Optional :cf-adjustments map adds account-level costs from cash flow statement.
-   Optional :marketplace keyword scopes ad-spend to that marketplace.
-   Returns a map with all P&L line items."
+  "Period-level P&L rollup.
+
+   Canonical definition: see docs/canonical-formulas.md §P&L
+   (P&L.1–P&L.9). Every field produced has a 5-point block in the canon
+   with formula, economic justification, inputs, edge cases, and a test
+   pointer.
+
+   Arguments:
+     finance-data          seq of finance rows (usually from
+                           `finance/fetch-finance`).
+     :cf-adjustments       map from `db/cash-flow-adjustments` (Ozon
+                           only). When nil, adjusted-* fields are
+                           omitted from the output.
+     :marketplace          keyword :wb | :ozon | :ym | nil. Scopes
+                           ad-spend lookup; does NOT filter finance-data
+                           (caller must pre-filter).
+
+   Returns a map with the P&L.1–P&L.5 fields unconditionally; P&L.6
+   cf-* / adjusted-* fields appear only when cf-adjustments is non-nil."
   [finance-data & {:keys [cf-adjustments marketplace]}]
   (let [by-art        (finance/by-article finance-data)
         [from to]     (derive-date-range finance-data)
