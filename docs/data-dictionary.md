@@ -282,3 +282,63 @@ to represent "article-level" cost (when 1C doesn't track per-barcode).
 - **No multi-version history** — a 1C re-import replaces old cost. Historical pricing for past periods is lost.
 - **No marketplace dimension** — same cost applies to all MPs. Acceptable per current scope (1C is our single source of truth).
 - **Atom-cached at load time** — `cost_price.clj` keeps prices in an atom. Rebuild on app restart requires explicit re-load.
+
+## ad_stats
+
+### Purpose
+
+WB advertising campaign statistics per campaign per day per nm_id.
+Used by Unit Economics as a legacy fallback path for `ad_spend_total`
+when the canonical `finance.ad_cost` is not populated (see P&L §3.9).
+
+### Grain
+
+One row = one (campaign_id, date, nm_id) triple. `nm_id = 0` denotes
+campaign-level rollup (multi-article campaigns with no per-article
+breakdown from the API).
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| WB | `/adv/v2/fullstats` | `campaignId` → `campaign-id`, `date` → `date`, `apps[*].nm` → `nm-id` (0 if absent), `views`/`clicks`/`ctr`/`cpc`/`sum` → same, `atbs`/`orders`/`cr`/`shks`/`sum_price` → same |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `campaign-id` | int/double | no | — | WB campaign id |
+| `date` | `:string` | no | ISO date | stat date |
+| `nm-id` | int/double | no | — | WB article id; 0 = campaign-level |
+| `views` | int/double | yes | count | impressions |
+| `clicks` | int/double | yes | count | clicks |
+| `ctr` | int/double | yes | % | views→clicks rate |
+| `cpc` | int/double | yes | RUB | cost per click |
+| `spend` | int/double | yes | RUB | ad spend for (campaign_id, date, nm_id) |
+| `atbs` | int/double | yes | count | add-to-basket |
+| `orders` | int/double | yes | count | orders attributed |
+| `cr` | int/double | yes | % | clicks→orders rate |
+| `shks` | int/double | yes | count | unique buyers |
+| `sum-price` | int/double | yes | RUB | gross ad-attributed revenue |
+| `synced-at` | `:string` | yes | ISO timestamp | last sync time |
+
+### Invariants
+
+- `(campaign-id, date, nm-id)` is unique (PK).
+- `ctr` in [0, 100].
+- `spend >= 0`.
+
+### Edge cases
+
+- **nm_id = 0 rows** represent campaigns with no per-article breakdown
+  (multi-article campaign). Ad-cost allocation (spec 003 US5) treats
+  these as allocable to covered articles proportionally by revenue.
+- **No marketplace column** — ad_stats is WB-only; Ozon/YM don't go here.
+- **Empty days** — WB skips days with zero impressions. Absence of a
+  row means "no spend," not "unknown."
+
+### Known gaps
+
+- **Ozon advertising** lives in `finance.ad_cost` only; no per-campaign breakdown stored.
+- **YM advertising** (bidFee) lives in `finance.ad_cost` only.
+- **nm_id = 0** ambiguity: can mean "campaign-level" OR "transform couldn't resolve per-article". Historical rows may mix both meanings.

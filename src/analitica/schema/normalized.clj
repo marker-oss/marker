@@ -11,15 +11,17 @@
   (:require [analitica.schema.normalized.finance :as finance]
             [analitica.schema.normalized.sales :as sales]
             [analitica.schema.normalized.stocks :as stocks]
-            [analitica.schema.normalized.cost-prices :as cost-prices]))
+            [analitica.schema.normalized.cost-prices :as cost-prices]
+            [analitica.schema.normalized.ad-stats :as ad-stats]))
 
-(def tables #{:finance :sales :stocks :cost-prices})
+(def tables #{:finance :sales :stocks :cost-prices :ad-stats})
 
 (def schemas
   {:finance     finance/FinanceRow
    :sales       sales/SalesRow
    :stocks      stocks/StocksRow
-   :cost-prices cost-prices/CostPriceRow})
+   :cost-prices cost-prices/CostPriceRow
+   :ad-stats    ad-stats/AdStatsRow})
 
 (defn valid?
   "Dispatch on table keyword. Returns true iff row satisfies the table's schema."
@@ -28,7 +30,8 @@
     :finance     (finance/valid? row)
     :sales       (sales/valid? row)
     :stocks      (stocks/valid? row)
-    :cost-prices (cost-prices/valid? row)))
+    :cost-prices (cost-prices/valid? row)
+    :ad-stats    (ad-stats/valid? row)))
 
 (defn validate-rows
   "Dispatch on table keyword."
@@ -37,4 +40,5 @@
     :finance     (finance/validate-rows rows)
     :sales       (sales/validate-rows rows)
     :stocks      (stocks/validate-rows rows)
-    :cost-prices (cost-prices/validate-rows rows)))
+    :cost-prices (cost-prices/validate-rows rows)
+    :ad-stats    (ad-stats/validate-rows rows)))
