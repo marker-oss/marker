@@ -342,3 +342,50 @@ breakdown from the API).
 - **Ozon advertising** lives in `finance.ad_cost` only; no per-campaign breakdown stored.
 - **YM advertising** (bidFee) lives in `finance.ad_cost` only.
 - **nm_id = 0** ambiguity: can mean "campaign-level" OR "transform couldn't resolve per-article". Historical rows may mix both meanings.
+
+## paid_storage
+
+### Purpose
+
+WB paid-storage daily charge per (date, barcode, warehouse). Feeds
+Unit Economics `storage_by_article` aggregate. One row per barcode
+per warehouse per day.
+
+### Grain
+
+One row = one (date, barcode, warehouse, marketplace) quadruple.
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| WB | `/api/v1/paid_storage` | `date` → `date`, `supplierArticle` → `article`, `barcode` → `barcode`, `warehouse` → `warehouse`, `warehousePrice` → `cost`, `volume` → `volume`, `barcodesCount` → `barcodes-count` |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `date` | `:string` | no | ISO date | storage-charge date |
+| `article` | `:string` | no | — | seller article |
+| `barcode` | `:string` | no | — | barcode (empty string allowed) |
+| `warehouse` | `:string` | no | — | warehouse name (empty string allowed) |
+| `cost` | ≥0 int/double | no | RUB | storage charge for this (date, barcode, warehouse) |
+| `marketplace` | enum | no | — | always `:wb` in practice |
+| `nm-id`, `volume`, `barcodes-count` | various | yes | — | metadata |
+| `synced-at` | `:string` | yes | ISO timestamp | last sync |
+
+### Invariants
+
+- `cost >= 0`.
+- PK `(date, barcode, warehouse, marketplace)`.
+
+### Edge cases
+
+- **Empty barcode / warehouse** — WB returns `""` when it can't attribute. PK still holds because empty strings are distinct from NULL.
+- **Back-filled dates** — WB paid-storage endpoint allows historical range queries; re-sync can overwrite rows for the same keys.
+
+### Known gaps
+
+- **Ozon per-barcode storage doesn't exist** — Ozon storage is reported only at period level in `cash_flow_periods.storage`. This table stays empty for Ozon.
+- **YM has no per-SKU storage API** — same gap. YM storage is fully absent at per-article grain.
+- **Volume units** — raw API returns liters; no conversion documented.
