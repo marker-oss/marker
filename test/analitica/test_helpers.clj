@@ -101,6 +101,14 @@
       (delete-test-db-files!)
       (clear-test-db-env!))))
 
+(defn strip-ns
+  "Remove the namespace from every key in a flat map. Used by schema-
+   conformance tests to normalize `next.jdbc.result-set/as-kebab-maps`
+   output — which produces table-namespaced keys like `:finance/rrd-id`
+   — into unqualified kebab-case keys that Malli schemas expect."
+  [m]
+  (into {} (map (fn [[k v]] [(keyword (name k)) v]) m)))
+
 (defn db-or-skip
   "Returns a datasource for the configured test DB, or nil to signal
    the schema conformance test should skip. Reads ANALITICA_TEST_DB

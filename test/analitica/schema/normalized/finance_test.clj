@@ -40,11 +40,6 @@
                     :deduction nil :acquiring-fee nil :ad-cost nil})]
     (is (sut/valid? row))))
 
-(defn- strip-ns
-  "Remove namespace qualifier from all keys in a map (e.g. :finance/rrd-id → :rrd-id)."
-  [m]
-  (into {} (map (fn [[k v]] [(keyword (name k)) v]) m)))
-
 (deftest production-rows-conform
   (testing "Every row currently in the finance table passes FinanceRow"
     (if-let [ds (th/db-or-skip)]
@@ -52,7 +47,7 @@
                                 {:builder-fn rs/as-kebab-maps})
             ;; as-kebab-maps returns namespaced keys (:finance/rrd-id); strip ns
             ;; DB stores marketplace as string; convert to keyword for schema check
-            rows (map #(-> % strip-ns (update :marketplace keyword)) rows)
+            rows (map #(-> % th/strip-ns (update :marketplace keyword)) rows)
             {:keys [ok bad]} (sut/validate-rows rows)]
         (is (empty? bad)
             (str "Non-conforming rows: " (count bad) " / "

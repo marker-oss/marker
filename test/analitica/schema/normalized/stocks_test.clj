@@ -5,9 +5,6 @@
             [next.jdbc.result-set :as rs]
             [analitica.test-helpers :as th]))
 
-(defn- strip-ns [m]
-  (into {} (map (fn [[k v]] [(keyword (name k)) v]) m)))
-
 (def minimal-row
   {:article "ABC-1" :marketplace :wb})
 
@@ -23,7 +20,7 @@
       (let [rows (jdbc/execute! ds ["SELECT * FROM stocks LIMIT 1000"]
                                 {:builder-fn rs/as-kebab-maps})
             rows (->> rows
-                      (map strip-ns)
+                      (map th/strip-ns)
                       (map #(update % :marketplace (fn [v] (some-> v keyword)))))
             {:keys [ok bad]} (sut/validate-rows rows)]
         (is (empty? bad)
