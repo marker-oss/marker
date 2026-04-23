@@ -442,3 +442,71 @@ One row = one (date_from, date_to, nm_id, region, city) tuple.
 - **Only WB supplies regional data.** Ozon / YM regional cuts would require separate endpoints; currently out of scope.
 - **No marketplace column** — table is implicitly WB-only. Future MP coverage should add this.
 - **No mapping to standardized region codes** (e.g. OKATO); strings are free-form from API.
+
+## cash_flow_periods
+
+### Purpose
+
+Period-level cash flow statement from Ozon `/v1/finance/cash-flow-statement`.
+Used by P&L to compensate per-row `finance_rows` accounting for
+account-level charges that don't map to individual SKUs (e.g. storage,
+fines, platform subscription fees).
+
+### Grain
+
+One row = one (source, period_begin, period_end) tuple — typically one
+Ozon weekly settlement period.
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| Ozon | `/v1/finance/cash-flow-statement` | `period.begin` → `period-begin`, `period.end` → `period-end`, `orders_amount` → `orders-amount`, `returns_amount` → `returns-amount`, `commission_amount` → `commission-amount`, `delivery_amount`/`delivery_logistics` → same, `storage` → `storage`, `fines` → `fines`, `other_services` → `other-services`, `acquiring` → `acquiring`, `corrections` → `corrections`, `compensation` → `compensation`, `payment` → `payment`, `begin_balance`/`end_balance` → same |
+
+### Field dictionary
+
+All amount fields: `num-default-zero` (REAL with DEFAULT 0 in DDL, so
+schema accepts both nil from app layer and 0 from DB).
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `source` | `[:enum :ozon]` | no | — | fixed to `:ozon` today |
+| `period-begin` | `:string` | no | ISO date | settlement period start |
+| `period-end` | `:string` | no | ISO date | settlement period end |
+| `synced-at` | `:string` | no | ISO timestamp | when row was last synced |
+| `id` | int/double | yes | — | DB autoincrement |
+| `orders-amount` | RUB | yes | RUB | gross order amount in period |
+| `returns-amount` | RUB | yes | RUB | returns amount |
+| `commission-amount` | RUB | yes | RUB | MP commission total |
+| `delivery-amount` | RUB | yes | RUB | delivery income |
+| `delivery-logistics` | RUB | yes | RUB | delivery cost |
+| `return-amount`, `return-logistics` | RUB | yes | RUB | return cash/logistics |
+| `storage` | RUB | yes | RUB | storage charges |
+| `packaging` | RUB | yes | RUB | packaging |
+| `warehouse-movement` | RUB | yes | RUB | FBO warehouse transfers |
+| `returns-cargo` | RUB | yes | RUB | returns freight |
+| `subscription` | RUB | yes | RUB | Ozon Premium / platform fees |
+| `fines` | RUB | yes | RUB | fines |
+| `other-services` | RUB | yes | RUB | misc services |
+| `acquiring` | RUB | yes | RUB | payment-processing fee |
+| `corrections`, `compensation` | RUB | yes | RUB | MP adjustments |
+| `payment` | RUB | yes | RUB | payout to seller |
+| `begin-balance`, `end-balance` | RUB | yes | RUB | period opening/closing balance |
+| `invoice-transfer` | RUB | yes | RUB | invoice transfers |
+
+### Invariants
+
+- `period-begin <= period-end` (ISO date string comparison).
+- `UNIQUE(source, period_begin, period_end)`.
+
+### Edge cases
+
+- **Overlapping periods shouldn't happen** but are not enforced at DB level beyond the UNIQUE constraint.
+- **Ozon sign convention**: some amounts (commission_amount, fines) arrive positive from API but represent costs to the seller. `domain/pnl.clj/load-cf-adjustments` subtracts them explicitly — canon is "positive amount = positive absolute value of cost / revenue, sign applied by consumer."
+- **`begin-balance` / `end-balance`** are self-reconciling across contiguous periods; gaps indicate missing sync windows.
+
+### Known gaps
+
+- **WB has no equivalent endpoint** — WB provides settlement data per-row in `finance`, not per-period summary. `cash_flow_periods` stays Ozon-only for now.
+- **YM has reports but no period-level cash-flow statement** — same situation.
+- **Ozon partial months**: fields like `storage` cover only the reported period; for a full-month P&L you must sum multiple period rows.
