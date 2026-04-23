@@ -909,6 +909,40 @@ test, then asserts summary equals weighted average of per-article.
 6. **`:spp-amount` semantic ambiguity.** UE passes it through without a
    formula of its own because Finance §7.6 flags its definition as
    unclear. `:spp-compensation` = rounded pass-through only.
+7. **COGS coverage gap** (Phase-2 finding 2026-04-23). The 1C CSV loaded
+   into `analitica.domain.cost-price` groups prices as
+   `{article → first_barcode_price}`. About 45% of sold barcodes on WB
+   March 2026 have no article-level match — those sales get COGS = 0,
+   artificially improving reported margin. Underlying issue is 1C export
+   not covering all barcodes, not a code bug. Needs product action;
+   alternately the loader could warn when matched ratio drops below a
+   threshold.
+8. **Ozon realization is month-aggregated.** Unlike WB/YM where event_date
+   is per-event, Ozon `/v2/finance/realization` delivers monthly batches
+   keyed by article. All rows materialised from a single realization
+   response share `event_date = header.start_date` (month-first).
+   Queries narrower than one month give approximate results for Ozon
+   (they include all of the covering month). Per-transaction granularity
+   requires leaning on `/v3/finance/transaction/list` (which does have
+   `operation_date`); the hybrid path UPDATEs cost fields but does not
+   re-date the realization rows.
+
+**Resolved during Phase-2 verification:**
+
+- **Overlap-inflation in finance queries** (formerly tracked here as an
+  open gap). Resolved by the 2026-04-23 `event_date` migration: finance
+  rows now carry the per-event date extracted at transform time, and
+  `db-finance` filters by `event_date BETWEEN` rather than report-period
+  overlap. Legacy rows without event_date fall back to overlap semantics
+  — re-materialising from `raw_data` eliminates the fallback path. Impact
+  on WB March 2026: revenue 1,107k → 854k, logistics 318k → 238k.
+- **WB paid_storage 3× inflation** (transform multiplied
+  `warehousePrice × barcodesCount` when `warehousePrice` was already a
+  total). Resolved 2026-04-23 in
+  `marketplace/wb/transform.clj/->storage-cost` plus a coalesce pass in
+  `->storage-costs` that sums duplicate raw rows sharing one
+  (date, barcode, warehouse) key before insert. Impact on WB March 2026:
+  storage 362k → 110k.
 
 ### UE.12 — Verification summary
 
