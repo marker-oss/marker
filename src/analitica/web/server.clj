@@ -1,0 +1,802 @@
+(ns analitica.web.server
+  (:require [ring.adapter.jetty :as jetty]
+            [ring.middleware.cors :refer [wrap-cors]]
+            [ring.middleware.params :refer [wrap-params]]
+            [ring.middleware.keyword-params :refer [wrap-keyword-params]]
+            [ring.middleware.multipart-params :refer [wrap-multipart-params]]
+            [compojure.core :refer [defroutes GET POST]]
+            [compojure.route :as route]
+            [hiccup.core]
+            [analitica.db :as db]
+            [analitica.core :as core]
+            [analitica.util.time :as time]
+            [analitica.web.layout :as layout]
+            [analitica.web.pages.sync :as sync-page]
+            [analitica.web.pages.dashboard :as dashboard-page]
+            [analitica.web.pages.reports :as reports-page]
+            [analitica.web.api.sync :as sync-api]
+            [analitica.web.api.metrics :as metrics-api]
+            [analitica.web.api.charts :as charts-api]
+            [analitica.web.api.export :as export-api]
+            [analitica.web.api.cost-prices :as cost-prices-api]
+            [jsonista.core :as json])
+  (:gen-class))
+
+;; ---------------------------------------------------------------------------
+;; Utilities
+;; ---------------------------------------------------------------------------
+
+;; Note: parse-period is now in analitica.util.time namespace
+
+;; ---------------------------------------------------------------------------
+;; Validation
+;; ---------------------------------------------------------------------------
+
+(def valid-periods
+  #{"last-week" "last-7-days" "last-30-days" "this-month"})
+
+(def valid-marketplaces
+  #{"wb" "ozon" "ym"})
+
+(def valid-report-types
+  #{"sales" "finance" "ue" "pnl" "abc" "stock" "returns" "buyout" "geo" "trends"})
+
+(def valid-sync-what
+  #{"sales" "orders" "finance" "storage" "stocks" "stats" "prices" "regions" "1c" "all"})
+
+(defn validate-period
+  "Validate period parameter. Returns period string if valid, nil otherwise.
+  Also accepts custom date ranges in format YYYY-MM-DD,YYYY-MM-DD"
+  [period-str]
+  (when period-str
+    (if (valid-periods period-str)
+      period-str
+      ;; Check for custom date range format
+      (when (re-matches #"\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}" period-str)
+        period-str))))
+
+(defn validate-marketplace
+  "Validate marketplace parameter. Returns keyword if valid, nil otherwise."
+  [mp-str]
+  (when (and mp-str (valid-marketplaces mp-str))
+    (keyword mp-str)))
+
+(defn validate-report-type
+  "Validate report-type parameter. Returns keyword if valid, nil otherwise."
+  [type-str]
+  (when (and type-str (valid-report-types type-str))
+    (keyword type-str)))
+
+(defn validate-sync-what
+  "Validate sync what parameter. Returns keyword if valid, nil otherwise."
+  [what-str]
+  (when (and what-str (valid-sync-what what-str))
+    (keyword what-str)))
+
+;; ---------------------------------------------------------------------------
+;; Routes
+;; ---------------------------------------------------------------------------
+
+(defroutes app-routes
+  ;; Pages
+  (GET "/" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (if (or validated-period (nil? period-str))
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         :last-week))]
+          {:status 200 
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Дашборд" 
+                              (dashboard-page/summary-dashboard period)
+                              :active-route "/")})
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
+                            :active-route "/")})))
+  (GET "/wb" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (if (or validated-period (nil? period-str))
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         :last-week))]
+          {:status 200 
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Wildberries" 
+                              (dashboard-page/marketplace-dashboard :wb period)
+                              :active-route "/wb")})
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
+                            :active-route "/wb")})))
+  (GET "/ozon" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (if (or validated-period (nil? period-str))
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         :last-week))]
+          {:status 200 
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Ozon" 
+                              (dashboard-page/marketplace-dashboard :ozon period)
+                              :active-route "/ozon")})
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
+                            :active-route "/ozon")})))
+  (GET "/ym" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (if (or validated-period (nil? period-str))
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         :last-week))]
+          {:status 200 
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Yandex.Market" 
+                              (dashboard-page/marketplace-dashboard :ym period)
+                              :active-route "/ym")})
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
+                            :active-route "/ym")})))
+  (GET "/sync" [] 
+    {:status 200 
+     :headers {"Content-Type" "text/html; charset=utf-8"}
+     :body (layout/page "Синхронизация" 
+                        (sync-page/sync-page)
+                        :active-route "/sync")})
+  
+  ;; Report routes - all 10 report types
+  (GET "/reports/sales" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Продажи" 
+                            (reports-page/report-page :sales (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/sales")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/sales")})))
+  (GET "/reports/finance" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Финансы" 
+                            (reports-page/report-page :finance (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/finance")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/finance")})))
+  (GET "/reports/ue" {params :params}
+    (let [period-str      (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          article-str     (get params :article)
+          validated-period (validate-period period-str)
+          validated-mp     (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Юнит-экономика"
+                            (reports-page/report-page :ue (or validated-period "last-week") validated-mp
+                                                      :article article-str)
+                            :active-route "/reports/ue")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка"
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/ue")})))
+  (GET "/reports/pnl" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: P&L" 
+                            (reports-page/report-page :pnl (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/pnl")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/pnl")})))
+  (GET "/reports/abc" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: ABC-анализ" 
+                            (reports-page/report-page :abc (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/abc")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/abc")})))
+  (GET "/reports/stock" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Остатки" 
+                            (reports-page/report-page :stock (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/stock")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/stock")})))
+  (GET "/reports/returns" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Возвраты" 
+                            (reports-page/report-page :returns (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/returns")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/returns")})))
+  (GET "/reports/buyout" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Выкуп" 
+                            (reports-page/report-page :buyout (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/buyout")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/buyout")})))
+  (GET "/reports/geo" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: География" 
+                            (reports-page/report-page :geo (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/geo")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/geo")})))
+  (GET "/reports/trends" {params :params}
+    (let [period-str (get params :period "last-week")
+          marketplace-str (get params :marketplace)
+          validated-period (validate-period period-str)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (if (and (or validated-period (nil? period-str))
+               (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
+        {:status 200 
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Отчёт: Тренды" 
+                            (reports-page/report-page :trends (or validated-period "last-week") validated-mp)
+                            :active-route "/reports/trends")}
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка" 
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                            :active-route "/reports/trends")})))
+  
+  ;; Fallback for any other report type (404)
+  (GET "/reports/:type" [type] 
+    {:status 404 
+     :headers {"Content-Type" "text/html; charset=utf-8"}
+     :body (layout/page "Отчёт не найден" 
+                        [:div.text-center.py-12
+                         [:h2.text-2xl.font-bold.text-gray-900.mb-4 "Отчёт не найден"]
+                         [:p.text-gray-600 (str "Отчёт типа '" type "' не существует.")]]
+                        :active-route (str "/reports/" type))})
+  
+  ;; API endpoints
+  (GET "/api/metrics" {params :params headers :headers}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          is-htmx? (get headers "hx-request")]
+      (cond
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if period
+            (let [metrics (if validated-mp
+                            (metrics-api/summary-metrics period :marketplace validated-mp)
+                            (metrics-api/summary-metrics period))]
+              (if is-htmx?
+                ;; Return HTML fragment for HTMX
+                {:status 200
+                 :headers {"Content-Type" "text/html; charset=utf-8"}
+                 :body (hiccup.core/html
+                         [:div
+                          [:div.grid.grid-cols-1.md:grid-cols-2.lg:grid-cols-4.gap-6.mb-6
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Выручка"
+                             :value (long (:revenue metrics))
+                             :unit "₽"
+                             :delta (:revenue-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Заказы"
+                             :value (:orders metrics)
+                             :unit ""
+                             :delta (:orders-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Прибыль"
+                             :value (long (:profit metrics))
+                             :unit "₽"
+                             :delta (:profit-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Процент возвратов"
+                             :value (format "%.1f" (:return-rate metrics))
+                             :unit "%"
+                             :delta (:return-rate-wow metrics)
+                             :delta-label "WoW"})]
+                          ;; Marketplace comparison table
+                          (when-let [by-mp (:by-marketplace metrics)]
+                            [:div.mb-6
+                             ((requiring-resolve 'analitica.web.pages.dashboard/marketplace-comparison-table)
+                              by-mp)])])}
+                ;; Return JSON for non-HTMX requests
+                {:status 200 :body metrics}))
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+  
+  (GET "/api/metrics/:marketplace" {params :params headers :headers}
+    (let [marketplace-str (:marketplace params)
+          validated-mp (validate-marketplace marketplace-str)
+          period-str (get params :period "last-week")
+          validated-period (validate-period period-str)
+          is-htmx? (get headers "hx-request")]
+      (cond
+        (not validated-mp)
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if period
+            (let [metrics (metrics-api/marketplace-metrics validated-mp period)]
+              (if is-htmx?
+                ;; Return HTML fragment for HTMX
+                {:status 200
+                 :headers {"Content-Type" "text/html; charset=utf-8"}
+                 :body (hiccup.core/html
+                         [:div
+                          ;; Metrics cards
+                          [:div.grid.grid-cols-1.md:grid-cols-2.lg:grid-cols-4.gap-6.mb-6
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Выручка"
+                             :value (long (:revenue metrics))
+                             :unit "₽"
+                             :delta (:revenue-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Заказы"
+                             :value (:orders metrics)
+                             :unit ""
+                             :delta (:orders-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Прибыль"
+                             :value (long (:profit metrics))
+                             :unit "₽"
+                             :delta (:profit-wow metrics)
+                             :delta-label "WoW"})
+                           ((requiring-resolve 'analitica.web.components/metric-card)
+                            {:title "Процент возвратов"
+                             :value (format "%.1f" (:return-rate metrics))
+                             :unit "%"
+                             :delta (:return-rate-wow metrics)
+                             :delta-label "WoW"})]
+                          
+                          ;; Top products table
+                          [:div.mb-6
+                           ((requiring-resolve 'analitica.web.pages.dashboard/top-products-table)
+                            (:top-products metrics))]
+                          
+                          ;; Top returns table
+                          [:div
+                           ((requiring-resolve 'analitica.web.pages.dashboard/top-returns-table)
+                            (:top-returns metrics))]])}
+                ;; Return JSON for non-HTMX requests
+                {:status 200 :body metrics}))
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+  (GET "/api/chart/sales" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (cond
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if period
+            (let [chart-data (if validated-mp
+                               (charts-api/sales-chart-data period :marketplace validated-mp)
+                               (charts-api/sales-chart-data period))]
+              {:status 200 :body chart-data})
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+  
+  (GET "/api/chart/share" {params :params}
+    (let [period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (if (or validated-period (nil? period-str))
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if period
+            (let [chart-data (charts-api/share-chart-data period)]
+              {:status 200 :body chart-data})
+            {:status 400 :body {:error (str "Invalid period: " period-str)}}))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}})))
+  (GET "/api/chart/report" {params :params}
+    (let [report-type-str (get params :type)
+          validated-type (when report-type-str (validate-report-type report-type-str))
+          period-str (get params :period "last-week")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+      (cond
+        (and report-type-str (not validated-type))
+        {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
+        
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if (and validated-type period)
+            (let [chart-data (if validated-mp
+                               (charts-api/report-chart-data validated-type period :marketplace validated-mp)
+                               (charts-api/report-chart-data validated-type period))]
+              {:status 200 :body chart-data})
+            {:status 400 :body {:error (str "Invalid parameters - type: " report-type-str ", period: " period-str)}})))))
+  
+  (GET "/api/chart/finance-breakdown" {params :params}
+    (let [marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (cond
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if (and validated-mp period)
+            (let [chart-data (charts-api/finance-breakdown-chart-data validated-mp period)]
+              {:status 200 :body chart-data})
+            {:status 400 :body {:error (str "Invalid parameters - marketplace: " marketplace-str ", period: " period-str)}})))))
+  
+  (GET "/api/chart/abc-distribution" {params :params}
+    (let [marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          period-str (get params :period "last-week")
+          validated-period (validate-period period-str)]
+      (cond
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if (and validated-mp period)
+            (let [chart-data (charts-api/abc-distribution-chart-data validated-mp period)]
+              {:status 200 :body chart-data})
+            {:status 400 :body {:error (str "Invalid parameters - marketplace: " marketplace-str ", period: " period-str)}})))))
+  
+  (GET "/api/report/:type" {params :params}
+    (let [report-type-str (:type params)
+          validated-type  (validate-report-type report-type-str)
+          period-str      (get params :period "last-week")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          trend-type-str  (get params :trend-type)
+          trend-type      (when trend-type-str (keyword trend-type-str))
+          article-str     (get params :article)]
+      (cond
+        (not validated-type)
+        {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
+
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e nil))]
+          (if period
+            (let [report-data ((requiring-resolve 'analitica.web.api.report/report-data)
+                               validated-type period
+                               :marketplace validated-mp
+                               :trend-type  trend-type
+                               :article     article-str)]
+              {:status 200 :body report-data})
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+  (GET "/api/export/:report" {params :params}
+    (let [report-type-str (:report params)
+          validated-type (validate-report-type report-type-str)
+          period-str (get params :period "last-week")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          format-str (get params :format "excel")
+          format (keyword format-str)]
+      (cond
+        (not validated-type)
+        {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
+        
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+        
+        :else
+        (let [period (try
+                       (time/parse-period (or validated-period "last-week"))
+                       (catch Exception e
+                         nil))]
+          (if period
+            (export-api/export-report validated-type period validated-mp format)
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+  
+  ;; Sync API endpoints
+  (POST "/api/sync/start" {body :body params :params}
+    (let [body-str (when body (slurp body))
+          body-data (when (and body-str (not (empty? body-str)))
+                      (json/read-value body-str json/keyword-keys-object-mapper))
+          what-str (or (:what body-data) (:what params))
+          period-str (or (:period body-data) (:period params))
+          marketplace-str (or (:marketplace body-data) (:marketplace params))
+          validated-what (when what-str (validate-sync-what (if (keyword? what-str) (name what-str) what-str)))
+          validated-period (when period-str (validate-period period-str))
+          validated-mp (when marketplace-str (validate-marketplace (if (keyword? marketplace-str) (name marketplace-str) marketplace-str)))]
+      (cond
+        (not validated-what)
+        {:status 400 :body {:error (str "Invalid 'what' parameter: " what-str)}}
+
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+
+        :else
+        (let [period (when validated-period
+                       (try (time/parse-period validated-period)
+                            (catch Exception _ nil)))
+              result (sync-api/start-sync! validated-what
+                                           :period      period
+                                           :marketplace validated-mp)]
+          (if (:error result)
+            {:status 409 :body result}
+            {:status 200 :body result})))))
+  
+  (GET "/api/sync/stream" request
+    (sync-api/sse-stream request))
+  
+  (GET "/api/sync/coverage" []
+    (let [coverage (metrics-api/sync-coverage)]
+      {:status 200
+       :body coverage}))
+
+  ;; Cost prices: CostSource-backed ingest. 1C CSV upload today; future
+  ;; 1C API / Мойсклад / … endpoints will live under the same prefix.
+  (POST "/api/cost-prices/upload" request
+    (cost-prices-api/upload-csv request))
+  (GET "/upload/cost-prices" []
+    (layout/page
+      "Загрузка себестоимости"
+      [:div.container
+       [:h1 "Загрузка себестоимости из 1С"]
+       [:p "Выберите CSV-файл (формат units.csv из 1С) и нажмите «Загрузить»."]
+       [:form {:action "/api/cost-prices/upload"
+               :method "post"
+               :enctype "multipart/form-data"
+               :style "margin-top:1em;padding:1em;border:1px solid #ccc;border-radius:8px"}
+        [:input {:type "file" :name "file" :accept ".csv,text/csv" :required true}]
+        [:button {:type "submit" :style "margin-left:1em"} "Загрузить"]]
+       [:p {:style "color:#666;font-size:0.9em;margin-top:1em"}
+        "После загрузки откроется JSON с результатом: "
+        [:code "{ :loaded :rejected :source … }"]
+        ". Себестоимости обновятся немедленно, перезапуск не требуется."]]))
+
+  ;; 404
+  (route/not-found {:status 404 :body "Not Found"}))
+
+;; ---------------------------------------------------------------------------
+;; Middleware
+;; ---------------------------------------------------------------------------
+
+(defn wrap-json-response
+  "Middleware to convert response body to JSON if it's a Clojure data structure."
+  [handler]
+  (fn [request]
+    (let [response (handler request)]
+      (if (and (or (map? (:body response))
+                   (vector? (:body response))
+                   (seq? (:body response)))
+               (not (string? (:body response))))
+        (-> response
+            (assoc :body (json/write-value-as-string (:body response)))
+            (assoc-in [:headers "Content-Type"] "application/json; charset=utf-8"))
+        response))))
+
+(defn app []
+  (-> app-routes
+      (wrap-multipart-params)
+      (wrap-keyword-params)
+      (wrap-params)
+      (wrap-json-response)
+      (wrap-cors :access-control-allow-origin [#".*"]
+                 :access-control-allow-methods [:get :post :options])))
+
+;; ---------------------------------------------------------------------------
+;; Server lifecycle
+;; ---------------------------------------------------------------------------
+
+(defonce server (atom nil))
+
+(defn start!
+  "Start Jetty server on specified port."
+  [& {:keys [port] :or {port 3000}}]
+  (when-not @server
+    (println (str "Starting Analitica Web UI on port " port "..."))
+    (core/start!)
+    (let [s (jetty/run-jetty (app) {:port port :join? false})]
+      (reset! server s)
+      (println (str "Server running at http://localhost:" port))
+      s)))
+
+(defn stop!
+  "Stop Jetty server."
+  []
+  (when-let [s @server]
+    (.stop s)
+    (reset! server nil)
+    (println "Server stopped")))
+
+;; ---------------------------------------------------------------------------
+;; Main entry point
+;; ---------------------------------------------------------------------------
+
+(defn -main
+  "Entry point for web server. Parses --port argument (default 3000)."
+  [& args]
+  (let [port-arg (some #(when (.startsWith % "--port=")
+                          (subs % 7))
+                       args)
+        port     (if port-arg
+                   (Integer/parseInt port-arg)
+                   3000)]
+    (start! :port port)
+    ;; Keep main thread alive
+    @(promise)))
