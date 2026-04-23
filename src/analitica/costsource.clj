@@ -65,33 +65,60 @@
              ts])
           rows)))
 
+(defn- record-import!
+  "Log one ingest into cost_prices_imports for audit. Safe to no-op
+   when the table doesn't exist yet (db/init! hasn't run)."
+  [{:keys [source fetched loaded rejected] :as _summary} opts]
+  (try
+    (db/execute!
+      ["INSERT INTO cost_prices_imports
+         (source, imported_at, fetched, loaded, rejected, filename, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+       (name source)
+       (now-str)
+       (int fetched)
+       (int loaded)
+       (int rejected)
+       (:filename opts)
+       (:notes opts)])
+    (catch Throwable t
+      ;; Don't let audit-logging failures break the ingest itself.
+      (println "  [warn] cost_prices_imports log failed:" (.getMessage t)))))
+
 (defn ingest!
   "Ingest cost prices from `source` (anything implementing CostSource).
    Returns {:source :fetched :loaded :rejected :errors}.
 
    Side effects:
      - INSERT OR REPLACE rows in `cost_prices` table (per-barcode)
+     - INSERT one row in `cost_prices_imports` for audit (source kind,
+       timestamp, counts, optional filename/notes via `opts`)
      - Refresh in-memory atoms in `analitica.domain.cost-price` so
        existing `get-price` callers see the fresh data immediately
 
    `rejected` counts rows that failed minimal validation (article blank
    or cost-price < 0). Duplicate (article, barcode) rows after the first
    are silently dropped — INSERT-OR-REPLACE would do the same, but we
-   count the unique rows for the caller's summary."
-  [source]
-  (let [source-name (p/source-id source)
-        raw         (p/fetch-cost-prices source)
-        {:keys [ok bad]} (split-ok-bad raw)
-        deduped     (dedup-per-key ok)
-        db-rows     (to-db-rows deduped)
-        inserted    (db/insert-batch!
-                      :cost_prices
-                      [:article :barcode :cost_price
-                       :nomenclature :color :characteristic :quantity_1c :updated_at]
-                      db-rows)]
-    (cp/set-prices-from-rows! ok)
-    {:source    source-name
-     :fetched   (count raw)
-     :loaded    (or inserted (count db-rows))
-     :rejected  (count bad)
-     :errors    (vec (take 10 bad))}))
+   count the unique rows for the caller's summary.
+
+   Optional `opts` map: {:filename \"units.csv\" :notes \"manual upload\"}."
+  ([source] (ingest! source {}))
+  ([source opts]
+   (let [source-name (p/source-id source)
+         raw         (p/fetch-cost-prices source)
+         {:keys [ok bad]} (split-ok-bad raw)
+         deduped     (dedup-per-key ok)
+         db-rows     (to-db-rows deduped)
+         inserted    (db/insert-batch!
+                       :cost_prices
+                       [:article :barcode :cost_price
+                        :nomenclature :color :characteristic :quantity_1c :updated_at]
+                       db-rows)
+         summary     {:source    source-name
+                      :fetched   (count raw)
+                      :loaded    (or inserted (count db-rows))
+                      :rejected  (count bad)
+                      :errors    (vec (take 10 bad))}]
+     (cp/set-prices-from-rows! ok)
+     (record-import! summary opts)
+     summary)))

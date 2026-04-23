@@ -247,6 +247,17 @@
       UNIQUE(source, period_begin, period_end)
     )"
 
+   "CREATE TABLE IF NOT EXISTS cost_prices_imports (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      source      TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      fetched     INTEGER NOT NULL DEFAULT 0,
+      loaded      INTEGER NOT NULL DEFAULT 0,
+      rejected    INTEGER NOT NULL DEFAULT 0,
+      filename    TEXT,
+      notes       TEXT
+    )"
+
    "CREATE TABLE IF NOT EXISTS raw_data (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       source      TEXT NOT NULL,

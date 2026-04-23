@@ -712,22 +712,49 @@
   ;; 1C API / Мойсклад / … endpoints will live under the same prefix.
   (POST "/api/cost-prices/upload" request
     (cost-prices-api/upload-csv request))
+  (GET "/api/cost-prices/imports" request
+    (cost-prices-api/list-imports request))
   (GET "/upload/cost-prices" []
-    (layout/page
-      "Загрузка себестоимости"
-      [:div.container
-       [:h1 "Загрузка себестоимости из 1С"]
-       [:p "Выберите CSV-файл (формат units.csv из 1С) и нажмите «Загрузить»."]
-       [:form {:action "/api/cost-prices/upload"
-               :method "post"
-               :enctype "multipart/form-data"
-               :style "margin-top:1em;padding:1em;border:1px solid #ccc;border-radius:8px"}
-        [:input {:type "file" :name "file" :accept ".csv,text/csv" :required true}]
-        [:button {:type "submit" :style "margin-left:1em"} "Загрузить"]]
-       [:p {:style "color:#666;font-size:0.9em;margin-top:1em"}
-        "После загрузки откроется JSON с результатом: "
-        [:code "{ :loaded :rejected :source … }"]
-        ". Себестоимости обновятся немедленно, перезапуск не требуется."]]))
+    (let [recent (:body (cost-prices-api/list-imports {:params {:limit "10"}}))]
+      (layout/page
+        "Загрузка себестоимости"
+        [:div.container
+         [:h1 "Загрузка себестоимости из 1С"]
+         [:p "Выберите CSV-файл (формат units.csv из 1С) и нажмите «Загрузить»."]
+         [:form {:action "/api/cost-prices/upload"
+                 :method "post"
+                 :enctype "multipart/form-data"
+                 :style "margin-top:1em;padding:1em;border:1px solid #ccc;border-radius:8px"}
+          [:input {:type "file" :name "file" :accept ".csv,text/csv" :required true}]
+          [:button {:type "submit" :style "margin-left:1em"} "Загрузить"]]
+         [:p {:style "color:#666;font-size:0.9em;margin-top:1em"}
+          "После загрузки откроется JSON с результатом: "
+          [:code "{ :loaded :rejected :source … }"]
+          ". Себестоимости обновятся немедленно, перезапуск не требуется."]
+         [:h2 {:style "margin-top:2em"} "История загрузок (последние 10)"]
+         [:table {:style "border-collapse:collapse;width:100%"}
+          [:thead
+           [:tr {:style "background:#f4f4f4"}
+            [:th {:style "text-align:left;padding:6px;border-bottom:1px solid #ddd"} "#"]
+            [:th {:style "text-align:left;padding:6px;border-bottom:1px solid #ddd"} "Когда"]
+            [:th {:style "text-align:left;padding:6px;border-bottom:1px solid #ddd"} "Источник"]
+            [:th {:style "text-align:right;padding:6px;border-bottom:1px solid #ddd"} "Загружено"]
+            [:th {:style "text-align:right;padding:6px;border-bottom:1px solid #ddd"} "Отброшено"]
+            [:th {:style "text-align:left;padding:6px;border-bottom:1px solid #ddd"} "Файл"]
+            [:th {:style "text-align:left;padding:6px;border-bottom:1px solid #ddd"} "Примечание"]]]
+          [:tbody
+           (if (seq (:imports recent))
+             (for [r (:imports recent)]
+               [:tr
+                [:td {:style "padding:6px;border-bottom:1px solid #eee"} (:id r)]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee"} (:imported-at r)]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee"} (:source r)]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee;text-align:right"} (:loaded r)]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee;text-align:right"} (:rejected r)]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee"} (or (:filename r) "")]
+                [:td {:style "padding:6px;border-bottom:1px solid #eee"} (or (:notes r) "")]])
+             [:tr [:td {:colspan 7 :style "padding:1em;color:#666;text-align:center"}
+                   "Импортов пока не было."]])]]])))
 
   ;; 404
   (route/not-found {:status 404 :body "Not Found"}))

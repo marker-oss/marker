@@ -6,11 +6,15 @@
    `analitica.costsource/ingest!` via the csv1c provider, returns the
    ingest summary as JSON.
 
+   `GET /api/cost-prices/imports` — returns the last N rows from the
+   `cost_prices_imports` audit table (newest first).
+
    Future providers (1C HTTP API, Мойсклад API, …) will expose
    additional endpoints under the same `/api/cost-prices/…` prefix.
    The underlying ingest pipeline is shared."
   (:require [analitica.costsource :as costsource]
             [analitica.costsource.csv1c :as csv1c]
+            [analitica.db :as db]
             [clojure.java.io :as io])
   (:import [java.io File]))
 
@@ -24,6 +28,21 @@
         out    (File/createTempFile "costprices-" suffix)]
     (io/copy tempfile out)
     out))
+
+(defn list-imports
+  "GET handler — return last N rows of cost_prices_imports (newest first).
+   Accepts optional query param `limit` (default 50, max 500)."
+  [request]
+  (let [raw (or (get-in request [:params :limit])
+                (get-in request [:params "limit"]))
+        n   (try (max 1 (min 500 (Integer/parseInt (str raw))))
+                 (catch Exception _ 50))
+        rows (db/query
+               ["SELECT id, source, imported_at, fetched, loaded, rejected, filename, notes
+                 FROM cost_prices_imports
+                 ORDER BY id DESC
+                 LIMIT ?" n])]
+    {:status 200 :body {:limit n :imports (vec rows)}}))
 
 (defn upload-csv
   "Compojure handler for POST /api/cost-prices/upload.
@@ -41,7 +60,10 @@
       :else
       (let [^File temp (save-upload-to-temp file-part)]
         (try
-          (let [result (costsource/ingest! (csv1c/make-source (.getAbsolutePath temp)))]
+          (let [result (costsource/ingest!
+                         (csv1c/make-source (.getAbsolutePath temp))
+                         {:filename (:filename file-part)
+                          :notes    "web upload"})]
             {:status 200
              :body   (assoc result :filename (:filename file-part))})
           (catch Throwable t
