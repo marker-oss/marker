@@ -114,3 +114,15 @@
                     {:period s
                      :supported ["last-week" "last-7-days" "last-30-days"
                                  "this-month" "YYYY-MM-DD,YYYY-MM-DD"]}))))
+
+(defn resolve-period
+  "Normalize a period argument to [from to] date-string pair.
+
+   Accepts: keyword (looked up via `period`), 2-vector [from to],
+   or map {:from :to}."
+  [p]
+  (cond
+    (keyword? p) (period p)
+    (vector? p)  p
+    (map? p)     [(:from p) (:to p)]
+    :else (throw (ex-info "Unrecognized period" {:period p}))))

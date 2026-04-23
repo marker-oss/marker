@@ -18,3 +18,11 @@
   (if (and b (not (zero? b)))
     (/ (double a) (double b))
     0.0))
+
+(defn pct-delta
+  "Percentage change from `previous` to `current`. Returns 0.0 when
+   previous is nil or zero. Rounded to 2 dp."
+  [current previous]
+  (if (or (nil? previous) (zero? previous))
+    0.0
+    (round2 (* 100.0 (/ (- current previous) previous)))))

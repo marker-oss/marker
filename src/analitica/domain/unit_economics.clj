@@ -8,9 +8,6 @@
             [analitica.util.math :as math]
             [analitica.util.time :as t]))
 
-(defn- resolve-dates [period]
-  (if (keyword? period) (t/period period) [(:from period) (:to period)]))
-
 (defn- ensure-finance-coverage!
   [finance-data from to]
   (let [pick-date (fn [k1 k2 m] (or (get m k1) (get m k2)))
@@ -201,7 +198,7 @@
   [period & {:keys [marketplace source basis]
              :or   {source :db basis :article}}]
   (println "\nЗагрузка данных для юнит-экономики...")
-  (let [[from to] (resolve-dates period)
+  (let [[from to] (t/resolve-period period)
         fin-data (finance/fetch-finance period :marketplace marketplace :source source)
         _        (ensure-finance-coverage! fin-data from to)
         storage-map (let [rows (db/storage-by-article from to :marketplace marketplace)]
@@ -360,7 +357,7 @@
    [:profit "Profit"] [:margin-pct "Margin%"]])
 
 (defn export-excel [period path & opts]
-  (let [[from to] (resolve-dates period)
+  (let [[from to] (t/resolve-period period)
         opts-map (apply hash-map opts)
         marketplace (:marketplace opts-map)
         basis       (or (:basis opts-map) :article)
