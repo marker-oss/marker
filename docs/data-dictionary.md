@@ -232,3 +232,53 @@ One row = one (article, warehouse, marketplace) stock snapshot at the last sync.
 - No cross-MP warehouse ID unification — warehouse strings are MP-specific.
 - No historical time series — consumer reports compute days-of-supply from sales history × current snapshot.
 - **Tech-size** is WB-specific; nil for other MPs.
+
+## cost_prices
+
+### Purpose
+
+Self-cost (COGS base) per article, imported from a 1C CSV export.
+Used by Finance, P&L, and Unit Economics to compute gross profit.
+Single-source (1C) — no marketplace dimension.
+
+### Grain
+
+One row = one (article, barcode) pair. Barcode may be empty string
+to represent "article-level" cost (when 1C doesn't track per-barcode).
+
+### Source mapping
+
+| source | how | raw → normalized |
+|---|---|---|
+| 1C CSV | CLI import (`cost-price/load-from-1c`) or web upload | `Артикул` → `article`, `Штрихкод` → `barcode`, `Цена` → `cost-price`, `Номенклатура` → `nomenclature`, `Цвет` → `color`, `Количество` → `quantity-1c` |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `article` | `:string` | no | — | seller article (must match article in finance/sales) |
+| `barcode` | `:string` | no | — | product barcode; empty string if article-level |
+| `cost-price` | int/double ≥ 0 | no | RUB | self-cost per unit |
+| `nomenclature` | `:string` | yes | — | 1C product name |
+| `color` | `:string` | yes | — | variant color |
+| `quantity-1c` | int/double | yes | units | stock-on-hand per 1C at import time |
+| `updated-at` | `:string` | yes | ISO timestamp | last import date |
+
+### Invariants
+
+- `cost-price >= 0` (never negative; cannot be zero in practice but schema allows it for "unknown cost" markers).
+- PK `(article, barcode)` — one row per combo.
+
+### Edge cases
+
+- **BOM-prefixed 1C CSVs** — CSV loader strips UTF-8 BOM.
+- **CSV delimiter** — 1C may emit `;` or `,`; loader auto-detects from header.
+- **Decimal separator** — 1C uses `,` or `.` — loader normalizes to `.`.
+- **Missing barcode** — loader writes empty string, not nil, to keep PK stable.
+- **Fallback lookup** — if finance row's (article, barcode) has no cost_price, `cost_price/get-price` falls back to (article, "").
+
+### Known gaps
+
+- **No multi-version history** — a 1C re-import replaces old cost. Historical pricing for past periods is lost.
+- **No marketplace dimension** — same cost applies to all MPs. Acceptable per current scope (1C is our single source of truth).
+- **Atom-cached at load time** — `cost_price.clj` keeps prices in an atom. Rebuild on app restart requires explicit re-load.
