@@ -34,7 +34,8 @@
    :cash-flow-periods cash-flow-periods/CashFlowPeriodRow})
 
 (defn valid?
-  "Dispatch on table keyword. Returns true iff row satisfies the table's schema."
+  "Dispatch on table keyword. Returns true iff row satisfies the table's schema.
+   Throws ex-info on unknown table keyword."
   [table row]
   (case table
     :finance           (finance/valid? row)
@@ -44,10 +45,12 @@
     :ad-stats          (ad-stats/valid? row)
     :paid-storage      (paid-storage/valid? row)
     :region-sales      (region-sales/valid? row)
-    :cash-flow-periods (cash-flow-periods/valid? row)))
+    :cash-flow-periods (cash-flow-periods/valid? row)
+    (throw (ex-info "Unknown normalized table"
+                    {:table table :known tables}))))
 
 (defn validate-rows
-  "Dispatch on table keyword."
+  "Dispatch on table keyword. Throws ex-info on unknown table keyword."
   [table rows]
   (case table
     :finance           (finance/validate-rows rows)
@@ -57,4 +60,6 @@
     :ad-stats          (ad-stats/validate-rows rows)
     :paid-storage      (paid-storage/validate-rows rows)
     :region-sales      (region-sales/validate-rows rows)
-    :cash-flow-periods (cash-flow-periods/validate-rows rows)))
+    :cash-flow-periods (cash-flow-periods/validate-rows rows)
+    (throw (ex-info "Unknown normalized table"
+                    {:table table :known tables}))))
