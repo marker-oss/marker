@@ -70,3 +70,18 @@
       (is (false? (:supports-compare? s)))
       (is (not (contains? (set (:tabs s)) :table)))
       (is (contains? (set (:tabs s)) :chart)))))
+
+(deftest all-schemas-registered-test
+  (testing "все 10 типов отчётов зарегистрированы"
+    (let [expected #{:sales :finance :ue :pnl :abc :stock :returns :buyout :geo :trends}]
+      (is (= expected (set (rs/all-report-types))))))
+
+  (testing "snapshot-отчёты (stock) имеют :uses-period? false"
+    (is (false? (:uses-period? (rs/get-schema :stock)))))
+
+  (testing "каждая schema имеет минимум 2 колонки"
+    (doseq [rt (rs/all-report-types)]
+      (let [s (rs/get-schema rt)]
+        (when-not (= :none (:rows-mode s))
+          (is (>= (count (:columns s)) 2)
+              (str rt " should have >= 2 columns")))))))

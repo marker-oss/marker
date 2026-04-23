@@ -92,9 +92,143 @@
     :penalties :acquiring :deduction :additional :ad-spend :total-cost
     :gross-profit :net-profit :margin-gross :margin-net]})
 
+(def ^:private sales-schema
+  {:report-type :sales :title "Продажи"
+   :uses-period? true :supports-compare? true :rows-mode :per-period
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-revenue :title "Выручка" :format :rub}
+         {:key :total-sales :title "Продажи" :format :int}
+         {:key :total-returns :title "Возвраты" :format :int}]
+   :columns [{:key :group :title "Дата" :group :identity :format :date :default-visible? true}
+             {:key :sales-count :title "Продажи" :group :volume :format :int :default-visible? true}
+             {:key :returns-count :title "Возвраты" :group :volume :format :int :default-visible? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :avg-price :title "Средняя цена" :group :money :format :rub :default-visible? true}]
+   :column-groups {:identity {:title "Identity"}
+                   :volume   {:title "Объём"}
+                   :money    {:title "Деньги"}}
+   :chart {:type :line :title "Динамика продаж" :x :group :y :revenue}})
+
+(def ^:private finance-schema
+  {:report-type :finance :title "Финансы"
+   :uses-period? true :supports-compare? true :rows-mode :per-article
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-revenue :title "Выручка" :format :rub}
+         {:key :total-for-pay :title "К оплате" :format :rub}
+         {:key :total-cost :title "Затраты" :format :rub}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :wb-reward :title "Вознаграждение WB" :group :money :format :rub :default-visible? true}
+             {:key :logistics :title "Логистика" :group :money :format :rub :default-visible? true}
+             {:key :storage :title "Хранение" :group :money :format :rub :default-visible? true}
+             {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true}
+             {:key :total-cost :title "Общие затраты" :group :money :format :rub :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :money {:title "Деньги"}}
+   :chart {:type :bar :title "Разбивка затрат" :x :article :y :for-pay :limit 20}})
+
+(def ^:private abc-schema
+  {:report-type :abc :title "ABC-анализ"
+   :uses-period? true :supports-compare? false :rows-mode :per-article
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-revenue :title "Выручка" :format :rub}
+         {:key :a-count :title "А-класс" :format :int}
+         {:key :b-count :title "B-класс" :format :int}
+         {:key :c-count :title "C-класс" :format :int}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :abc-category :title "Категория" :group :identity :format :text :default-visible? true}
+             {:key :cum-pct :title "Накопленный %" :group :pct :format :pct :default-visible? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true}
+             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :pct {:title "%"} :money {:title "Деньги"} :volume {:title "Объём"}}
+   :chart {:type :line :title "Парето-кривая" :x :article :y :cum-pct}})
+
+(def ^:private stock-schema
+  {:report-type :stock :title "Остатки"
+   :uses-period? false :supports-compare? false :rows-mode :per-article
+   :tabs [:table :chart]
+   :kpi [{:key :total-quantity :title "Всего на складах" :format :int}
+         {:key :total-in-way-to :title "В пути к клиенту" :format :int}
+         {:key :sku-count :title "SKU" :format :int}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :quantity :title "Количество" :group :qty :format :int :default-visible? true}
+             {:key :quantity-full :title "Полное кол-во" :group :qty :format :int :default-visible? true}
+             {:key :in-way-to :title "В пути к клиенту" :group :qty :format :int :default-visible? true}
+             {:key :in-way-from :title "В пути от клиента" :group :qty :format :int :default-visible? true}
+             {:key :warehouses :title "Склады" :group :identity :format :text :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :qty {:title "Количество"}}
+   :chart {:type :bar :title "Остатки по артикулам" :x :article :y :quantity :limit 20}})
+
+(def ^:private returns-schema
+  {:report-type :returns :title "Возвраты"
+   :uses-period? true :supports-compare? true :rows-mode :per-article
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-sold :title "Продано" :format :int}
+         {:key :total-returned :title "Возвращено" :format :int}
+         {:key :avg-return-rate :title "% возврата" :format :pct}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :sold :title "Продано" :group :volume :format :int :default-visible? true}
+             {:key :returned :title "Возвращено" :group :volume :format :int :default-visible? true}
+             {:key :total :title "Всего" :group :volume :format :int :default-visible? true}
+             {:key :return-rate :title "% возврата" :group :pct :format :pct :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :pct {:title "%"}}
+   :chart {:type :line :title "Динамика возвратов" :x :article :y :return-rate}})
+
+(def ^:private buyout-schema
+  {:report-type :buyout :title "Выкуп"
+   :uses-period? true :supports-compare? true :rows-mode :per-article
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-ordered :title "Заказано" :format :int}
+         {:key :total-bought :title "Выкуплено" :format :int}
+         {:key :avg-buyout-rate :title "% выкупа" :format :pct}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :ordered :title "Заказано" :group :volume :format :int :default-visible? true}
+             {:key :bought :title "Выкуплено" :group :volume :format :int :default-visible? true}
+             {:key :returned :title "Возвращено" :group :volume :format :int :default-visible? true}
+             {:key :buyout-rate :title "% выкупа" :group :pct :format :pct :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :pct {:title "%"}}
+   :chart {:type :bar :title "Выкуп по артикулам" :x :article :y :buyout-rate :limit 20}})
+
+(def ^:private geo-schema
+  {:report-type :geo :title "География"
+   :uses-period? true :supports-compare? false :rows-mode :per-region
+   :tabs [:table :chart]
+   :kpi [{:key :total-sum :title "Выручка" :format :rub}
+         {:key :total-qty :title "Заказов" :format :int}
+         {:key :region-count :title "Регионов" :format :int}]
+   :columns [{:key :region :title "Регион" :group :identity :format :text :default-visible? true}
+             {:key :qty :title "Количество" :group :volume :format :int :default-visible? true}
+             {:key :sum :title "Сумма" :group :money :format :rub :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :money {:title "Деньги"}}
+   :chart {:type :bar :title "Продажи по регионам" :x :region :y :sum :limit 20}})
+
+(def ^:private trends-schema
+  {:report-type :trends :title "Тренды"
+   :uses-period? true :supports-compare? false :rows-mode :per-metric
+   :tabs [:table :chart]
+   :kpi [{:key :revenue-current :title "Выручка сейчас" :format :rub}
+         {:key :orders-current :title "Заказы сейчас" :format :int}
+         {:key :profit-current :title "Прибыль сейчас" :format :rub}]
+   :columns [{:key :metric :title "Метрика" :group :identity :format :text :default-visible? true}
+             {:key :current :title "Текущий" :group :money :format :rub :default-visible? true}
+             {:key :previous :title "Предыдущий" :group :money :format :rub :default-visible? true}
+             {:key :change :title "Изменение" :group :money :format :rub :default-visible? true}
+             {:key :change-pct :title "Изменение %" :group :pct :format :pct :default-visible? true}]
+   :column-groups {:identity {:title "Identity"} :money {:title "Деньги"} :pct {:title "%"}}
+   :chart {:type :bar :title "WoW/MoM" :x :metric :y :change-pct}})
+
 (def ^:private registry
-  {:ue  ue-schema
-   :pnl pnl-schema})
+  {:ue      ue-schema
+   :pnl     pnl-schema
+   :sales   sales-schema
+   :finance finance-schema
+   :abc     abc-schema
+   :stock   stock-schema
+   :returns returns-schema
+   :buyout  buyout-schema
+   :geo     geo-schema
+   :trends  trends-schema})
 
 (defn get-schema
   "Return schema map for report-type keyword, or nil if unknown."
