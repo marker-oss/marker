@@ -181,4 +181,54 @@ when source IDs aren't globally unique).
 
 - **Warehouse attribution** for Ozon is via `warehouse_id` lookup; unknown warehouses land as nil.
 - **Region** for YM orders often nil — YM exposes region only in specific report endpoints.
+
+## stocks
+
+### Purpose
+
+Point-in-time warehouse stock snapshots per article per warehouse.
+Feeds the Stock report and `unit_economics` days-of-supply calculation.
+Not a time series — each sync overwrites prior rows for the same (article, warehouse, marketplace).
+
+### Grain
+
+One row = one (article, warehouse, marketplace) stock snapshot at the last sync.
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| WB | `/api/v1/supplier/stocks` | `supplierArticle` → `article`, `nmId` → `nm-id`, `warehouseName` → `warehouse`, `quantity` → `quantity`, `quantityFull` → `quantity-full`, `inWayToClient` → `in-way-to`, `inWayFromClient` → `in-way-from` |
+| Ozon | `/v3/product/info/stocks` | `offer_id` → `article`, `stocks[*].type` → `warehouse`, `stocks[*].present` → `quantity`, `stocks[*].reserved` (subtracted or separate key — check transform) |
+| YM | `/businesses/{id}/offer-mappings` | `offer.id` → `article`, `stocks[*].warehouseId` → `warehouse`, stock counts → `quantity` |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `article` | `:string` | no | — | seller article |
+| `marketplace` | enum | no | — | source MP |
+| `warehouse` | `:string` | yes | — | warehouse name/id |
+| `quantity` | int/double | yes | units | available for sale |
+| `quantity-full` | int/double | yes | units | total including reserved |
+| `in-way-to` | int/double | yes | units | inbound shipment |
+| `in-way-from` | int/double | yes | units | customer returns in transit |
+| `nm-id`, `barcode`, `tech-size`, `subject`, `category`, `brand` | various | yes | — | catalog metadata |
+| `id`, `synced-at` | int, string | yes | — | row id, last sync time |
+
+### Invariants
+
+- `quantity <= quantity-full` whenever both present.
+- `quantity >= 0` always.
+
+### Edge cases
+
+- **Snapshot semantics** — old warehouses not in latest sync remain in the table until re-sync overwrites or manual cleanup. Consumers should filter by `synced-at >= now - 24h` if freshness matters.
+- **Ozon `present` vs `reserved`** — transform subtracts reserved to get `quantity`. `quantity-full` preserves the raw total.
+- **YM `warehouse` may be empty string** — YM exposes only FBY warehouses by id, not name.
+
+### Known gaps
+
+- No cross-MP warehouse ID unification — warehouse strings are MP-specific.
+- No historical time series — consumer reports compute days-of-supply from sales history × current snapshot.
 - **Tech-size** is WB-specific; nil for other MPs.
