@@ -526,10 +526,7 @@
 
 (defn- transform-storage [source raw-items]
   (case source
-    ;; WB storage transform was trimmed from the branch sync; stub to empty.
-    "wb"   (do (println "  WB storage transform not available on this branch; skipping.")
-               (vec raw-items)
-               [])
+    "wb"   (wb-t/->storage-costs raw-items)
     "ozon" (ozon-t/->storage-costs raw-items)
     "ym"   []))
 

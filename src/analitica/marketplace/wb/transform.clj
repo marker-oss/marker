@@ -114,7 +114,10 @@
    :wb-reward         (:ppvz_reward raw)            ;; вознаграждение WB
    :wb-kvw-prc        (:ppvz_kvw_prc raw)           ;; % комиссии WB
    :spp-prc           (:ppvz_spp_prc raw)            ;; % СПП
-   :operation         (:supplier_oper_name raw)
+   :operation         (case (:supplier_oper_name raw)
+                        "Продажа" "sale"
+                        "Возврат" "return"
+                        (:supplier_oper_name raw))
    :price-with-disc   (:retail_price_withdisc_rub raw)
    :delivery-amount   (:delivery_amount raw)
    :return-amount     (:return_amount raw)
@@ -131,6 +134,43 @@
 
 (defn ->finance-report [raw-list]
   (mapv ->finance-line raw-list))
+
+;; ---------------------------------------------------------------------------
+;; Paid storage
+;; ---------------------------------------------------------------------------
+
+(defn ->storage-cost [raw]
+  ;; NB: WB `warehousePrice` is already the total cost for this row's
+  ;; `barcodesCount` items (= per_unit_rate × barcodesCount).  Earlier code
+  ;; multiplied by barcodesCount again, triple-inflating storage in March
+  ;; 2026 (362k stored vs 120k real). See Phase-2 verification 2026-04-23.
+  {:date           (:date raw)
+   :article        (:vendorCode raw)
+   :nm-id          (:nmId raw)
+   :barcode        (or (:barcode raw) "")
+   :warehouse      (or (:warehouse raw) "")
+   :cost           (or (:warehousePrice raw) 0.0)
+   :volume         (:volume raw)
+   :barcodes-count (:barcodesCount raw)
+   :marketplace    :wb})
+
+(defn ->storage-costs
+  "Transform WB paid-storage raw items and coalesce duplicates.
+
+   WB returns multiple rows per (date, barcode, warehouse) when inventory
+   is split across calcType categories (e.g. «короба базы» +
+   «короба свыше базы»).  Each row's `warehousePrice` is the cost for
+   its portion; we sum them per unique (date, barcode, warehouse) key.
+   Otherwise `db/insert-batch!` INSERT-OR-REPLACE would drop all-but-last."
+  [raw-list]
+  (->> raw-list
+       (mapv ->storage-cost)
+       (group-by (juxt :date :barcode :warehouse))
+       vals
+       (mapv (fn [rows]
+               (-> (first rows)
+                   (assoc :cost (reduce + 0.0 (keep :cost rows)))
+                   (assoc :barcodes-count (reduce + 0 (keep :barcodes-count rows))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Product stats (nm-report)
@@ -158,9 +198,9 @@
 (defn ->price [raw]
   {:nm-id     (:nmID raw)
    :article   (:vendorCode raw)
-   :price     (:price raw)
+   :price     (get-in raw [:sizes 0 :price])
    :discount  (:discount raw)
    :club-disc (:clubDiscount raw)})
 
 (defn ->prices [response]
-  (mapv ->price (get response :data [])))
+  (mapv ->price (get-in response [:data :listGoods] [])))
