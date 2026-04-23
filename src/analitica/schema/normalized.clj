@@ -7,8 +7,24 @@
      - explain      — humanized error map
      - validate-rows — {:ok [...] :bad [...]}
 
-   See docs/data-dictionary.md for canonical semantics.")
+   See docs/data-dictionary.md for canonical semantics."
+  (:require [analitica.schema.normalized.finance :as finance]))
 
 (def tables
-  "Registered normalized tables. Populated by per-table tasks."
-  #{})
+  "Registered normalized tables."
+  #{:finance})
+
+(def schemas
+  {:finance finance/FinanceRow})
+
+(defn valid?
+  "Dispatch on table keyword. Returns true iff row satisfies the table's schema."
+  [table row]
+  (case table
+    :finance (finance/valid? row)))
+
+(defn validate-rows
+  "Dispatch on table keyword."
+  [table rows]
+  (case table
+    :finance (finance/validate-rows rows)))

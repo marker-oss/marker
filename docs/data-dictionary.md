@@ -36,3 +36,90 @@ Each section below follows a fixed 7-point structure:
 ---
 
 <!-- Tasks 1-8 populate one section each, in order. -->
+
+## finance
+
+### Purpose
+
+Normalized per-row financial events from marketplace settlement reports.
+Captures every money-moving operation (sale, return, commission charge,
+logistics fee, penalty, storage fee, ad spend) at its most granular
+grain, regardless of marketplace. Primary source for Finance, P&L, UE,
+and ABC reports.
+
+### Grain
+
+One row = one marketplace-reported financial event, keyed by
+`(marketplace, rrd_id)`. For WB, `rrd_id` comes from the detail-by-period
+report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
+`operation_id` + service index to keep the composite PK stable. For YM,
+`rrd_id` is synthesized from order id + bidFee/event type.
+
+### Source mapping
+
+| marketplace | endpoint                                | raw field → normalized field |
+|---|---|---|
+| WB  | `/api/v5/supplier/reportDetailByPeriod` | `rrd_id` → `rrd-id`, `date_from` → `date-from`, `retail_amount` → `retail-amount`, `for_pay` → `for-pay`, `ppvz_for_pay` → `for-pay` (fallback), `bonus_type_name` → `operation`, `commission_percent` → `commission-pct`, `ppvz_vw` → `wb-reward`, `delivery_rub` → `delivery-cost`, `storage_fee` → `storage-fee`, `acceptance` → `acceptance`, `penalty` → `penalty`, `additional_payment` → `additional-payment`, `deduction` → `deduction`, `acquiring_fee` → `acquiring-fee` |
+| Ozon | `/v3/finance/transaction/list` + `/v2/finance/realization` | `amount` → `for-pay` (transaction) / `payout` → `for-pay` (realization), `operation_type` → `operation`, `services[*].name` → field-mapped cost per service type (see `transform.clj`), `commission_amount` → `wb-commission` (reused field, see known gap), `sku` → `article` via `ozon_sku_map` |
+| YM | `/campaigns/{id}/stats/orders` + `/reports/united-netting` | `status` → `operation` (`DELIVERED` → `sale`, `CANCELLED` → `cancel`, etc.), `netting.*` → for-pay, `bidFee` → `ad-cost`, order item `price * count` → `retail-amount` |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | enum | meaning |
+|---|---|---|---|---|---|
+| `marketplace` | `[:enum :wb :ozon :ym]` | no | — | wb/ozon/ym | source marketplace (canonical keyword) |
+| `rrd-id` | `[:or :int :double]` | no | — | — | composite PK second half — MP-assigned or synthesized |
+| `date-from` | `:string` | no | ISO date | — | reporting period start |
+| `date-to` | `:string` | no | ISO date | — | reporting period end |
+| `article` | `:string` | yes | — | — | seller-facing article (offer_id for Ozon, supplierArticle for WB) |
+| `operation` | `:string` | no | — | sale/return/commission/logistics/storage/ad/penalty/cancel/other | normalized operation kind |
+| `quantity` | int/double | yes | units | — | units moved (positive for sale, negative or separate row for return) |
+| `for-pay` | int/double | no | RUB | — | net amount credited to seller for this row |
+| `retail-price` | int/double | yes | RUB | — | list price per unit |
+| `retail-amount` | int/double | yes | RUB | — | retail price × quantity before discounts |
+| `sale-percent` | int/double | yes | % | — | discount pct applied |
+| `commission-pct` | int/double | yes | % | — | MP commission as declared in report |
+| `wb-commission` | int/double | yes | RUB | — | WB: from report; Ozon: `commission_amount` (reused field — see known gap) |
+| `wb-reward` | int/double | yes | RUB | — | WB: `ppvz_vw`; other MP: nil |
+| `wb-kvw-prc` | int/double | yes | % | — | WB-specific discount margin |
+| `spp-prc` | int/double | yes | % | — | WB SPP percentage |
+| `price-with-disc` | int/double | yes | RUB | — | discounted unit price |
+| `delivery-amount` | int/double | yes | count | — | number of deliveries/returns in row |
+| `return-amount` | int/double | yes | count | — | number of returned units |
+| `delivery-cost` | int/double | yes | RUB | — | logistics fee for this row |
+| `penalty` | int/double | yes | RUB | — | fines attributed to this row |
+| `storage-fee` | int/double | yes | RUB | — | storage fee attributed to this row |
+| `acceptance` | int/double | yes | RUB | — | acceptance/receiving fee |
+| `additional-payment` | int/double | yes | RUB | — | surcharges |
+| `deduction` | int/double | yes | RUB | — | other deductions |
+| `acquiring-fee` | int/double | yes | RUB | — | payment-processing fee |
+| `ad-cost` | int/double | yes | RUB | — | ad spend allocated to this row (per-article for YM/Ozon; proportional for WB — spec 003 US5) |
+| `report-id` | int/double | yes | — | — | MP report batch id (for traceability) |
+| `nm-id` | int/double | yes | — | — | WB-specific numeric article id |
+| `barcode` | `:string` | yes | — | — | product barcode if available |
+| `subject`, `brand`, `doc-type` | `:string` | yes | — | — | catalog metadata |
+| `synced-at` | `:string` | yes | ISO timestamp | — | when sync wrote this row |
+
+### Invariants
+
+- `for-pay` must be numeric (not nil). All other money fields may be nil.
+- For WB, `rrd-id` is always a positive integer.
+- For a sale row, `quantity >= 1`. For a return row, either `quantity <= 0` or `return-amount >= 1` (marketplace-dependent — see edge cases).
+- `marketplace` must be one of `:wb` `:ozon` `:ym`. Stale string values are rejected by schema.
+
+### Edge cases
+
+- **WB return rows** may have `quantity` negative or `return_amount > 0` depending on report version.
+- **Ozon cancellations** appear as transactions with `operation_type = OperationTypeRefund` — normalized to `operation = "return"` by `ozon/transform.clj`.
+- **Ozon per-article service costs** live as separate rows with `quantity = 0` or `nil` and a single cost field populated (e.g. `delivery-cost`). See B-009 in `specs/002-calculation-audit/verdicts.md`.
+- **YM cancelled orders still accrue `ad-cost`** — bidFee charged even if order never delivered.
+- **Multi-article ad campaigns** (WB) allocate `ad-cost` proportionally to revenue per article (spec 003 US5).
+- **Timezone:** all dates are in Moscow TZ as emitted by MPs; no UTC conversion.
+- **`as-kebab-maps` namespacing:** `next.jdbc.result-set/as-kebab-maps` returns keys namespaced by table (`:finance/rrd-id`). Callers must strip the namespace qualifier before passing rows to `validate-rows`. See `strip-ns` helper in `finance_test.clj`.
+
+### Known gaps
+
+- `wb-commission` field is reused by Ozon `transform.clj` to carry `commission_amount` from realization — semantically the same (MP commission in RUB) but the WB-prefixed name is misleading. Rename deferred.
+- **Ozon finance_realization sometimes omits `return_commission` and `delivery_commission`** — wrapped in `[:maybe ...]` at the API schema layer; not a FinanceRow concern.
+- **YM has no storage/acceptance fees at per-article grain** — those fields are nil for `:ym` rows.
+- **WB advertising allocation** is proportional to revenue, not actual campaign-to-article attribution — approximation documented as B-003 in 002-audit verdicts.
