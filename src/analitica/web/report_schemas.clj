@@ -24,7 +24,8 @@
     :ue1      {:title "UE.1 Объём"   :anchor "UE.1"}
     :ue2      {:title "UE.2 Затраты" :anchor "UE.2"}
     :ue4      {:title "UE.4 Прибыль" :anchor "UE.4"}
-    :ue7      {:title "UE.7 %"       :anchor "UE.7"}}
+    :ue7      {:title "UE.7 %"       :anchor "UE.7"}
+    :per-unit {:title "UE.6 Per-unit" :anchor "UE.6"}}
 
    :columns
    [{:key :article     :title "Артикул"  :group :identity :format :text :default-visible? true}
@@ -41,7 +42,20 @@
     {:key :total-cost  :title "Себестоимость" :group :ue4 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :profit      :title "Прибыль"  :group :ue4 :format :rub :canon-anchor "UE.4" :default-visible? true}
     {:key :margin-pct  :title "Маржа %"  :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? true}
-    {:key :drr-pct     :title "ДРР %"    :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}]
+    {:key :drr-pct     :title "ДРР %"    :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
+    {:key :wb-cost-pct :title "МП-затраты %" :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
+    {:key :cogs-pct    :title "COGS %"   :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
+    {:key :logistics-pct :title "Логистика %" :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
+    {:key :revenue-per-unit :title "Выручка/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :reward-per-unit :title "wb-reward/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :logistics-per-op :title "Логистика/опер" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :logistics-per-unit :title "Логистика/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :storage-per-unit :title "Хранение/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :accept-per-unit :title "Приёмка/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :acquiring-per-unit :title "Эквайринг/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :cost-per-unit :title "Себестоимость/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :payout-per-unit :title "Выплата/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}
+    {:key :profit-per-unit :title "Прибыль/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}]
 
    :column-presets
    {:basic       [:article :brand :sales-qty :revenue :profit :margin-pct :buyout-rate]

@@ -25,3 +25,18 @@
       (is (= :identity (:group article-col)))
       (is (= :pct (:format margin-col)))
       (is (= "UE.7" (:canon-anchor margin-col))))))
+
+(deftest ue-presets-reference-valid-columns-test
+  (testing "каждый ключ в column-presets :per-unit/:percentages существует в :columns
+            (не даёт silent-fail при рендере презета)"
+    (let [schema (rs/get-schema :ue)
+          col-keys (set (map :key (:columns schema)))
+          check-preset (fn [preset-key]
+                         (let [preset (get-in schema [:column-presets preset-key])]
+                           (when (vector? preset)
+                             (doseq [k preset]
+                               (is (contains? col-keys k)
+                                   (str "preset " preset-key " references missing column " k))))))]
+      (check-preset :basic)
+      (check-preset :per-unit)
+      (check-preset :percentages))))
