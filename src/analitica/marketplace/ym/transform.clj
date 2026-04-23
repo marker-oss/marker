@@ -179,6 +179,11 @@
   [order]
   (let [order-id    (get order :id)
         date        (get order :creationDate)
+        ;; Per-event date: prefer statusUpdateDate (when the status became
+        ;; final, i.e. when the financial event crystallised); fall back to
+        ;; creationDate if missing. Normalized to YYYY-MM-DD.
+        event-date  (let [s (or (get order :statusUpdateDate) date)]
+                      (when (and s (>= (count s) 10)) (subs s 0 10)))
         commissions (get order :commissions [])
         status      (get order :status)
         items       (get order :items [])
@@ -207,6 +212,7 @@
                :report-id          nil
                :date-from          date
                :date-to            date
+               :event-date         event-date
                :article            shop-sku
                :nm-id              (get item :marketSku)
                :barcode            nil
@@ -250,6 +256,8 @@
   {:marketplace    :ym
    :date-from      (or (get raw :dateFrom) (get raw :date))
    :date-to        (or (get raw :dateTo) (get raw :date))
+   :event-date     (let [d (or (get raw :date) (get raw :dateFrom))]
+                     (when (and d (>= (count d) 10)) (subs d 0 10)))
    :article        (or (get raw :offerId) (get raw :shopSku))
    :operation      (or (get raw :type) (get raw :operationType))
    :quantity       (or (get raw :count) (get raw :quantity))

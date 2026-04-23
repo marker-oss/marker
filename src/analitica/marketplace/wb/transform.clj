@@ -95,12 +95,23 @@
 ;; Finance report
 ;; ---------------------------------------------------------------------------
 
+(defn- iso-day
+  "Normalize a date/timestamp string to YYYY-MM-DD (WB uses mixed forms)."
+  [s]
+  (when (and s (>= (count s) 10)) (subs s 0 10)))
+
 (defn ->finance-line [raw]
   {:marketplace       :wb
    :rrd-id            (:rrd_id raw)
    :report-id         (:realizationreport_id raw)
    :date-from         (:date_from raw)
    :date-to           (:date_to raw)
+   ;; Per-event date: `rr_dt` = realization-report event date. Used by
+   ;; domain queries to filter precisely without overlap inflation.
+   :event-date        (iso-day (or (:rr_dt raw)
+                                   (:sale_dt raw)
+                                   (:order_dt raw)
+                                   (:date_from raw)))
    :article           (:sa_name raw)
    :nm-id             (:nm_id raw)
    :barcode           (:barcode raw)

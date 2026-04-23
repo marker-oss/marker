@@ -65,6 +65,7 @@
       report_id          INTEGER,
       date_from          TEXT,
       date_to            TEXT,
+      event_date         TEXT,
       article            TEXT,
       nm_id              INTEGER,
       barcode            TEXT,
@@ -441,6 +442,19 @@
       (when-not has-ad-cost?
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN ad_cost REAL DEFAULT 0"])
         (println "Migration: finance.ad_cost column added")))
+    ;; Migrate finance.event_date: per-event date extracted from raw at
+    ;; transform time. Replaces overlap-on-date_from/date_to queries with
+    ;; precise event-level filtering. Legacy rows have NULL event_date
+    ;; until re-materialized; domain queries fall back to overlap when
+    ;; event_date IS NULL to stay compatible during the rollout window.
+    (let [info          (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                       {:builder-fn rs/as-unqualified-maps})
+          has-event?    (some #(= "event_date" (:name %)) info)]
+      (when-not has-event?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN event_date TEXT"])
+        (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_event_date
+                            ON finance(marketplace, event_date)"])
+        (println "Migration: finance.event_date column + index added")))
     ;; Migrate region_sales: old schema had no PK → every rerun duplicated rows.
     ;; Add composite PK so INSERT OR REPLACE folds reruns.
     (let [info    (jdbc/execute! ds ["PRAGMA table_info(region_sales)"]

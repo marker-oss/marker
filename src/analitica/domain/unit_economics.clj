@@ -10,11 +10,19 @@
 
 (defn- ensure-finance-coverage!
   [finance-data from to]
-  (let [pick-date (fn [k1 k2 m] (or (get m k1) (get m k2)))
-        min-str   (fn [xs] (reduce #(if (neg? (compare %1 %2)) %1 %2) xs))
-        max-str   (fn [xs] (reduce #(if (pos? (compare %1 %2)) %1 %2) xs))
-        dates-from (->> finance-data (map #(pick-date :date-from :date_from %)) (remove nil?))
-        dates-to   (->> finance-data (map #(pick-date :date-to :date_to %)) (remove nil?))
+  (let [pick-date  (fn [k1 k2 m] (or (get m k1) (get m k2)))
+        min-str    (fn [xs] (reduce #(if (neg? (compare %1 %2)) %1 %2) xs))
+        max-str    (fn [xs] (reduce #(if (pos? (compare %1 %2)) %1 %2) xs))
+        ;; Prefer event_date (post 2026-04-23 migration): per-event precision.
+        ;; Fallback to date_from/date_to (weekly-report semantics) for legacy
+        ;; rows that pre-date the migration.
+        event-dates (->> finance-data (map #(pick-date :event-date :event_date %)) (remove nil?))
+        dates-from (if (seq event-dates)
+                     event-dates
+                     (->> finance-data (map #(pick-date :date-from :date_from %)) (remove nil?)))
+        dates-to   (if (seq event-dates)
+                     event-dates
+                     (->> finance-data (map #(pick-date :date-to :date_to %)) (remove nil?)))
         min-from   (when (seq dates-from) (min-str dates-from))
         max-to     (when (seq dates-to) (max-str dates-to))]
     (cond

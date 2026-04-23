@@ -142,6 +142,10 @@
      :report-id          nil
      :date-from          (get raw :operation_date)
      :date-to            (get raw :operation_date)
+     ;; Per-event date: Ozon txn/realization rows carry `operation_date`
+     ;; already at day granularity (often "YYYY-MM-DD 00:00:00").
+     :event-date         (when-let [d (get raw :operation_date)]
+                           (subs d 0 10))
      :article            (get sku-map sku)
      :nm-id              sku
      :barcode            nil
@@ -214,6 +218,12 @@
                   :report-id          nil
                   :date-from          date-from
                   :date-to            date-to
+                  ;; Realization is a month-level aggregate: no per-event
+                  ;; date in rows. Use the report's start_date so that
+                  ;; rows land inside the claimed month when filtered by
+                  ;; event_date. Approximation — see data-dictionary
+                  ;; §finance/known-gaps.
+                  :event-date         date-from
                   :article            article
                   :nm-id              sku
                   :barcode            barcode
@@ -377,7 +387,9 @@
 (defn- services-rows
   "Build rows for each (item × service) pair using per-service classification."
   [operation items article-lookup month-first op-id]
-  (let [services (get operation :services [])]
+  (let [services (get operation :services [])
+        op-date  (when-let [d (get operation :operation_date)]
+                   (when (>= (count d) 10) (subs d 0 10)))]
     (for [svc  services
           :let [svc-name   (get svc :name)
                 svc-price  (get svc :price)
@@ -393,6 +405,7 @@
        :nm-id       sku
        :date-from   month-first
        :date-to     month-first
+       :event-date  op-date
        :operation   "sale"
        field        alloc})))
 
@@ -400,8 +413,10 @@
   "Build rows when the operation_type itself maps to a field (e.g. Marketing).
    Uses |operation.amount| distributed across items by price×quantity weights."
   [operation items article-lookup month-first field op-id]
-  (let [amount (get operation :amount 0)
-        allocs (distribute-service-amount amount items)]
+  (let [amount  (get operation :amount 0)
+        allocs  (distribute-service-amount amount items)
+        op-date (when-let [d (get operation :operation_date)]
+                  (when (>= (count d) 10) (subs d 0 10)))]
     (for [[item alloc] (map vector items allocs)
           :let  [sku     (get item :sku)
                  article (normalize-lookup article-lookup sku)]
@@ -412,6 +427,7 @@
        :nm-id       sku
        :date-from   month-first
        :date-to     month-first
+       :event-date  op-date
        :operation   "sale"
        field        alloc})))
 

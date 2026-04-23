@@ -23,6 +23,10 @@
    [:rrd-id         [:or :int :double]]
    [:date-from      :string]
    [:date-to        :string]
+   ;; :event-date is required going forward (2026-04-23 migration).
+   ;; Legacy rows that pre-date it may have nil until re-materialized;
+   ;; optional-nilable during the rollout window.
+   [:event-date     {:optional true} [:maybe :string]]
    [:article        [:maybe :string]]
    [:operation      :string]
    [:quantity       [:maybe [:or :int :double]]]

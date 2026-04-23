@@ -41,7 +41,7 @@
    :brand :warehouse :region :status :price :price_with_disc :marketplace :synced_at])
 
 (defn finance->row [f]
-  [(:rrd-id f) (:report-id f) (:date-from f) (:date-to f)
+  [(:rrd-id f) (:report-id f) (:date-from f) (:date-to f) (:event-date f)
    (:article f) (:nm-id f) (:barcode f) (:subject f) (:brand f)
    (:operation f) (:doc-type f) (:quantity f)
    (:retail-price f) (:retail-amount f) (:sale-percent f)
@@ -54,7 +54,8 @@
    (name (or (:marketplace f) :wb)) (now-str)])
 
 (def finance-columns
-  [:rrd_id :report_id :date_from :date_to :article :nm_id :barcode
+  [:rrd_id :report_id :date_from :date_to :event_date
+   :article :nm_id :barcode
    :subject :brand :operation :doc_type :quantity
    :retail_price :retail_amount :sale_percent
    :commission_pct :wb_commission :wb_reward

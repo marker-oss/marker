@@ -441,6 +441,9 @@
               :report-id    nil
               :date-from    date-from
               :date-to      date-to
+              ;; Orphan service has no per-event date — use month-first
+              ;; so it falls inside any event_date BETWEEN query covering the month.
+              :event-date   date-from
               :article      article
               :nm-id        nil
               :barcode      nil
