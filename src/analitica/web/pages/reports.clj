@@ -1,6 +1,7 @@
 (ns analitica.web.pages.reports
   (:require [hiccup.core :refer [html]]
-            [analitica.web.components :as c]))
+            [analitica.web.components :as c]
+            [analitica.web.report-schemas :as rs]))
 
 ;; ---------------------------------------------------------------------------
 ;; No Data Banner
@@ -23,96 +24,6 @@
        "Запустите синхронизацию"]
       " для загрузки данных."]]]])
 
-;; ---------------------------------------------------------------------------
-;; Report Metadata
-;; ---------------------------------------------------------------------------
-
-(def report-configs
-  "Configuration for all 10 report types with titles, columns, and chart types."
-  {:sales {:title "Продажи"
-           :chart-type "line"
-           :columns [{:title "Дата" :field "group" :width 120}
-                     {:title "Продажи" :field "sales-count" :width 100}
-                     {:title "Возвраты" :field "returns-count" :width 100}
-                     {:title "Выручка" :field "revenue" :width 150}
-                     {:title "Средняя цена" :field "avg-price" :width 120}]}
-   
-   :finance {:title "Финансы"
-             :chart-type "bar"
-             :columns [{:title "Артикул" :field "article" :width 150}
-                       {:title "Продажи" :field "sales-qty" :width 100}
-                       {:title "Выручка" :field "revenue" :width 150}
-                       {:title "Вознаграждение WB" :field "wb-reward" :width 150}
-                       {:title "Логистика" :field "logistics" :width 120}
-                       {:title "Хранение" :field "storage" :width 120}
-                       {:title "К оплате" :field "for-pay" :width 150}
-                       {:title "Общие затраты" :field "total-cost" :width 150}]}
-   
-   :ue {:title "Юнит-экономика"
-        :chart-type "horizontalBar"
-        :columns [{:title "Артикул" :field "article" :width 150}
-                  {:title "Бренд" :field "brand" :width 120}
-                  {:title "Категория" :field "subject" :width 150}
-                  {:title "Продажи" :field "sales-qty" :width 100}
-                  {:title "% выкупа" :field "buyout-rate" :width 100}
-                  {:title "Выручка" :field "revenue" :width 150}
-                  {:title "Выручка/ед" :field "revenue-per-unit" :width 120}
-                  {:title "Себестоимость/ед" :field "cost-per-unit" :width 150}
-                  {:title "Прибыль/ед" :field "profit-per-unit" :width 120}
-                  {:title "Маржа %" :field "margin-pct" :width 100}]}
-   
-   :pnl {:title "P&L"
-         :chart-type "waterfall"
-         :columns [{:title "Метрика" :field "metric" :width 200}
-                   {:title "Значение" :field "value" :width 150}]}
-   
-   :abc {:title "ABC-анализ"
-         :chart-type "line"
-         :columns [{:title "Артикул" :field "article" :width 150}
-                   {:title "Категория" :field "abc-category" :width 100}
-                   {:title "Накопленный %" :field "cum-pct" :width 120}
-                   {:title "Выручка" :field "revenue" :width 150}
-                   {:title "К оплате" :field "for-pay" :width 150}
-                   {:title "Продажи" :field "sales-qty" :width 100}]}
-   
-   :stock {:title "Остатки"
-           :chart-type "bar"
-           :columns [{:title "Артикул" :field "article" :width 150}
-                     {:title "Количество" :field "quantity" :width 100}
-                     {:title "Полное кол-во" :field "quantity-full" :width 120}
-                     {:title "В пути к клиенту" :field "in-way-to" :width 130}
-                     {:title "В пути от клиента" :field "in-way-from" :width 150}
-                     {:title "Склады" :field "warehouses" :width 200}]}
-   
-   :returns {:title "Возвраты"
-             :chart-type "line"
-             :columns [{:title "Артикул" :field "article" :width 150}
-                       {:title "Продано" :field "sold" :width 100}
-                       {:title "Возвращено" :field "returned" :width 100}
-                       {:title "Всего" :field "total" :width 100}
-                       {:title "% возврата" :field "return-rate" :width 120}]}
-   
-   :buyout {:title "Выкуп"
-            :chart-type "bar"
-            :columns [{:title "Артикул" :field "article" :width 150}
-                      {:title "Заказано" :field "ordered" :width 100}
-                      {:title "Выкуплено" :field "bought" :width 100}
-                      {:title "Возвращено" :field "returned" :width 100}
-                      {:title "% выкупа" :field "buyout-rate" :width 120}]}
-   
-   :geo {:title "География"
-         :chart-type "bar"
-         :columns [{:title "Регион" :field "region" :width 200}
-                   {:title "Количество" :field "qty" :width 100}
-                   {:title "Сумма" :field "sum" :width 150}]}
-   
-   :trends {:title "Тренды"
-            :chart-type "bar"
-            :columns [{:title "Метрика" :field "metric" :width 200}
-                      {:title "Текущий" :field "current" :width 120}
-                      {:title "Предыдущий" :field "previous" :width 120}
-                      {:title "Изменение" :field "change" :width 120}
-                      {:title "Изменение %" :field "change-pct" :width 120}]}})
 
 ;; ---------------------------------------------------------------------------
 ;; Filter Components
@@ -202,14 +113,14 @@
 ;; ---------------------------------------------------------------------------
 
 (defn report-page
-  "Render unified report page template for all 10 report types.
-   
+  "Render unified report page from schema.
+
    Parameters:
    - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
    - period: period string (e.g. last-week, last-30-days)
    - marketplace: optional marketplace keyword or string
    - show-no-data: optional boolean to show no-data banner
-   
+
    Features:
    - Period and marketplace filters with HTMX updates
    - Excel and CSV export buttons
@@ -221,55 +132,61 @@
      - Pagination (50 rows)
      - Frozen first column
    - No data banner when data is missing
-   
+
    Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 8.1, 9.1, 14.1"
   [report-type period marketplace & {:keys [show-no-data article]}]
-  (let [config (get report-configs report-type)
-        report-title (:title config)
-        chart-type (:chart-type config)
-        columns (:columns config)
+  (let [schema (rs/get-schema report-type)
+        _ (when-not schema
+            (throw (ex-info "Unknown report-type" {:type report-type})))
+        report-title (:title schema)
+        chart-type-kw (:type (:chart schema))
+        chart-type (case chart-type-kw
+                     :waterfall "bar"           ;; Chart.js has no waterfall; bar placeholder
+                     :horizontalBar "bar"
+                     (name chart-type-kw))
+        columns (->> (:columns schema)
+                     (filter :default-visible?)
+                     (mapv (fn [col]
+                             {:title (:title col)
+                              :field (name (:key col))
+                              :format (:format col)
+                              :width (case (:format col)
+                                       :rub 130 :int 100 :pct 100
+                                       :text 150 :date 120 120)})))
         marketplace-param (if (and marketplace (not= marketplace "all"))
-                            (str "&marketplace=" marketplace)
-                            "")
-        article-param (when (seq article) (str "&article=" (java.net.URLEncoder/encode article "UTF-8")))
-        api-url (str "/api/report/" (name report-type) "?period=" period marketplace-param (or article-param ""))
-        chart-api-url (str "/api/chart/report?type=" (name report-type) "&period=" period marketplace-param)]
+                            (str "&marketplace=" marketplace) "")
+        article-param (when (seq article)
+                        (str "&article=" (java.net.URLEncoder/encode article "UTF-8")))
+        api-url (str "/api/report/" (name report-type) "?period=" period
+                     marketplace-param (or article-param ""))
+        chart-api-url (str "/api/chart/report?type=" (name report-type)
+                           "&period=" period marketplace-param)]
 
     [:div
-     ;; Page header with title
      [:div.mb-6
       [:h2.text-2xl.font-bold.text-gray-900 report-title]]
 
-     ;; No data banner (show if requested)
-     (when show-no-data
-       (no-data-banner))
+     (when show-no-data (no-data-banner))
 
-     ;; Filters and export buttons
      [:div.bg-white.rounded-lg.shadow.p-4.mb-6
       [:div.flex.items-center.justify-between.flex-wrap.gap-4
-       ;; Left side: filters
        [:div.flex.items-center.gap-4.flex-wrap
         (period-filter report-type period marketplace)
         (marketplace-filter report-type period marketplace)
         (when (= report-type :ue)
           (article-filter report-type article))]
-
-       ;; Right side: export buttons
        (export-buttons report-type period marketplace)]]
-     
-     ;; Report content container (for HTMX updates)
+
      [:div#report-content
-      ;; Chart visualization
       [:div.mb-6
        (c/chart-container {:id (str (name report-type) "-chart")
                            :type chart-type
                            :title (str "Визуализация: " report-title)
                            :api-url chart-api-url
                            :height 400})]
-      
-      ;; Tabulator table
-      (c/tabulator-table {:id (str (name report-type) "-table")
-                          :api-url api-url
-                          :columns columns
-                          :frozen-cols 1
-                          :page-size 50})]]))
+      (when (not= :none (:rows-mode schema))
+        (c/tabulator-table {:id (str (name report-type) "-table")
+                            :api-url api-url
+                            :columns columns
+                            :frozen-cols 1
+                            :page-size 50}))]]))
