@@ -444,11 +444,20 @@
 
     (mat/materialize-wb-ad-cost! ["2026-03-01" "2026-03-31"])
 
-    ;; ad-spend-by-article uses `article IS NOT NULL AND article != ''`
-    ;; on the finance sub-SELECT. Articles with nm_id mapped to 0 would
-    ;; match only if there's a finance row with nm_id=0 — none here.
-    (let [legacy (->> (db/ad-spend-by-article "2026-03-01" "2026-03-31"
-                                              :marketplace :wb)
+    ;; Inline the pre-2026-04-24 legacy ad_stats JOIN query (the old
+    ;; behaviour of db/ad-spend-by-article before it was upgraded to
+    ;; prefer canonical finance.ad_cost). This captures "what the old
+    ;; path would have returned" for the SC-009 comparison.
+    (let [legacy (->> (db/query
+                        ["SELECT f.article, SUM(a.spend) AS ad_spend
+                          FROM ad_stats a
+                          JOIN (SELECT DISTINCT nm_id, article, marketplace FROM finance
+                                WHERE article IS NOT NULL AND article != '') f
+                            ON a.nm_id = f.nm_id
+                          WHERE a.date >= ? AND a.date <= ?
+                            AND f.marketplace = ?
+                          GROUP BY f.article"
+                         "2026-03-01" "2026-03-31" "wb"])
                       (map :ad-spend)
                       (reduce + 0.0))
           new-sum (or (:sum (first (db/query
@@ -458,13 +467,20 @@
                                          AND date_from >= ?
                                          AND date_from <= ?"
                                       "2026-03-01" "2026-03-31"])))
-                      0.0)]
+                      0.0)
+          canonical-by-article (->> (db/ad-spend-by-article
+                                      "2026-03-01" "2026-03-31"
+                                      :marketplace :wb)
+                                    (map :ad-spend)
+                                    (reduce + 0.0))]
       (is (zero? legacy)
-          "legacy drops campaign-only rows silently")
+          "legacy ad_stats JOIN drops campaign-only rows silently")
       (is (= 100.0 new-sum)
           "new path allocates campaign-only spend proportional to revenue → ART-A gets all 100")
       (is (> new-sum legacy)
-          "new captures what legacy drops"))))
+          "new captures what legacy drops")
+      (is (= 100.0 canonical-by-article)
+          "db/ad-spend-by-article now prefers canonical finance.ad_cost and matches new-sum"))))
 
 ;; ---------------------------------------------------------------------------
 ;; End-to-end wiring: materialize-finance! for :wb auto-runs ad-cost

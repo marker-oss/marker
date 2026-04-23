@@ -585,19 +585,41 @@
                  params))))
 
 (defn ad-spend-by-article
-  "Sum ad spend by article for period, mapping nm_id→article via finance.
-   Optional :marketplace keyword filters to a specific marketplace."
+  "Sum ad spend by article for period. Prefers the canonical
+   `finance.ad_cost` path (populated by Ozon / YM ingest and — since
+   spec 003 US5 — by WB materialize too); falls back to the legacy
+   `ad_stats` JOIN when canonical returns empty (pre-migration WB
+   periods).
+
+   Date filter uses per-event `event_date` when populated (post
+   2026-04-23 migration), falling back to weekly-report overlap for
+   legacy rows. `:marketplace` scopes both paths."
   [from to & {:keys [marketplace]}]
-  (let [mp-clause (when marketplace " AND f.marketplace = ?")
-        params    (cond-> [from to] marketplace (conj (name marketplace)))]
-    (query (into [(str "SELECT f.article, SUM(a.spend) AS ad_spend
-                        FROM ad_stats a
-                        JOIN (SELECT DISTINCT nm_id, article, marketplace FROM finance
-                              WHERE article IS NOT NULL AND article != '') f
-                          ON a.nm_id = f.nm_id
-                        WHERE a.date >= ? AND a.date <= ?" mp-clause
-                        " GROUP BY f.article")]
-                 params))))
+  (let [mp-clause-f  (when marketplace " AND marketplace = ?")
+        canonical-sql (str "SELECT article, SUM(ad_cost) AS ad_spend
+                            FROM finance
+                            WHERE ad_cost IS NOT NULL AND ad_cost > 0
+                              AND article IS NOT NULL AND article != ''
+                              AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
+                                   OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
+                           mp-clause-f
+                           " GROUP BY article")
+        canonical-params (cond-> [from to to from] marketplace (conj (name marketplace)))
+        canonical    (query (into [canonical-sql] canonical-params))]
+    (if (seq canonical)
+      canonical
+      ;; Legacy fallback — ad_stats JOIN on nm_id. Kept for pre-spec-003
+      ;; WB periods where ad_cost is 0 on finance rows.
+      (let [mp-clause-a (when marketplace " AND f.marketplace = ?")
+            params     (cond-> [from to] marketplace (conj (name marketplace)))]
+        (query (into [(str "SELECT f.article, SUM(a.spend) AS ad_spend
+                            FROM ad_stats a
+                            JOIN (SELECT DISTINCT nm_id, article, marketplace FROM finance
+                                  WHERE article IS NOT NULL AND article != '') f
+                              ON a.nm_id = f.nm_id
+                            WHERE a.date >= ? AND a.date <= ?" mp-clause-a
+                            " GROUP BY f.article")]
+                     params))))))
 
 (defn insert-batch!
   "Insert multiple rows using multi-row INSERT OR REPLACE.

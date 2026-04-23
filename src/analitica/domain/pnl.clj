@@ -18,16 +18,20 @@
 (defn- ad-cost-sum
   "SUM(finance.ad_cost) across the period, optionally filtered by marketplace.
    Returns a double (0.0 when no rows match). Non-throwing: a DB-schema drift
-   (no ad_cost column) returns nil."
+   (no ad_cost column) returns nil.
+
+   Prefers per-event `event_date` filter (populated by the 2026-04-23
+   migration); falls back to weekly-report overlap on date_from/date_to
+   for legacy rows that pre-date event_date."
   [from to marketplace]
   (try
     (let [base "SELECT COALESCE(SUM(ad_cost), 0) AS sum FROM finance
-                WHERE substr(date_from, 1, 10) >= ?
-                  AND substr(date_from, 1, 10) <= ?"
+                WHERE ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
+                       OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
           [sql params] (if marketplace
                          [(str base " AND marketplace = ?")
-                          [from to (name marketplace)]]
-                         [base [from to]])
+                          [from to to from (name marketplace)]]
+                         [base [from to to from]])
           row (first (db/query (into [sql] params)))]
       (double (or (:sum row) 0.0)))
     (catch Exception _ nil)))
