@@ -13,18 +13,25 @@
   (let [pick-date  (fn [k1 k2 m] (or (get m k1) (get m k2)))
         min-str    (fn [xs] (reduce #(if (neg? (compare %1 %2)) %1 %2) xs))
         max-str    (fn [xs] (reduce #(if (pos? (compare %1 %2)) %1 %2) xs))
-        ;; Prefer event_date (post 2026-04-23 migration): per-event precision.
-        ;; Fallback to date_from/date_to (weekly-report semantics) for legacy
-        ;; rows that pre-date the migration.
-        event-dates (->> finance-data (map #(pick-date :event-date :event_date %)) (remove nil?))
-        dates-from (if (seq event-dates)
-                     event-dates
-                     (->> finance-data (map #(pick-date :date-from :date_from %)) (remove nil?)))
-        dates-to   (if (seq event-dates)
-                     event-dates
-                     (->> finance-data (map #(pick-date :date-to :date_to %)) (remove nil?)))
-        min-from   (when (seq dates-from) (min-str dates-from))
-        max-to     (when (seq dates-to) (max-str dates-to))]
+        ;; Coverage is the widest span across event_date and the legacy
+        ;; report-period bounds (date_from/date_to). Ozon realization is
+        ;; month-aggregated, so event_date = month-first for every row;
+        ;; the report-period bounds cover the whole month. Taking the
+        ;; widest span lets a mid-month query pass the coverage check
+        ;; while still catching genuine data gaps (e.g. no rows for part
+        ;; of the period).
+        candidates-from (->> finance-data
+                             (mapcat (fn [r]
+                                       [(pick-date :event-date :event_date r)
+                                        (pick-date :date-from :date_from r)]))
+                             (remove nil?))
+        candidates-to   (->> finance-data
+                             (mapcat (fn [r]
+                                       [(pick-date :event-date :event_date r)
+                                        (pick-date :date-to :date_to r)]))
+                             (remove nil?))
+        min-from   (when (seq candidates-from) (min-str candidates-from))
+        max-to     (when (seq candidates-to) (max-str candidates-to))]
     (cond
       (empty? finance-data)
       (do

@@ -135,12 +135,15 @@
       (is (= 2 (count rows)))
       (is (= 100 (:ad-cost (first rows))) "FR-019: item A keeps its own bidFee")
       (is (= 200 (:ad-cost (second rows))) "FR-019: item B keeps its own bidFee")
-      ;; FR-005: per-item :for-pay = BUYER − commission_share (60/2=30) − bidFee
-      (is (= 370.0 (:for-pay (first rows))) "500 − 30 − 100")
-      (is (= 570.0 (:for-pay (second rows))) "800 − 30 − 200"))))
+      ;; Canonical: :for-pay = BUYER − Σcommissions. bidFee is tracked in
+      ;; :ad-cost and subtracted once via UE.4 profit formula. Earlier
+      ;; design double-subtracted bidFee (here AND via ad-spend-by-article);
+      ;; fixed 2026-04-23 Phase-2 verification.
+      (is (= 470.0 (:for-pay (first rows))) "500 − 30")
+      (is (= 770.0 (:for-pay (second rows))) "800 − 30"))))
 
-(deftest cancelled-before-processing-bidfee-produces-negative-for-pay
-  (testing "CANCELLED_BEFORE_PROCESSING with bidFee → seller still owes ad-cost (negative :for-pay)"
+(deftest cancelled-before-processing-bidfee-stays-on-ad-cost
+  (testing "CANCELLED_BEFORE_PROCESSING with bidFee → zero for-pay + ad-cost on ad-cost only"
     (let [order {:id 2 :status "CANCELLED_BEFORE_PROCESSING" :creationDate "2026-03-01"
                  :commissions []
                  :payments []
@@ -150,5 +153,6 @@
           row (first rows)]
       (is (= "cancelled" (:operation row)))
       (is (= 500 (:ad-cost row)) "bidFee preserved even when order cancelled")
-      (is (neg? (:for-pay row)) "no revenue, only ad cost → negative for-pay")
-      (is (= -500.0 (:for-pay row)) "0 − 0 − 500 = -500"))))
+      ;; for-pay = 0 (BUYER=0 − commissions=0). bidFee lives in :ad-cost;
+      ;; profit impact via UE.4 formula stays at −500.
+      (is (= 0.0 (:for-pay row)) "0 − 0 = 0"))))

@@ -247,30 +247,41 @@
                   :deduction          nil
                   :acquiring-fee      0}
         row-no   (or (get rrow :rowNumber) 0)
+        ;; Ozon seller payout = amount (from buyer) + bonus (Ozon platform
+        ;; subsidy for promo discounts) + compensation + stars (loyalty).
+        ;; Previous code used only `amount`, silently dropping ~50% of
+        ;; seller income in periods with heavy Ozon promotions. Verified on
+        ;; March 2026: amount 266,994 + bonus 303,674 = 570,668 real payout.
+        ;; Commission = (total − for_pay) = what Ozon actually charged.
+        seller-payout (fn [c]
+                        (+ (or (get c :amount) 0)
+                           (or (get c :bonus) 0)
+                           (or (get c :compensation) 0)
+                           (or (get c :stars) 0)))
         sale-row   (when (pos? (or (get dc :quantity) 0))
                      (let [q      (get dc :quantity)
-                           amount (or (get dc :amount) 0)
-                           fee    (or (get dc :standard_fee) 0)]
+                           payout (seller-payout dc)
+                           total  (or (get dc :total) 0)]
                        (assoc common
                               :rrd-id        (hash [:ozon-real :sale row-no article sku date-from date-to])
                               :operation     "sale"
                               :quantity      q
                               :retail-price  price
-                              :retail-amount (* q price)
-                              :wb-commission (- fee amount)
-                              :for-pay       amount)))
+                              :retail-amount (* q total)
+                              :wb-commission (max 0 (- (* q total) payout))
+                              :for-pay       payout)))
         return-row (when (pos? (or (get rc :quantity) 0))
                      (let [q      (get rc :quantity)
-                           amount (or (get rc :amount) 0)
-                           fee    (or (get rc :standard_fee) 0)]
+                           payout (seller-payout rc)
+                           total  (or (get rc :total) 0)]
                        (assoc common
                               :rrd-id        (hash [:ozon-real :return row-no article sku date-from date-to])
                               :operation     "return"
                               :quantity      q
                               :retail-price  price
-                              :retail-amount (* q price)
-                              :wb-commission (- fee amount)
-                              :for-pay       amount)))]
+                              :retail-amount (* q total)
+                              :wb-commission (max 0 (- (* q total) payout))
+                              :for-pay       payout)))]
     (into [] (remove nil? [sale-row return-row]))))
 
 (defn ->finance-from-realization

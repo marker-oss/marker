@@ -205,8 +205,12 @@
                   qty         (or (get item :count) 1)
                   ;; FR-006/019: bidFee strictly per-item, no redistribution
                   bid-fee     (or (:bidFee item) 0)
-                  ;; FR-005: :for-pay = BUYER − Σcommissions − bidFee
-                  net-pay     (- (or buyer-price 0) all-comm bid-fee)]
+                  ;; :for-pay = BUYER − Σcommissions.  bidFee is NOT subtracted
+                  ;; here: it's stored separately in :ad-cost and the UE.4
+                  ;; profit formula subtracts :ad-spend once. Previous code
+                  ;; subtracted it twice (here AND via ad-spend-by-article),
+                  ;; silently erasing 100% of ad spend from for_pay.
+                  net-pay     (- (or buyer-price 0) all-comm)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
                :report-id          nil
