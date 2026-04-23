@@ -251,34 +251,35 @@
 (defn- handle-report [args opts]
   (let [what   (first args)
         period (resolve-period opts)
-        export (:export opts)]
+        export (:export opts)
+        mp     (when-let [m (:marketplace opts)] (keyword m))]
     (case what
       "sales"   (if export
-                  (sales/export-excel period export)
-                  (sales/dashboard period))
+                  (sales/export-excel period export :marketplace mp)
+                  (sales/dashboard period :marketplace mp))
       "finance" (if export
-                  (finance/export-excel period export)
-                  (finance/report period))
+                  (finance/export-excel period export :marketplace mp)
+                  (finance/report period :marketplace mp))
       "ue"      (if export
-                  (ue/export-excel period export)
-                  (ue/report period))
-      "abc"     (abc/report period)
-      "returns" (returns/report period)
+                  (ue/export-excel period export :marketplace mp)
+                  (ue/report period :marketplace mp))
+      "abc"     (abc/report period :marketplace mp)
+      "returns" (returns/report period :marketplace mp)
       "stock"   (if export
-                  (stock/export-excel export)
-                  (stock/overview))
+                  (stock/export-excel export :marketplace mp)
+                  (stock/overview :marketplace mp))
       "pnl"     (if export
-                  (pnl/export-excel period export)
-                  (pnl/report period))
+                  (pnl/export-excel period export :marketplace mp)
+                  (pnl/report period :marketplace mp))
       "geo"     (if export
-                  (geo/export-excel period export)
-                  (geo/report period))
-      "trends"  (trends/daily period)
-      "wow"     (trends/wow)
-      "mom"     (trends/mom)
+                  (geo/export-excel period export :marketplace mp)
+                  (geo/report period :marketplace mp))
+      "trends"  (trends/daily period :marketplace mp)
+      "wow"     (trends/wow :marketplace mp)
+      "mom"     (trends/mom :marketplace mp)
       "buyout"  (if export
-                  (buyout/export-excel period export)
-                  (buyout/report period))
+                  (buyout/export-excel period export :marketplace mp)
+                  (buyout/report period :marketplace mp))
       (println "Unknown report:" what))))
 
 (defn- print-help []
