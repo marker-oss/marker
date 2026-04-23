@@ -1275,4 +1275,422 @@ All UE.11 gaps apply (they ride the same ingest pipeline). P&L adds:
 - Regression coverage: `clojure -M:test` green on the whole suite.
 
 ---
+
+## Finance
+
+The Finance report decomposes the event stream to the per-article level: it
+is the bookkeeping view that precedes P&L and UE. Where UE computes derived
+KPIs (margin, profit) and P&L aggregates them to one period row, Finance
+exposes the raw monetary flows grouped by article, then optionally rolls
+them into a period total or a weekly (`by-report-id`) split.
+
+Implementation: `src/analitica/domain/finance.clj` — `by-article`, `totals`,
+`by-report-id`. Verification tests:
+`test/analitica/domain/finance_canon_test.clj`.
+
+Authored 2026-04-24 using the 5-point template from §Unit Economics.
+Uses the same post-2026-04-23 ingest pipeline (event_date filter, Ozon
+`bonus` + `compensation` in for_pay, YM subsidies, WB paid_storage
+single-multiplication fix).
+
+---
+
+### Finance.1 — `article-row` per-article aggregates
+
+**Members:** `:revenue`, `:wb-reward`, `:wb-commission`, `:acquiring`,
+`:sales-pay`, `:returns-pay`, `:logistics`, `:penalties`, `:additional`,
+`:acceptance`, `:deduction`.
+
+**Formula**
+
+```
+;; partition by operation type first
+sales-lines  := filter operation ∈ {"sale","Продажа"}
+return-lines := filter operation ∈ {"return","Возврат"}
+
+revenue       := round2 SUM(retail-amount   over sales-lines)
+wb-reward     := round2 SUM(wb-reward       over ALL lines)
+wb-commission := round2 SUM(wb-commission   over sales-lines)
+acquiring     := round2 SUM(acquiring-fee   over ALL lines)
+sales-pay     := round2 SUM(for-pay         over sales-lines)
+returns-pay   := round2 SUM(for-pay         over return-lines)
+logistics     := round2 SUM(delivery-cost   over ALL lines)
+penalties     := round2 SUM(penalty         over ALL lines)
+additional    := round2 SUM(additional-payment over ALL lines)
+acceptance    := round2 SUM(acceptance      over ALL lines)
+deduction     := round2 SUM(deduction       over ALL lines)
+```
+
+Each field is a plain SUM over the operation-filtered (or all) lines for
+one article. Missing fields are treated as 0 via `(or (:field row) 0)`.
+
+**Economic justification.** Finance is the raw ledger view — no derived
+calculations, just sums of what the marketplace reported. Splitting by
+`sales-lines` vs `return-lines` ensures that sale-only fields (revenue,
+commission, acquiring on sales) are not polluted by the zero-valued
+return rows WB sends; `wb-reward` and `logistics` span all operations
+because WB issues reward/delivery records on return rows too.
+
+**Inputs.** `finance` table via `db-finance`; mapped with kebab-case keys
+by the JDBC layer. Key names follow
+[`data-dictionary.md#finance`](data-dictionary.md#finance).
+
+**Edge cases.**
+
+- A row with an unknown `operation` value is silently excluded from both
+  `sales-lines` and `return-lines`; its `logistics`, `penalties`,
+  `additional`, `acceptance`, `deduction`, `wb-reward`, `acquiring` still
+  accumulate into the ALL-lines sums.
+- `nil` field values replaced by 0 — `(or (:field row) 0)`.
+- An article with only return lines will have `revenue = 0`,
+  `wb-commission = 0`, `sales-pay = 0`.
+
+**Verification.** `finance_canon_test.clj` › `group-1-pass-throughs`:
+given 5 sale rows with known amounts, asserts each field equals the
+expected SUM.
+
+---
+
+### Finance.2 — `:spp-amount` derivative
+
+**Formula**
+
+```
+spp-amount := round2 (sales-pay − revenue)
+           := SUM(for-pay over sales-lines) − SUM(retail-amount over sales-lines)
+```
+
+**Economic justification.** On WB, `for-pay` on a sale line reflects the
+amount the seller actually receives from WB after WB's SPP (promotional
+discount) compensation is factored in. When WB absorbs the SPP discount,
+`for-pay < retail-amount` and `spp-amount` is negative (the seller
+effectively pays part of the discount to WB). When WB subsidizes the
+discount, `for-pay > retail-amount` and `spp-amount` is positive.
+The field surfaces the net SPP direction without requiring the caller to
+subtract revenue from for-pay manually.
+
+**Inputs.** `sales-pay` and `revenue` from Finance.1 (same pass-through
+lines).
+
+**Edge cases.**
+
+- For Ozon and YM, `for-pay` semantics differ (see UE.2 per-MP
+  coverage); the arithmetic is still valid but `spp-amount` will not
+  equal WB's specific SPP notion — callers should treat it as a
+  `for-pay − revenue` residual.
+- If the article has no sale lines: `spp-amount = 0.0 − 0.0 = 0.0`.
+
+**Verification.** `finance_canon_test.clj` › `group-2-spp-amount`:
+for the fixture article A (5 sales, for-pay=80, retail=100 each):
+`spp-amount = 5×80 − 5×100 = −100`.
+
+---
+
+### Finance.3 — `:storage` coalescence
+
+**Formula**
+
+```
+if storage-by-article is provided:
+    storage := round2 (get storage-by-article article 0.0)
+else:
+    storage := round2 SUM(storage-fee over ALL lines)
+```
+
+**Economic justification.** WB reports storage costs in a separate
+`paid_storage` endpoint that gives a per-article number for the whole
+week; the per-row `storage_fee` is always 0 on that path. Ozon/YM may
+include storage in per-row fields. The coalescence lets the caller inject
+the precise storage value when available, falling back to row-level
+accumulation otherwise. Semantics are identical to UE.2 storage path.
+
+**Inputs.** `storage-by-article` keyword arg (map keyed by article),
+passed from `finance/by-article` to `article-row`. Built by
+`db/storage-by-article` in the report layer.
+
+**Edge cases.**
+
+- When `storage-by-article` is nil/not-provided, the `if` branch falls
+  through to row-level SUM — which may be 0.0 if the MP delivers storage
+  separately (WB without paid_storage passed in).
+- An article absent from the map returns `0.0` via `(get m a 0.0)`.
+
+**Verification.** `finance_canon_test.clj` › `group-3-storage`:
+without `storage-by-article`, asserts row-level SUM; with a synthetic
+`storage-by-article` map, asserts the overridden value is used.
+
+---
+
+### Finance.4 — `:for-pay` net (sales − returns)
+
+**Formula**
+
+```
+for-pay := round2 (
+              SUM(for-pay over sales-lines)
+            − |SUM(for-pay over return-lines)|
+           )
+```
+
+The `Math/abs` strips the sign of the returns sum. On WB, return `for-pay`
+values are typically 0.0 (seller pays logistics only, not charged via
+`for_pay`). On Ozon the return `for-pay` arrives as a negative number.
+Taking the absolute value means the subtraction is always
+`sales_total − |returns_total|`, never a double-subtraction from an
+already-negative value.
+
+**Economic justification.** The seller's net received amount for an
+article in the period is `what I got from sales` minus `what was clawed
+back from returns`. Both `sales_pay` (exposed as Finance.1 `:sales-pay`)
+and `returns_pay` (`:returns-pay`) are preserved separately for
+reconciliation; `:for-pay` is the single net number the Finance report
+displays. This mirrors UE.2's `for-pay` definition exactly.
+
+**Inputs.** `for-pay` field from `sales-lines` and `return-lines`
+(Finance.1 partition).
+
+**Edge cases.**
+
+- Article with only return lines: `sales SUM = 0`, so `for-pay =
+  −|returns SUM|` which evaluates to ≤ 0 (correct — net refund).
+- Article with only sale lines: `returns SUM = 0`; `|0| = 0`;
+  `for-pay = sales SUM`.
+- NaN/nil: `(or (:for-pay row) 0)` prevents NaN propagation.
+
+**Verification.** `finance_canon_test.clj` › `group-4-for-pay`:
+article A: `5×80 − |0| = 400`; article B: `3×42 − |0| = 126`;
+article C: `0 − |0| = 0` (return rows have `for-pay=0` in the WB
+fixture).
+
+---
+
+### Finance.5 — `:cost-price` and `:total-cost`
+
+**Formula**
+
+```
+cost-price := round2 line-cost(first(sales-lines))
+           where line-cost(line) = cost-price/get-price(article, barcode) OR 0.0
+
+total-cost := round2 SUM( line-cost(line) × max(1, quantity)
+                          for line in sales-lines )
+```
+
+**Economic justification.** `cost-price` is the per-unit procurement cost
+of this article in the period, sourced from the `cost_prices` table via
+`cost-price/get-price`. Using the first sale line as the representative
+is a deliberate simplification: most articles have a single SKU and a
+stable cost price within a weekly report period. `total-cost` correctly
+accounts for multi-unit lines via `max(1, quantity)` to prevent 0-quantity
+lines from zeroing out cost.
+
+**Inputs.**
+[`data-dictionary.md#cost_prices`](data-dictionary.md#cost_prices) via
+`cost-price/get-price(article, barcode)`.
+
+**Edge cases.**
+
+- No sale lines → `(first nil) = nil`; `line-cost(nil) = 0.0`;
+  `cost-price = 0.0`, `total-cost = 0.0`.
+- Article with no entry in `cost_prices`: `get-price` returns nil →
+  `0.0`.
+- `quantity = nil` in a row: `(or nil 1) = 1`; `max(1,1) = 1` —
+  single-unit fallback.
+- Mid-period cost change: only the first sale-line's cost is reported as
+  `cost-price`; `total-cost` uses each line's own lookup so it remains
+  accurate (each barcode may have a different entry).
+
+**Verification.** `finance_canon_test.clj` › `group-5-cost-price`:
+with no `cost_prices` rows, both fields are 0.0; this is the expected
+behavior for the in-memory fixture (no DB).
+
+---
+
+### Finance.6 — `empty-article-row` fallback
+
+**Formula**
+
+```
+when `articles` kwarg is supplied AND article has no finance lines:
+    emit empty-article-row(article, storage-by-article)
+    where all monetary fields = 0.0 / 0 except:
+        storage = round2 (get storage-by-article article 0.0)
+```
+
+**Economic justification.** When the caller supplies an explicit article
+list (e.g. to join the finance report against a product catalog), an
+article that had no activity in the period should still appear in the
+output with a zero row rather than silently disappearing. The storage
+field is still populated from `storage-by-article` because WB charges
+storage regardless of sales activity — a zero-sales week still incurs
+storage cost.
+
+**Inputs.** `articles` keyword arg (seq of article strings); the
+`storage-by-article` map for storage coalescence.
+
+**Edge cases.**
+
+- When `articles` is not provided (nil / empty), `empty-article-row` is
+  never called — the output only contains articles that appear in the
+  finance data.
+- An article present in both `articles` and the finance data uses the
+  computed `article-row`, not the empty fallback.
+- `cost-price = 0.0`, `total-cost = 0.0` — correct; no sale to derive
+  cost from.
+
+**Verification.** `finance_canon_test.clj` › `group-6-empty-article-row`:
+passes `:articles ["A" "B" "C" "D"]` where D has no rows; asserts D
+appears with `for-pay = 0.0` and all monetary fields zero.
+
+---
+
+### Finance.7 — `totals` period rollup
+
+**Formula**
+
+```
+totals(finance-data) := let articles = by-article(finance-data)
+  :total-revenue     := round2 SUM(:revenue    over articles)
+  :total-wb-reward   := round2 SUM(:wb-reward  over articles)
+  :total-acquiring   := round2 SUM(:acquiring  over articles)
+  :total-spp         := round2 SUM(:spp-amount over articles)
+  :total-logistics   := round2 SUM(:logistics  over articles)
+  :total-penalties   := round2 SUM(:penalties  over articles)
+  :total-storage     := round2 SUM(:storage    over articles)
+  :total-acceptance  := round2 SUM(:acceptance over articles)
+  :total-additional  := round2 SUM(:additional over articles)
+  :total-deduction   := round2 SUM(:deduction  over articles)
+  :total-for-pay     := round2 SUM(:for-pay    over articles)
+  :total-sales-qty   := SUM(:sales-qty   over articles)   [integer]
+  :total-returns-qty := SUM(:returns-qty over articles)   [integer]
+  :articles-count    := count(articles)
+```
+
+Note: `totals` calls `by-article` internally without `storage-by-article`
+or `articles` args. If the caller needs storage coalescence, they should
+call `by-article` themselves and derive totals from that result.
+
+**Economic justification.** The period summary displayed at the top of the
+Finance report. Mirrors P&L.1 but keyed with `:total-*` prefix for
+disambiguation. No `gross-profit` or `net-profit` — Finance is the
+bookkeeping view; P&L is the profit view built on top of it.
+
+**Inputs.** All Finance.1–Finance.5 per-article fields via `by-article`.
+
+**Edge cases.**
+
+- Empty input → `by-article` returns `[]`; all totals = 0.0, counts = 0.
+- `:articles-count` counts the number of rows returned by `by-article`,
+  which equals the number of distinct articles in the finance data (or
+  the length of the `articles` arg when supplied — but `totals` does not
+  pass `articles`, so it always reflects distinct articles in data).
+
+**Verification.** `finance_canon_test.clj` › `group-7-totals`:
+asserts `total-for-pay = 526.0` (matches fixture), `articles-count = 3`.
+
+---
+
+### Finance.8 — `by-report-id` weekly split (WB only)
+
+**Formula**
+
+```
+by-report-id(finance-data) :=
+  group finance-data by (row.report-id OR row.report_id)
+  for each [id lines]:
+    :report-id := id
+    :date-from := first(lines).date-from OR first(lines).date_from
+    :date-to   := first(lines).date-to   OR first(lines).date_to
+    :lines     := count(lines)
+    :for-pay   := round2 SUM(row.for-pay over lines)
+  sort ascending by :date-from
+```
+
+**Economic justification.** WB groups settlement rows into weekly
+`report_id` buckets. The `by-report-id` view exposes the raw `for-pay`
+total per report week, useful for reconciling WB's weekly settlement
+statements. For Ozon and YM, `report_id` is nil for all rows, so
+`by-report-id` produces a single catch-all row with `report-id = nil`.
+
+**Inputs.** Raw finance rows; `report-id` / `report_id` dual-key lookup
+handles both kebab and snake-case from the DB layer.
+
+**Edge cases.**
+
+- YM / Ozon: all rows group under `nil` → single-element output.
+- The `:for-pay` here is row-level `for_pay` summed directly — not
+  net-of-returns as in Finance.4. For WB this is the same number WB
+  reports on the settlement (net is already in the raw rows); for
+  Ozon/YM, raw `for_pay` sign semantics differ (see UE.2).
+- `date-from` / `date-to` are taken from `(first lines)` — the lines
+  within a group may span dates; the first line's dates serve as a proxy
+  for the report week start/end.
+
+**Verification.** `finance_canon_test.clj` › `group-8-by-report-id`:
+fixture has all rows with `date-from = "2026-03-01"`, so a single
+report-week group; asserts `count = 1` and `for-pay` equals raw SUM
+of all `:for-pay` field values across rows.
+
+---
+
+### Finance.9 — Marketplace coverage matrix
+
+| Metric / field | WB | Ozon | YM |
+|---|---|---|---|
+| `:revenue` | ✅ `retail_amount` | ✅ `retail_amount` | ✅ `retail_amount` |
+| `:wb-reward` | ✅ WB-specific commission field | ❌ always 0 | ❌ always 0 |
+| `:wb-commission` | ✅ sale-commission breakout | ❌ always 0 | ❌ always 0 |
+| `:spp-amount` | ✅ meaningful (SPP mechanism) | ⚠️ residual only | ⚠️ residual only |
+| `:acquiring` | ✅ acquiring_fee field | ✅ acquiring_fee field | ❌ rolled into for_pay |
+| `:sales-pay` / `:returns-pay` | ✅ | ✅ (bonus+compensation included) | ✅ (buyer − commissions + subsidies) |
+| `:for-pay` net | ✅ | ✅ | ✅ |
+| `:logistics` | ✅ delivery_cost | ✅ delivery_cost | ✅ delivery_cost |
+| `:storage` | ✅ paid_storage coalescence | ✅ row-level storage_fee | ✅ row-level storage_fee |
+| `:penalties` | ✅ | ✅ | ✅ |
+| `:acceptance` | ✅ FBO acceptance fee | ✅ | ❌ always 0 |
+| `:deduction` | ✅ | ❌ always 0 | ❌ always 0 |
+| `:additional` | ✅ seller credits | ✅ | ✅ |
+| `:cost-price` / `:total-cost` | ✅ | ✅ | ✅ |
+| `by-report-id` week split | ✅ meaningful | ⚠️ single nil group | ⚠️ single nil group |
+
+---
+
+### Finance.10 — Known gaps
+
+Inherits all UE.11 gaps (same ingest pipeline). Finance-specific additions:
+
+1. **`:cost-price` uses the first sale-line's per-unit cost as the
+   "representative".** Silently wrong when an article has multiple SKUs
+   (barcodes) with different cost-prices within the same period, or when
+   the cost changed mid-period. `total-cost` is unaffected because it
+   does per-line lookup, but `cost-price` displayed in the UI will show
+   only one SKU's value.
+2. **`by-report-id` assumes one `report_id` per week.** If a future MP
+   re-uses IDs across dates or issues multiple settlement IDs in one
+   week, the date-from/date-to proxy from `(first lines)` will be
+   inaccurate and the grouping will merge distinct weeks.
+3. **Return-bearing-only articles (e.g. fixture article C) show
+   `cost-price = 0.0`** because no sale lines exist to derive cost from.
+   `total-cost = 0.0` as well — no units were sold in the period, so
+   the cost assignment is not meaningful anyway. Callers should not
+   interpret `cost-price = 0` as "free" — they should check
+   `sales-qty = 0`.
+4. **`totals` does not accept `storage-by-article`.** It calls
+   `by-article` with no kwargs, so if the report layer wants
+   storage-coalesced totals, it must build them from the `by-article`
+   result directly (as `pnl/calculate` does).
+
+---
+
+### Finance.11 — Verification summary
+
+- Every Finance.N group has a corresponding `deftest` in
+  `test/analitica/domain/finance_canon_test.clj`.
+- `group-reconcile-with-pnl-and-ue`: asserts that on the shared fixture,
+  `SUM(:for-pay)` across `by-article` Finance rows equals `:for-pay`
+  from `pnl/calculate` within 0.1 RUB, and equals
+  `(reduce + (map :for-pay (ue/calculate fx)))` within 0.1 RUB.
+- Regression coverage: `clojure -M:test` green on the whole suite.
+
+---
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).

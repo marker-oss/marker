@@ -111,6 +111,8 @@
    :total-cost    0.0})
 
 (defn by-article
+  "Per-article aggregation of finance rows.
+   See docs/canonical-formulas.md §Finance.1-Finance.8 for the canonical formulas."
   [finance-data & {:keys [storage-by-article articles sort-key]
                    :or   {sort-key :for-pay}}]
   (let [grouped       (group-by :article finance-data)
