@@ -8,23 +8,27 @@
      - validate-rows — {:ok [...] :bad [...]}
 
    See docs/data-dictionary.md for canonical semantics."
-  (:require [analitica.schema.normalized.finance :as finance]))
+  (:require [analitica.schema.normalized.finance :as finance]
+            [analitica.schema.normalized.sales :as sales]))
 
 (def tables
   "Registered normalized tables."
-  #{:finance})
+  #{:finance :sales})
 
 (def schemas
-  {:finance finance/FinanceRow})
+  {:finance finance/FinanceRow
+   :sales   sales/SalesRow})
 
 (defn valid?
   "Dispatch on table keyword. Returns true iff row satisfies the table's schema."
   [table row]
   (case table
-    :finance (finance/valid? row)))
+    :finance (finance/valid? row)
+    :sales   (sales/valid? row)))
 
 (defn validate-rows
   "Dispatch on table keyword."
   [table rows]
   (case table
-    :finance (finance/validate-rows rows)))
+    :finance (finance/validate-rows rows)
+    :sales   (sales/validate-rows rows)))

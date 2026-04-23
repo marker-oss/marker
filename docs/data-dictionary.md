@@ -123,3 +123,62 @@ report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
 - **Ozon finance_realization sometimes omits `return_commission` and `delivery_commission`** — wrapped in `[:maybe ...]` at the API schema layer; not a FinanceRow concern.
 - **YM has no storage/acceptance fees at per-article grain** — those fields are nil for `:ym` rows.
 - **WB advertising allocation** is proportional to revenue, not actual campaign-to-article attribution — approximation documented as B-003 in 002-audit verdicts.
+
+## sales
+
+### Purpose
+
+Per-order and per-return events captured at the line-item grain. Feeds
+Sales, Returns, Buyout, and Trends reports. This is an event stream:
+one row per sale event, one row per return event. Regional geography
+is denormalized into the row for per-region analytics.
+
+### Grain
+
+One row = one sale event OR one return event, keyed by `sale_id`
+(unique across marketplaces — transform prefixes / concatenates IDs
+when source IDs aren't globally unique).
+
+### Source mapping
+
+| marketplace | endpoint | raw → normalized |
+|---|---|---|
+| WB | `/api/v1/supplier/sales` | `saleID` → `sale-id`, `date` → `date`, `supplierArticle` → `article`, `odid` → (used in sale-id prefix), `totalPrice` → `total-price`, `forPay` → `for-pay`, `finishedPrice` → `finished-price`, `priceWithDisc` → `price-with-disc`, positive `sale/for_pay` → `:sale`, return report endpoint → `:return` |
+| Ozon | `/v3/posting/fbo/list` + `/v3/posting/fbs/list` | `posting_number` → `sale-id`, `in_process_at` → `date`, `products[*].offer_id` → `article`, `status` → `:sale`/`:cancel`/`:return` |
+| YM | `/campaigns/{id}/stats/orders` | `id` → `sale-id`, `creationDate` → `date`, `items[*].offerId` → `article`, `status` mapping: `DELIVERED` → `:sale`, `CANCELLED` → `:cancel`, return flows → `:return` |
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | enum | meaning |
+|---|---|---|---|---|---|
+| `sale-id` | `:string` | no | — | — | globally unique event id |
+| `date` | `:string` | no | ISO date | — | event date (order creation or return) |
+| `article` | `:string` | no | — | — | seller-facing article |
+| `type` | `[:enum :sale :return :cancel]` | no | — | sale/return/cancel | event kind |
+| `marketplace` | `[:enum :wb :ozon :ym]` | no | — | wb/ozon/ym | source |
+| `total-price` | int/double | yes | RUB | — | list price before discounts × qty |
+| `for-pay` | int/double | yes | RUB | — | seller payout for this event |
+| `finished-price` | int/double | yes | RUB | — | price after MP discounts, before SPP |
+| `price-with-disc` | int/double | yes | RUB | — | final buyer price |
+| `nm-id`, `barcode`, `tech-size`, `subject`, `category`, `brand`, `warehouse`, `region` | various | yes | — | — | catalog + geography metadata |
+| `synced-at` | `:string` | yes | ISO timestamp | — | when sync wrote this row |
+
+### Invariants
+
+- `sale-id` is unique across all rows (PK).
+- `type` is one of `:sale`, `:return`, `:cancel` — no other values.
+- For a `:sale` row, `for-pay` should be > 0 (may be nil when MP report hasn't closed).
+- For a `:return` or `:cancel` row, `for-pay` may be 0, negative, or nil.
+
+### Edge cases
+
+- **WB sales and returns come from separate endpoints** — transform merges into one table with `type` as discriminator.
+- **Ozon partial returns** — one posting can have multiple return events; each gets its own row.
+- **YM cancelled orders** never produce a `:sale` row; they appear only as `:cancel`.
+- **Duplicate `sale_id` across marketplaces**: transform prefixes non-WB ids (e.g. `ozon-<posting>`) to guarantee global uniqueness.
+
+### Known gaps
+
+- **Warehouse attribution** for Ozon is via `warehouse_id` lookup; unknown warehouses land as nil.
+- **Region** for YM orders often nil — YM exposes region only in specific report endpoints.
+- **Tech-size** is WB-specific; nil for other MPs.
