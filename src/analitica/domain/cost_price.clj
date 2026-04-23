@@ -60,6 +60,29 @@
          (println "Файл не найден:" path)
          (throw e))))))
 
+(defn load-from-db!
+  "Populate in-memory caches from the `cost_prices` DB table.
+   Returns {:articles :barcodes} or {:articles 0 :barcodes 0} when empty.
+
+   Call this at boot (after `db/init!`) instead of `load-from-1c` — the
+   DB is now the source of truth, seeded by any CostSource provider
+   through `analitica.costsource/ingest!`. The CSV file is just one
+   possible source, not the runtime state holder."
+  []
+  ;; Requiring `analitica.db` at call-time avoids a load-time cycle:
+  ;; analitica.db -> jdbc init; analitica.domain.cost-price -> db. Using
+  ;; requiring-resolve dodges the ns-level require that would otherwise
+  ;; bring db in before it's ready in some test-harness orders.
+  (let [q (requiring-resolve 'analitica.db/query)
+        rows (@q ["SELECT article, barcode, cost_price FROM cost_prices"])
+        ;; Convert DB result (snake_case) to domain row shape (kebab).
+        normalized (mapv (fn [r]
+                           {:article    (:article r)
+                            :barcode    (:barcode r)
+                            :cost-price (:cost-price r)})
+                         rows)]
+    (set-prices-from-rows! normalized)))
+
 ;; ---------------------------------------------------------------------------
 ;; Simple loaders
 ;; ---------------------------------------------------------------------------

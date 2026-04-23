@@ -185,7 +185,17 @@
       (catch Exception e
         (println "Warning: Could not register YM:" (.getMessage e)))))
   (println "Registered marketplaces:" (vec (registry/registered)))
-  (cost-price/load-from-1c)
+  ;; Prefer DB as the runtime source of truth for cost prices. When the
+  ;; cost_prices table is empty (fresh install or cleared for re-ingest),
+  ;; bootstrap from the local 1C CSV via the canonical CostSource path so
+  ;; we don't lose the existing repo fallback.
+  (let [{:keys [articles]} (cost-price/load-from-db!)]
+    (if (pos? articles)
+      (println (str "Загружено себестоимостей из БД: " articles " артикулов"))
+      (do (println "cost_prices DB is empty → bootstrapping from 1c/units.csv")
+          (try (sync/sync-1c!)
+               (catch Throwable t
+                 (println "  Bootstrap failed:" (.getMessage t)))))))
   (let [{:keys [loaded errors]} (schema-loader/load-all!)]
     (println (str "Registered " loaded " API schemas from resources/schemas/"))
     (doseq [{:keys [file message]} errors]
