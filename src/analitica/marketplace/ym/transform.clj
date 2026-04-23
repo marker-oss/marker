@@ -198,19 +198,36 @@
         ;; Named types above are kept for attribution to specific FinanceRow
         ;; fields; the generic sum guarantees for-pay stays correct when YM
         ;; introduces new commission types (e.g. SORTING, seen once in live data).
-        all-comm    (/ (reduce + 0.0 (map #(or (:actual %) 0) commissions)) n-items)]
+        all-comm    (/ (reduce + 0.0 (map #(or (:actual %) 0) commissions)) n-items)
+        ;; YM subsidies: Yandex pays seller to cover Yandex-side discounts
+        ;; (SUBSIDY type) and cashbacks (YANDEX_CASHBACK). ACCRUAL adds to
+        ;; seller payout; DEDUCTION reverses on returns / partial delivery.
+        ;; Net effect per order, split across items like commissions.
+        ;; Discovered 2026-04-24 Phase-2 verification — YM UE was losing
+        ;; ~40% of real seller income on promo-heavy periods.
+        subsidies   (get order :subsidies [])
+        subsidy-net (/ (reduce + 0.0
+                          (map (fn [s]
+                                 (let [a (or (:amount s) 0)]
+                                   (case (:operationType s)
+                                     "ACCRUAL"   a
+                                     "DEDUCTION" (- a)
+                                     0)))
+                               subsidies))
+                       n-items)]
     (mapv (fn [item]
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   qty         (or (get item :count) 1)
                   ;; FR-006/019: bidFee strictly per-item, no redistribution
                   bid-fee     (or (:bidFee item) 0)
-                  ;; :for-pay = BUYER − Σcommissions.  bidFee is NOT subtracted
-                  ;; here: it's stored separately in :ad-cost and the UE.4
-                  ;; profit formula subtracts :ad-spend once. Previous code
-                  ;; subtracted it twice (here AND via ad-spend-by-article),
-                  ;; silently erasing 100% of ad spend from for_pay.
-                  net-pay     (- (or buyer-price 0) all-comm)]
+                  ;; :for-pay = BUYER − Σcommissions + net_subsidies.
+                  ;; bidFee is NOT subtracted here — it's stored in
+                  ;; :ad-cost and the UE.4 profit formula subtracts
+                  ;; :ad-spend once. Subsidies are Yandex paying seller
+                  ;; to cover Yandex-side discounts (see binding above).
+                  net-pay     (+ (- (or buyer-price 0) all-comm)
+                                 subsidy-net)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
                :report-id          nil

@@ -171,13 +171,46 @@
     (when (seq prices)
       (/ (reduce + prices) (count prices)))))
 
+(defn- normalize-article
+  "Canonicalise an article name for fuzzy matching across marketplaces:
+   lowercase + strip trailing digit runs (size suffix). E.g.
+   `6405/Голубой48` → `6405/голубой`, `1523-1/Серый` → `1523-1/серый`.
+   1C CSVs omit the size; WB lowercases; YM/Ozon often include size."
+  [s]
+  (when s
+    (-> s
+        clojure.string/lower-case
+        (clojure.string/replace #"\s+$" "")
+        (clojure.string/replace #"\d+$" ""))))
+
+(defonce ^:private cost-by-normalized (atom {}))
+
+(defn- rebuild-normalized-index! []
+  (reset! cost-by-normalized
+          (reduce-kv (fn [acc art price]
+                       (let [k (normalize-article art)]
+                         (if (and k (not (contains? acc k)))
+                           (assoc acc k price)
+                           acc)))
+                     {}
+                     @cost-prices)))
+
+;; Rebuild the normalized index whenever cost-prices changes via load-*.
+;; Simple add-watch keeps the two atoms in sync without touching load sites.
+(add-watch cost-prices ::normalized-index
+           (fn [_ _ _ _] (rebuild-normalized-index!)))
+
 (defn get-price
-  "Get cost price by article. Falls back to barcode, then to average."
-  ([article] (get @cost-prices article))
+  "Get cost price by article with fallback strategy:
+     1. strict match on article
+     2. strict match on barcode
+     3. fuzzy match: lowercase + strip size suffix (e.g. /Голубой48 → /голубой).
+   Returns nil when nothing matches."
+  ([article] (get-price article nil))
   ([article barcode]
    (or (get @cost-prices article)
        (when barcode (get @cost-by-barcode barcode))
-       (average-price))))
+       (when article (get @cost-by-normalized (normalize-article article))))))
 
 (defn all-prices [] @cost-prices)
 (defn all-barcodes [] @cost-by-barcode)
