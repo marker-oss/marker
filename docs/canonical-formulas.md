@@ -856,4 +856,70 @@ asserts each summary derived metric on a fixture matching UE.7 per-article
 test, then asserts summary equals weighted average of per-article.
 
 ---
+
+### UE.10 — Marketplace coverage matrix
+
+| Metric family | WB | Ozon | YM |
+|---|---|---|---|
+| UE.1 (counts)                 | ✅ | ✅ | ✅ |
+| UE.2 `:revenue`               | ✅ | ✅ | ✅ |
+| UE.2 `:wb-commission`         | ✅ | ✅ (reused for commission_amount) | ✅ |
+| UE.2 `:wb-reward`             | ✅ | ❌ (nil) | ❌ (nil) |
+| UE.2 `:logistics`             | ✅ | ✅ (per-service rows) | partial (per bidFee only) |
+| UE.2 `:storage`               | ✅ (paid_storage) | ✅ (per-service) | ❌ (no API) |
+| UE.2 `:acceptance`            | ✅ | ❌ (nil) | ❌ (nil) |
+| UE.2 `:penalties`             | ✅ | ✅ (cash_flow_periods fines) | ❌ (nil) |
+| UE.2 `:acquiring`             | ✅ | ❌ (inside for-pay) | ❌ (inside for-pay) |
+| UE.2 `:deduction`             | ✅ | partial | ❌ |
+| UE.2 `:additional`            | ✅ | ❌ | ❌ |
+| UE.2 `:for-pay`               | ✅ | ✅ | ✅ |
+| UE.2 `:total-cost` (COGS)     | from 1C (all MP) |
+| UE.2 `:spp-amount`            | ✅ | ❌ | ❌ |
+| UE.3 `:total-wb-costs`        | ✅ | partial (depends on component coverage) | partial |
+| UE.4 `:profit`                | ✅ | ✅ | ✅ |
+| UE.5 `:ad-spend`              | ad_stats table | finance.ad-cost | finance.ad-cost |
+| UE.6 per-unit                 | ✅ | ✅ | ✅ |
+| UE.7 percentages              | ✅ | ✅ | ✅ |
+| UE.8 totals                   | ✅ | ✅ | ✅ |
+| UE.9 derived summary          | ✅ | ✅ | ✅ |
+
+### UE.11 — Known gaps (Phase 2 exit state)
+
+1. **Account-level costs not included for WB** (B-002). WB does not
+   expose subscription / warehouse-movement / fines at per-article grain;
+   these flow through `finance` rows with `article = nil` and are not
+   surfaced in UE. Estimated unaccounted cost: ~0.3% of revenue.
+2. **Ad-spend marketplace filter missing in legacy P&L path** (B-003).
+   `pnl/ad-spend-total` historically SELECTed from ad_stats without
+   filtering `marketplace`, so in multi-MP installs UE profit for one
+   MP could be inflated/deflated by another MP's spend. Fixed for the
+   canonical per-article path (UE.5); `pnl` path still has the read.
+   **This does not affect UE's `profit` or `:total-profit`** because
+   UE uses `ad-spend-by-article`, which is already MP-filtered.
+3. **Net-qty clamp hides full-return scenarios** (UE.1 edge case). An
+   article with 2 sales and 5 returns shows `net-qty = 1` instead of
+   `-3`. Per-unit metrics are misleading for such articles; UE report
+   flags them in the "Убыточные артикулы" section via `profit < 0`,
+   which is the practical escape hatch.
+4. **Rounding drift UE.total-profit vs P&L.net-profit** (up to
+   2 kopek × article-count). UE totals are per-article-sum; P&L is
+   grand-total. For regulatory reconciliation, use P&L.
+5. **Storage for YM is 0** (see UE.10). Margin is overstated for YM
+   sellers who do use YM FBO storage.
+6. **`:spp-amount` semantic ambiguity.** UE passes it through without a
+   formula of its own because Finance §7.6 flags its definition as
+   unclear. `:spp-compensation` = rounded pass-through only.
+
+### UE.12 — Verification summary
+
+- All 9 metric groups have at least one deftest in
+  `test/analitica/domain/unit_economics_canon_test.clj`.
+- Integration test: `profit-matches-pnl-single-article` asserts UE's
+  per-article `:profit` equals P&L's `:net-profit` when the fixture has
+  one article on one MP with ad-spend allocated.
+- Reconciliation test: on a 3-article fixture, `SUM UE.profit` equals
+  P&L `:net-profit` within 0.1 RUB.
+- Regression coverage: `clojure -M:test` green on the whole suite.
+
+---
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
