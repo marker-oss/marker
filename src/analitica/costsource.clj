@@ -32,42 +32,63 @@
           {:ok [] :bad []}
           rows))
 
-(defn- to-db-rows
-  "Collapse per-row records to the current DB shape (one row per article,
-   barcode=\"\"). Phase 2 will switch to per-barcode; keeping the current
-   shape here preserves read semantics for existing `get-price` callers."
+(defn- dedup-per-key
+  "Collapse rows sharing the same DB primary key `(article, barcode)`.
+   Keeps the first occurrence (preserves CSV order); downstream callers
+   can re-run ingest to overwrite with INSERT-OR-REPLACE semantics."
   [rows]
   (->> rows
-       (group-by :article)
-       (mapv (fn [[article items]]
-               (let [head (first items)]
-                 [article
-                  ""
-                  (:cost-price head)
-                  (or (:nomenclature head) "")
-                  (or (:color head) "")
-                  (or (:quantity head) 0.0)
-                  (now-str)])))))
+       (reduce (fn [{:keys [seen out] :as acc} r]
+                 (let [k [(:article r) (or (:barcode r) "")]]
+                   (if (contains? seen k)
+                     acc
+                     {:seen (conj seen k) :out (conj out r)})))
+               {:seen #{} :out []})
+       :out))
+
+(defn- to-db-rows
+  "Per-barcode DB rows preserving all canonical fields: characteristic
+   (1С size/composition), color, nomenclature, quantity_1c, updated_at.
+   Rows with no barcode land with barcode='' as the article-level
+   fallback used by cost-price/get-price when a strict-barcode lookup
+   misses."
+  [rows]
+  (let [ts (now-str)]
+    (mapv (fn [r]
+            [(:article r)
+             (or (:barcode r) "")
+             (:cost-price r)
+             (or (:nomenclature r) "")
+             (or (:color r) "")
+             (or (:characteristic r) "")
+             (or (:quantity r) 0.0)
+             ts])
+          rows)))
 
 (defn ingest!
   "Ingest cost prices from `source` (anything implementing CostSource).
-   Returns {:source :loaded :rejected :errors :fetched}.
+   Returns {:source :fetched :loaded :rejected :errors}.
 
    Side effects:
-     - INSERT OR REPLACE rows in cost_prices table
+     - INSERT OR REPLACE rows in `cost_prices` table (per-barcode)
      - Refresh in-memory atoms in `analitica.domain.cost-price` so
-       existing `get-price` callers see the fresh data immediately"
+       existing `get-price` callers see the fresh data immediately
+
+   `rejected` counts rows that failed minimal validation (article blank
+   or cost-price < 0). Duplicate (article, barcode) rows after the first
+   are silently dropped — INSERT-OR-REPLACE would do the same, but we
+   count the unique rows for the caller's summary."
   [source]
   (let [source-name (p/source-id source)
         raw         (p/fetch-cost-prices source)
         {:keys [ok bad]} (split-ok-bad raw)
-        db-rows     (to-db-rows ok)
-        inserted    (db/insert-batch! :cost_prices
-                                      [:article :barcode :cost_price
-                                       :nomenclature :color :quantity_1c :updated_at]
-                                      db-rows)]
-    ;; Refresh cache atoms from the ok-rows so get-price works without a
-    ;; re-read of the file. Mirrors the old (reset! …) semantics.
+        deduped     (dedup-per-key ok)
+        db-rows     (to-db-rows deduped)
+        inserted    (db/insert-batch!
+                      :cost_prices
+                      [:article :barcode :cost_price
+                       :nomenclature :color :characteristic :quantity_1c :updated_at]
+                      db-rows)]
     (cp/set-prices-from-rows! ok)
     {:source    source-name
      :fetched   (count raw)

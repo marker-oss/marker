@@ -117,13 +117,14 @@
     )"
 
    "CREATE TABLE IF NOT EXISTS cost_prices (
-      article       TEXT NOT NULL,
-      barcode       TEXT NOT NULL DEFAULT '',
-      cost_price    REAL NOT NULL,
-      nomenclature  TEXT,
-      color         TEXT,
-      quantity_1c   REAL,
-      updated_at    TEXT,
+      article        TEXT NOT NULL,
+      barcode        TEXT NOT NULL DEFAULT '',
+      cost_price     REAL NOT NULL,
+      nomenclature   TEXT,
+      color          TEXT,
+      characteristic TEXT,
+      quantity_1c    REAL,
+      updated_at     TEXT,
       PRIMARY KEY (article, barcode)
     )"
 
@@ -455,6 +456,16 @@
         (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_event_date
                             ON finance(marketplace, event_date)"])
         (println "Migration: finance.event_date column + index added")))
+    ;; Migrate cost_prices.characteristic: 1C characteristic string (size,
+    ;; composition, etc.) retained per-barcode so future lookup fallbacks
+    ;; can disambiguate variants. Empty for legacy rows; new imports fill
+    ;; it via costsource ingest.
+    (let [info         (jdbc/execute! ds ["PRAGMA table_info(cost_prices)"]
+                                      {:builder-fn rs/as-unqualified-maps})
+          has-char?    (some #(= "characteristic" (:name %)) info)]
+      (when-not has-char?
+        (jdbc/execute! ds ["ALTER TABLE cost_prices ADD COLUMN characteristic TEXT"])
+        (println "Migration: cost_prices.characteristic column added")))
     ;; Migrate region_sales: old schema had no PK → every rerun duplicated rows.
     ;; Add composite PK so INSERT OR REPLACE folds reruns.
     (let [info    (jdbc/execute! ds ["PRAGMA table_info(region_sales)"]

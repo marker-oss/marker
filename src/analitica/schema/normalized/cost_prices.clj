@@ -11,10 +11,11 @@
    [:barcode    :string]
    [:cost-price [:and [:or :int :double] [:>= 0]]]
 
-   [:nomenclature {:optional true} [:maybe :string]]
-   [:color        {:optional true} [:maybe :string]]
-   [:quantity-1c  {:optional true} [:maybe [:or :int :double]]]
-   [:updated-at   {:optional true} [:maybe :string]]])
+   [:nomenclature   {:optional true} [:maybe :string]]
+   [:color          {:optional true} [:maybe :string]]
+   [:characteristic {:optional true} [:maybe :string]]
+   [:quantity-1c    {:optional true} [:maybe [:or :int :double]]]
+   [:updated-at     {:optional true} [:maybe :string]]])
 
 (def ^:private validator (m/validator CostPriceRow))
 (def ^:private explainer (m/explainer CostPriceRow))
