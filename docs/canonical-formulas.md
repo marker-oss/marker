@@ -772,4 +772,88 @@ asserts each %-metric equals numerator / denominator × 100 on a
 non-trivial fixture, and returns nil on zero-denominator fixtures.
 
 ---
+
+### UE.8 — Summary monetary totals (aggregation)
+
+**Members:** `:total-revenue`, `:total-wb-reward`, `:total-logistics`,
+`:total-storage`, `:total-acceptance`, `:total-penalties`,
+`:total-acquiring`, `:total-deduction`, `:total-additional`,
+`:total-ad-spend`, `:total-wb-costs`, `:total-spp`, `:total-for-pay`,
+`:total-cost`, `:total-profit`.
+
+**Formula**
+
+```
+total-X := SUM(row-level-X) across all article rows      [round to 2 dp]
+```
+
+where `row-level-X` is the matching per-article metric from UE.2, UE.3,
+UE.4, UE.5, or a pass-through. Aggregation ignores nil values (treats as 0).
+
+**Economic justification.** Period-level roll-up answers "how did this
+seller's account perform across all articles in this window." It's the
+UE equivalent of P&L's top-line figures but computed from the UE
+decomposition, so rounding differences vs P&L appear only at 2nd-decimal
+resolution.
+
+**Inputs.** Every row-level metric from UE.1-UE.5.
+
+**Edge cases.**
+
+- Empty period → all totals = 0.
+- **Known issue: `:total-profit` may differ from P&L `:net-profit`** by
+  up to 2 kopek per article × article count due to independent rounding
+  of per-article `profit`. For reconciliation-grade numbers, P&L is the
+  source of truth; UE totals are decomposition-consistent.
+- Rows with `:additional = nil` safely treated as 0.
+
+**Verification.** `unit_economics_canon_test.clj` › `group-8-totals-sum`:
+asserts each `total-*` = sum of per-article `*` on a 3-article fixture;
+asserts UE total-profit agrees with P&L net-profit within 0.1 RUB
+tolerance.
+
+---
+
+### UE.9 — Summary derived metrics
+
+**Members:** `:margin-pct`, `:wb-cost-pct`, `:cogs-pct`, `:drr-pct`,
+`:profit-per-sale`, `:avg-check`, summary `:buyout-rate`.
+
+**Formula**
+
+```
+margin-pct     := total-profit / total-revenue × 100
+wb-cost-pct    := total-wb-costs / total-revenue × 100
+cogs-pct       := total-cost / total-revenue × 100
+drr-pct        := total-ad-spend / total-revenue × 100
+profit-per-sale:= total-profit / net-qty             ← net-qty = sales-qty − returns-qty (NOT clamped at summary level)
+avg-check      := total-revenue / sales-qty
+buyout-rate    := sales-qty / (sales-qty + returns-qty) × 100
+```
+
+where summary `sales-qty`, `returns-qty` are non-clamped sums across all
+articles.
+
+**Economic justification.** Same as UE.7 but at period level. Notably,
+`net-qty` at summary level is **not clamped** (code uses raw subtraction),
+unlike per-article where it is clamped to ≥1. This is because the report
+consumer generally filters out zero-activity periods before reading
+the summary, and a negative net-qty at summary-level genuinely means the
+period had more returns than sales (a legitimate business state).
+
+**Inputs.** UE.8 totals + summary `sales-qty`/`returns-qty`.
+
+**Edge cases.**
+
+- `net-qty ≤ 0` at summary → `profit-per-sale` via `safe-div` → 0. This
+  is a LOSS-dominated period — the metric becomes uninformative but
+  doesn't crash.
+- `sales-qty = 0` → `avg-check = 0`, `buyout-rate = nil`.
+- `total-revenue = 0` → all `*-pct` = nil.
+
+**Verification.** `unit_economics_canon_test.clj` › `group-9-summary-derived`:
+asserts each summary derived metric on a fixture matching UE.7 per-article
+test, then asserts summary equals weighted average of per-article.
+
+---
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
