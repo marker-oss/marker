@@ -2625,4 +2625,254 @@ any record of what changed.
 
 ---
 
+## Returns
+
+**Namespace**: `analitica.domain.returns`
+
+**Data model note**: Returns is a pure analysis layer over the same `sales`
+table as §Sales. One row = one unit event. `:type` is `:sale` or `:return`.
+There is **no cost accounting** in Returns; for financial impact of returns
+use UE / P&L (which compute return-as-negative-for-pay).
+
+Implementation: `src/analitica/domain/returns.clj`. Verification tests:
+`test/analitica/domain/returns_canon_test.clj`.
+
+Authored 2026-04-24 using the 5-point template from §Unit Economics.
+
+---
+
+### Returns.1 — `by-article` per-article return-rate
+
+**Formula**
+
+```
+grouped = group-by :article sales-data
+
+for each (article, items) in grouped:
+  sold        = count(items where :type = :sale)
+  returned    = count(items where :type = :return)
+  total       = sold + returned
+  return-rate = math/percentage(returned, total)
+                → nil when total = 0
+
+  {:article     article
+   :subject     (:subject (first items))
+   :sold        sold
+   :returned    returned
+   :total       total
+   :return-rate return-rate}
+
+result = sort-by :return-rate desc   ; nil treated as least by Clojure comparator
+```
+
+**Economic justification.** Per-article return-rate pinpoints which SKUs have
+structural quality or listing problems. Using `total = sold + returned` as the
+denominator matches the Sales.4 convention (§Sales.4 return-rate uses the same
+denominator), so return-rate semantics are consistent across Reports and Sales.
+Sorting descending by return-rate surfaces the most problematic articles first.
+
+**Inputs.** `sales` table rows with `:type`, `:article`, `:subject` (both
+`:sale` and `:return` rows are needed; only type-counts matter here).
+
+**Edge cases.**
+
+- Article with only returns and no sales: `sold = 0`, `total = returned`,
+  `return-rate = 100.0`.
+- Article with only sales and no returns: `returned = 0`, `return-rate = 0.0`.
+- Article with no rows: cannot appear (group-by produces only non-empty groups).
+- `total = 0`: impossible for any grouped article (group-by guarantees ≥ 1 item).
+
+**Verification.** `returns_canon_test.clj` › `by-article-computes-return-rate`,
+`by-article-sorts-by-rate-desc`.
+
+---
+
+### Returns.2 — `by-day` temporal distribution (returns only)
+
+**Formula**
+
+```
+returns = filter sales-data where :type = :return
+
+grouped = group-by (subs (:date row) 0 10) returns
+
+for each (day, items) in grouped:
+  {:date    day
+   :returns count(items)}
+
+result = sort-by :date ascending
+```
+
+**Economic justification.** The temporal view answers "when did returns occur?"
+without mixing sale counts per day. `by-day` is return-only by design — for
+sale counts by day, combine with Sales.1 `by-day`. Sorting ascending by date
+makes timeline charts directly plottable.
+
+**Inputs.** `:type` and `:date` fields on all rows. `:date` is an ISO datetime
+string; only the first 10 characters (YYYY-MM-DD) are used as the group key
+(via `parse-date-str` which calls `(subs s 0 10)`).
+
+**Edge cases.**
+
+- No return rows in input → empty vector (filter produces `[]`; group-by
+  produces `{}`; map produces `()`; sort-by produces `()`).
+- Sale rows with `:type = :sale` are silently excluded by the filter.
+- `:date` nil on a return row → `parse-date-str` returns nil → nil-keyed group.
+
+**Verification.** `returns_canon_test.clj` › `by-day-filters-to-returns-only`.
+
+---
+
+### Returns.3 — `totals` period rollup
+
+**Formula**
+
+```
+totals(sales-data) :=
+  sold     = count(sales-data where :type = :sale)
+  returned = count(sales-data where :type = :return)
+
+  {:sold        sold
+   :returned    returned
+   :return-rate math/percentage(returned, sold + returned)}
+               → nil when (sold + returned) = 0
+```
+
+**Economic justification.** Period-level KPI for the Returns dashboard header.
+`return-rate` uses the same `total = sold + returned` denominator as
+Returns.1, ensuring the period rate is the weighted average of per-article rates
+(weighted by total units per article). Returns nil when denominator is zero
+(empty period) — callers display "N/A" or "—" rather than 0%.
+
+**Inputs.** Same raw `sales` rows as Returns.1.
+
+**Edge cases.**
+
+- Empty input → `sold = 0`, `returned = 0`, `return-rate = nil`.
+- All returns, no sales → `sold = 0`, `returned = N`, `return-rate = 100.0`.
+- All sales, no returns → `returned = 0`, `return-rate = 0.0`.
+
+**Verification.** `returns_canon_test.clj` › `totals-overall-rate`,
+`totals-empty-denominator`.
+
+---
+
+### Returns.4 — Report layer filter (top-20, min 2 operations)
+
+**Formula / design**
+
+```
+report(period, marketplace) :=
+  data    = sales/fetch-sales(period, marketplace)
+  summary = totals(data)
+
+  top-articles =
+    ->> (by-article data)
+        (filter #(>= (:total %) 2))   ; ≥ 2 total operations
+        (take 20)
+
+  print summary header
+  print by-day(data) table
+  print top-articles table
+```
+
+**Economic justification.** A single unit return (100% rate on 1 total) is
+not a signal — it could be a one-time quality fluke, a gift, or a data entry
+error. Requiring `total ≥ 2` ensures the displayed rate is computed from at
+least one sale AND one return (or two sales), making it statistically
+meaningful. The filter is applied in the `report` view layer, **not** in
+`by-article` itself — callers can access the full unfiltered ranking via
+`(by-article data)` directly.
+
+**Inputs.** Output of `by-article` (sorted by return-rate desc).
+
+**Edge cases.**
+
+- Article with `total = 1` is excluded from the report view but visible via
+  `by-article` directly (see Returns.7.4 and test
+  `single-operation-articles-not-excluded-from-by-article`).
+- `take 20` on fewer than 20 remaining rows returns all remaining rows.
+
+**Verification.** `returns_canon_test.clj` ›
+`single-operation-articles-not-excluded-from-by-article`.
+
+---
+
+### Returns.5 — Inputs
+
+**Source table:** `sales` (via `sales/fetch-sales`)
+
+| Field | Type | Description |
+|---|---|---|
+| `:type` | keyword | `:sale` or `:return` — primary dispatch key |
+| `:date` | string | ISO datetime (e.g. `"2026-03-01T10:00:00"`) |
+| `:article` | string | Seller SKU / article code |
+| `:subject` | string | Product category / subject (for display only) |
+
+Monetary fields (`:for-pay`, `:finished-price`) are present on rows but
+**not used** by any Returns function — Returns is purely unit-count-based.
+
+---
+
+### Returns.6 — Marketplace coverage
+
+| Marketplace | `:type :sale` | `:type :return` | Notes |
+|---|---|---|---|
+| Wildberries (WB) | ✅ | ✅ | Full sale+return ingest |
+| Ozon | ✅ | ✅ | Full sale+return ingest |
+| Яндекс Маркет (YM) | ✅ | ✅ | Full sale+return ingest |
+
+Coverage matches §Sales.6 — all three marketplaces populate both `:sale` and
+`:return` type rows via their respective ingest transforms. Returns inherits
+all Sales.6 caveats (`:warehouse` / `:region` may be nil on Ozon/YM rows;
+these fields are not used by Returns).
+
+---
+
+### Returns.7 — Known gaps and quirks
+
+1. **Unit-count basis, not monetary.** A high-return-rate T-shirt worth 500 RUB
+   pollutes the ranking equally with a low-return-rate TV worth 50 000 RUB if
+   both have the same `return-rate`. For financial-impact ranking use UE / P&L,
+   which compute `return-as-negative-for-pay`.
+
+2. **No time-to-return tracking.** Returns are counted in the period they
+   appear in the settlement data, not linked to the original sale event. An
+   item sold in March and returned in April is counted in the April Returns
+   report (the period the return settled) but in the March Sales report (the
+   period the sale settled). Cross-period cross-report reconciliation must
+   choose one convention; UE / Finance use order-level status classification
+   which may differ.
+
+3. **`by-day` counts returns only — no daily sale denominator.** "Daily return
+   rate" (returns-per-day / sales-per-day) is not derivable from `by-day`
+   alone. Combine with `sales/by-day` output if per-day rates are needed.
+
+4. **`report` filter of `total ≥ 2` is a UI convention.** The public function
+   `by-article` exposes the unfiltered ranking. Callers who need the full list
+   (e.g. exports, API) should call `by-article` directly and apply their own
+   threshold.
+
+---
+
+### Returns.8 — Verification summary
+
+- Every Returns.N group has a corresponding `deftest` in
+  `test/analitica/domain/returns_canon_test.clj`.
+- Fixture: 3 articles with known return distributions:
+  - Article A: 8 sales + 2 returns → 20.0% return rate
+  - Article B: 5 sales + 0 returns → 0.0% return rate
+  - Article C: 1 sale + 1 return → 50.0% return rate
+  - Returns distributed across 2+ distinct dates (by-day multi-group coverage)
+- `by-article-computes-return-rate` — verifies A=20%, B=0%, C=50% (§Returns.1).
+- `by-article-sorts-by-rate-desc` — C(50%) first, then A(20%), then B(0%) (§Returns.1 sort).
+- `by-day-filters-to-returns-only` — only return rows appear, grouped by date (§Returns.2).
+- `totals-overall-rate` — period sold/returned/rate match expected values (§Returns.3).
+- `totals-empty-denominator` — empty input → sold=0, returned=0, rate=nil (§Returns.3 edge case).
+- `returns-are-unit-counted-not-monetary` — spurious `:for-pay` on rows does not affect counts (§Returns.5, §Returns.7.1).
+- `single-operation-articles-not-excluded-from-by-article` — article with total=1 appears in `by-article` output (§Returns.4 filter is report-layer only).
+- Regression coverage: `clojure -M:test` green on full suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).

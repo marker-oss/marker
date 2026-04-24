@@ -34,7 +34,12 @@
                  :returns  (count items)}))
          (sort-by :date))))
 
-(defn totals [sales-data]
+(defn totals
+  "Period rollup: total sold, returned, and overall return-rate.
+   See §Returns.3 in docs/canonical-formulas.md.
+   Formula: return-rate = math/percentage(returned, sold+returned).
+   Returns nil for return-rate when denominator is 0 (empty input)."
+  [sales-data]
   (let [sold     (count (filter #(= :sale (:type %)) sales-data))
         returned (count (filter #(= :return (:type %)) sales-data))]
     {:sold        sold
