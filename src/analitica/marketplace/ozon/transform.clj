@@ -195,7 +195,8 @@
 ;;
 ;; Key decisions (see specs/002-calculation-audit/verdicts.md B-005):
 ;;   - article = item.offer_id (direct, no sku-map needed)
-;;   - for_pay = delivery_commission.amount (what Ozon paid net to seller)
+;;   - for_pay = amount + bonus + compensation + stars + bank_coinvestment
+;;                + pick_up_point_coinvestment (full Ozon payout to seller)
 ;;   - retail_amount = qty * seller_price_per_instance (gross revenue)
 ;;   - wb_commission = standard_fee - amount (commission deducted;
 ;;     negative value means seller got MORE than base rate due to
@@ -253,11 +254,17 @@
         ;; seller income in periods with heavy Ozon promotions. Verified on
         ;; March 2026: amount 266,994 + bonus 303,674 = 570,668 real payout.
         ;; Commission = (total − for_pay) = what Ozon actually charged.
+        ;; bank_coinvestment / pick_up_point_coinvestment added by Ozon
+        ;; Dec 2024 — co-investment subsidies paid by bank/PUP and passed
+        ;; through to seller. Verified present on realization rows in prod
+        ;; data (2026-03 sample: bank_coinvestment ≈ 1% of amount).
         seller-payout (fn [c]
                         (+ (or (get c :amount) 0)
                            (or (get c :bonus) 0)
                            (or (get c :compensation) 0)
-                           (or (get c :stars) 0)))
+                           (or (get c :stars) 0)
+                           (or (get c :bank_coinvestment) 0)
+                           (or (get c :pick_up_point_coinvestment) 0)))
         sale-row   (when (pos? (or (get dc :quantity) 0))
                      (let [q      (get dc :quantity)
                            payout (seller-payout dc)

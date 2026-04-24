@@ -1017,8 +1017,8 @@ coalesced with [`paid_storage`](data-dictionary.md#paid_storage) via
 
 - Missing fields (nil) are skipped — `reduce + 0.0 … (or (:foo %) 0)`.
 - `:for-pay` on P&L already subtracts returns (UE.2 semantics for WB,
-  Ozon `amount+bonus+compensation+stars`, YM `buyer − commissions +
-  subsidies`).
+  Ozon `amount+bonus+compensation+stars+bank_coinvestment+pick_up_point_coinvestment`,
+  YM `buyer − commissions + subsidies`).
 - Empty period → all aggregates = 0.0.
 
 **Verification.** `pnl_canon_test.clj` › `group-1-aggregates`: on a
