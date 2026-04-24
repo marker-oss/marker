@@ -85,16 +85,22 @@
    The period-picker chip is server-rendered with `default-state` (last-30-days).
    On DOMContentLoaded, period-picker.js reads URL params → localStorage →
    default and hydrates the chip text, so any user-chosen period survives the
-   reload cycle. Full URL-state plumbing (server-side read) lands in Phase 7."
-  []
+   reload cycle.
+
+   :hide-period?      — when true, omit the period-picker entirely (snapshot reports)
+   :supports-compare? — passed through to period-picker; when false, compare toggle hidden"
+  [& {:keys [hide-period? supports-compare?]
+      :or {hide-period? false supports-compare? true}}]
   (let [initial (period/default-state)]
     [:header.bg-white.shadow-sm.border-b.border-gray-200.px-4.lg:px-6.py-4
      [:div.flex.flex-col.lg:flex-row.items-start.lg:items-center.justify-between.gap-4
       [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-4.lg:gap-6.w-full.lg:w-auto
        [:h1.text-xl.lg:text-2xl.font-bold.text-gray-900 "Analitica"]
-       (components/period-picker {:from    (:from initial)
-                                  :to      (:to initial)
-                                  :compare :none})]
+       (when-not hide-period?
+         (components/period-picker {:from              (:from initial)
+                                    :to                (:to initial)
+                                    :compare           :none
+                                    :supports-compare? supports-compare?}))]
       [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-3.lg:gap-4.w-full.lg:w-auto
        [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.w-full.sm:w-auto
         {:hx-post "/api/sync/start"
@@ -112,16 +118,19 @@
 
 (defn page
   "Main page layout with sidebar, header, and content area.
-  
+
   Parameters:
   - title: Page title (string)
   - content: Hiccup content vector
   - options:
-    - :active-route - Current route for sidebar highlighting (default: slash)
-  
+    - :active-route      - Current route for sidebar highlighting (default: \"/\")
+    - :hide-period?      - When true, omit period-picker from header (default: false)
+    - :supports-compare? - When false, compare toggle hidden in period-picker (default: true)
+
   Example:
     (page \"Dashboard\" [:div \"Content\"] :active-route \"/\")"
-  [title content & {:keys [active-route] :or {active-route "/"}}]
+  [title content & {:keys [active-route hide-period? supports-compare?]
+                    :or {active-route "/" hide-period? false supports-compare? true}}]
   (html5
     [:head
      [:meta {:charset "utf-8"}]
@@ -161,7 +170,7 @@
      [:div#app
       (sidebar active-route)
       [:div#main-container
-       (header)
+       (header :hide-period? hide-period? :supports-compare? supports-compare?)
        [:main#main-content.bg-gray-50
         content]]
      (components/drill-panel {})]]))

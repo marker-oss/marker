@@ -23,6 +23,7 @@
             [analitica.web.api.report :as report]
             [analitica.web.api.detail :as detail]
             [analitica.web.api.coverage :as coverage]
+            [analitica.web.report-schemas :as rs]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -214,7 +215,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :sales)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :sales period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -226,7 +230,9 @@
                               (reports-page/report-page :sales period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/sales")})
+                              :active-route "/reports/sales"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -238,7 +244,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :finance)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :finance period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -250,7 +259,9 @@
                               (reports-page/report-page :finance period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/finance")})
+                              :active-route "/reports/finance"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -263,7 +274,10 @@
           marketplace-str (get params :marketplace)
           article-str     (get params :article)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :ue)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :ue period-arg :marketplace validated-mp :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -275,7 +289,9 @@
                               (reports-page/report-page :ue period-arg validated-mp
                                                         :article article-str :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/ue")})
+                              :active-route "/reports/ue"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -287,7 +303,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :pnl)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :pnl period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -299,7 +318,9 @@
                               (reports-page/report-page :pnl period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/pnl")})
+                              :active-route "/reports/pnl"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -311,7 +332,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :abc)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :abc period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -323,7 +347,9 @@
                               (reports-page/report-page :abc period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/abc")})
+                              :active-route "/reports/abc"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -335,7 +361,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :stock)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :stock period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -347,7 +376,9 @@
                               (reports-page/report-page :stock period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/stock")})
+                              :active-route "/reports/stock"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -359,7 +390,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :returns)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :returns period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -371,7 +405,9 @@
                               (reports-page/report-page :returns period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/returns")})
+                              :active-route "/reports/returns"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -383,7 +419,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :buyout)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :buyout period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -395,7 +434,9 @@
                               (reports-page/report-page :buyout period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/buyout")})
+                              :active-route "/reports/buyout"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -407,7 +448,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :geo)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :geo period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -419,7 +463,9 @@
                               (reports-page/report-page :geo period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/geo")})
+                              :active-route "/reports/geo"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -431,7 +477,10 @@
     (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)
+          schema          (rs/get-schema :trends)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :trends period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
@@ -443,7 +492,9 @@
                               (reports-page/report-page :trends period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
-                              :active-route "/reports/trends")})
+                              :active-route "/reports/trends"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
