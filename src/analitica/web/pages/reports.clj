@@ -109,10 +109,24 @@
      :hx-select "#report-content"
      :hx-include "#marketplace-filter"}]])
 
+(defn- period->url-frag
+  "Convert a period value (map, keyword, or legacy string) to a query-string fragment
+   WITHOUT leading '&' or '?'. Examples:
+     {:from \"2026-03-01\" :to \"2026-04-01\"} → \"from=2026-03-01&to=2026-04-01\"
+     :last-30-days                             → \"period=last-30-days\"
+     \"last-7-days\"                           → \"period=last-7-days\""
+  [period]
+  (cond
+    (map? period)     (str "from=" (:from period) "&to=" (:to period))
+    (keyword? period) (str "period=" (name period))
+    (string? period)  (str "period=" period)
+    :else             "period=last-30-days"))
+
 (defn- export-buttons
   "Render Excel and CSV export buttons."
   [report-type period marketplace]
-  (let [base-url (str "/api/export/" (name report-type) "?period=" period)
+  (let [period-frag (period->url-frag period)
+        base-url (str "/api/export/" (name report-type) "?" period-frag)
         marketplace-param (if (and marketplace (not= marketplace "all"))
                             (str "&marketplace=" marketplace)
                             "")]
@@ -174,10 +188,11 @@
                             (str "&marketplace=" marketplace) "")
         article-param (when (seq article)
                         (str "&article=" (java.net.URLEncoder/encode article "UTF-8")))
-        api-url (str "/api/report/" (name report-type) "?period=" period
+        period-frag (period->url-frag period)
+        api-url (str "/api/report/" (name report-type) "?" period-frag
                      marketplace-param (or article-param ""))
         chart-api-url (str "/api/chart/report?type=" (name report-type)
-                           "&period=" period marketplace-param
+                           "&" period-frag marketplace-param
                            (when compare "&compare=prev"))]
 
     [:div
@@ -240,7 +255,7 @@
                                          "  const d = row.getData();\n"
                                          "  if (d.article) { window.openDrillPanel('"
                                          (name report-type) "', d.article, '"
-                                         period "', '" (or marketplace "all") "'); }\n"
+                                         period-frag "', '" (or marketplace "all") "'); }\n"
                                          "}"))})])
            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
 

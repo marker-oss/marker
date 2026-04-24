@@ -77,6 +77,45 @@
   (when (and what-str (valid-sync-what what-str))
     (keyword what-str)))
 
+(defn- resolve-period-from-params
+  "Return a period value suitable for report-data:
+   - If ?from AND ?to are present and match YYYY-MM-DD → {:from str :to str}
+   - Else if ?period is a valid named period or date-range → keyword (named) or string (date-range)
+   - Else fall back to :last-30-days
+
+   Returns nil only when params are explicitly invalid (e.g. ?from present but ?to absent,
+   or ?from has wrong format). Callers should 400 on nil."
+  [params]
+  (let [from       (get params :from)
+        to         (get params :to)
+        period-str (get params :period)
+        iso-date?  #(and (seq %) (re-matches #"\d{4}-\d{2}-\d{2}" %))]
+    (cond
+      ;; Both from and to provided — validate both
+      (and (seq from) (seq to))
+      (if (and (iso-date? from) (iso-date? to))
+        {:from from :to to}
+        nil) ; malformed dates → signal 400
+
+      ;; Only one of from/to provided — invalid partial range → 400
+      (or (seq from) (seq to))
+      nil
+
+      ;; Named ?period param present — validate then resolve via parse-period
+      ;; so that every string (including "last-week") becomes a {:from :to} map.
+      ;; parse-period handles all valid-periods strings and date-range strings.
+      (seq period-str)
+      (when (validate-period period-str)
+        (try
+          (let [[from to] (time/parse-period period-str)]
+            {:from from :to to})
+          (catch Exception _ nil)))
+
+      ;; Nothing provided — safe default: last 30 days as {:from :to} map
+      :else
+      (let [[from to] (time/parse-period "last-30-days")]
+        {:from from :to to}))))
+
 ;; ---------------------------------------------------------------------------
 ;; Routes
 ;; ---------------------------------------------------------------------------
@@ -172,21 +211,19 @@
   
   ;; Report routes - all 10 report types
   (GET "/reports/sales" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :sales period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :sales period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Продажи"
-                              (reports-page/report-page :sales (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :sales period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/sales")})
@@ -195,24 +232,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/sales")})))
   (GET "/reports/finance" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :finance period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :finance period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Финансы"
-                              (reports-page/report-page :finance (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :finance period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/finance")})
@@ -221,25 +256,23 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/finance")})))
   (GET "/reports/ue" {params :params}
-    (let [period-str      (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           article-str     (get params :article)
-          validated-period (validate-period period-str)
-          validated-mp     (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw       (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :ue period-kw :marketplace (when validated-mp (keyword validated-mp)) :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :ue period-arg :marketplace validated-mp :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Юнит-экономика"
-                              (reports-page/report-page :ue (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :ue period-arg validated-mp
                                                         :article article-str :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/ue")})
@@ -248,24 +281,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/ue")})))
   (GET "/reports/pnl" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :pnl period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :pnl period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: P&L"
-                              (reports-page/report-page :pnl (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :pnl period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/pnl")})
@@ -274,24 +305,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/pnl")})))
   (GET "/reports/abc" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :abc period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :abc period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: ABC-анализ"
-                              (reports-page/report-page :abc (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :abc period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/abc")})
@@ -300,24 +329,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/abc")})))
   (GET "/reports/stock" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :stock period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :stock period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Остатки"
-                              (reports-page/report-page :stock (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :stock period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/stock")})
@@ -326,24 +353,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/stock")})))
   (GET "/reports/returns" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :returns period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :returns period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Возвраты"
-                              (reports-page/report-page :returns (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :returns period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/returns")})
@@ -352,24 +377,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/returns")})))
   (GET "/reports/buyout" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :buyout period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :buyout period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Выкуп"
-                              (reports-page/report-page :buyout (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :buyout period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/buyout")})
@@ -378,24 +401,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/buyout")})))
   (GET "/reports/geo" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :geo period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :geo period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: География"
-                              (reports-page/report-page :geo (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :geo period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/geo")})
@@ -404,24 +425,22 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/geo")})))
   (GET "/reports/trends" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
-      (if (and (or validated-period (nil? period-str))
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
+      (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :trends period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals (:totals data)
+        (let [data          (try (report/report-data :trends period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Тренды"
-                              (reports-page/report-page :trends (or validated-period "last-week") validated-mp
+                              (reports-page/report-page :trends period-arg validated-mp
                                                         :show-no-data show-no-data? :totals totals
                                                         :compare (:compare data))
                               :active-route "/reports/trends")})
@@ -430,7 +449,7 @@
          :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
-                             [:p.text-gray-600 "Проверьте значения period и marketplace"]]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/trends")})))
   
   ;; Fallback for any other report type (404)
@@ -610,34 +629,29 @@
         {:status 400 :body {:error (str "Invalid period: " period-str)}})))
   (GET "/api/chart/report" {params :params}
     (let [report-type-str (get params :type)
-          validated-type (when report-type-str (validate-report-type report-type-str))
-          period-str (get params :period "last-week")
-          validated-period (validate-period period-str)
+          validated-type  (when report-type-str (validate-report-type report-type-str))
+          period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          compare-kw (if (= (get params :compare) "prev") :prev :none)]
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
       (cond
         (and report-type-str (not validated-type))
         {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
 
-        (and period-str (not validated-period))
-        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        (not period-arg)
+        {:status 400 :body {:error "Invalid or incomplete period parameters (use ?period=, or both ?from= and ?to=)"}}
 
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
         {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
 
         :else
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         nil))]
-          (if (and validated-type period)
-            (let [chart-data (charts-api/report-chart-data validated-type period
-                                                           :marketplace validated-mp
-                                                           :compare compare-kw)]
-              {:status 200 :body chart-data})
-            {:status 400 :body {:error (str "Invalid parameters - type: " report-type-str ", period: " period-str)}})))))
-  
+        (if validated-type
+          (let [chart-data (charts-api/report-chart-data validated-type period-arg
+                                                         :marketplace validated-mp
+                                                         :compare compare-kw)]
+            {:status 200 :body chart-data})
+          {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}))))
+
   (GET "/api/chart/finance-breakdown" {params :params}
     (let [marketplace-str (get params :marketplace)
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))
@@ -723,8 +737,7 @@
   (GET "/api/report/:type" {params :params}
     (let [report-type-str (:type params)
           validated-type  (validate-report-type report-type-str)
-          period-str      (get params :period "last-week")
-          validated-period (validate-period period-str)
+          period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
           trend-type-str  (get params :trend-type)
@@ -735,52 +748,40 @@
         (not validated-type)
         {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
 
-        (and period-str (not validated-period))
-        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+        (not period-arg)
+        {:status 400 :body {:error "Invalid or incomplete period parameters"}}
 
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
         {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
 
         :else
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e nil))]
-          (if period
-            (let [report-data ((requiring-resolve 'analitica.web.api.report/report-data)
-                               validated-type period
-                               :marketplace validated-mp
-                               :trend-type  trend-type
-                               :article     article-str
-                               :compare     compare-kw)]
-              {:status 200 :body report-data})
-            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+        (let [report-data ((requiring-resolve 'analitica.web.api.report/report-data)
+                           validated-type period-arg
+                           :marketplace validated-mp
+                           :trend-type  trend-type
+                           :article     article-str
+                           :compare     compare-kw)]
+          {:status 200 :body report-data}))))
   (GET "/api/export/:report" {params :params}
     (let [report-type-str (:report params)
-          validated-type (validate-report-type report-type-str)
-          period-str (get params :period "last-week")
-          validated-period (validate-period period-str)
+          validated-type  (validate-report-type report-type-str)
+          period-arg      (resolve-period-from-params params)
           marketplace-str (get params :marketplace)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          format-str (get params :format "excel")
-          format (keyword format-str)]
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          format-str      (get params :format "excel")
+          fmt             (keyword format-str)]
       (cond
         (not validated-type)
         {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
-        
-        (and period-str (not validated-period))
-        {:status 400 :body {:error (str "Invalid period: " period-str)}}
-        
+
+        (not period-arg)
+        {:status 400 :body {:error "Invalid or incomplete period parameters"}}
+
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
         {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
-        
+
         :else
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         nil))]
-          (if period
-            (export-api/export-report validated-type period validated-mp format)
-            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+        (export-api/export-report validated-type period-arg validated-mp fmt))))
   
   ;; Sync API endpoints
   (POST "/api/sync/start" {body :body params :params}
