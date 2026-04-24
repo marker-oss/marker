@@ -255,7 +255,15 @@
                                   :frozen-cols 1
                                   :page-size 50
                                   :column-presets presets
-                                  :default-visible-fields default-visible})])
+                                  :default-visible-fields default-visible
+                                  :on-row-click-js
+                                  (when (#{:ue :finance} report-type)
+                                    (str "function(e, row) {\n"
+                                         "  const d = row.getData();\n"
+                                         "  if (d.article) { window.openDrillPanel('"
+                                         (name report-type) "', d.article, '"
+                                         period "', '" (or marketplace "all") "'); }\n"
+                                         "}"))})])
            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
 
       (when (contains? tab-set :chart)

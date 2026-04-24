@@ -132,7 +132,7 @@
   Column definition map: {:title :field :format (:rub|:int|:pct|:text|:date) :width}
   Numeric formats (:rub/:int/:pct) get a bottomCalc footer row."
   [{:keys [id api-url columns grouped-columns frozen-cols page-size
-           column-presets default-visible-fields]
+           column-presets default-visible-fields on-row-click-js]
     :or {frozen-cols 1 page-size 50}}]
   (let [final-columns
         (if grouped-columns
@@ -189,6 +189,8 @@
                 locale: 'ru'
               });
               window['" id "_tabulator'] = t;
+              " (when on-row-click-js
+                  (str "t.on('rowClick', " on-row-click-js ");")) "
             })
             .catch(err => console.error('Table load error:', err));
         })();
