@@ -98,9 +98,16 @@
 (defn- enrich-column [c]
   (let [fmt (:format c)
         sum? (contains? #{:rub :int} fmt)
-        avg? (= :pct fmt)]
+        avg? (= :pct fmt)
+        canon (:canon-anchor c)
+        title (if canon
+                (str (:title c)
+                     " <span title='Canon: " canon "' "
+                     "style='font-size:9px;color:#9ca3af;cursor:help;'>ⓘ</span>")
+                (:title c))]
     (cond-> (assoc c "headerFilter" true
-                     "headerFilterPlaceholder" "Фильтр...")
+                     "headerFilterPlaceholder" "Фильтр..."
+                     "title" title)
       sum? (assoc "bottomCalc" "sum"
                   "bottomCalcFormatter" "money"
                   "bottomCalcFormatterParams" {"thousand" " " "precision" 0})

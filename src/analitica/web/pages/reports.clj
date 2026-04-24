@@ -24,6 +24,7 @@
                       :columns (mapv (fn [c] {:title (:title c)
                                               :field (name (:key c))
                                               :format (:format c)
+                                              :canon-anchor (:canon-anchor c)
                                               :width (case (:format c)
                                                        :rub 130 :int 100 :pct 100
                                                        :text 150 :date 120 120)})
@@ -32,6 +33,7 @@
       (mapv (fn [c] {:title (:title c)
                      :field (name (:key c))
                      :format (:format c)
+                     :canon-anchor (:canon-anchor c)
                      :width (case (:format c)
                               :rub 130 :int 100 :pct 100
                               :text 150 :date 120 120)})

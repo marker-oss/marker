@@ -205,3 +205,12 @@
                                              {:title "Взв." :field "returns-qty" :format :int}]}]}))]
       (is (re-find #"\"title\":\"Identity\"" html))
       (is (re-find #"\"title\":\"UE.1\"" html)))))
+
+(deftest tabulator-canon-tooltip-test
+  (testing "column with :canon-anchor gets info-icon with canon-anchor in title tooltip"
+    (let [html (hiccup.core/html
+                (c/tabulator-table
+                  {:id "t" :api-url "/x"
+                   :columns [{:title "Маржа" :field "margin" :format :pct :canon-anchor "UE.7"}]}))]
+      (is (re-find #"UE\.7" html))
+      (is (re-find #"Canon:" html)))))
