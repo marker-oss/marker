@@ -15,3 +15,17 @@
   (testing "report-page for :stock renders"
     (let [html (h/html (pages/report-page :stock "last-30-days" nil))]
       (is (re-find #"Остатки" html)))))
+
+(deftest report-page-with-totals-test
+  (testing "report-page renders KPI row when totals provided"
+    (let [html (h/html (pages/report-page :ue "last-30-days" nil
+                         :totals {:total-revenue 1000 :total-profit 200
+                                  :margin-pct 20.0 :drr-pct 8.0}))]
+      (is (re-find #"Выручка" html))
+      (is (re-find #"1 000" html))
+      (is (re-find #"Маржа" html))))
+
+  (testing "report-page renders drawer when totals provided"
+    (let [html (h/html (pages/report-page :ue "last-30-days" nil
+                         :totals {:total-revenue 1000}))]
+      (is (re-find #"Все метрики" html)))))

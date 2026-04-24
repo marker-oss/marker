@@ -114,12 +114,14 @@
 
 (defn report-page
   "Render unified report page from schema.
+   When :totals is provided, renders KPI row above filters and summary-drawer after the table.
 
    Parameters:
    - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
    - period: period string (e.g. last-week, last-30-days)
    - marketplace: optional marketplace keyword or string
    - show-no-data: optional boolean to show no-data banner
+   - totals: optional map of metric key -> numeric value; enables KPI row + summary drawer
 
    Features:
    - Period and marketplace filters with HTMX updates
@@ -132,9 +134,11 @@
      - Pagination (50 rows)
      - Frozen first column
    - No data banner when data is missing
+   - KPI row (when totals provided and kpi schema defined)
+   - Summary drawer (when totals provided)
 
    Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 8.1, 9.1, 14.1"
-  [report-type period marketplace & {:keys [show-no-data article]}]
+  [report-type period marketplace & {:keys [show-no-data article totals]}]
   (let [schema (rs/get-schema report-type)
         _ (when-not schema
             (throw (ex-info "Unknown report-type" {:type report-type})))
@@ -153,6 +157,7 @@
                               :width (case (:format col)
                                        :rub 130 :int 100 :pct 100
                                        :text 150 :date 120 120)})))
+        kpi-schema (:kpi schema)
         marketplace-param (if (and marketplace (not= marketplace "all"))
                             (str "&marketplace=" marketplace) "")
         article-param (when (seq article)
@@ -167,6 +172,10 @@
       [:h2.text-2xl.font-bold.text-gray-900 report-title]]
 
      (when show-no-data (no-data-banner))
+
+     ;; KPI row above filters (only when totals provided and kpi schema defined)
+     (when (and kpi-schema (seq totals))
+       (c/kpi-row kpi-schema totals))
 
      [:div.bg-white.rounded-lg.shadow.p-4.mb-6
       [:div.flex.items-center.justify-between.flex-wrap.gap-4
@@ -189,4 +198,8 @@
                             :api-url api-url
                             :columns columns
                             :frozen-cols 1
-                            :page-size 50}))]]))
+                            :page-size 50}))
+
+      ;; Summary drawer at the end of report-content (only when totals provided)
+      (when (seq totals)
+        (c/summary-drawer {:totals totals :title "Все метрики периода"}))]]))

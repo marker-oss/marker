@@ -19,6 +19,7 @@
             [analitica.web.api.charts :as charts-api]
             [analitica.web.api.export :as export-api]
             [analitica.web.api.cost-prices :as cost-prices-api]
+            [analitica.web.api.report :as report]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -174,14 +175,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Продажи" 
-                            (reports-page/report-page :sales (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/sales")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :sales period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Продажи"
+                              (reports-page/report-page :sales (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/sales")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -193,14 +199,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Финансы" 
-                            (reports-page/report-page :finance (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/finance")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :finance period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Финансы"
+                              (reports-page/report-page :finance (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/finance")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -213,12 +224,16 @@
           validated-mp     (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Юнит-экономика"
-                            (reports-page/report-page :ue (or validated-period "last-week") validated-mp
-                                                      :article article-str)
-                            :active-route "/reports/ue")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :ue period-kw :marketplace (when validated-mp (keyword validated-mp)) :article article-str) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Юнит-экономика"
+                              (reports-page/report-page :ue (or validated-period "last-week") validated-mp
+                                                        :article article-str :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/ue")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
          :body (layout/page "Ошибка"
@@ -233,14 +248,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: P&L" 
-                            (reports-page/report-page :pnl (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/pnl")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :pnl period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: P&L"
+                              (reports-page/report-page :pnl (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/pnl")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -252,14 +272,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: ABC-анализ" 
-                            (reports-page/report-page :abc (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/abc")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :abc period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: ABC-анализ"
+                              (reports-page/report-page :abc (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/abc")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -271,14 +296,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Остатки" 
-                            (reports-page/report-page :stock (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/stock")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :stock period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Остатки"
+                              (reports-page/report-page :stock (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/stock")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -290,14 +320,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Возвраты" 
-                            (reports-page/report-page :returns (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/returns")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :returns period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Возвраты"
+                              (reports-page/report-page :returns (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/returns")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -309,14 +344,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Выкуп" 
-                            (reports-page/report-page :buyout (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/buyout")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :buyout period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Выкуп"
+                              (reports-page/report-page :buyout (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/buyout")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -328,14 +368,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: География" 
-                            (reports-page/report-page :geo (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/geo")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :geo period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: География"
+                              (reports-page/report-page :geo (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/geo")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
@@ -347,14 +392,19 @@
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        {:status 200 
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Отчёт: Тренды" 
-                            (reports-page/report-page :trends (or validated-period "last-week") validated-mp)
-                            :active-route "/reports/trends")}
+        (let [period-kw (keyword (or validated-period "last-week"))
+              data (try (report/report-data :trends period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              totals (:totals data)
+              show-no-data? (and (empty? (:rows data)) (empty? totals))]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Тренды"
+                              (reports-page/report-page :trends (or validated-period "last-week") validated-mp
+                                                        :show-no-data show-no-data? :totals totals)
+                              :active-route "/reports/trends")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
+         :body (layout/page "Ошибка"
                             [:div.text-center.py-12
                              [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
                              [:p.text-gray-600 "Проверьте значения period и marketplace"]]
