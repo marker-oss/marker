@@ -235,6 +235,73 @@
     [:div.text-gray-500 "Ожидание запуска синхронизации..."]]])
 
 ;; ---------------------------------------------------------------------------
+;; KPI Card Components
+;; ---------------------------------------------------------------------------
+
+(defn- format-value [value fmt]
+  (cond
+    (nil? value) "—"
+    (= fmt :rub) (str (clojure.string/replace (format "%,.0f" (double value)) "," " ") " ₽")
+    (= fmt :pct) (str (format "%.1f" (double value)) "%")
+    (= fmt :int) (clojure.string/replace (format "%,d" (long value)) "," " ")
+    :else (str value)))
+
+(defn kpi-card
+  "KPI card with title, value and optional delta.
+
+  Parameters:
+  - opts: Map with keys:
+    - :title - Metric title (string)
+    - :value - Metric value (number)
+    - :format - Display format: :rub | :pct | :int (default: :rub)
+    - :delta - Delta vs prior period (number, optional)
+    - :delta-unit - Delta unit suffix (string, optional, default: %)
+    - :delta-direction - :normal (green=up) | :inverted (green=down, e.g. ДРР)
+
+  Example:
+    (kpi-card {:title \"Выручка\" :value 1830000 :format :rub :delta 12.4})"
+  [{:keys [title value format delta delta-unit delta-direction]
+    :or {format :rub delta-direction :normal}}]
+  (let [fmt format   ; rename to avoid shadowing clojure.core/format below
+        is-positive? (and delta (pos? delta))
+        is-negative? (and delta (neg? delta))
+        arrow (cond is-positive? "↑" is-negative? "↓" :else "")
+        is-good? (case delta-direction
+                   :inverted is-negative?
+                   is-positive?)
+        color-class (cond
+                      (nil? delta) ""
+                      is-good? "text-green-600"
+                      :else "text-red-600")]
+    [:div.bg-white.rounded-lg.shadow.p-4.border.border-gray-100
+     [:div.text-xs.font-medium.text-gray-500.uppercase.tracking-wide title]
+     [:div.text-2xl.font-bold.text-gray-900.mt-1 (format-value value fmt)]
+     (when delta
+       [:div {:class (str "text-xs mt-1 " color-class)}
+        arrow " " (clojure.core/format "%+.1f" (double delta)) (or delta-unit "%") " vs пред."])]))
+
+(defn kpi-row
+  "Render row of KPI cards from schema :kpi and totals map.
+
+  Parameters:
+  - kpi-schema: seq of {:key :title :format :delta-from :delta-direction}
+  - totals: map {<key> <numeric>}
+  - compare-totals: optional map for delta calc (prior period)
+
+  Example:
+    (kpi-row [{:key :revenue :title \"Выручка\" :format :rub}] totals prev-totals)"
+  [kpi-schema totals & [compare-totals]]
+  [:div.grid.grid-cols-2.md:grid-cols-4.gap-4.mb-6
+   (for [{:keys [key title format delta-from delta-direction]} kpi-schema]
+     (let [value (get totals key)
+           prev-value (when (and compare-totals delta-from)
+                        (get compare-totals key))
+           delta (when (and prev-value (number? value) (number? prev-value) (not (zero? prev-value)))
+                   (* 100.0 (/ (- value prev-value) prev-value)))]
+       (kpi-card {:title title :value value :format format
+                  :delta delta :delta-direction delta-direction})))])
+
+;; ---------------------------------------------------------------------------
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 
