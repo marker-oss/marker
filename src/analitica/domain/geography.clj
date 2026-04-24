@@ -20,7 +20,17 @@
              (wb-api/region-sales mp from to)))))
 
 (defn by-region
-  "Aggregate by region."
+  "Aggregate region_sales rows by region name → {:region :qty :sum} per region.
+
+   §Geography.1 dual-key-read: each row may carry DB-normalised keys (:region,
+   :qty, :sum-price) or WB-API camelCase keys (:regionName, :saleItemInvoiceQty,
+   :saleInvoiceCostPrice). The `(or ...)` fallbacks in group-by and reduce
+   accept both shapes without a transformation step, so DB-sourced and
+   API-sourced rows produce identical aggregation output.
+
+   Result is sorted descending by :sum. :sum is rounded via math/round2.
+   See canonical-formulas.md §Geography.1 for the full formula and
+   §Geography.4 for marketplace coverage (WB only)."
   [data]
   (->> data
        (group-by (fn [r] (or (:region r) (:regionName r))))

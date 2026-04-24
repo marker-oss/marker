@@ -3032,4 +3032,226 @@ All three marketplaces are covered. Each populates `:sale` and `:return` rows vi
 
 ---
 
+## Geography
+
+**Source file:** `src/analitica/domain/geography.clj`
+**Test file:** `test/analitica/domain/geography_canon_test.clj`
+**Purpose:** Region- and city-level sales rollup for WB geographic analysis.
+**Marketplace coverage:** **WB only** — Ozon and YM do not expose a
+region-level sales endpoint in the current ingest pipeline.
+
+---
+
+### Geography.1 — `by-region` aggregation + dual-key-read
+
+**Formula:**
+
+```
+group by (or :region :regionName)
+  → for each [region items]:
+      {:region  region
+       :qty     SUM(or :qty :saleItemInvoiceQty 0   over items)
+       :sum     round2(SUM(or :sum-price :saleInvoiceCostPrice 0   over items))}
+
+sort descending by :sum
+```
+
+**Dual-key-read pattern.** Each source row may carry keys in one of two shapes:
+
+| Key | Origin | Example |
+|---|---|---|
+| `:region` | DB rows after `db/query` (snake_case-ish normalisation) | `"Центральный"` |
+| `:regionName` | WB API rows (`wb-api/region-sales`) before normalisation | `"Центральный"` |
+| `:qty` | DB rows | `5` |
+| `:saleItemInvoiceQty` | WB API rows | `5` |
+| `:sum-price` | DB rows (normalised from `sum_price`) | `2500.0` |
+| `:saleInvoiceCostPrice` | WB API rows | `2500.0` |
+
+The `(or (:region r) (:regionName r))` pattern bridges the two shapes so
+`by-region` produces identical aggregation output regardless of whether the
+caller fetched from DB (`:source :db`) or API (`:source :api`).
+
+`math/round2` is applied to `:sum` to prevent floating-point drift across many rows.
+
+**Economic justification.** Geographic sales distribution tells the seller
+which federal districts drive volume and revenue. The dual-key-read is a
+deliberate bridge that lets DB-cached data and live API responses flow through
+the same aggregation without a transformation step.
+
+**Inputs.** `region_sales` rows with at least one of:
+`(:region, :regionName)`, `(:qty, :saleItemInvoiceQty)`,
+`(:sum-price, :saleInvoiceCostPrice)`.
+
+**Edge cases.**
+
+- Both `:region` and `:regionName` nil → group key is `nil`; rows still
+  accumulate correctly under a `nil` key.
+- Both `:sum-price` and `:saleInvoiceCostPrice` nil → `(or nil nil 0)` →
+  contributes `0` to sum (silently; no warning). See Geography.6.5.
+- Empty input → empty seq.
+
+**Verification.** `geography_canon_test.clj` › `by-region-aggregates-db-shape`,
+`by-region-aggregates-api-shape`, `by-region-aggregates-mixed-shape`.
+
+---
+
+### Geography.2 — `by-city` aggregation
+
+**Formula:**
+
+```
+group by (or :city :cityName)
+  → for each [city items]:
+      {:city  city
+       :qty   SUM(or :qty :saleItemInvoiceQty 0   over items)
+       :sum   round2(SUM(or :sum-price :saleInvoiceCostPrice 0   over items))}
+
+sort descending by :sum
+```
+
+Identical dual-key-read pattern as Geography.1, with `:city` / `:cityName`
+substituting for `:region` / `:regionName`. Cities are a strictly finer
+grain than regions: one region contains one or more cities.
+
+**Economic justification.** City-level breakdown identifies which metro areas
+generate the most revenue within a region — useful for targeted advertising,
+warehouse placement decisions, and local promotional campaigns.
+
+**Inputs.** Same `region_sales` rows as Geography.1; additionally requires
+`(:city, :cityName)` for the group key.
+
+**Edge cases.**
+
+- A row with region key but without city key will produce a `nil`-keyed city
+  group — this is the WB norm for some lower-granularity rows.
+- Sort and rounding semantics are identical to Geography.1.
+
+**Verification.** `geography_canon_test.clj` › `by-city-aggregates`,
+`by-region-sorts-by-sum-desc`.
+
+---
+
+### Geography.3 — Data flow and DB vs API source
+
+```
+fetch-regions(period, :source :db)
+  → db/query ["SELECT * FROM region_sales
+               WHERE date_from >= ? AND date_to <= ?" from to]
+  → [DB-shape rows]   (:region :city :qty :sum-price …)
+  → by-region / by-city  (dual-key-read handles both shapes)
+
+fetch-regions(period, :source :api)
+  → wb-api/region-sales(mp, from, to)
+  → [WB-API-shape rows]  (:regionName :cityName :saleItemInvoiceQty :saleInvoiceCostPrice …)
+  → by-region / by-city  (same aggregation — dual-key-read picks API keys)
+```
+
+`resolve-dates` translates a keyword period shorthand (e.g. `:last-30-days`)
+to `[from to]` strings via `analitica.util.time/period`; or extracts
+`[:from :to]` directly from a map. The `:source :db` path is the default for
+all production `report` and `export-excel` calls.
+
+**Economic justification.** DB-sourced data is the cached, reproducible view
+(point-in-time snapshot from last sync). API-sourced data gives live data
+at the cost of an API call latency. The dual-key-read is what lets the same
+aggregation logic serve both paths without a separate normalisation adapter.
+
+**Verification.** Covered implicitly by `by-region-aggregates-db-shape` (DB
+shape) and `by-region-aggregates-api-shape` (API shape) — both exercise the
+same `by-region` function on different row shapes. No DB/API is invoked in
+tests; fixtures simulate both shapes as plain in-memory vectors.
+
+---
+
+### Geography.4 — Marketplace coverage
+
+**WB only.** Ozon and YM do not have a `region_sales`-equivalent table or
+endpoint in the current ingest pipeline.
+
+| Marketplace | region_sales | `by-region` / `by-city` | Notes |
+|---|---|---|---|
+| Wildberries (WB) | ✅ populated | ✅ | WB exposes a dedicated region-level sales API (`/api/v1/supplier/sales` with geographic breakdown) |
+| Ozon | ❌ | ❌ | Geography data would require product-catalog × order-shipping-address joins; not implemented |
+| Яндекс Маркет (YM) | ❌ | ❌ | Same limitation as Ozon — no regional sales endpoint in current ingest |
+
+**Known risk.** The `region_sales` DB table has no marketplace-discriminating
+column in the current schema. If Ozon or YM ingest is ever added without
+namespacing the table, Geography aggregations will silently include multi-MP
+rows. See Geography.6.4.
+
+---
+
+### Geography.5 — Inputs
+
+**Source table:** `region_sales`
+
+| Column / key | DB column | API field | Type | Description |
+|---|---|---|---|---|
+| `:region` | `region` | — | string | Normalised region name (DB path) |
+| `:regionName` | — | `regionName` | string | Region name (WB API path) |
+| `:city` | `city` | — | string | Normalised city name (DB path) |
+| `:cityName` | — | `cityName` | string | City name (WB API path) |
+| `:qty` | `qty` | — | integer | Unit qty (DB path) |
+| `:saleItemInvoiceQty` | — | `saleItemInvoiceQty` | integer | Unit qty (WB API path) |
+| `:sum-price` | `sum_price` | — | double | Invoice sum (DB path, normalised from `sum_price`) |
+| `:saleInvoiceCostPrice` | — | `saleInvoiceCostPrice` | double | Invoice sum (WB API path) |
+| `date_from` | `date_from` | — | date string | Period start — used in DB filter |
+| `date_to` | `date_to` | — | date string | Period end — used in DB filter |
+
+For each semantic column, exactly one of the two key forms is present per row
+(DB-sourced rows carry the left form; API-sourced rows carry the right form).
+The dual-key `or` fallback reads whichever is present.
+
+---
+
+### Geography.6 — Known gaps and quirks
+
+1. **WB-only coverage.** See Geography.4. Running `geography/report` for
+   Ozon or YM will return empty results (no rows in `region_sales`), not an
+   error. There is no marketplace guard — the report silently prints "Нет данных."
+
+2. **Dual-key-read masks schema drift.** If WB renames a camelCase field
+   (e.g. `regionName` → `regionFullName`), the `(or (:region r) (:regionName r))`
+   falls back to the `:region` DB key and continues producing output — but API
+   rows will silently aggregate under `nil` instead of the actual region name.
+   Add a schema guard test (Malli or explicit field-presence assertion) before
+   adopting new WB API versions that touch `region_sales` field names.
+
+3. **Date filter uses strict containment, not overlap.**
+   `WHERE date_from >= from AND date_to <= to` excludes any `region_sales` row
+   whose reporting period extends beyond the requested window. This differs from
+   Finance's overlap-semantics (`date_from <= to AND date_to >= from`).
+   A row spanning period boundaries (e.g. week straddling month boundary) is
+   excluded entirely. Documented; not considered a bug at this layer.
+
+4. **No marketplace column on `region_sales`.** All rows in the period are
+   returned regardless of marketplace. Currently safe because only WB populates
+   the table. Will silently produce cross-MP aggregations if Ozon/YM ingest
+   adds rows without a namespace discriminator.
+
+5. **`:sum-price` / `:saleInvoiceCostPrice` zero-fallback.** `(or nil nil 0)`
+   means rows missing **both** price keys contribute `0` to the sum silently.
+   No warning is emitted. Rows from partial API responses (e.g. timeout-truncated
+   pages) may be included with zero invoice sum, understating the region total.
+
+---
+
+### Geography.7 — Verification summary
+
+- Every Geography.N group has a corresponding `deftest` in
+  `test/analitica/domain/geography_canon_test.clj`.
+- Three fixture shapes: `fx-db` (DB snake_case-ish keys), `fx-api` (WB camelCase
+  keys), `fx-mixed` (rows from both shapes in one input).
+- Regions: "Центральный" (2 cities), "Северо-Западный" (1 city), "Южный" (1 city).
+- `by-region-aggregates-db-shape` — DB-key rows → correct `:qty` / `:sum` (§Geography.1).
+- `by-region-aggregates-api-shape` — camelCase rows → same formula (§Geography.1 fallback).
+- `by-region-aggregates-mixed-shape` — mixed shapes in one input → sums still correct (§Geography.1).
+- `by-region-sorts-by-sum-desc` — first row has highest `:sum` (§Geography.1 sort).
+- `by-city-aggregates` — 4 cities, `:qty` and `:sum` per city, sort verified (§Geography.2).
+- `sum-rounded-to-2dp` — untruncated sum → `math/round2` applied (§Geography.1 rounding).
+- `empty-data-returns-empty-seq` — both `by-region` and `by-city` on `[]` return empty (§Geography.1/.2 edge case).
+- Regression coverage: `clojure -M:test` green on full suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
