@@ -3480,4 +3480,181 @@ implemented in the domain namespace.
 
 ---
 
-- Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
+## Losses
+
+Отчёт «Убытки» идентифицирует SKU, которые теряют деньги через хранение,
+низкую маржу, или отрицательный прогноз по текущей динамике.
+
+### Losses.1 — Dead-stock classifier
+
+**Метрика:** `dead-stock-rows`
+
+**Формула:**
+```
+dead-stock = (storage_cost > 100 RUB) AND (sales_qty == 0)
+profit     = -storage_cost
+```
+
+**Обоснование:** Товар лежит на складе, не продаётся, при этом генерирует
+прямые затраты на хранение. Порог 100 RUB отсекает технические нули (артикулы
+с мизерным остатком хранения из округлений WB-API).
+
+**Входные данные:** `paid_storage` (через `db/storage-by-article`); `ue/calculate`
+для получения `sales-qty`.
+
+**Граничные случаи:**
+- Артикул только в storage-map, но отсутствует в ue-data → считается dead-stock
+  (нет продаж).
+- `storage_cost <= 100` → не флаг.
+
+**Тест-указатель:** `dead-stock-flags-zero-sales-positive-storage`,
+`dead-stock-ignores-below-threshold-storage`.
+
+---
+
+### Losses.2 — Storage-eats-margin classifier
+
+**Метрика:** `storage-eats-margin-rows`
+
+**Формула:**
+```
+storage_ratio = storage_cost / revenue * 100
+flag          = (storage_ratio > 20%) AND (profit < 500 RUB)
+suggestion    = "Критично: +15% или снять" if ratio > 40%, else "+5-10%"
+```
+
+**Обоснование:** Товар ещё продаётся, но хранение «съедает» значимую долю
+выручки, и итоговая прибыль слишком мала для покрытия операционных рисков.
+
+**Входные данные:** Поля `revenue`, `storage`, `profit` из `ue/calculate`.
+
+**Граничные случаи:**
+- `revenue == 0` → деление на ноль невозможно; строка пропускается (`pos? rev`).
+- `profit >= 500` → не флаг (артикул здоровый, несмотря на высокий ratio).
+
+**Тест-указатель:** `storage-eats-margin-flags-high-ratio-low-profit`,
+`storage-eats-margin-ignores-healthy-skus`.
+
+---
+
+### Losses.3 — Forecast-negative classifier
+
+**Метрика:** `forecast-negative-rows`
+
+**Формула:**
+```
+daily_storage        = storage_cost / days_in_period
+sales_per_day        = sales_qty / days_in_period
+remaining_days       = quantity_full / sales_per_day   (365 если 0 продаж)
+future_storage_cost  = daily_storage × remaining_days
+days_to_break_even   = profit / daily_storage          (9999 если ds == 0)
+
+flag = (profit > 0) AND (days_to_break_even < 30) AND (future_storage_cost > profit)
+```
+
+**Обоснование:** SKU прибыльный сейчас, но при текущей скорости продаж
+хранение текущего остатка «переживёт» прибыль. Порог 30 дней — actionable
+горизонт (к следующей поставке/акции продавец успеет скорректировать).
+
+**Входные данные:** `ue/calculate` (поля `profit`, `sales-qty`, `storage`);
+`stock/by-article` (поле `quantity-full`); `db/storage-by-article` для
+`daily_storage`.
+
+**Граничные случаи:**
+- `daily_storage == 0` → `days_to_break_even = 9999` → не флаг.
+- `sales_per_day == 0` → `remaining_days = 365` (worst-case).
+- `profit <= 0` → не флаг (уже убыточный, попадает в другой класс).
+
+**Тест-указатель:** `forecast-negative-flags-days-to-break-even-under-30`,
+`forecast-negative-skips-zero-daily-storage`.
+
+---
+
+### Losses.4 — `calculate` orchestrator
+
+**Функция:** `(losses/calculate period :marketplace kw)`
+
+**Логика:**
+1. `resolve-period` → `[from to]` строки дат; `days-between` → `days`.
+2. `finance/fetch-finance` → `fin-data` (catch → `[]` для Ozon/YM с пустой БД).
+3. `db/storage-by-article` → `storage-map` (catch → `{}` для Ozon/YM).
+4. `ue/calculate fin-data :storage-by-article storage-map` → `ue-data`
+   (пропускается если `fin-data` пуст).
+5. `stock/fetch-stocks` → `stock-by-art`.
+6. Три классификатора: `dead`, `eat`, `fcst`.
+7. `totals` = агрегация count/sum по классам.
+
+**Возвращает:**
+```clojure
+{:rows   [...]     ;; concat dead + eat + fcst
+ :totals {:total-loss          Double
+          :dead-stock-loss     Double
+          :storage-eats-loss   Double
+          :forecast-count      Int
+          :dead-stock-count    Int
+          :storage-eats-count  Int
+          :total-sku-affected  Int}}
+```
+
+---
+
+### Losses.5 — Inputs
+
+| Источник | Таблица/функция | Использование |
+|---|---|---|
+| WB paid_storage | `db/storage-by-article` | `storage-map` для всех трёх классов |
+| Finance | `finance/fetch-finance` | via `ue/calculate` → `profit`, `revenue`, `storage`, `sales-qty` |
+| Stocks | `stock/fetch-stocks` + `stock/by-article` | `quantity-full` для Losses.3 |
+| UE | `ue/calculate` | Агрегированные row-level метрики |
+
+---
+
+### Losses.6 — Marketplace coverage
+
+**WB only.** Только WB имеет ingestion в таблицу `paid_storage`; для Ozon и YM
+`storage-map` возвращает `{}`, все три классификатора дают `[]`, отчёт возвращает
+пустые `:rows` без краша.
+
+**Known gap / Roadmap:**
+- Ozon: тарификация хранения через `POST /v1/finance/realization` (колонка
+  `service_charge` + item `name = "Хранение"`); требует отдельного ingest-пути.
+- YM: хранение не тарифицируется отдельно через API (включено в комиссию);
+  аналитика хранения недоступна без ручного импорта.
+
+---
+
+### Losses.7 — Known gaps
+
+1. **WB-only coverage** — для Ozon/YM отчёт возвращает пустые losses.
+   Roadmap: добавить ingest paid_storage для Ozon через realization API.
+
+2. **Hardcoded thresholds** — порог 100 RUB (dead-stock), 20%/500 RUB
+   (storage-eats-margin), 30 дней (forecast) — не конфигурируются per-user.
+   Требует таблицы user_settings или параметров запроса.
+
+3. **Uniform sales velocity** — прогноз в Losses.3 использует среднесуточные
+   продажи за весь период; не учитывает сезонность, промо-спайки,
+   или тренд вверх/вниз.
+
+4. **Dead-stock без учёта последней продажи** — SKU, проданный 2 дня назад,
+   может попасть в dead-stock если в выбранном периоде было 0 продаж.
+   Нужен `last_sale_date` из `finance` или `sales` для корректной фильтрации.
+
+5. **Suggestion статически выводится** — рекомендации захардкожены по
+   thresholds. Нет ML/AI-слоя, нет учёта ценовой эластичности или
+   конкурентного контекста.
+
+---
+
+### Losses.8 — Verification summary
+
+- Каждый классификатор (Losses.1–Losses.3) покрыт минимум двумя `deftest` в
+  `test/analitica/domain/losses_canon_test.clj`.
+- Все тесты — pure unit: никаких DB-хитов, только inline-фикстуры.
+- `calculate-totals-sum-correctly` — мок через `with-redefs` на
+  `db/storage-by-article`, `finance/fetch-finance`, `stock/fetch-stocks`.
+- Regression: `clojure -M:test` зелёный на полном suite.
+
+---
+
+- Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj), [src/analitica/domain/losses.clj](../src/analitica/domain/losses.clj).

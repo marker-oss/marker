@@ -17,7 +17,9 @@
     {:key :total-profit  :title "Прибыль"  :format :rub :delta-from :profit}
     {:key :margin-pct    :title "Маржа"    :format :pct :delta-from :margin}
     {:key :drr-pct       :title "ДРР"      :format :pct :delta-from :drr
-     :delta-direction :inverted}]
+     :delta-direction :inverted}
+    {:key :total-loss    :title "Убытки"   :format :rub :delta-direction :inverted
+     :href "/reports/losses"}]
 
    :column-groups
    {:identity {:title "Identity"     :anchor nil}
@@ -218,6 +220,39 @@
    :column-groups {:identity {:title "Identity"} :money {:title "Деньги"} :pct {:title "%"}}
    :chart {:type :bar :title "WoW/MoM" :x :metric :y :change-pct}})
 
+(def ^:private losses-schema
+  {:report-type :losses
+   :title "Убытки"
+   :uses-period? true
+   :supports-compare? false
+   :rows-mode :per-article
+   :tabs [:table :chart :drawer]
+   :kpi [{:key :total-loss :title "Общие потери" :format :rub :delta-direction :inverted}
+         {:key :dead-stock-count :title "Мёртвый сток" :format :int}
+         {:key :storage-eats-count :title "Склад ест маржу" :format :int}
+         {:key :forecast-count :title "Прогноз: в убыток" :format :int}]
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+             {:key :loss-type :title "Тип" :group :identity :format :text :default-visible? true}
+             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}
+             {:key :storage-cost :title "Хранение" :group :money :format :rub :default-visible? true :canon-anchor "Losses.1"}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :profit :title "Прибыль/Убыток" :group :money :format :rub :default-visible? true}
+             {:key :storage-ratio :title "Склад %" :group :pct :format :pct :default-visible? true :canon-anchor "Losses.2"}
+             {:key :days-to-break-even :title "До убытка (дней)" :group :forecast :format :int :default-visible? true :canon-anchor "Losses.3"}
+             {:key :suggestion :title "Рекомендация" :group :action :format :text :default-visible? true}]
+   :column-groups {:identity {:title "Identity"}
+                   :volume {:title "Объём"}
+                   :money {:title "Деньги"}
+                   :pct {:title "%"}
+                   :forecast {:title "Прогноз"}
+                   :action {:title "Действие"}}
+   :column-presets {:basic [:article :loss-type :storage-cost :profit :suggestion]
+                    :full :all
+                    :dead [:article :storage-cost :profit :suggestion]
+                    :margin [:article :revenue :storage-ratio :profit :suggestion]
+                    :forecast [:article :profit :days-to-break-even :suggestion]}
+   :chart {:type :bar :title "Топ убыточных SKU" :x :article :y :profit :limit 20}})
+
 (def ^:private registry
   {:ue      ue-schema
    :pnl     pnl-schema
@@ -228,7 +263,8 @@
    :returns returns-schema
    :buyout  buyout-schema
    :geo     geo-schema
-   :trends  trends-schema})
+   :trends  trends-schema
+   :losses  losses-schema})
 
 (defn get-schema
   "Return schema map for report-type keyword, or nil if unknown."

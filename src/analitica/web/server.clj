@@ -25,6 +25,7 @@
             [analitica.web.api.detail :as detail]
             [analitica.web.api.coverage :as coverage]
             [analitica.web.report-schemas :as rs]
+            [analitica.domain.losses :as losses]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -45,7 +46,7 @@
   #{"wb" "ozon" "ym"})
 
 (def valid-report-types
-  #{"sales" "finance" "ue" "pnl" "abc" "stock" "returns" "buyout" "geo" "trends"})
+  #{"sales" "finance" "ue" "pnl" "abc" "stock" "returns" "buyout" "geo" "trends" "losses"})
 
 (def valid-sync-what
   #{"sales" "orders" "finance" "storage" "stocks" "stats" "prices" "regions" "1c" "all"})
@@ -282,7 +283,8 @@
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [data          (try (report/report-data :ue period-arg :marketplace validated-mp :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
-              totals        (:totals data)
+              losses-totals (try (:totals (losses/calculate period-arg :marketplace validated-mp)) (catch Exception _ {}))
+              totals        (merge (:totals data) (select-keys losses-totals [:total-loss]))
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -504,8 +506,60 @@
                              [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
                             :active-route "/reports/trends")})))
   
+  (GET "/reports/losses" {params :params}
+    (let [period-arg      (resolve-period-from-params params)
+          marketplace-str (get params :marketplace)
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
+          schema          (rs/get-schema :losses)
+          hide-period?    (false? (:uses-period? schema))
+          supports-compare? (not (false? (:supports-compare? schema)))]
+      (if period-arg
+        (let [data          (try (losses/calculate period-arg :marketplace validated-mp) (catch Exception _ {:rows [] :totals {}}))
+              totals        (:totals data)
+              show-no-data? (empty? (:rows data))
+              ;; Notice for non-WB: losses only available for WB
+              mp-notice     (when (and validated-mp (not= validated-mp :wb))
+                              [:div.bg-blue-50.border-l-4.border-blue-400.p-4.mb-4
+                               [:p.text-sm.text-blue-700
+                                "Отчёт «Убытки» сейчас доступен только для Wildberries. "
+                                "Для Ozon и Яндекс.Маркет данные по хранению не загружаются."]])]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body (layout/page "Отчёт: Убытки"
+                              (into [:div]
+                                    (keep identity
+                                          [mp-notice
+                                           (reports-page/report-page :losses period-arg validated-mp
+                                                                      :show-no-data show-no-data? :totals totals)]))
+                              :active-route "/reports/losses"
+                              :hide-period? hide-period?
+                              :supports-compare? supports-compare?)})
+        {:status 400
+         :headers {"Content-Type" "text/html; charset=utf-8"}
+         :body (layout/page "Ошибка"
+                            [:div.text-center.py-12
+                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверные параметры"]
+                             [:p.text-gray-600 "Проверьте значения period/from/to и marketplace"]]
+                            :active-route "/reports/losses")})))
+
+  ;; API endpoint for losses
+  (GET "/api/report/losses" {params :params}
+    (let [period-arg      (resolve-period-from-params params)
+          marketplace-str (get params :marketplace)
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))]
+      (if period-arg
+        (let [data (try (losses/calculate period-arg :marketplace validated-mp)
+                        (catch Exception _ {:rows [] :totals {}}))]
+          {:status 200
+           :headers {"Content-Type" "application/json"}
+           :body (json/write-value-as-string {:rows (mapv (fn [r] (update r :loss-type name)) (:rows data))
+                                  :totals (:totals data)})})
+        {:status 400
+         :headers {"Content-Type" "application/json"}
+         :body (json/write-value-as-string {:error "Invalid or incomplete period parameters"})})))
+
   ;; Fallback for any other report type (404)
-  (GET "/reports/:type" [type] 
+  (GET "/reports/:type" [type]
     {:status 404 
      :headers {"Content-Type" "text/html; charset=utf-8"}
      :body (layout/page "Отчёт не найден" 

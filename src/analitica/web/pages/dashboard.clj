@@ -242,7 +242,17 @@
                           :type "doughnut"
                           :title "Доли маркетплейсов"
                           :api-url (str "/api/chart/share?period=" period-param)
-                          :height 300})]]))
+                          :height 300})]
+
+     ;; Losses quick-link card (WB only)
+     [:div.mt-6
+      [:a.block.bg-red-50.border.border-red-200.rounded-lg.p-4.hover:bg-red-100.transition-colors
+       {:href (str "/reports/losses?period=" period-param)}
+       [:div.flex.items-center.justify-between
+        [:div
+         [:div.text-sm.font-medium.text-red-700.mb-1 "Убытки (WB)"]
+         [:div.text-xs.text-red-600 "SKU теряющих деньги — мёртвый сток, склад ест маржу, прогноз убытка"]]
+        [:div.text-3xl "💀"]]]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Marketplace Dashboard

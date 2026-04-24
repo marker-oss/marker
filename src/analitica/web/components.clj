@@ -250,10 +250,11 @@
     - :delta - Delta vs prior period (number, optional)
     - :delta-unit - Delta unit suffix (string, optional, default: %)
     - :delta-direction - :normal (green=up) | :inverted (green=down, e.g. ДРР)
+    - :href - Optional URL; when provided, card is rendered as <a> link
 
   Example:
     (kpi-card {:title \"Выручка\" :value 1830000 :format :rub :delta 12.4})"
-  [{:keys [title value format delta delta-unit delta-direction]
+  [{:keys [title value format delta delta-unit delta-direction href]
     :or {format :rub delta-direction :normal}}]
   (let [fmt format   ; rename to avoid shadowing clojure.core/format below
         is-positive? (and delta (pos? delta))
@@ -265,8 +266,11 @@
         color-class (cond
                       (nil? delta) ""
                       is-good? "text-green-600"
-                      :else "text-red-600")]
-    [:div.bg-white.rounded-lg.shadow.p-4.border.border-gray-100
+                      :else "text-red-600")
+        tag (if href :a.block :div)
+        attrs (cond-> {:class "bg-white rounded-lg shadow p-4 border border-gray-100"}
+                href (assoc :href href))]
+    [tag attrs
      [:div.text-xs.font-medium.text-gray-500.uppercase.tracking-wide title]
      [:div.text-2xl.font-bold.text-gray-900.mt-1 (format-value value fmt)]
      (when delta
@@ -300,7 +304,7 @@
   "Render row of KPI cards from schema :kpi and totals map.
 
   Parameters:
-  - kpi-schema: seq of {:key :title :format :delta-from :delta-direction}
+  - kpi-schema: seq of {:key :title :format :delta-from :delta-direction [:href]}
   - totals: map {<key> <numeric>}
   - compare-totals: optional map for delta calc (prior period)
 
@@ -308,14 +312,14 @@
     (kpi-row [{:key :revenue :title \"Выручка\" :format :rub}] totals prev-totals)"
   [kpi-schema totals & [compare-totals]]
   [:div.grid.grid-cols-2.md:grid-cols-4.gap-4.mb-6
-   (for [{:keys [key title format delta-from delta-direction]} kpi-schema]
+   (for [{:keys [key title format delta-from delta-direction href]} kpi-schema]
      (let [value (get totals key)
            prev-value (when (and compare-totals delta-from)
                         (get compare-totals key))
            delta (when (and prev-value (number? value) (number? prev-value) (not (zero? prev-value)))
                    (* 100.0 (/ (- value prev-value) prev-value)))]
        (kpi-card {:title title :value value :format format
-                  :delta delta :delta-direction delta-direction})))])
+                  :delta delta :delta-direction delta-direction :href href})))])
 
 ;; ---------------------------------------------------------------------------
 ;; Tab Switcher Component

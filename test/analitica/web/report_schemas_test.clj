@@ -72,8 +72,8 @@
       (is (contains? (set (:tabs s)) :chart)))))
 
 (deftest all-schemas-registered-test
-  (testing "все 10 типов отчётов зарегистрированы"
-    (let [expected #{:sales :finance :ue :pnl :abc :stock :returns :buyout :geo :trends}]
+  (testing "все 11 типов отчётов зарегистрированы"
+    (let [expected #{:sales :finance :ue :pnl :abc :stock :returns :buyout :geo :trends :losses}]
       (is (= expected (set (rs/all-report-types))))))
 
   (testing "snapshot-отчёты (stock) имеют :uses-period? false"
