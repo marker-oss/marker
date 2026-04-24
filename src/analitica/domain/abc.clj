@@ -4,7 +4,11 @@
             [analitica.util.math :as math]))
 
 (defn- classify
-  "Assign ABC category based on cumulative percentage."
+  "Assign ABC category based on cumulative percentage. §ABC.1 in canonical-formulas.md.
+
+   Formula: cum% = round2(100 × Σ(value-fn, items[0..i]) / total).
+   Boundaries: cum% ≤ 80 → A; 80 < cum% ≤ 95 → B; else → C.
+   When total = 0 (empty or all-zero criterion), returns nil — caller must handle."
   [sorted-items value-fn]
   (let [total (reduce + 0.0 (map value-fn sorted-items))]
     (when (pos? total)

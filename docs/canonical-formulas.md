@@ -20,7 +20,7 @@ populated; other reports list the namespace but defer full canonization.
 | 1 | Finance          | `analitica.domain.finance`         | [§Finance](#finance)                 |
 | 2 | P&L              | `analitica.domain.pnl`             | [§P&L](#pl) *— Phase 3 (2026-04-24)* |
 | 3 | Unit Economics   | `analitica.domain.unit-economics`  | [§Unit Economics](#unit-economics)   |
-| 4 | ABC              | `analitica.domain.abc`             | *Phase 3*                            |
+| 4 | ABC              | `analitica.domain.abc`             | [§ABC](#abc) *— Phase 3 (2026-04-24)* |
 | 5 | Sales            | `analitica.domain.sales`           | *Phase 3*                            |
 | 6 | Stock            | `analitica.domain.stock`           | *Phase 3*                            |
 | 7 | Returns          | `analitica.domain.returns`         | *Phase 3*                            |
@@ -1955,6 +1955,297 @@ without special-casing.
 - `group-reconcile-empty`: empty input → all totals zero, `avg-price = 0`,
   `return-rate = nil`, `unique-skus = 0`.
 - Regression coverage: `clojure -M:test` green on the whole suite.
+
+---
+
+## ABC
+
+**Статус**: канонизирован 2026-04-24 (Phase 3 audit). Алгоритм — классический ABC-анализ Парето.
+
+**Назначение**: ранжировать артикулы по вкладу в выбранный критерий (выручка / к выплате / количество продаж) и разбить на три группы для управленческих решений: удерживать (A), оптимизировать (B), выводить (C).
+
+**Аудитория**: `analitica.domain.abc`, `report/abc-report`, все потребители ABC-тегов в dashboard.
+
+---
+
+### ABC.1 — `classify` (80/95 Pareto bucketing)
+
+**Formula**
+
+```
+total = Σ value-fn(item)   for item in sorted-items (desc)
+
+cum_i = Σ value-fn(item_j)  for j = 0..i
+cum%_i = round2(100 × cum_i / total)
+
+category_i = cond
+  cum%_i ≤ 80 → "A"
+  cum%_i ≤ 95 → "B"
+  else        → "C"
+```
+
+`round2` is applied **before** the comparison, meaning an item whose running
+cumulative share would be 80.004 rounds to 80.00 and lands in **A**, not B.
+Conversely, 80.005 rounds to 80.01 and lands in **B**.
+
+**Economic justification**
+
+The 80/95 split is the textbook Pareto-B variant (not the strict 80/20 cut).
+Real SKU catalogs are rarely clean enough for strict 80/20 to produce stable
+A/B/C populations period-over-period; the 80/95 boundaries give a useful
+B-tier (mid-tail improvement candidates) instead of collapsing everything
+below 80% straight into C. Convention used by most Russian marketplace
+analytics tools.
+
+- **A** — core revenue drivers. Protect margin, maximise stock availability.
+- **B** — mid-tail. Optimise listings, pricing, ads.
+- **C** — tail / prune candidates. Review for discontinuation or bunching.
+
+**Inputs**
+
+- Pre-aggregated article rows from `finance/by-article` (see §Finance.1).
+  Required keys: `:revenue`, `:for-pay`, `:sales-qty` (integer, coerced to
+  `double` for criterion dispatch — see §ABC.2).
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| `total = 0` (empty data or all-zero criterion) | `classify` returns `nil`; caller must handle (dashboard prints empty table) |
+| Item whose cum% rounds to exactly 80.00 | Category **A** (`≤ 80` is inclusive) |
+| Item whose cum% rounds to exactly 95.00 | Category **B** (`≤ 95` is inclusive) |
+| Item whose cum% rounds to 80.01 | Category **B** |
+| All items have identical criterion value | Ties broken by input order (stable `sort-by` — see §ABC.3) |
+| `:for-pay` contains negatives (net-of-returns pathology) | `total` is reduced; per-item cum% may briefly exceed 100. Not observed in production but not guarded against |
+
+**Verification**
+
+`test/analitica/domain/abc_canon_test.clj` — `abc-classify-80-95-boundaries`.
+
+---
+
+### ABC.2 — `analyze-by` criterion dispatch
+
+**Formula**
+
+```clojure
+val-fn = case criterion
+  :revenue   → :revenue          ; keyword, used as fn on map
+  :for-pay   → :for-pay
+  :sales-qty → (comp double :sales-qty)   ; integer → double
+  _          → :revenue          ; unknown criterion falls back to :revenue
+```
+
+`sorted = sort-by val-fn > by-article-rows`
+
+Then `classify sorted val-fn`.
+
+**Economic justification**
+
+- `:revenue` (default) — gross seller revenue. Best for identifying top-revenue SKUs regardless of costs.
+- `:for-pay` — net marketplace payout. Better for cash-flow ranking; ranks high-commission SKUs lower.
+- `:sales-qty` — unit volume. Useful for logistics planning and restock prioritisation independent of price.
+
+Unknown criteria silently fall back to `:revenue` rather than throwing, so
+callers (e.g., CLI with a typo) degrade gracefully.
+
+**Inputs**
+
+Raw finance rows (the same format fed to `finance/fetch-finance`). `analyze-by`
+calls `finance/by-article` internally; see §Finance.1 for that contract.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| Unknown criterion keyword | Silently falls back to `:revenue` |
+| `:sales-qty = 0` for all items | All contribute 0.0 to cumulative; `total = 0` → `classify` returns `nil` |
+| `:sales-qty` is integer | Coerced to `double` via `(comp double :sales-qty)` — safe for all valid qty values |
+
+**Verification**
+
+`test/analitica/domain/abc_canon_test.clj` —
+`abc-analyze-by-revenue`, `abc-analyze-by-criterion-dispatch`,
+`abc-unknown-criterion-falls-back-to-revenue`.
+
+---
+
+### ABC.3 — Sort stability
+
+**Formula**
+
+`sort-by val-fn > by-article-rows`
+
+Clojure's `sort-by` delegates to Java's `Arrays.sort`, which is a stable
+merge sort. Items with identical criterion values keep the relative order they
+had in the input sequence. The input from `finance/by-article` is itself
+sorted by `:for-pay desc` by default.
+
+**Economic justification**
+
+Tie-breaking on identical criterion values matters for deterministic
+reporting: the same raw data must always produce the same A/B/C assignment.
+Stable sort guarantees this without requiring an explicit secondary key.
+
+**Edge cases**
+
+In production, revenue ties between two distinct articles are uncommon but
+not impossible (e.g., both sold exactly 1 unit at the same price). When ties
+occur, the article that appears earlier in `finance/by-article`'s output
+(lower index in the by-:for-pay-desc sort) wins the lower cumulative
+position and may land in a "better" category. This is deterministic but
+potentially surprising; document it in the dashboard tooltip.
+
+**Verification**
+
+`test/analitica/domain/abc_canon_test.clj` — `abc-classify-80-95-boundaries`
+(fixture constructed with distinct values, so ties do not occur; stable-sort
+property is implicitly tested by category-order assertions).
+
+---
+
+### ABC.4 — `summary` category rollup
+
+**Formula**
+
+```
+grouped = group-by :abc-category abc-data
+
+for each (cat, items) in grouped:
+  {:category    cat
+   :count        count(items)
+   :revenue      round2(Σ :revenue items)
+   :for-pay      round2(Σ :for-pay items)
+   :sales-qty    Σ :sales-qty items        ; integer sum
+   :returns-qty  Σ :returns-qty items}     ; integer sum
+
+result = sort-by :category grouped-rows   ; alphabetic: A, B, C
+```
+
+**Economic justification**
+
+The summary collapses the per-article detail into a 3-row management view:
+how many SKUs, how much revenue, and how much was paid out per tier. This is
+the primary output of ABC reporting for executive dashboards.
+
+`round2` on monetary sums prevents floating-point drift when many articles
+aggregate into one category. Integer quantities are summed as integers (no
+rounding needed).
+
+**Inputs**
+
+ABC-tagged article rows (output of `classify` / `analyze-by`), each carrying:
+`:abc-category`, `:revenue`, `:for-pay`, `:sales-qty`, `:returns-qty`.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| No C-category articles | Category C absent from output (no zero-row inserted) |
+| `abc-data` is `nil` or empty | `group-by` on `nil` returns `{}` → empty `summary` seq |
+| All articles in one category | Output has a single row |
+
+**Verification**
+
+`test/analitica/domain/abc_canon_test.clj` — `abc-summary-rollup`.
+
+---
+
+### ABC.5 — Inputs and data flow
+
+```
+finance/fetch-finance(period, marketplace)
+    ↓
+[raw finance rows]  — canonical finance row format (§Finance §4)
+    ↓
+finance/by-article(finance-data)
+    ↓
+[per-article aggregate rows]   — §Finance.1
+    ↓
+analyze-by(finance-data, criterion)   — sorts + classifies
+    ↓
+[ABC-tagged article rows]  — each row + :abc-category, :cum-pct
+    ↓
+summary(abc-data)   — optional 3-row rollup
+```
+
+ABC inherits Finance.1–Finance.5 semantics for all per-article monetary
+fields (`:revenue`, `:for-pay`, `:sales-pay`, `:returns-pay`, `:storage`,
+etc.). The ABC layer adds only `:abc-category` and `:cum-pct` and does not
+modify or re-derive Finance fields.
+
+**Verification**
+
+`test/analitica/domain/abc_canon_test.clj` — `abc-analyze-by-revenue`
+exercises the full chain from raw finance rows through `analyze-by`.
+
+---
+
+### ABC.6 — Marketplace coverage
+
+| Marketplace | Finance data available | `:revenue` | `:for-pay` | `:sales-qty` | Notes |
+|---|---|---|---|---|---|
+| Wildberries (WB) | Yes | Yes | Yes | Yes | All 3 criteria available |
+| Яндекс Маркет (YM) | Yes | Yes | Yes | Yes | All 3 criteria available |
+| Ozon | Yes | Yes | Yes | Yes | All 3 criteria available |
+
+Coverage is equal to Finance.9 coverage (ABC is a pure transform of
+`finance/by-article` output). All three criteria exist in all per-article
+rows for all three marketplaces because `finance/by-article` always produces
+`:revenue`, `:for-pay`, and `:sales-qty` keys (defaulting to `0.0` / `0`
+when no data is present — see §Finance.6 empty-row fallback).
+
+---
+
+### ABC.7 — Known gaps and quirks
+
+1. **`total = 0` → `classify` returns `nil`.** When the finance data is empty
+   or the chosen criterion is zero for all articles (e.g., all articles have
+   `:sales-qty = 0`), `classify` returns `nil` rather than an empty vector.
+   Callers must handle `nil` (the `report` function prints an empty table;
+   the dashboard must guard against `nil` before iterating).
+
+2. **Running cumulative, not per-item share.** Category assignment uses the
+   running cumulative percentage, not each item's individual share. The last
+   article whose **cumulative** share ≤ 80% is still in A, even if that
+   article itself contributes only 0.1% to total. This matches the standard
+   Pareto convention but surprises users who expect "A = each item contributes
+   ≥ X% to total".
+
+3. **`:sales-qty` coerced to `double`.** Integer quantities are safe; zero-qty
+   articles contribute `0.0` to cumulative and receive category C (or A if
+   total is also zero, which triggers the `nil` path above).
+
+4. **No guard against negative `:for-pay`.** If net-of-returns accounting
+   produces a negative `:for-pay` for some articles (observed only in
+   pathological all-returns periods), `total` may be less than the sum of
+   positive items, and `cum%` can exceed 100% before the loop ends. The code
+   does not clamp or error; all articles receive a category (likely C) in such
+   scenarios. This is not observed in current production data.
+
+5. **`:abc-category` absent from `finance/by-article` rows.** ABC tags are
+   added only by `classify`; they are never stored to the database. Each
+   invocation of `analyze-by` recomputes them. This is correct for an
+   analytics read-path but means filtering `:abc-category` from cached
+   by-article rows will always return empty.
+
+---
+
+### ABC.8 — Verification summary
+
+- `test/analitica/domain/abc_canon_test.clj` contains one `deftest` per canon
+  metric group (ABC.1–ABC.5 directly; ABC.6 is structural / no runtime test).
+- Fixture: 5 pre-aggregated article rows with total revenue = 1000.
+  Cumulative by revenue: 50 / 80 / 90 / 97 / 100 → expected A/A/B/C/C.
+- `abc-classify-80-95-boundaries` — direct `classify` call; verifies all 5
+  categories and that cum-pct at exactly 80.00 lands in A.
+- `abc-analyze-by-revenue` — full chain from raw WB finance rows.
+- `abc-analyze-by-criterion-dispatch` — verifies top-row category for all 3
+  criteria on the same input.
+- `abc-summary-rollup` — verifies category-level aggregates and A/B/C sort order.
+- `abc-empty-input-returns-nil` — `classify` on `[]` → nil path (§ABC.7.1).
+- `abc-unknown-criterion-falls-back-to-revenue` — §ABC.2 fallback.
+- Regression coverage: `clojure -M:test` green on full suite.
 
 ---
 
