@@ -22,7 +22,9 @@
 ;; ---------------------------------------------------------------------------
 
 (defn by-article
-  "Aggregate stock by article (sum across warehouses)."
+  "Aggregate stock by article (sum across warehouses). §Stock.1
+   NOTE: output keys :in-way-to / :in-way-from are renamed from
+   source keys :in-way-to-client / :in-way-from-client (§Stock.8.1)."
   [stocks]
   (->> stocks
        (group-by :article)

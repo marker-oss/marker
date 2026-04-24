@@ -2249,4 +2249,380 @@ when no data is present — see §Finance.6 empty-row fallback).
 
 ---
 
+## Stock
+
+**Namespace**: `analitica.domain.stock`
+
+**Data model note**: Stock is a **point-in-time snapshot**, not a flow. There
+is no `:date-from` / `:date-to` period concept. Data always reflects "now".
+Two independent data sources feed stock computations:
+
+- **`stocks` table / API** — per-article-per-warehouse quantities.
+- **`sales` data** (from `sales/fetch-sales`) — used *only* in `with-turnover`
+  to compute daily velocity and days-left forecast.
+
+---
+
+### Stock.1 — `by-article` per-article rollup across warehouses
+
+**Formula**
+
+```
+grouped = group-by :article stocks
+
+for each (article, items) in grouped:
+  {:article       article
+   :subject       (:subject (first items))     ; representative, see §Stock.8.5
+   :brand         (:brand   (first items))     ; representative, see §Stock.8.5
+   :quantity      Σ :quantity      items       ; available stock
+   :quantity-full Σ :quantity-full items       ; total incl. in-transit
+   :in-way-to     Σ :in-way-to-client items   ; NOTE: key renamed (§Stock.8.1)
+   :in-way-from   Σ :in-way-from-client items ; NOTE: key renamed (§Stock.8.1)
+   :warehouses    count(distinct :warehouse items)}
+
+result = sort-by :quantity-full desc
+```
+
+**Field-name discrepancy (§Stock.8.1)**
+
+Source rows carry `:in-way-to-client` / `:in-way-from-client`.
+The output uses the **shortened keys** `:in-way-to` / `:in-way-from`.
+This rename happens on lines 35–36 of `stock.clj`.
+All downstream callers (export, UI, turnover) must use the **output** keys.
+
+**Economic justification**
+
+A seller cares about per-article position, not per-warehouse. Summing across
+warehouses gives the true available-to-promise (`:quantity`) and the
+total-in-network (`:quantity-full`) counts. The warehouse count (`:warehouses`)
+is retained for distribution-risk analysis.
+
+**Inputs**
+
+`stocks` table rows — see `data-dictionary.md#stocks`:
+`:article`, `:subject`, `:brand`, `:warehouse`, `:quantity`,
+`:quantity-full`, `:in-way-to-client`, `:in-way-from-client`.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| Article spans multiple warehouses with different `:subject` | First-row value is used (see §Stock.8.5) |
+| `:quantity` or `:quantity-full` is `nil` | Treated as `0` via `(or x 0)` |
+| Single article in a single warehouse | `:warehouses` = 1 |
+
+**Verification**
+
+`test/analitica/domain/stock_canon_test.clj` — `stock-by-article-rollup`,
+`stock-field-rename-guard`.
+
+---
+
+### Stock.2 — `by-warehouse` per-warehouse rollup
+
+**Formula**
+
+```
+grouped = group-by :warehouse stocks
+
+for each (warehouse, items) in grouped:
+  {:warehouse     warehouse
+   :articles      count(distinct :article items)
+   :quantity      Σ :quantity      items
+   :quantity-full Σ :quantity-full items}
+
+result = sort-by :quantity-full desc
+```
+
+**Economic justification**
+
+Warehouse-level view tells the seller which fulfilment centres hold the most
+inventory and how many distinct SKUs are stocked there. Used for rebalancing
+decisions (move stock from oversupplied warehouse to understocked one).
+
+**Inputs**
+
+Same `stocks` table rows as §Stock.1.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| Warehouse name is `nil` | Groups all nil-warehouse rows together |
+| `:quantity` or `:quantity-full` is `nil` | Treated as `0` |
+
+**Verification**
+
+`test/analitica/domain/stock_canon_test.clj` — `stock-by-warehouse-rollup`.
+
+---
+
+### Stock.3 — `with-turnover` velocity and days-left
+
+**Formula**
+
+```
+sales-by-art = {article → count(items where :type = :sale)}
+              from sales-data grouped by :article
+
+for each row s in stock-by-article:
+  sold       = get(sales-by-art, :article s, default=0)
+  daily-rate = safe-div(sold, days)    ; 0.0 when days=0 or sold=0
+  qty        = :quantity-full s
+  days-left  = if pos?(daily-rate)
+                 then round2(qty / daily-rate)
+                 else nil              ; zero or no sales → no forecast
+
+  assoc s :sold-period sold
+           :daily-rate  round2(daily-rate)
+           :days-left   days-left
+
+result = sort-by :days-left ascending, nil LAST
+```
+
+**Sort semantics**: `nil` days-left sorts after all numeric values. This puts
+imminent stockouts (smallest positive days-left) at the **top** of the list
+and dead-stock / never-selling articles at the **bottom**.
+
+**safe-div**: returns `0.0` when `days = 0`, so `daily-rate = 0.0` → `nil`
+days-left. This avoids division-by-zero and correctly marks zero-velocity
+articles as un-forecastable.
+
+**round2**: both `:daily-rate` and `:days-left` are rounded to 2 decimal
+places. `:days-left` is therefore a fractional day count (e.g. `3.5`), not
+an integer ceiling.
+
+**Economic justification**
+
+Days-left = time until stockout at current velocity. The most useful
+risk signal for re-ordering decisions. Nil for articles with zero sales means
+"we have no evidence of demand yet — do not alarm the seller".
+
+**Inputs**
+
+- `stock-by-article` — output of `by-article` (§Stock.1), carrying
+  `:article`, `:quantity-full`.
+- `sales-data` — raw sale rows with `:article` and `:type` (`:sale` / `:return`).
+  Only rows with `:type = :sale` are counted. Typically 30 days of data (see
+  §Stock.5 on the hardcoded window in `risk`).
+- `days` — integer, length of the sales observation window.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| Article has no sales in period | `sold = 0`, `daily-rate = 0.0`, `days-left = nil` |
+| `days = 0` | `safe-div` → `0.0`, `daily-rate = 0.0`, `days-left = nil` |
+| `quantity-full = 0` and `daily-rate > 0` | `days-left = 0.0` (already out) |
+
+**Verification**
+
+`test/analitica/domain/stock_canon_test.clj` — `stock-with-turnover-computes-days-left`,
+`stock-with-turnover-zero-sales-nil-days-left`,
+`stock-with-turnover-sort-puts-nil-last`.
+
+---
+
+### Stock.4 — `totals` snapshot rollup
+
+**Formula**
+
+```
+{:total-quantity    Σ :quantity           stocks
+ :total-full        Σ :quantity-full      stocks
+ :total-to-client   Σ :in-way-to-client  stocks   ; uses SOURCE key (not renamed)
+ :total-from-client Σ :in-way-from-client stocks  ; uses SOURCE key (not renamed)
+ :unique-articles   count(distinct :article   stocks)
+ :warehouses        count(distinct :warehouse stocks)}
+```
+
+Note: `totals` operates on **raw `stocks` table rows** (not `by-article`
+output), so it reads the source keys `:in-way-to-client` /
+`:in-way-from-client` directly. This is consistent — `totals` never calls
+`by-article`.
+
+**Economic justification**
+
+A single-row summary header for the overview report and dashboards. Gives the
+seller a quick read: total SKUs, total units, and how many are in-transit.
+
+**Inputs**
+
+Raw `stocks` table rows (same shape as §Stock.6 inputs).
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| Empty input | All sums = 0, counts = 0 |
+| `:quantity` / `:quantity-full` nil | Treated as `0` via `(or x 0)` |
+
+**Verification**
+
+`test/analitica/domain/stock_canon_test.clj` — `stock-totals-snapshot-aggregate`.
+
+---
+
+### Stock.5 — `risk` threshold filter
+
+**Formula**
+
+```
+enriched = with-turnover(by-article(stocks), sales-data, 30)  ; hardcoded 30d
+
+at-risk = filter enriched where:
+  days-left ≠ nil
+  AND days-left ≤ threshold
+  AND quantity-full > 0
+```
+
+**Predicate breakdown**:
+
+- `days-left ≠ nil` — excludes articles with zero sales (no forecast, not an
+  actionable risk today). See §Stock.8.4.
+- `days-left ≤ threshold` — below the caller-supplied danger horizon.
+- `quantity-full > 0` — already-empty articles are excluded (nothing to
+  protect; re-order decision is separate from stockout detection).
+
+**Hardcoded 30-day sales window**: `risk` always calls
+`sales/fetch-sales :last-30-days`, passing `days = 30` to `with-turnover`.
+The threshold is caller-supplied; the observation window is not.
+
+**Economic justification**
+
+Seller needs a short list of articles to act on *now*. The three-part filter
+removes: (a) articles with no demand signal, (b) articles with enough runway,
+(c) articles already gone (re-order is moot once stock = 0). The residual set
+is the actionable reorder queue.
+
+**Inputs**
+
+- `days-threshold` — integer, caller-supplied danger horizon (e.g. 14 = "alert
+  me if I'll run out within 2 weeks").
+- Raw `stocks` table rows (fed through `by-article` + `with-turnover`).
+- `sales-data` from `sales/fetch-sales :last-30-days`.
+
+**Edge cases**
+
+| Situation | Behaviour |
+|---|---|
+| All articles have nil days-left | `at-risk` is empty |
+| `days-threshold = 0` | Only articles with `days-left = 0.0` pass |
+| `quantity-full = 0` | Excluded even if `days-left = 0` |
+
+**Verification**
+
+`test/analitica/domain/stock_canon_test.clj` —
+`stock-risk-filter-excludes-nil-and-positive-remainder`.
+
+---
+
+### Stock.6 — Inputs
+
+**Primary input: `stocks` table rows**
+
+| Field | Type | Description |
+|---|---|---|
+| `:article` | string | Seller SKU |
+| `:subject` | string | Product category / subject |
+| `:brand` | string | Brand name |
+| `:warehouse` | string | Warehouse / fulfilment centre name |
+| `:quantity` | integer | Available (not reserved) units |
+| `:quantity-full` | integer | Total units incl. in-transit |
+| `:in-way-to-client` | integer | Units en route to buyer |
+| `:in-way-from-client` | integer | Units en route back (returns) |
+
+**Secondary input (turnover / risk only): `sales` rows**
+
+Raw sale events from `sales/fetch-sales`. Only `:article` and `:type` are
+used by `with-turnover`; `:type = :sale` rows are counted per article.
+
+**Point-in-time semantics**
+
+There is no date range. The stocks snapshot reflects whatever was last written
+to the `stocks` table (from the most recent API sync or manual import). Two
+calls to `fetch-stocks` at different times may return different values without
+any record of what changed.
+
+---
+
+### Stock.7 — Marketplace coverage
+
+| Field | WB | Ozon | YM |
+|---|---|---|---|
+| `:article` | yes | yes | yes |
+| `:subject` | yes | verify | verify |
+| `:brand` | yes | verify | verify |
+| `:warehouse` | yes | yes | yes |
+| `:quantity` | yes | yes | yes |
+| `:quantity-full` | yes | yes | yes |
+| `:in-way-to-client` | yes | 0 (not provided by MP) | 0 (not provided by MP) |
+| `:in-way-from-client` | yes | 0 (not provided by MP) | 0 (not provided by MP) |
+
+**Notes**:
+- `:in-way-to-client` / `:in-way-from-client` are WB-specific fields.
+  Ozon and YM stocks APIs do not expose in-transit breakdowns at the
+  per-article level; transforms emit `0` for these fields. The `totals`
+  in-transit totals will therefore be WB-only figures in multi-MP views.
+- `:subject` and `:brand` population for Ozon/YM marked **verify** — confirm
+  from `marketplace/ozon/transform.clj` and `marketplace/ym/transform.clj`.
+
+---
+
+### Stock.8 — Known gaps and quirks
+
+1. **Field-name discrepancy**: `by-article` output keys (`:in-way-to` /
+   `:in-way-from`) differ from `stocks` table source keys
+   (`:in-way-to-client` / `:in-way-from-client`). Downstream callers
+   (exports, UI, `with-turnover`) must use the **renamed** output keys.
+   `totals` uses the source keys directly because it bypasses `by-article`.
+   Trace: `stock.clj` lines 35–36.
+
+2. **Daily-rate treats period as uniform** — computes `sold-in-period / days`,
+   does not handle seasonality, weekend effects, or within-period velocity
+   spikes. Acceptable for MVP risk filter; a rolling-window model would
+   be more accurate.
+
+3. **No stock history / deltas** — snapshot only. If the caller wants "stock
+   change over time" they must re-fetch and diff themselves. The `stocks`
+   table has no timestamp column in the current schema.
+
+4. **Hardcoded 30-day sales window in `risk`** — the observation window for
+   velocity is always 30 days (see §Stock.5). The threshold is caller-supplied,
+   but the window is not. A configurable window would allow seasonal adjustment.
+
+5. **`:brand` / `:subject` taken from first item** — if the same article
+   appears in multiple warehouses with conflicting `:brand` or `:subject`
+   values (data quality issue), `by-article` silently uses the first row's
+   value. No warning is emitted in the current code.
+
+---
+
+### Stock.9 — Verification summary
+
+- `test/analitica/domain/stock_canon_test.clj` — 8 `deftest` blocks,
+  one per canon metric group (Stock.1–Stock.5 directly; Stock.6–Stock.8 are
+  structural / documented here).
+- Fixture: 4 articles × up to 3 warehouses (12 stock rows), plus a sales
+  fixture with known per-article counts.
+- `stock-by-article-rollup` — verifies summed quantities and warehouse count
+  for a multi-warehouse article (§Stock.1).
+- `stock-field-rename-guard` — asserts `:in-way-to` present, `:in-way-to-client`
+  absent in `by-article` output (§Stock.8.1).
+- `stock-by-warehouse-rollup` — verifies per-warehouse article count and
+  quantity sums (§Stock.2).
+- `stock-totals-snapshot-aggregate` — verifies all six totals fields on raw
+  stock rows (§Stock.4).
+- `stock-with-turnover-computes-days-left` — for article with known sales and
+  known days, verifies `:sold-period`, `:daily-rate`, `:days-left` (§Stock.3).
+- `stock-with-turnover-zero-sales-nil-days-left` — dead-stock article gets
+  `nil` days-left (§Stock.3 edge case).
+- `stock-with-turnover-sort-puts-nil-last` — nil days-left article appears
+  after all numeric days-left articles (§Stock.3 sort semantics).
+- `stock-risk-filter-excludes-nil-and-positive-remainder` — one at-risk, one
+  safe, one nil-days-left; only the at-risk article passes (§Stock.5).
+- Regression coverage: `clojure -M:test` green on full suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
