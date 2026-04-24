@@ -71,10 +71,14 @@
 
       ;; P&L report — single summary map goes to :totals; :rows is empty
       :pnl
-      (let [finance-data (finance/fetch-finance period
+      (let [[from to]    (resolve-dates period)
+            finance-data (finance/fetch-finance period
                                                 :marketplace marketplace
                                                 :source :db)
-            totals (pnl/calculate finance-data)]
+            cf-adj       (pnl/load-cf-adjustments from to marketplace)
+            totals       (pnl/calculate finance-data
+                                        :marketplace marketplace
+                                        :cf-adjustments cf-adj)]
         {:rows [] :totals totals})
 
       ;; ABC analysis

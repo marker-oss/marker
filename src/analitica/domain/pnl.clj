@@ -188,7 +188,7 @@
              :adjusted-net        (math/round2 adj-net)
              :adjusted-margin     (math/percentage adj-net revenue)))))
 
-(defn- load-cf-adjustments [from to marketplace]
+(defn load-cf-adjustments [from to marketplace]
   (when (and from to (= marketplace :ozon))
     (let [adj (db/cash-flow-adjustments "ozon" from to)]
       (when (some pos? (map #(Math/abs (or % 0)) (vals adj)))

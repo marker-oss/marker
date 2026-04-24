@@ -59,7 +59,7 @@
                                              :ozon [{:for-pay 8000.0}]
                                              :ym [{:for-pay 6000.0}]
                                              []))
-                  pnl/calculate (fn [data]
+                  pnl/calculate (fn [data & _]
                                   (if (seq data)
                                     {:revenue (:for-pay (first data))}
                                     {:revenue 0.0}))]
@@ -105,9 +105,9 @@
 
   (testing "report-chart-data for pnl returns waterfall chart structure"
     (with-redefs [finance/fetch-finance (fn [_ & _] [])
-                  pnl/calculate (fn [_] 
-                                  {:revenue 10000.0 :wb-reward 1000.0 :logistics 500.0 
-                                   :storage 200.0 :cogs 3000.0 :ad-spend 500.0 
+                  pnl/calculate (fn [_ & _]
+                                  {:revenue 10000.0 :wb-reward 1000.0 :logistics 500.0
+                                   :storage 200.0 :cogs 3000.0 :ad-spend 500.0
                                    :net-profit 4800.0})]
       (let [result (charts/report-chart-data :pnl :last-7-days :marketplace :wb)]
         (is (map? result))

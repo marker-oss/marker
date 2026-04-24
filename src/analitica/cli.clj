@@ -51,6 +51,17 @@
    ["-e" "--export PATH" "Export to file (csv/xlsx)"]
    ["-h" "--help" "Show help"]])
 
+(defn- reparse-subcommand-args
+  "Top-level -main uses parse-opts with :in-order true so subcommands like
+   `audit` can own their flags. The downside: flags placed AFTER a simple
+   subcommand (e.g. `report pnl -m ym`) never reach parse-opts and the
+   defaults leak through. Handlers that use the shared cli-options call this
+   to re-parse their rest-args and recover those flags, merging over the
+   top-level opts."
+  [args opts]
+  (let [{:keys [options arguments]} (parse-opts args cli-options :in-order false)]
+    [arguments (merge opts options)]))
+
 (declare handle-ingest)
 (declare handle-materialize)
 (declare handle-rebuild)
@@ -209,7 +220,8 @@
     (keyword period)))
 
 (defn- handle-ingest [args opts]
-  (let [what   (keyword (first args))
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what   (keyword (first args))
         period (resolve-period opts)
         mp     (keyword (:marketplace opts "wb"))]
     (case what
@@ -226,7 +238,8 @@
       (println "Unknown ingest target:" (first args)))))
 
 (defn- handle-materialize [args opts]
-  (let [what   (keyword (first args))
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what   (keyword (first args))
         period (resolve-period opts)
         mp     (keyword (:marketplace opts "wb"))]
     (case what
@@ -243,7 +256,8 @@
       (println "Unknown materialize target:" (first args)))))
 
 (defn- handle-rebuild [args opts]
-  (let [what   (keyword (first args))
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what   (keyword (first args))
         period (resolve-period opts)
         mp     (keyword (:marketplace opts "wb"))]
     (case what
@@ -260,7 +274,8 @@
       (println "Unknown rebuild target:" (first args)))))
 
 (defn- handle-report [args opts]
-  (let [what   (first args)
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what   (first args)
         period (resolve-period opts)
         export (:export opts)
         mp     (when-let [m (:marketplace opts)] (keyword m))]
