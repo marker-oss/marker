@@ -229,11 +229,28 @@
         [:div {:data-tab-content "table"
                :style (when (not= active-tab :table) "display:none;")}
          (if (not= :none (:rows-mode schema))
-           (c/tabulator-table {:id (str (name report-type) "-table")
-                               :api-url api-url
-                               :grouped-columns grouped-cols
-                               :frozen-cols 1
-                               :page-size 50})
+           (let [table-id (str (name report-type) "-table")
+                 presets (:column-presets schema)
+                 preset-labels {:basic "Базовый" :full "Полный"
+                                :per-unit "Per-unit" :percentages "Проценты"}
+                 default-visible (->> (:columns schema)
+                                      (filter :default-visible?)
+                                      (mapv #(name (:key %))))]
+             [:div
+              [:div.flex.items-center.gap-2.mb-2
+               (when (seq presets)
+                 (c/preset-chips {:presets presets
+                                  :active :basic
+                                  :table-id table-id
+                                  :labels preset-labels}))
+               (c/column-chooser {:columns (:columns schema) :table-id table-id})]
+              (c/tabulator-table {:id table-id
+                                  :api-url api-url
+                                  :grouped-columns grouped-cols
+                                  :frozen-cols 1
+                                  :page-size 50
+                                  :column-presets presets
+                                  :default-visible-fields default-visible})])
            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
 
       (when (contains? tab-set :chart)

@@ -148,7 +148,8 @@
      [:script {:src (:chartjs cdn-resources)}]
      [:link {:rel "stylesheet" :href (:tabulator-css cdn-resources)}]
      [:script {:src (:tabulator-js cdn-resources)}]
-     
+     [:script {:src "/js/table-columns.js"}]
+
      ;; Custom styles
      [:style "
        body { margin: 0; padding: 0; }

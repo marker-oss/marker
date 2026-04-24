@@ -4,6 +4,7 @@
             [ring.middleware.params :refer [wrap-params]]
             [ring.middleware.keyword-params :refer [wrap-keyword-params]]
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
+            [ring.middleware.resource :as resource]
             [compojure.core :refer [defroutes GET POST]]
             [compojure.route :as route]
             [hiccup.core]
@@ -829,6 +830,7 @@
 
 (defn app []
   (-> app-routes
+      (resource/wrap-resource "public")
       (wrap-multipart-params)
       (wrap-keyword-params)
       (wrap-params)

@@ -126,10 +126,13 @@
     - :grouped-columns — Nested column groups. Each: {:title :columns}. Inner columns enriched same as flat.
     - :frozen-cols — Number of columns to freeze (number, optional, default: 1; ignored for grouped)
     - :page-size — Rows per page (number, optional, default: 50)
+    - :column-presets — Map of preset-key → preset-value (optional). Serialised to window['<id>_presets'].
+    - :default-visible-fields — Vector of field name strings visible in the :full/:all-default-visible preset.
 
   Column definition map: {:title :field :format (:rub|:int|:pct|:text|:date) :width}
   Numeric formats (:rub/:int/:pct) get a bottomCalc footer row."
-  [{:keys [id api-url columns grouped-columns frozen-cols page-size]
+  [{:keys [id api-url columns grouped-columns frozen-cols page-size
+           column-presets default-visible-fields]
     :or {frozen-cols 1 page-size 50}}]
   (let [final-columns
         (if grouped-columns
@@ -144,6 +147,8 @@
       (str "
         (function() {
           const columns = " (json/write-value-as-string final-columns) ";
+          window['" id "_presets'] = " (json/write-value-as-string (or column-presets {})) ";
+          window['" id "_defaultVisible'] = " (json/write-value-as-string (or default-visible-fields [])) ";
 
           " (when freezing-enabled?
               (str "for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {
@@ -154,7 +159,7 @@
             .then(res => res.json())
             .then(data => {
               const rows = Array.isArray(data) ? data : (data.rows || []);
-              new Tabulator('#" id "', {
+              const t = new Tabulator('#" id "', {
                 data: rows,
                 columns: columns,
                 layout: 'fitDataStretch',
@@ -183,6 +188,7 @@
                 },
                 locale: 'ru'
               });
+              window['" id "_tabulator'] = t;
             })
             .catch(err => console.error('Table load error:', err));
         })();
