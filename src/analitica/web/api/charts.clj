@@ -2,7 +2,8 @@
   (:require [analitica.domain.sales :as sales]
             [analitica.domain.finance :as finance]
             [analitica.domain.pnl :as pnl]
-            [analitica.util.time :as t]))
+            [analitica.util.time :as t]
+            [analitica.util.period :as period]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helper functions
@@ -107,27 +108,9 @@
                                    "rgba(239, 68, 68, 0.8)"
                                    "rgba(34, 197, 94, 0.8)"]}]}))
 
-(defn report-chart-data
-  "Returns Chart.js data for report visualizations.
-   
-   Parameters:
-   - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :trends)
-   - period: keyword or map with :from/:to keys
-   - marketplace: optional keyword (:wb, :ozon, :ym)
-   
-   Returns map with chart data in Chart.js format, structure depends on report type:
-   - sales: line chart (daily dynamics)
-   - finance: stacked bar chart (cost breakdown)
-   - ue: horizontal bar chart (top-20 products by profit)
-   - pnl: waterfall chart
-   - abc: pareto curve
-   - stock: bar chart (stock by warehouse)
-   - returns: line chart (% returns by day)
-   - buyout: bar chart (% buyout by article)
-   - trends: grouped bar chart (WoW and MoM)
-   
-   Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 11.3"
-  [report-type period & {:keys [marketplace]}]
+(defn- compute-report-chart
+  "Single-period chart data (no compare). Internal helper factored out of report-chart-data."
+  [report-type period marketplace]
   (let [[from to] (resolve-dates period)]
     (case report-type
       ;; Sales: line chart - daily dynamics
@@ -278,6 +261,47 @@
       ;; Default: empty chart
       {:labels []
        :datasets []})))
+
+(defn report-chart-data
+  "Returns Chart.js data for report visualizations.
+
+   Parameters:
+   - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :trends)
+   - period: keyword or map with :from/:to keys
+   - marketplace: optional keyword (:wb, :ozon, :ym)
+   - compare: optional keyword; when :prev, appends a prev-period dataset styled as a dashed gray line
+
+   Returns map with chart data in Chart.js format, structure depends on report type:
+   - sales: line chart (daily dynamics)
+   - finance: stacked bar chart (cost breakdown)
+   - ue: horizontal bar chart (top-20 products by profit)
+   - pnl: waterfall chart
+   - abc: pareto curve
+   - stock: bar chart (stock by warehouse)
+   - returns: line chart (% returns by day)
+   - buyout: bar chart (% buyout by article)
+   - trends: grouped bar chart (WoW and MoM)
+
+   Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 11.3"
+  [report-type period & {:keys [marketplace compare] :or {compare :none}}]
+  (let [current (compute-report-chart report-type period marketplace)]
+    (if (= compare :prev)
+      (let [[from to] (resolve-dates period)
+            [prev-from prev-to] (period/compare-period {:from from :to to})
+            prev-period {:from prev-from :to prev-to}
+            prev (compute-report-chart report-type prev-period marketplace)
+            prev-datasets (:datasets prev)]
+        ;; Only append if prev has at least one dataset with data
+        (if (seq prev-datasets)
+          (let [styled-prev (-> (first prev-datasets)
+                                (assoc :label "Пред. период"
+                                       :borderColor "rgba(156,163,175,0.6)"
+                                       :backgroundColor "rgba(156,163,175,0.1)"
+                                       :borderDash [5 5]
+                                       :fill false))]
+            (update current :datasets conj styled-prev))
+          current))
+      current)))
 
 (defn finance-breakdown-chart-data
   "Returns stacked bar chart data for financial breakdown.

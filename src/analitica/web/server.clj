@@ -614,26 +614,27 @@
           period-str (get params :period "last-week")
           validated-period (validate-period period-str)
           marketplace-str (get params :marketplace)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (cond
         (and report-type-str (not validated-type))
         {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
-        
+
         (and period-str (not validated-period))
         {:status 400 :body {:error (str "Invalid period: " period-str)}}
-        
+
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
         {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
-        
+
         :else
         (let [period (try
                        (time/parse-period (or validated-period "last-week"))
                        (catch Exception e
                          nil))]
           (if (and validated-type period)
-            (let [chart-data (if validated-mp
-                               (charts-api/report-chart-data validated-type period :marketplace validated-mp)
-                               (charts-api/report-chart-data validated-type period))]
+            (let [chart-data (charts-api/report-chart-data validated-type period
+                                                           :marketplace validated-mp
+                                                           :compare compare-kw)]
               {:status 200 :body chart-data})
             {:status 400 :body {:error (str "Invalid parameters - type: " report-type-str ", period: " period-str)}})))))
   

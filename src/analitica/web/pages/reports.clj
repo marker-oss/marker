@@ -177,7 +177,8 @@
         api-url (str "/api/report/" (name report-type) "?period=" period
                      marketplace-param (or article-param ""))
         chart-api-url (str "/api/chart/report?type=" (name report-type)
-                           "&period=" period marketplace-param)]
+                           "&period=" period marketplace-param
+                           (when compare "&compare=prev"))]
 
     [:div
      [:div.mb-6
