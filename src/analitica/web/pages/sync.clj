@@ -257,9 +257,10 @@
                 :stream-url "/api/sync/stream"
                 :height "400px"})
    
-   ;; Data coverage heatmap
-   (data-coverage-section)
-   
+   ;; Data coverage heatmap (per-day × per-MP × per-type)
+   (c/sync-heatmap {:id "sync-coverage-heatmap"
+                    :api-url "/api/sync/coverage-days"})
+
    ;; Last sync status table
    (last-sync-status)])
 

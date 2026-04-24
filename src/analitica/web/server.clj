@@ -16,6 +16,7 @@
             [analitica.web.pages.dashboard :as dashboard-page]
             [analitica.web.pages.reports :as reports-page]
             [analitica.web.api.sync :as sync-api]
+            [analitica.web.api.sync-coverage :as sync-coverage]
             [analitica.web.api.metrics :as metrics-api]
             [analitica.web.api.charts :as charts-api]
             [analitica.web.api.export :as export-api]
@@ -873,6 +874,10 @@
     (let [coverage (metrics-api/sync-coverage)]
       {:status 200
        :body coverage}))
+
+  (GET "/api/sync/coverage-days" []
+    (let [data (sync-coverage/coverage-by-mp-and-type)]
+      {:status 200 :body data}))
 
   ;; Data-coverage (used by the period-picker calendar): which days in a
   ;; range have at least one finance row. Optional `marketplace` narrows

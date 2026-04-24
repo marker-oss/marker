@@ -547,3 +547,64 @@
      [:div.text-xs.text-gray-600.mt-1
       (str (format "%.1f" coverage-pct) "% покрытие")]]))
 
+;; ---------------------------------------------------------------------------
+;; Sync Heatmap Component
+;; ---------------------------------------------------------------------------
+
+(defn sync-heatmap
+  "Heatmap of data coverage across MP × type × day.
+
+  :id — container div id
+  :api-url — endpoint returning {mp-kw {type-kw {:days [iso-strs]}}}
+
+  Rendered as a table: rows = (mp, type) pairs, columns = days in a
+  90-day window ending today. Each cell green if the day is in :days,
+  gray otherwise."
+  [{:keys [id api-url]}]
+  [:div.bg-white.rounded-lg.shadow.p-6
+   [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Покрытие данных (90 дней)"]
+   [:div {:id id} [:div.text-sm.text-gray-500 "Загрузка…"]]
+   [:script (str "
+     (function() {
+       const WINDOW_DAYS = 90;
+       const container = document.getElementById('" id "');
+       fetch('" api-url "')
+         .then(r => r.json())
+         .then(data => {
+           const today = new Date();
+           const days = [];
+           for (let i = WINDOW_DAYS - 1; i >= 0; i--) {
+             const d = new Date(today);
+             d.setDate(today.getDate() - i);
+             days.push(d.toISOString().slice(0, 10));
+           }
+           const rows = [];
+           const mpNames = {wb: 'WB', ozon: 'Ozon', ym: 'YM'};
+           const typeNames = {finance: 'Finance', orders: 'Orders', sales: 'Sales', storage: 'Storage', stocks: 'Stocks'};
+           for (const mpKey of ['wb', 'ozon', 'ym']) {
+             const mp = data[mpKey] || {};
+             for (const typeKey of Object.keys(mp)) {
+               const set = new Set(mp[typeKey].days || []);
+               const label = mpNames[mpKey] + ' / ' + (typeNames[typeKey] || typeKey);
+               const total = set.size;
+               const cells = days.map(d => {
+                 const has = set.has(d);
+                 return '<td title=\"' + label + ' · ' + d + (has ? ' ✓' : ' ✗') + '\" class=\"' +
+                   (has ? 'bg-green-500' : 'bg-gray-200') + '\" style=\"width:8px;height:18px;border:0\"></td>';
+               }).join('');
+               rows.push('<tr><td class=\"pr-3 py-1 text-xs text-gray-600 whitespace-nowrap\">' + label +
+                         '</td><td class=\"pr-3 text-xs text-gray-400\">' + total + ' дн.</td>' +
+                         cells + '</tr>');
+             }
+           }
+           container.innerHTML = '<div class=\"overflow-x-auto\"><table style=\"border-collapse:separate;border-spacing:1px\">' +
+                                  '<tbody>' + rows.join('') + '</tbody></table>' +
+                                  '<div class=\"text-xs text-gray-500 mt-2 flex gap-3\">' +
+                                  '<span><span class=\"inline-block w-3 h-3 bg-green-500 align-middle\"></span> данные есть</span>' +
+                                  '<span><span class=\"inline-block w-3 h-3 bg-gray-200 align-middle\"></span> нет</span>' +
+                                  '</div></div>';
+         })
+         .catch(err => { container.innerHTML = '<div class=\"text-sm text-red-600\">Ошибка: ' + err + '</div>'; });
+     })();
+   ")]])
+
