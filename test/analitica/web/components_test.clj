@@ -177,3 +177,18 @@
                                               {:title "Выручка" :field "revenue" :width 130 :format :rub}]}))]
       (is (re-find #"bottomCalc" html))
       (is (re-find #"sum" html)))))
+
+(deftest tab-switcher-test
+  (testing "renders all tabs with labels"
+    (let [html (hiccup.core/html
+                (c/tab-switcher {:tabs [:table :chart :drawer]
+                                 :active :table
+                                 :labels {:table "Таблица" :chart "График" :drawer "Метрики"}}))]
+      (is (re-find #"Таблица" html))
+      (is (re-find #"График" html))
+      (is (re-find #"Метрики" html))))
+  (testing "marks active tab"
+    (let [html (hiccup.core/html
+                (c/tab-switcher {:tabs [:a :b] :active :b
+                                 :labels {:a "A" :b "B"}}))]
+      (is (re-find #"tab-active" html)))))

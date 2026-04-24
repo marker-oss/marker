@@ -340,6 +340,50 @@
                   :delta delta :delta-direction delta-direction})))])
 
 ;; ---------------------------------------------------------------------------
+;; Tab Switcher Component
+;; ---------------------------------------------------------------------------
+
+(defn tab-switcher
+  "Tab bar. Activation via JS toggling data-tab-content divs.
+
+  :tabs — vector of keywords identifying tabs
+  :active — keyword of default-active tab
+  :labels — map kw→label string
+  :target-prefix — optional prefix for data-tab-content attr (default 'tab-content-')
+
+  Emits a nav with buttons and a <script> that defines window.switchTab(prefix, tab)."
+  [{:keys [tabs active labels target-prefix]
+    :or {target-prefix "tab-content-"}}]
+  [:div.border-b.border-gray-200.mb-0
+   [:nav.-mb-px.flex.space-x-0
+    (for [t tabs]
+      (let [is-active? (= t active)
+            classes (if is-active?
+                      "tab-active border-blue-500 text-blue-600 font-semibold"
+                      "border-transparent text-gray-500 hover:text-gray-700")]
+        [:button.px-4.py-2.text-sm.border-b-2
+         {:class classes
+          :data-tab (name t)
+          :onclick (str "window.switchTab('" target-prefix "', '" (name t) "')")}
+         (get labels t (name t))]))]
+   [:script "
+     window.switchTab = function(prefix, tab) {
+       document.querySelectorAll('[data-tab-content]').forEach(el => {
+         el.style.display = el.dataset.tabContent === tab ? '' : 'none';
+       });
+       document.querySelectorAll('[data-tab]').forEach(el => {
+         if (el.dataset.tab === tab) {
+           el.classList.add('tab-active', 'border-blue-500', 'text-blue-600', 'font-semibold');
+           el.classList.remove('border-transparent', 'text-gray-500');
+         } else {
+           el.classList.remove('tab-active', 'border-blue-500', 'text-blue-600', 'font-semibold');
+           el.classList.add('border-transparent', 'text-gray-500');
+         }
+       });
+     };
+   "]])
+
+;; ---------------------------------------------------------------------------
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 
