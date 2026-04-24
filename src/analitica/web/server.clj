@@ -22,6 +22,7 @@
             [analitica.web.api.cost-prices :as cost-prices-api]
             [analitica.web.api.report :as report]
             [analitica.web.api.detail :as detail]
+            [analitica.web.api.coverage :as coverage]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -797,6 +798,27 @@
     (let [coverage (metrics-api/sync-coverage)]
       {:status 200
        :body coverage}))
+
+  ;; Data-coverage (used by the period-picker calendar): which days in a
+  ;; range have at least one finance row. Optional `marketplace` narrows
+  ;; by MP. Returns `{:days [iso …]}`. When `from` or `to` is missing we
+  ;; fail with 400 rather than default to an arbitrary window.
+  (GET "/api/coverage" {params :params}
+    (let [from   (get params :from)
+          to     (get params :to)
+          mp-str (get params :marketplace)
+          mp     (when (and mp-str (not= mp-str "all"))
+                   (validate-marketplace mp-str))]
+      (cond
+        (not (and from to))
+        {:status 400 :body {:error "from and to required"}}
+
+        (and mp-str (not= mp-str "all") (not mp))
+        {:status 400 :body {:error (str "Invalid marketplace: " mp-str)}}
+
+        :else
+        (let [days (coverage/days-with-data from to :marketplace mp)]
+          {:status 200 :body {:days days}}))))
 
   ;; Cost prices: CostSource-backed ingest. 1C CSV upload today; future
   ;; 1C API / Мойсклад / … endpoints will live under the same prefix.

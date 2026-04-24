@@ -2,7 +2,8 @@
   (:require [hiccup.page :refer [html5 include-css include-js]]
             [hiccup.core :refer [html]]
             [jsonista.core :as json]
-            [analitica.web.components :as components]))
+            [analitica.web.components :as components]
+            [analitica.util.period :as period]))
 
 ;; ---------------------------------------------------------------------------
 ;; CDN Resources
@@ -101,23 +102,31 @@
      {:type "button" :data-preset "this-month"} "Месяц"]]])
 
 (defn- header
-  "Render the header with title, period selector, sync button, and last sync time."
+  "Render the header: title, global period picker, sync button, last-sync label.
+
+   The period-picker chip is server-rendered with `default-state` (last-30-days).
+   On DOMContentLoaded, period-picker.js reads URL params → localStorage →
+   default and hydrates the chip text, so any user-chosen period survives the
+   reload cycle. Full URL-state plumbing (server-side read) lands in Phase 7."
   []
-  [:header.bg-white.shadow-sm.border-b.border-gray-200.px-4.lg:px-6.py-4
-   [:div.flex.flex-col.lg:flex-row.items-start.lg:items-center.justify-between.gap-4
-    [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-4.lg:gap-6.w-full.lg:w-auto
-     [:h1.text-xl.lg:text-2xl.font-bold.text-gray-900 "Analitica"]
-     (period-selector)]
-    [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-3.lg:gap-4.w-full.lg:w-auto
-     [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.w-full.sm:w-auto
-      {:hx-post "/api/sync/start"
-       :hx-vals (json/write-value-as-string {:what "all" :period "last-30-days"})
-       :hx-swap "none"
-       "hx-on:htmx:responseError" "if(event.detail.xhr.status === 409) { alert('Синхронизация уже запущена. Дождитесь завершения текущей синхронизации.'); }"}
-      "Sync All (WB)"]
-     [:div.text-xs.lg:text-sm.text-gray-600
-      [:span "Последняя синхронизация: "]
-      [:span#last-sync-time.font-medium "—"]]]]])
+  (let [initial (period/default-state)]
+    [:header.bg-white.shadow-sm.border-b.border-gray-200.px-4.lg:px-6.py-4
+     [:div.flex.flex-col.lg:flex-row.items-start.lg:items-center.justify-between.gap-4
+      [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-4.lg:gap-6.w-full.lg:w-auto
+       [:h1.text-xl.lg:text-2xl.font-bold.text-gray-900 "Analitica"]
+       (components/period-picker {:from    (:from initial)
+                                  :to      (:to initial)
+                                  :compare :none})]
+      [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-3.lg:gap-4.w-full.lg:w-auto
+       [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.w-full.sm:w-auto
+        {:hx-post "/api/sync/start"
+         :hx-vals (json/write-value-as-string {:what "all" :period "last-30-days"})
+         :hx-swap "none"
+         "hx-on:htmx:responseError" "if(event.detail.xhr.status === 409) { alert('Синхронизация уже запущена. Дождитесь завершения текущей синхронизации.'); }"}
+        "Sync All (WB)"]
+       [:div.text-xs.lg:text-sm.text-gray-600
+        [:span "Последняя синхронизация: "]
+        [:span#last-sync-time.font-medium "—"]]]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Main Layout
@@ -151,6 +160,7 @@
      [:script {:src (:tabulator-js cdn-resources)}]
      [:script {:src "/js/table-columns.js"}]
      [:script {:src "/js/drill-panel.js"}]
+     [:script {:src "/js/period-picker.js"}]
 
      ;; Custom styles
      [:style "
