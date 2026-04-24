@@ -114,28 +114,26 @@
 
 (defn report-page
   "Render unified report page from schema.
-   When :totals is provided, renders KPI row above filters and summary-drawer after the table.
+   Tabs are driven by schema :tabs; contents wrapped in data-tab-content divs.
+   When :totals provided, KPI row renders above tabs, drawer tab populated.
 
    Parameters:
    - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
    - period: period string (e.g. last-week, last-30-days)
    - marketplace: optional marketplace keyword or string
    - show-no-data: optional boolean to show no-data banner
+   - article: optional article string for UE filtering
    - totals: optional map of metric key -> numeric value; enables KPI row + summary drawer
 
    Features:
    - Period and marketplace filters with HTMX updates
    - Excel and CSV export buttons
-   - Chart.js visualization
-   - Tabulator interactive table with:
-     - Sorting
-     - Column filters
-     - Global search
-     - Pagination (50 rows)
-     - Frozen first column
+   - Chart.js visualization (in :chart tab)
+   - Tabulator interactive table (in :table tab, when rows-mode != :none)
+   - Summary drawer (in :drawer tab, when totals provided)
    - No data banner when data is missing
-   - KPI row (when totals provided and kpi schema defined)
-   - Summary drawer (when totals provided)
+   - KPI row above tabs (when totals provided and kpi schema defined)
+   - Tab switcher driven by schema :tabs key
 
    Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 8.1, 9.1, 14.1"
   [report-type period marketplace & {:keys [show-no-data article totals]}]
@@ -158,6 +156,9 @@
                                        :rub 130 :int 100 :pct 100
                                        :text 150 :date 120 120)})))
         kpi-schema (:kpi schema)
+        tabs (or (:tabs schema) [:chart])
+        active-tab (first tabs)
+        tab-set (set tabs)
         marketplace-param (if (and marketplace (not= marketplace "all"))
                             (str "&marketplace=" marketplace) "")
         article-param (when (seq article)
@@ -173,10 +174,6 @@
 
      (when show-no-data (no-data-banner))
 
-     ;; KPI row above filters (only when totals provided and kpi schema defined)
-     (when (and kpi-schema (seq totals))
-       (c/kpi-row kpi-schema totals))
-
      [:div.bg-white.rounded-lg.shadow.p-4.mb-6
       [:div.flex.items-center.justify-between.flex-wrap.gap-4
        [:div.flex.items-center.gap-4.flex-wrap
@@ -186,20 +183,43 @@
           (article-filter report-type article))]
        (export-buttons report-type period marketplace)]]
 
-     [:div#report-content
-      [:div.mb-6
-       (c/chart-container {:id (str (name report-type) "-chart")
-                           :type chart-type
-                           :title (str "Визуализация: " report-title)
-                           :api-url chart-api-url
-                           :height 400})]
-      (when (not= :none (:rows-mode schema))
-        (c/tabulator-table {:id (str (name report-type) "-table")
-                            :api-url api-url
-                            :columns columns
-                            :frozen-cols 1
-                            :page-size 50}))
+     ;; KPI row (above tabs)
+     (when (and kpi-schema (seq totals))
+       (c/kpi-row kpi-schema totals))
 
-      ;; Summary drawer at the end of report-content (only when totals provided)
-      (when (seq totals)
-        (c/summary-drawer {:totals totals :title "Все метрики периода"}))]]))
+     ;; Tab switcher
+     (c/tab-switcher {:tabs tabs
+                      :active active-tab
+                      :labels {:table "Таблица"
+                               :chart "График"
+                               :drawer (str "Все метрики" (when (seq totals)
+                                                             (str " (" (count totals) ")")))}})
+
+     ;; Tab content containers
+     [:div#report-content.bg-white.rounded-b-lg.shadow.p-6
+      (when (contains? tab-set :table)
+        [:div {:data-tab-content "table"
+               :style (when (not= active-tab :table) "display:none;")}
+         (if (not= :none (:rows-mode schema))
+           (c/tabulator-table {:id (str (name report-type) "-table")
+                               :api-url api-url
+                               :columns columns
+                               :frozen-cols 1
+                               :page-size 50})
+           [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
+
+      (when (contains? tab-set :chart)
+        [:div {:data-tab-content "chart"
+               :style (when (not= active-tab :chart) "display:none;")}
+         (c/chart-container {:id (str (name report-type) "-chart")
+                             :type chart-type
+                             :title (str "Визуализация: " report-title)
+                             :api-url chart-api-url
+                             :height 400})])
+
+      (when (contains? tab-set :drawer)
+        [:div {:data-tab-content "drawer"
+               :style (when (not= active-tab :drawer) "display:none;")}
+         (if (seq totals)
+           (c/summary-drawer {:totals totals :title "Все метрики периода"})
+           [:div.text-gray-500.text-sm "Нет данных"])])]]))

@@ -29,3 +29,15 @@
     (let [html (h/html (pages/report-page :ue "last-30-days" nil
                          :totals {:total-revenue 1000}))]
       (is (re-find #"Все метрики" html)))))
+
+(deftest report-page-tabs-test
+  (testing "UE page has table/chart/drawer tabs"
+    (let [html (h/html (pages/report-page :ue "last-30-days" nil :totals {:total-revenue 1}))]
+      (is (re-find #"data-tab=\"table\"" html))
+      (is (re-find #"data-tab=\"chart\"" html))
+      (is (re-find #"data-tab=\"drawer\"" html))))
+
+  (testing "P&L page has no :table tab"
+    (let [html (h/html (pages/report-page :pnl "last-30-days" nil :totals {:revenue 1}))]
+      (is (re-find #"data-tab=\"chart\"" html))
+      (is (not (re-find #"data-tab=\"table\"" html))))))
