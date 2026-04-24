@@ -7,7 +7,17 @@
             [analitica.util.math :as math]))
 
 (defn analyze
-  "Calculate buyout rate per article from sales data."
+  "Per-article buyout rate from sales data. §Buyout.1
+
+   Formula: buyout-rate = math/percentage(sold, sold+returned).
+   Output rows sorted ascending by :buyout-rate (worst first — riskiest articles at top).
+
+   Field note: :ordered = sold + returned (total unit operations). It is NOT
+   orders placed on the marketplace — that data lives in the `orders` table.
+   The misleading name is a deferred breaking-change; see §Buyout.6.1.
+
+   :buyout-rate is nil when :ordered = 0 (math/percentage returns nil on
+   zero denominator). Callers must handle nil before arithmetic. See §Buyout.6.4."
   [period]
   (let [data     (sales/fetch-sales period)
         by-art   (->> data

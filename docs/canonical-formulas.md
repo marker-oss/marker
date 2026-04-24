@@ -2875,4 +2875,161 @@ these fields are not used by Returns).
 
 ---
 
+---
+
+## Buyout
+
+**Source file:** `src/analitica/domain/buyout.clj`
+**Test file:** `test/analitica/domain/buyout_canon_test.clj`
+**Purpose:** Per-article buyout rate and low-buyout detection — the operational efficiency complement to §Returns.
+
+---
+
+### Buyout.1 — `analyze` per-article buyout rate
+
+**Formula:**
+
+```
+buyout-rate = math/percentage(sold, sold + returned)
+            = round2(sold / (sold + returned) × 100)
+```
+
+**Output fields per article row:**
+
+| Field | Type | Description |
+|---|---|---|
+| `:article` | string | Seller SKU / article code |
+| `:subject` | string | Product category / subject (display only) |
+| `:ordered` | integer | **Total operations** = sold + returned. **NAMING CAVEAT:** `:ordered` is a misnomer. It is NOT orders placed by buyers on the marketplace. It is the total unit-event count (sales + returns) in the period. True order intent lives in the `orders` table. Renaming is a breaking change and is deferred — see Buyout.6.1. |
+| `:bought` | integer | Count of `:sale` events (units sold / picked up) |
+| `:returned` | integer | Count of `:return` events (units returned) |
+| `:buyout-rate` | double or nil | `math/percentage(bought, ordered)`. `nil` when `ordered = 0` (no events for the article in the period). |
+
+**Sort:** Ascending by `:buyout-rate` (lowest buyout = riskiest articles first). This is the **opposite** of most other reports which sort descending. Intentional for operator UX — worst performers surface at the top. Callers and UI consumers must be aware.
+
+---
+
+### Buyout.2 — Relationship to Returns
+
+**Arithmetic identity:**
+
+```
+buyout-rate + return-rate = 100   (for any article with ordered > 0)
+```
+
+Both rates share the same denominator (`ordered = sold + returned`) and complementary numerators (`bought` vs `returned`), so they sum to exactly 100.0 for any article with at least one operation.
+
+**Economic framing:**
+- **Buyout-rate** = "operational efficiency" signal. A high buyout-rate means most delivered items are kept — good logistics, accurate product description, correct sizing info.
+- **Return-rate** = "quality / expectation" signal. A high return-rate means buyers are dissatisfied post-delivery or cancelled — descriptions mislead, sizing wrong, product defective.
+
+The two metrics are complementary but operators frame them differently: §Returns ranks articles by worst return-rate (descending) to find problem items; §Buyout ranks by worst buyout-rate (ascending, same ordering intent) to find efficiency gaps. They are the same underlying data viewed through different operator questions.
+
+---
+
+### Buyout.3 — Report-layer aggregates
+
+The `report` function (not `analyze`) computes period-level totals and filters:
+
+**Period totals:**
+
+```
+total-o = SUM(:ordered)   over all articles
+total-b = SUM(:bought)    over all articles
+total-r = SUM(:returned)  over all articles
+overall-buyout-rate = math/percentage(total-b, total-o)
+```
+
+**Low-buyout filter (`:low` slice):**
+
+```
+low = filter articles where:
+  (:ordered %) >= 3
+  AND (or (:buyout-rate %) 100) < 70
+```
+
+Threshold: `ordered ≥ 3` (minimum volume to avoid noisy single-event articles) AND `buyout-rate < 70%`.
+
+**`(or buyout-rate 100)` guard:** Articles with `ordered = 0` have `buyout-rate = nil` (from `math/percentage`). The `(or nil 100)` evaluates to `100`, so zero-operation articles are treated as "100% buyout" and are **not** flagged as low. This is a "no data = no concern" convention. Callers using `analyze` output directly and applying their own threshold must handle `nil` buyout-rate themselves.
+
+**Top-20 by volume:** `report` also prints the top-20 articles by `:ordered` descending (for volume monitoring), but does not return this slice — it returns the full `analyze` output.
+
+---
+
+### Buyout.4 — Inputs and data flow
+
+**Source table:** `sales` (same table as §Sales and §Returns).
+
+Data flows as:
+```
+sales/fetch-sales(period)
+  → [sale/return rows]
+  → group-by :article
+  → compute {sold, rets, total, buyout-rate} per article
+  → sort-by :buyout-rate ascending
+```
+
+No marketplace filter at the `analyze` level. The caller controls data scope via the `period` argument passed to `sales/fetch-sales`. Multi-marketplace installations will see all MPs' rows mixed in one result unless the ingest pipeline separates them at DB level.
+
+**Input fields used:**
+
+| Field | Used by |
+|---|---|
+| `:type` | Dispatch: `:sale` → bought count; `:return` → returned count |
+| `:article` | Group-by key |
+| `:subject` | Display label (taken from `(first items)`) |
+
+Monetary fields (`:for-pay`, `:finished-price`) are present on rows but **not used** — Buyout is purely unit-count-based, same as §Returns.
+
+---
+
+### Buyout.5 — Marketplace coverage
+
+All three marketplaces are covered. Each populates `:sale` and `:return` rows via their ingest transform.
+
+| Marketplace | `:type :sale` | `:type :return` | Buyout semantics |
+|---|---|---|---|
+| Wildberries (WB) | ✅ | ✅ | Returns happen post-delivery (buyer refuses at pickup or returns after receipt). Low buyout-rate = logistics / expectation issue. |
+| Ozon | ✅ | ✅ | Returns include both rejection-in-delivery and post-delivery returns. Buyout-rate aggregates both categories without distinction. |
+| Яндекс Маркет (YM) | ✅ | ✅ | **Cancellations are mapped to `:return` type.** Item-level `itemStatus = REJECTED` and order-level `CANCELLED_*` statuses are ingested as `:return` rows. YM buyout-rate is therefore **depressed by cancellations** (higher "return" count → lower buyout-rate). |
+
+**Cross-MP comparability warning:** YM bundles cancellations into the `:return` count, while WB and Ozon do not. This means WB buyout-rate and YM buyout-rate are **not apples-to-apples** when compared in a mixed-MP dataset. Operators comparing across marketplaces must be aware of this definitional difference.
+
+---
+
+### Buyout.6 — Known gaps and quirks
+
+1. **`:ordered` field naming** — `:ordered` means "total operations (sold + returned)" not "orders placed by buyers". The `orders` table tracks actual order-level intent. Renaming `:ordered` to `:total-ops` would be a breaking change across `report`, `export-excel`, CLI output, and any downstream consumers. Deferred until a major API revision.
+
+2. **Cross-MP cancellation skew (YM)** — YM cancellations inflate the `:returned` count and depress buyout-rate (see Buyout.5). Cross-marketplace buyout-rate comparison is misleading without normalisation. The current implementation does not separate cancellations from genuine returns.
+
+3. **Hardcoded `low` threshold** — `ordered ≥ 3` and `buyout-rate < 70` are hardcoded in `report`. If product management wants tunable thresholds (e.g. per-category, per-MP, or operator-configured), the thresholds must be plumbed through as arguments to `report`.
+
+4. **`nil` buyout-rate for zero-operation articles** — `math/percentage(0, 0) = nil`. The `(or buyout-rate 100)` guard in the `low` filter prevents false positives. Callers using `analyze` output directly must handle `nil` themselves — arithmetic on `nil` will throw.
+
+5. **Sort ascending in `analyze` (worst first)** — `sort-by :buyout-rate` with default ascending order puts `nil` values first (Clojure sorts `nil` before numbers). Articles with `ordered = 0` (nil buyout-rate) will appear at the very top of the `analyze` result. The `report` layer implicitly excludes them from the `low` filter via the `(or 100)` guard, but they remain in the returned seq.
+
+---
+
+### Buyout.7 — Verification summary
+
+- Every Buyout.N group has a corresponding `deftest` in
+  `test/analitica/domain/buyout_canon_test.clj`.
+- Fixture: 5 articles with known sale/return distributions:
+  - Article A: 8 sales + 2 returns → buyout-rate = 80.0%
+  - Article B: 3 sales + 3 returns → buyout-rate = 50.0% (low: ordered=6, rate<70)
+  - Article C: 10 sales + 0 returns → buyout-rate = 100.0%
+  - Article D: 1 sale + 0 returns → buyout-rate = 100.0% (NOT low: ordered=1 < 3)
+  - Article E: 1 sale + 4 returns → buyout-rate = 20.0% (low: ordered=5, rate<70)
+- `analyze-computes-buyout-rate` — verifies A=80%, B=50%, C=100% (§Buyout.1).
+- `analyze-sorts-ascending-worst-first` — E(20%) sorts first (§Buyout.1 sort).
+- `buyout-plus-return-equals-100-algebraically` — for each article, `buyout-rate + (100 − buyout-rate) = 100` (§Buyout.2 identity).
+- `ordered-is-total-ops-not-orders` — asserts `:ordered = :bought + :returned` (§Buyout.6.1 naming guard).
+- `report-low-filter-threshold` — B and E appear in low, D does not (§Buyout.3 filter).
+- `nil-buyout-rate-excluded-from-low` — zero-op article has nil buyout-rate, is not flagged low (§Buyout.3 guard, §Buyout.6.4).
+- `empty-input-returns-empty` — `analyze` on empty sales → empty seq (§Buyout.1 edge case).
+- Regression coverage: `clojure -M:test` green on full suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
