@@ -227,3 +227,14 @@
       (is (re-find #"Полный" html))
       (is (re-find #"Per-unit" html))
       (is (re-find #"preset-chip-active" html)))))
+
+(deftest column-chooser-test
+  (testing "renders checkbox for each column"
+    (let [html (hiccup.core/html
+                (c/column-chooser {:columns [{:key :article :title "Артикул" :default-visible? true}
+                                             {:key :extra :title "Extra" :default-visible? false}]
+                                   :table-id "ue-table"}))]
+      (is (re-find #"Артикул" html))
+      (is (re-find #"Extra" html))
+      (is (re-find #"checked" html))  ;; article is visible by default
+      (is (re-find #"data-table-id=\"ue-table\"" html)))))

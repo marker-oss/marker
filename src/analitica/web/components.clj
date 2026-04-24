@@ -420,6 +420,30 @@
         (get labels k (name k))]))])
 
 ;; ---------------------------------------------------------------------------
+;; Column Chooser Component
+;; ---------------------------------------------------------------------------
+
+(defn column-chooser
+  "⚙ popover button with checkboxes to toggle column visibility.
+
+  :columns  — seq of schema column maps (each has :key :title :default-visible?)
+  :table-id — Tabulator container id that toggleColumn applies to"
+  [{:keys [columns table-id]}]
+  [:details.relative.inline-block.ml-2
+   [:summary.inline-flex.items-center.gap-1.px-3.py-1.border.border-gray-300.rounded.text-xs.cursor-pointer.bg-white.hover:bg-gray-50
+    "⚙ Колонки"]
+   [:div.absolute.right-0.mt-1.w-56.bg-white.border.border-gray-200.rounded-lg.shadow-lg.p-3.z-10
+    [:div.text-xs.font-semibold.text-gray-600.mb-2 "Видимые колонки"]
+    (for [c columns]
+      [:label.flex.items-center.gap-2.py-1.text-xs.cursor-pointer
+       [:input (cond-> {:type "checkbox"
+                        :data-table-id table-id
+                        :data-col-key (name (:key c))
+                        :onchange (str "window.toggleColumn('" table-id "', '" (name (:key c)) "', this.checked)")}
+                 (:default-visible? c) (assoc :checked true))]
+       [:span (:title c)]])]])
+
+;; ---------------------------------------------------------------------------
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 
