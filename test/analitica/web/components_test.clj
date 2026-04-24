@@ -192,3 +192,16 @@
                 (c/tab-switcher {:tabs [:a :b] :active :b
                                  :labels {:a "A" :b "B"}}))]
       (is (re-find #"tab-active" html)))))
+
+(deftest tabulator-grouped-columns-test
+  (testing "when :grouped-columns provided, columns are nested under group headers"
+    (let [html (hiccup.core/html
+                (c/tabulator-table
+                  {:id "t"
+                   :api-url "/x"
+                   :grouped-columns
+                   [{:title "Identity" :columns [{:title "Арт." :field "article"}]}
+                    {:title "UE.1" :columns [{:title "Прод." :field "sales-qty" :format :int}
+                                             {:title "Взв." :field "returns-qty" :format :int}]}]}))]
+      (is (re-find #"\"title\":\"Identity\"" html))
+      (is (re-find #"\"title\":\"UE.1\"" html)))))

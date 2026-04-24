@@ -4,6 +4,40 @@
             [analitica.web.report-schemas :as rs]))
 
 ;; ---------------------------------------------------------------------------
+;; Schema Column Helpers
+;; ---------------------------------------------------------------------------
+
+(defn- columns-from-schema
+  "Convert schema columns to grouped Tabulator columns.
+   Groups use schema :column-groups; columns retain :default-visible? filter.
+   Returns a vector of {:title :columns [...]}, ordered by :column-groups insertion order.
+   Falls back to flat column list if :column-groups not defined."
+  [schema]
+  (let [groups (:column-groups schema)
+        visible-cols (filter :default-visible? (:columns schema))]
+    (if (seq groups)
+      (let [grouped (group-by :group visible-cols)]
+        (->> (keys groups)
+             (filter #(seq (grouped %)))
+             (mapv (fn [g-key]
+                     {:title (get-in groups [g-key :title])
+                      :columns (mapv (fn [c] {:title (:title c)
+                                              :field (name (:key c))
+                                              :format (:format c)
+                                              :width (case (:format c)
+                                                       :rub 130 :int 100 :pct 100
+                                                       :text 150 :date 120 120)})
+                                     (grouped g-key))}))))
+      ;; flat fallback: wrap everything in a single pseudo-group
+      (mapv (fn [c] {:title (:title c)
+                     :field (name (:key c))
+                     :format (:format c)
+                     :width (case (:format c)
+                              :rub 130 :int 100 :pct 100
+                              :text 150 :date 120 120)})
+            visible-cols))))
+
+;; ---------------------------------------------------------------------------
 ;; No Data Banner
 ;; ---------------------------------------------------------------------------
 
@@ -146,15 +180,7 @@
                      :waterfall "bar"           ;; Chart.js has no waterfall; bar placeholder
                      :horizontalBar "bar"
                      (name chart-type-kw))
-        columns (->> (:columns schema)
-                     (filter :default-visible?)
-                     (mapv (fn [col]
-                             {:title (:title col)
-                              :field (name (:key col))
-                              :format (:format col)
-                              :width (case (:format col)
-                                       :rub 130 :int 100 :pct 100
-                                       :text 150 :date 120 120)})))
+        grouped-cols (columns-from-schema schema)
         kpi-schema (:kpi schema)
         tabs (or (:tabs schema) [:chart])
         active-tab (first tabs)
@@ -203,7 +229,7 @@
          (if (not= :none (:rows-mode schema))
            (c/tabulator-table {:id (str (name report-type) "-table")
                                :api-url api-url
-                               :columns columns
+                               :grouped-columns grouped-cols
                                :frozen-cols 1
                                :page-size 50})
            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])

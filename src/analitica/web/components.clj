@@ -113,74 +113,73 @@
 
   Parameters:
   - opts: Map with keys:
-    - :id - Table container ID (string, required)
-    - :api-url - API endpoint for table data (string, required)
-    - :columns - Column definitions (vector of maps, required)
-    - :frozen-cols - Number of columns to freeze (number, optional, default: 1)
-    - :page-size - Rows per page (number, optional, default: 50)
+    - :id — Table container ID (string, required)
+    - :api-url — API endpoint for table data (string, required)
+    - :columns — Flat column definitions (vector of maps). Mutually exclusive with :grouped-columns.
+    - :grouped-columns — Nested column groups. Each: {:title :columns}. Inner columns enriched same as flat.
+    - :frozen-cols — Number of columns to freeze (number, optional, default: 1; ignored for grouped)
+    - :page-size — Rows per page (number, optional, default: 50)
 
-  Column definition map:
-    {:title \"Артикул\" :field \"article\" :width 150 :format :rub}
-
-  Numeric formats (:rub, :int, :pct) get a bottomCalc sum footer row.
-
-  Example:
-    (tabulator-table {:id \"sales-table\"
-                      :api-url \"/api/report/sales\"
-                      :columns [{:title \"Артикул\" :field \"article\"}
-                                {:title \"Выручка\" :field \"revenue\" :format :rub}]
-                      :frozen-cols 1})"
-  [{:keys [id api-url columns frozen-cols page-size]
+  Column definition map: {:title :field :format (:rub|:int|:pct|:text|:date) :width}
+  Numeric formats (:rub/:int/:pct) get a bottomCalc footer row."
+  [{:keys [id api-url columns grouped-columns frozen-cols page-size]
     :or {frozen-cols 1 page-size 50}}]
-  [:div.bg-white.rounded-lg.shadow.p-6
-   [:div {:id id}]
-   [:script {:type "text/javascript"}
-    (str "
-      (function() {
-        const columns = " (json/write-value-as-string (mapv enrich-column columns)) ";
+  (let [final-columns
+        (if grouped-columns
+          (mapv (fn [g] {:title (:title g)
+                         :columns (mapv enrich-column (:columns g))})
+                grouped-columns)
+          (mapv enrich-column columns))
+        freezing-enabled? (not grouped-columns)]
+    [:div.bg-white.rounded-lg.shadow.p-6
+     [:div {:id id}]
+     [:script {:type "text/javascript"}
+      (str "
+        (function() {
+          const columns = " (json/write-value-as-string final-columns) ";
 
-        // Freeze first N columns
-        for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {
-          columns[i].frozen = true;
-        }
+          " (when freezing-enabled?
+              (str "for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {
+                      columns[i].frozen = true;
+                    }")) "
 
-        fetch('" api-url "')
-          .then(res => res.json())
-          .then(data => {
-            const rows = Array.isArray(data) ? data : (data.rows || []);
-            new Tabulator('#" id "', {
-              data: rows,
-              columns: columns,
-              layout: 'fitDataStretch',
-              pagination: true,
-              paginationSize: " page-size ",
-              paginationSizeSelector: [25, 50, 100, 200],
-              movableColumns: true,
-              resizableColumns: true,
-              headerFilterLiveFilterDelay: 600,
-              placeholder: 'Нет данных',
-              columnCalcs: 'bottom',
-              langs: {
-                'ru': {
-                  'pagination': {
-                    'first': 'Первая',
-                    'first_title': 'Первая страница',
-                    'last': 'Последняя',
-                    'last_title': 'Последняя страница',
-                    'prev': 'Пред',
-                    'prev_title': 'Предыдущая страница',
-                    'next': 'След',
-                    'next_title': 'Следующая страница',
-                    'page_size': 'Размер страницы'
+          fetch('" api-url "')
+            .then(res => res.json())
+            .then(data => {
+              const rows = Array.isArray(data) ? data : (data.rows || []);
+              new Tabulator('#" id "', {
+                data: rows,
+                columns: columns,
+                layout: 'fitDataStretch',
+                pagination: true,
+                paginationSize: " page-size ",
+                paginationSizeSelector: [25, 50, 100, 200],
+                movableColumns: true,
+                resizableColumns: true,
+                headerFilterLiveFilterDelay: 600,
+                placeholder: 'Нет данных',
+                columnCalcs: 'bottom',
+                langs: {
+                  'ru': {
+                    'pagination': {
+                      'first': 'Первая',
+                      'first_title': 'Первая страница',
+                      'last': 'Последняя',
+                      'last_title': 'Последняя страница',
+                      'prev': 'Пред',
+                      'prev_title': 'Предыдущая страница',
+                      'next': 'След',
+                      'next_title': 'Следующая страница',
+                      'page_size': 'Размер страницы'
+                    }
                   }
-                }
-              },
-              locale: 'ru'
-            });
-          })
-          .catch(err => console.error('Table load error:', err));
-      })();
-    ")]])
+                },
+                locale: 'ru'
+              });
+            })
+            .catch(err => console.error('Table load error:', err));
+        })();
+      ")]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Period Selector Component
