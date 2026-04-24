@@ -152,3 +152,19 @@
                 (c/kpi-card {:title "ДРР" :value 8.2 :format :pct
                              :delta 2.5 :delta-direction :inverted}))]
       (is (re-find #"text-red" html)))))
+
+(deftest summary-drawer-test
+  (testing "renders collapsed drawer with metrics count"
+    (let [html (hiccup.core/html
+                (c/summary-drawer {:totals {:total-revenue 100 :total-profit 20 :margin-pct 20.0}
+                                   :title "Все метрики"}))]
+      (is (re-find #"Все метрики" html))
+      (is (re-find #"3" html))  ;; metrics count
+      (is (re-find #"details" html))))
+
+  (testing "renders each total with formatted value"
+    (let [html (hiccup.core/html
+                (c/summary-drawer {:totals {:total-revenue 100000}
+                                   :title "Summary"}))]
+      (is (re-find #"total-revenue" html))
+      (is (re-find #"100 000" html)))))

@@ -281,6 +281,29 @@
        [:div {:class (str "text-xs mt-1 " color-class)}
         arrow " " (clojure.core/format "%+.1f" (double delta)) (or delta-unit "%") " vs пред."])]))
 
+(defn- guess-format [k]
+  (cond
+    (str/ends-with? (name k) "-pct") :pct
+    (str/ends-with? (name k) "-rate") :pct
+    (#{:total-revenue :total-profit :total-for-pay :total-cost :total-ad-spend
+       :total-wb-costs :total-logistics :total-storage :avg-check
+       :profit-per-sale :net-profit :gross-profit} k) :rub
+    :else :int))
+
+(defn summary-drawer
+  "Collapsible drawer listing every totals entry in a 3-column grid."
+  [{:keys [totals title] :or {title "Все метрики"}}]
+  (let [n (count totals)]
+    [:details.bg-purple-50.border.border-purple-200.rounded-lg.mt-4
+     [:summary.cursor-pointer.px-4.py-3.text-sm.font-semibold.text-purple-900
+      (str "▾ " title " (" n ")")]
+     [:div.px-4.pb-4.pt-2
+      [:div.grid.grid-cols-2.md:grid-cols-3.gap-x-6.gap-y-1
+       (for [[k v] (sort-by key totals)]
+         [:div.flex.justify-between.text-xs.py-1.border-b.border-purple-100
+          [:span.text-gray-600.font-mono (name k)]
+          [:span.font-semibold.text-gray-900 (format-value v (guess-format k))]])]]]))
+
 (defn kpi-row
   "Render row of KPI cards from schema :kpi and totals map.
 
