@@ -141,6 +141,9 @@
     const container = document.getElementById('period-picker-calendar');
     if (!container) return;
 
+    // Keep chip text in sync with state on every re-render.
+    hydrateChipText();
+
     // Anchor the display month on state.from when not already pinned.
     if (!state.displayMonth) state.displayMonth = parseISO(state.from);
     const dm = state.displayMonth;
