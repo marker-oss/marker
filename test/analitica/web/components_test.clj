@@ -168,3 +168,12 @@
                                    :title "Summary"}))]
       (is (re-find #"total-revenue" html))
       (is (re-find #"100 000" html)))))
+
+(deftest tabulator-footer-sum-test
+  (testing "tabulator-table includes bottomCalc:'sum' for numeric columns"
+    (let [html (hiccup.core/html
+                (c/tabulator-table {:id "test-tab" :api-url "/api/x"
+                                    :columns [{:title "Артикул" :field "article" :width 150}
+                                              {:title "Выручка" :field "revenue" :width 130 :format :rub}]}))]
+      (is (re-find #"bottomCalc" html))
+      (is (re-find #"sum" html)))))

@@ -95,9 +95,17 @@
 ;; Tabulator Table Component
 ;; ---------------------------------------------------------------------------
 
+(defn- enrich-column [c]
+  (let [numeric? (contains? #{:rub :int :pct} (:format c))]
+    (cond-> (assoc c "headerFilter" true
+                     "headerFilterPlaceholder" "Фильтр...")
+      numeric? (assoc "bottomCalc" "sum"
+                      "bottomCalcFormatter" "money"
+                      "bottomCalcFormatterParams" {"thousand" " " "precision" 0}))))
+
 (defn tabulator-table
   "Render a container for Tabulator interactive table.
-  
+
   Parameters:
   - opts: Map with keys:
     - :id - Table container ID (string, required)
@@ -105,15 +113,17 @@
     - :columns - Column definitions (vector of maps, required)
     - :frozen-cols - Number of columns to freeze (number, optional, default: 1)
     - :page-size - Rows per page (number, optional, default: 50)
-  
+
   Column definition map:
-    {:title \"Артикул\" :field \"article\" :width 150}
-  
+    {:title \"Артикул\" :field \"article\" :width 150 :format :rub}
+
+  Numeric formats (:rub, :int, :pct) get a bottomCalc sum footer row.
+
   Example:
     (tabulator-table {:id \"sales-table\"
                       :api-url \"/api/report/sales\"
                       :columns [{:title \"Артикул\" :field \"article\"}
-                                {:title \"Выручка\" :field \"revenue\"}]
+                                {:title \"Выручка\" :field \"revenue\" :format :rub}]
                       :frozen-cols 1})"
   [{:keys [id api-url columns frozen-cols page-size]
     :or {frozen-cols 1 page-size 50}}]
@@ -122,16 +132,13 @@
    [:script {:type "text/javascript"}
     (str "
       (function() {
-        const columns = " (json/write-value-as-string
-                            (mapv #(assoc % "headerFilter" true
-                                           "headerFilterPlaceholder" "Фильтр...")
-                                  columns)) ";
-        
+        const columns = " (json/write-value-as-string (mapv enrich-column columns)) ";
+
         // Freeze first N columns
         for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {
           columns[i].frozen = true;
         }
-        
+
         fetch('" api-url "')
           .then(res => res.json())
           .then(data => {
@@ -147,6 +154,7 @@
               resizableColumns: true,
               headerFilterLiveFilterDelay: 600,
               placeholder: 'Нет данных',
+              columnCalcs: 'bottom',
               langs: {
                 'ru': {
                   'pagination': {
