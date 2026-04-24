@@ -3254,4 +3254,230 @@ The dual-key `or` fallback reads whichever is present.
 
 ---
 
+## Trends
+
+**Source file:** `src/analitica/domain/trends.clj`
+
+**Purpose:** Provide temporal comparison views — week-over-week (WoW),
+month-over-month (MoM), and per-day dynamics (`daily`) — for sales and returns
+across all marketplaces. Aggregation is performed in-SQL, not in-memory.
+
+---
+
+### Trends.1 — `compare-periods` 4-metric comparison table
+
+`compare-periods` accepts two sequences of pre-aggregated rows (current period
+and previous period), computes four metric rows, and returns them as a vector.
+
+**Row shape (input):** SQL-pre-aggregated rows from `weekly-sales`:
+
+| Key     | Type          | Meaning                                      |
+|---------|---------------|----------------------------------------------|
+| `:day`  | String YYYY-MM-DD | Calendar day                             |
+| `:type` | String `"sale"` / `"return"` | Event type (string, not keyword) |
+| `:cnt`  | Integer       | Count of events on that day+type              |
+| `:total`| Double        | Sum of `for_pay` on that day+type             |
+
+**Derived scalars (reduce over filtered rows):**
+
+```
+cur-sales  = Σ :cnt  where :type = "sale"   in current
+cur-ret    = Σ :cnt  where :type = "return" in current
+cur-rev    = Σ :total where :type = "sale"  in current
+prev-sales = Σ :cnt  where :type = "sale"   in previous
+prev-ret   = Σ :cnt  where :type = "return" in previous
+prev-rev   = Σ :total where :type = "sale"  in previous
+```
+
+**Output rows (vector of 4 maps):**
+
+| `:metric`      | `:current`       | `:previous`       | `:change`                       | `:change-pct`                              |
+|----------------|------------------|-------------------|---------------------------------|--------------------------------------------|
+| "Продажи шт"   | `cur-sales`      | `prev-sales`      | `cur-sales − prev-sales`        | `math/percentage(Δ, max(1, prev-sales))`  |
+| "Возвраты шт"  | `cur-ret`        | `prev-ret`        | `cur-ret − prev-ret`            | `math/percentage(Δ, max(1, prev-ret))`    |
+| "Выручка"      | `round2(cur-rev)` | `round2(prev-rev)` | `round2(cur-rev − prev-rev)`  | `math/percentage(Δ, max(1.0, prev-rev))`  |
+| "Средний чек"  | `round2(cur-rev / cur-sales)` | `round2(prev-rev / prev-sales)` | `round2(cur-avg − prev-avg)` | **`nil`** |
+
+**`max 1 prev` guard:** When the previous value is zero, division by zero is
+prevented by treating the denominator as 1. This means a true 0-previous case
+is reported as `current × 100 %` (not `+∞`). Explicit, bounded, safe for
+dashboard display.
+
+**avg-check `:change-pct nil`:** The ratio of two averages (average / average)
+is a ratio-of-ratios, which is statistically misleading — the denominator
+already encodes quantity information. Canon deliberately sets `:change-pct nil`
+for this row. Dashboards render "—" for nil; programmatic callers must handle nil.
+
+---
+
+### Trends.2 — SQL pre-aggregation contrast with §Sales
+
+`weekly-sales` issues a SQL query that groups at the `day + type` level
+**in-SQL** before returning rows:
+
+```sql
+SELECT substr(date,1,10) AS day, type,
+       count(*) AS cnt, sum(for_pay) AS total
+FROM sales
+WHERE date >= ? AND date <= ?
+GROUP BY day, type
+ORDER BY day
+```
+
+**Contrast with §Sales (in-memory):** The `sales` domain reads individual
+event rows with keyword `:type :sale` / `:type :return`, groups them
+in-memory via `group-by`. Trends receives pre-aggregated rows with
+**string** `:type "sale"` / `"type "return"` — not keywords.
+
+This divergence means:
+- Trends fixtures must use `{:type "sale" ...}` (string). Using `:sale`
+  (keyword) as in §Sales fixtures produces incorrect filter results.
+- Trends cannot share test fixtures with §Sales without a type-coercion shim.
+- If a future refactor unifies the two namespaces, the string→keyword
+  conversion must be explicit and tested.
+
+---
+
+### Trends.3 — `wow` window (today−7 / today−14)
+
+```
+cur-start  = today − 7
+cur-end    = today
+prev-start = today − 14
+prev-end   = today − 7        ← same as cur-start
+```
+
+`wow` calls `weekly-sales` twice, then passes results to `compare-periods`.
+
+**Pivot-day double-count quirk:** `prev-end = cur-start = days-ago(7)`.
+The pivot day is included in **both** periods (the `WHERE date >=` and
+`date <=` clauses are both inclusive). On typical multi-day windows this
+is a minor double-count (1 day out of 7); it does not materially distort
+the ratio, but the canon records it honestly. A strict partition would use
+`cur-start = days-ago(6)` for one side, but the code does not do this.
+
+---
+
+### Trends.4 — `mom` window (today−30 / today−60)
+
+```
+cur-start  = today − 30
+cur-end    = today
+prev-start = today − 60
+prev-end   = today − 30       ← same as cur-start
+```
+
+Same structure as WoW (§Trends.3), 30-day windows instead of 7-day.
+The same pivot-day double-count quirk applies: the day at `today − 30`
+is counted in both current and previous windows.
+
+---
+
+### Trends.5 — `daily` per-period day-by-day
+
+`daily` takes a period argument (keyword `:month` / `:week` / etc., or a map
+`{:from "…" :to "…"}`), fetches pre-aggregated rows from `weekly-sales`,
+then **re-groups by `:day` in memory**:
+
+```
+by-day = for each distinct :day in data:
+  {
+    :day     = day string
+    :sales   = Σ :cnt  where :type = "sale"   (rows for this :day)
+    :returns = Σ :cnt  where :type = "return" (rows for this :day)
+    :revenue = round2( Σ :total where :type = "sale" )
+  }
+  sorted ascending by :day
+```
+
+**In-memory re-grouping after SQL aggregation:** `weekly-sales` already groups
+by `day + type` in SQL, so the in-memory `group-by :day` is a redundant second
+pass that merges the type dimension. This is functionally equivalent but
+slightly wasteful (the SQL result already has at most 2 rows per day).
+The behavior is preserved for API parity with other domain reports that expose
+a `by-day` pattern.
+
+`:revenue` is rounded via `math/round2` (half-up, 2 decimal places).
+Output is sorted ascending by `:day` (lexicographic order on YYYY-MM-DD strings
+is identical to chronological order).
+
+---
+
+### Trends.6 — Inputs & coverage
+
+| Input         | Source                                | Notes                                         |
+|---------------|---------------------------------------|-----------------------------------------------|
+| `sales` table | DB, populated by all 3 MP ingest jobs | No marketplace discriminator column in query  |
+
+`weekly-sales` queries `sales` with only a date range (`date >= ? AND date <= ?`).
+All three marketplaces (WB, Ozon, YM) contribute rows to `sales` via their
+respective ingest pipelines, so `wow`, `mom`, and `daily` aggregate
+**cross-marketplace** by default.
+
+**Per-MP filtering:** There is no `WHERE marketplace = ?` clause in
+`weekly-sales`. If per-MP trend views are required, the caller must wrap
+`daily` (or inject a filtered DB query) externally. This is not currently
+implemented in the domain namespace.
+
+---
+
+### Trends.7 — Known gaps and quirks
+
+1. **Pivot-day double-count** (§Trends.3 / §Trends.4). The day at the period
+   boundary (`days-ago(7)` for WoW, `days-ago(30)` for MoM) is included in
+   both the current and previous `weekly-sales` queries. Impact: minimal for
+   multi-day windows (1 day counted twice out of 7 or 30); the ratio distortion
+   is ≈ 1/7 ≈ 14 % at most if the pivot day has an extreme value. Not a bug
+   per se, but documented so callers understand the boundary semantics.
+
+2. **No MP filter in `weekly-sales`.** Cross-MP totals are the default. Per-MP
+   trends must be derived by the caller via an external filter or a separate
+   SQL query variant. A filtering wrapper is not implemented; tracked as
+   tech-debt.
+
+3. **String `:type` vs keyword `:type` (§Sales divergence).** Trends uses
+   string `"sale"` / `"return"` from the SQL `type` column; §Sales uses
+   keyword `:sale` / `:return` from in-memory grouping. Unification would
+   simplify cross-namespace fixture reuse but risks breaking existing callers
+   of either namespace. Tracked as tech-debt; do not silently coerce types
+   across namespaces.
+
+4. **`max 1 prev` guard means 0-previous is NOT infinite.** A seller with zero
+   previous-period sales gets a change-pct of `current × 100 %` — numerically
+   large but finite. For qty metrics this is unambiguous (e.g. "went from 0 to
+   50 units" → 5000 %). For revenue it may appear misleading on dashboards.
+   The guard is intentional (prevents NPE / `NaN`); explicit in the formula.
+
+5. **avg-check `:change-pct nil` — callers must handle nil.** Any code
+   consuming the `compare-periods` vector programmatically must guard against
+   `nil` in the `:change-pct` field of the 4th row. Dashboards render "—";
+   export pipelines must not coerce `nil` to `0`.
+
+6. **`daily` calls `weekly-sales` then re-groups by `:day`**, effectively
+   ignoring the `:type` dimension on the initial `group-by` pass. This is
+   redundant since the SQL result already has at most 2 rows per day. A
+   direct SQL query grouping only by day would be more efficient but would
+   change the behavior if additional types are ever added. Kept as-is;
+   refactor would require its own canon amendment.
+
+---
+
+### Trends.8 — Verification summary
+
+- Every Trends.N group has a corresponding `deftest` in
+  `test/analitica/domain/trends_canon_test.clj`.
+- Two fixture shapes: `fx-current` and `fx-previous` — pre-aggregated rows
+  in the SQL output shape (`{:day :type :cnt :total}`, string type).
+- `compare-periods-sales-qty` — Δ sales qty = 5, pct = 25 % (§Trends.1).
+- `compare-periods-returns-qty` — Δ returns with 0-prev uses `max 1` guard → 100 % (§Trends.1).
+- `compare-periods-revenue-rounds` — Δ revenue 12500 − 10000 = 2500 (§Trends.1 rounding).
+- `compare-periods-avg-check-change-pct-nil` — 4th row `:change-pct nil` (§Trends.1).
+- `compare-periods-empty-denominator-max-1-guard` — 0-prev sales → numeric pct, no NPE (§Trends.1).
+- `daily-groups-by-day` — stubbed `weekly-sales` via `with-redefs` → correct per-day `:sales`/`:returns`/`:revenue` (§Trends.5).
+- `daily-sorts-ascending-by-day` — output day order matches sorted input (§Trends.5).
+- `sql-shape-differs-from-sales-domain-type-keyword` — rows carry string `"sale"` not keyword `:sale` (§Trends.2 guard).
+- Regression coverage: `clojure -M:test` green on full suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).

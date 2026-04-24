@@ -16,7 +16,15 @@
              from (str to "T23:59:59")]))
 
 (defn- compare-periods
-  "Compare two periods and calculate change."
+  "Compare two periods and calculate change.
+
+  Canon reference: §Trends.1 (canonical-formulas.md).
+
+  Accepts two sequences of pre-aggregated rows in the shape returned by
+  `weekly-sales` ({:day :type :cnt :total}, string type \"sale\"/\"return\").
+  Returns a vector of 4 metric maps:
+    - Sales qty, Returns qty, Revenue: :change-pct = math/percentage(Δ, max(1, prev))
+    - Avg check: :change-pct nil (ratio-of-ratios is misleading — see §Trends.1)."
   [current previous label-current label-previous]
   (let [cur-sales  (reduce + 0 (map :cnt (filter #(= "sale" (:type %)) current)))
         cur-ret    (reduce + 0 (map :cnt (filter #(= "return" (:type %)) current)))
@@ -74,7 +82,13 @@
     comp))
 
 (defn daily
-  "Daily sales dynamics for a period."
+  "Daily sales dynamics for a period.
+
+  Canon reference: §Trends.3 / §Trends.5 (canonical-formulas.md).
+
+  Calls `weekly-sales` (SQL pre-aggregated rows, §Trends.2) then re-groups
+  by :day in memory, summing :sales, :returns, :revenue per day.
+  Output sorted ascending by :day. :revenue rounded via math/round2."
   [period]
   (let [[from to] (if (keyword? period) (t/period period) [(:from period) (:to period)])
         data (weekly-sales from to)
