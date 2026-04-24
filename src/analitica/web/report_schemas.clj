@@ -59,7 +59,7 @@
 
    :column-presets
    {:basic       [:article :brand :sales-qty :revenue :profit :margin-pct :buyout-rate]
-    :full        :all-default-visible
+    :full        :all
     :per-unit    [:article :revenue-per-unit :cost-per-unit :logistics-per-unit
                   :storage-per-unit :payout-per-unit :profit-per-unit]
     :percentages [:article :margin-pct :wb-cost-pct :cogs-pct :drr-pct :buyout-rate]}

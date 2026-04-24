@@ -14,9 +14,12 @@
       const sub = c.getSubColumns ? c.getSubColumns() : [];
       return sub.length ? sub.flatMap(getFields) : [c.getField()];
     }).filter(Boolean);
-    const visibleSet = (preset === 'all-default-visible' || preset === ':all-default-visible')
-      ? new Set(window[tableId + '_defaultVisible'] || allFields)
-      : new Set(preset);
+    const visibleSet =
+      (preset === 'all' || preset === ':all')
+        ? new Set(allFields)
+        : (preset === 'all-default-visible' || preset === ':all-default-visible')
+          ? new Set(window[tableId + '_defaultVisible'] || allFields)
+          : new Set(preset);
     allFields.forEach(function(field) {
       if (visibleSet.has(field)) table.showColumn(field);
       else table.hideColumn(field);
