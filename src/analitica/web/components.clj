@@ -608,3 +608,63 @@
      })();
    ")]])
 
+;; ---------------------------------------------------------------------------
+;; Cost Prices CSV Upload Component
+;; ---------------------------------------------------------------------------
+
+(defn cost-prices-upload
+  "Drag-drop zone + hidden file input + progress/result area for 1C CSV upload.
+   POSTs multipart to /api/cost-prices/upload, shows JSON response inline."
+  []
+  [:div.bg-white.rounded-lg.shadow.p-6
+   [:h3.text-lg.font-semibold.text-gray-900.mb-2 "Себестоимость из 1С (CSV)"]
+   [:p.text-sm.text-gray-600.mb-4 "Загрузите units.csv — обязательные колонки: article, cost_price"]
+   [:label#cost-prices-dropzone.block.border-2.border-dashed.border-gray-300.rounded-lg.p-6.text-center.cursor-pointer.hover:border-blue-500.hover:bg-blue-50
+    [:input#cost-prices-file {:type "file" :accept ".csv" :class "hidden"}]
+    [:div.text-gray-500 "📁 Перетащите CSV или кликните для выбора"]]
+   [:div#cost-prices-result.mt-3.text-sm]
+   [:div.mt-4.text-xs.text-gray-500
+    [:a {:href "/api/cost-prices/imports" :target "_blank"} "📜 История импортов (JSON)"]]
+   [:script "
+     (function() {
+       const input = document.getElementById('cost-prices-file');
+       const dropzone = document.getElementById('cost-prices-dropzone');
+       const result = document.getElementById('cost-prices-result');
+
+       async function upload(file) {
+         result.innerHTML = '<div class=\"text-gray-500\">⏳ Загрузка ' + file.name + '…</div>';
+         const fd = new FormData();
+         fd.append('file', file);
+         try {
+           const r = await fetch('/api/cost-prices/upload', { method: 'POST', body: fd });
+           const d = await r.json();
+           if (r.ok) {
+             const rows = d.rows || d.inserted || d.loaded || 0;
+             const warns = (d.warnings && d.warnings.length) || 0;
+             result.innerHTML = '<div class=\"text-green-700\">✓ Загружено строк: <b>' + rows + '</b>' +
+                                (warns ? ', предупреждений: ' + warns : '') + '</div>' +
+                                '<pre class=\"mt-2 text-xs bg-gray-50 border border-gray-200 rounded p-2 overflow-auto\">' +
+                                JSON.stringify(d, null, 2) + '</pre>';
+           } else {
+             result.innerHTML = '<div class=\"text-red-700\">✗ Ошибка ' + r.status + ': ' + (d.error || JSON.stringify(d)) + '</div>';
+           }
+         } catch (e) {
+           result.innerHTML = '<div class=\"text-red-700\">✗ ' + e.message + '</div>';
+         }
+       }
+
+       input.addEventListener('change', e => { if (e.target.files[0]) upload(e.target.files[0]); });
+       ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => {
+         e.preventDefault(); e.stopPropagation();
+         dropzone.classList.add('border-blue-500', 'bg-blue-50');
+       }));
+       ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+         e.preventDefault(); e.stopPropagation();
+         dropzone.classList.remove('border-blue-500', 'bg-blue-50');
+       }));
+       dropzone.addEventListener('drop', e => {
+         if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+       });
+     })();
+   "]])
+

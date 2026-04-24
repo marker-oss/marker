@@ -261,6 +261,10 @@
    (c/sync-heatmap {:id "sync-coverage-heatmap"
                     :api-url "/api/sync/coverage-days"})
 
+   ;; 1C CSV cost-prices upload
+   [:div.mt-6
+    (c/cost-prices-upload)]
+
    ;; Last sync status table
    (last-sync-status)])
 
