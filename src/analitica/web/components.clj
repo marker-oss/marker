@@ -134,8 +134,9 @@
         fetch('" api-url "')
           .then(res => res.json())
           .then(data => {
+            const rows = Array.isArray(data) ? data : (data.rows || []);
             new Tabulator('#" id "', {
-              data: data,
+              data: rows,
               columns: columns,
               layout: 'fitDataStretch',
               pagination: true,

@@ -28,28 +28,28 @@
 ;; ---------------------------------------------------------------------------
 
 (defn report-data
-  "Returns JSON array of report data for Tabulator tables.
-   
+  "Returns map {:rows [...] :totals {...}} for all report types.
+   Callers may be lenient: if result is a vector (old shape), treat as {:rows result :totals {}}.
+
    Parameters:
    - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
    - period: keyword or map with :from/:to keys
    - marketplace: optional keyword (:wb, :ozon, :ym)
    - trend-type: optional keyword for trends report (:wow, :mom, :daily)
-   
-   Returns vector of maps with kebab-case keys.
-   
+   - article: optional string to filter UE report to a single article
+
    Report type mappings:
-   - sales: sales/fetch-sales + sales/by-day
-   - finance: finance/by-article
-   - ue: unit-economics/calculate (requires storage-by-article and ad-spend-by-article from DB)
-   - pnl: pnl/calculate (returns single row)
-   - abc: abc/analyze-by with criterion :revenue
-   - stock: stock/by-article + optionally stock/with-turnover
-   - returns: returns/by-article
-   - buyout: buyout/analyze
-   - geo: geography/by-region
-   - trends: trends/wow, trends/mom, or trends/daily based on trend-type parameter
-   
+   - sales:   sales/fetch-sales + sales/by-day; :totals {}
+   - finance: finance/by-article; :totals from finance/totals
+   - ue:      unit-economics/calculate (storage+ad from DB); :totals from ue/totals
+   - pnl:     pnl/calculate → :totals; :rows []
+   - abc:     abc/analyze-by :revenue; :totals {}
+   - stock:   stock/by-article; :totals {}
+   - returns: returns/by-article; :totals {}
+   - buyout:  buyout/analyze; :totals {}
+   - geo:     geography/by-region; :totals {}
+   - trends:  wow/mom/daily; :totals {}
+
    Requirements: 7.2, 13.1-13.12"
   [report-type period & {:keys [marketplace trend-type article]}]
   (try
@@ -58,15 +58,18 @@
       :sales
       (let [sales-data (sales/fetch-sales period
                                           :marketplace marketplace
-                                          :source :db)]
-        (sales/by-day sales-data))
+                                          :source :db)
+            rows (sales/by-day sales-data)]
+        {:rows (vec rows) :totals {}})
 
       ;; Finance report
       :finance
       (let [finance-data (finance/fetch-finance period
                                                 :marketplace marketplace
-                                                :source :db)]
-        (finance/by-article finance-data))
+                                                :source :db)
+            rows (finance/by-article finance-data)
+            totals (finance/totals finance-data)]
+        {:rows (vec rows) :totals totals})
 
       ;; Unit Economics report
       :ue
@@ -82,61 +85,63 @@
             ;; Load ad spend by article
             ad-map (let [rows (db/ad-spend-by-article from to :marketplace marketplace)]
                      (when (seq rows)
-                       (into {} (map (juxt :article :ad-spend) rows))))]
-        (ue/calculate finance-data
-                      :storage-by-article storage-map
-                      :ad-spend-by-article ad-map))
-      
-      ;; P&L report (single row)
+                       (into {} (map (juxt :article :ad-spend) rows))))
+            rows (ue/calculate finance-data
+                               :storage-by-article storage-map
+                               :ad-spend-by-article ad-map)
+            totals (ue/totals rows)]
+        {:rows (vec rows) :totals totals})
+
+      ;; P&L report — single summary map goes to :totals; :rows is empty
       :pnl
-      (let [finance-data (finance/fetch-finance period 
-                                                :marketplace marketplace 
+      (let [finance-data (finance/fetch-finance period
+                                                :marketplace marketplace
                                                 :source :db)
-            pnl-data (pnl/calculate finance-data)]
-        ;; Return as single-element vector for consistency
-        [pnl-data])
-      
+            totals (pnl/calculate finance-data)]
+        {:rows [] :totals totals})
+
       ;; ABC analysis
       :abc
-      (let [finance-data (finance/fetch-finance period 
-                                                :marketplace marketplace 
-                                                :source :db)]
-        (abc/analyze-by finance-data :revenue))
-      
+      (let [finance-data (finance/fetch-finance period
+                                                :marketplace marketplace
+                                                :source :db)
+            rows (abc/analyze-by finance-data :revenue)]
+        {:rows (vec rows) :totals {}})
+
       ;; Stock report
       :stock
       (let [stocks (stock/fetch-stocks :marketplace marketplace :source :db)
-            by-art (stock/by-article stocks)]
-        (vec by-art))
-      
+            rows (stock/by-article stocks)]
+        {:rows (vec rows) :totals {}})
+
       ;; Returns report
       :returns
-      (let [sales-data (sales/fetch-sales period 
-                                          :marketplace marketplace 
-                                          :source :db)]
-        (returns/by-article sales-data))
-      
+      (let [sales-data (sales/fetch-sales period
+                                          :marketplace marketplace
+                                          :source :db)
+            rows (returns/by-article sales-data)]
+        {:rows (vec rows) :totals {}})
+
       ;; Buyout analysis
       :buyout
-      (buyout/analyze period)
-      
+      {:rows (vec (buyout/analyze period)) :totals {}}
+
       ;; Geography report
       :geo
-      (let [region-data (geography/fetch-regions period :source :db)]
-        (geography/by-region region-data))
-      
+      (let [region-data (geography/fetch-regions period :source :db)
+            rows (geography/by-region region-data)]
+        {:rows (vec rows) :totals {}})
+
       ;; Trends report
       :trends
       (case (or trend-type :wow)
-        :wow (trends/wow)
-        :mom (trends/mom)
-        :daily (trends/daily period)
-        ;; Default to wow
-        (trends/wow))
-      
+        :wow   {:rows (vec (trends/wow))         :totals {}}
+        :mom   {:rows (vec (trends/mom))         :totals {}}
+        :daily {:rows (vec (trends/daily period)) :totals {}}
+        {:rows (vec (trends/wow)) :totals {}})
+
       ;; Unknown report type
-      [])
-    
-    (catch Exception e
-      ;; Return empty vector on error
-      [])))
+      {:rows [] :totals {}})
+
+    (catch Exception _
+      {:rows [] :totals {}})))
