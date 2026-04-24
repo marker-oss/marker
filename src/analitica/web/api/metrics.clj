@@ -14,17 +14,37 @@
 ;; Data Coverage
 ;; ---------------------------------------------------------------------------
 
+(defn- parse-flexible-date
+  "Parse a date string as LocalDate. Tries ISO (YYYY-MM-DD) first, then
+   Russian DD-MM-YYYY, then DD.MM.YYYY. The first 10 chars determine format
+   unless timestamp has space/T separator. Returns nil for unparseable input."
+  [s]
+  (when (string? s)
+    (let [prefix (if (> (count s) 10) (subs s 0 10) s)]
+      (try
+        (java.time.LocalDate/parse prefix)
+        (catch java.time.format.DateTimeParseException _
+          (try
+            (java.time.LocalDate/parse prefix
+              (java.time.format.DateTimeFormatter/ofPattern "dd-MM-yyyy"))
+            (catch java.time.format.DateTimeParseException _
+              (try
+                (java.time.LocalDate/parse prefix
+                  (java.time.format.DateTimeFormatter/ofPattern "dd.MM.yyyy"))
+                (catch java.time.format.DateTimeParseException _ nil)))))))))
+
 (defn- date-range-result
-  "Build coverage map from a DB result row. Calculates :total-days from :from/:to."
+  "Build coverage map from a DB result row. Calculates :total-days from :from/:to.
+   Normalizes :from/:to to ISO (YYYY-MM-DD) strings regardless of source format."
   [result]
   (when (and result (:min-date result) (:max-date result))
-    (let [from-date  (java.time.LocalDate/parse (subs (:min-date result) 0 10))
-          to-date    (java.time.LocalDate/parse (subs (:max-date result) 0 10))
-          total-days (inc (.until from-date to-date java.time.temporal.ChronoUnit/DAYS))]
-      {:from       (:min-date result)
-       :to         (:max-date result)
-       :days       (:days result)
-       :total-days total-days})))
+    (when-let [from-date (parse-flexible-date (:min-date result))]
+      (when-let [to-date (parse-flexible-date (:max-date result))]
+        (let [total-days (inc (.until from-date to-date java.time.temporal.ChronoUnit/DAYS))]
+          {:from       (str from-date)
+           :to         (str to-date)
+           :days       (:days result)
+           :total-days total-days})))))
 
 (defn- query-date-range
   "Query min and max date for a table and marketplace.

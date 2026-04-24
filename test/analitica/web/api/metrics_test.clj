@@ -17,6 +17,12 @@
 ;; Tests
 ;; ---------------------------------------------------------------------------
 
+(deftest ^:integration sync-coverage-no-crash-test
+  (testing "sync-coverage endpoint does not throw on DD-MM-YYYY dates"
+    ;; Regression: sales.date stores "DD-MM-YYYY HH:MM:SS" (Russian), which
+    ;; previously crashed LocalDate/parse and bubbled up as HTTP 500.
+    (is (map? (metrics/sync-coverage)))))
+
 (deftest ^:integration sync-coverage-test
   (testing "sync-coverage returns a map with expected structure"
     (let [coverage (metrics/sync-coverage)]
