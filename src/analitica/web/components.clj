@@ -1,5 +1,6 @@
 (ns analitica.web.components
-  (:require [hiccup.core :refer [html]]
+  (:require [clojure.string :as str]
+            [hiccup.core :refer [html]]
             [jsonista.core :as json]))
 
 ;; ---------------------------------------------------------------------------
@@ -241,9 +242,9 @@
 (defn- format-value [value fmt]
   (cond
     (nil? value) "—"
-    (= fmt :rub) (str (clojure.string/replace (format "%,.0f" (double value)) "," " ") " ₽")
+    (= fmt :rub) (str (str/replace (format "%,.0f" (double value)) "," " ") " ₽")
     (= fmt :pct) (str (format "%.1f" (double value)) "%")
-    (= fmt :int) (clojure.string/replace (format "%,d" (long value)) "," " ")
+    (= fmt :int) (str/replace (format "%,d" (long value)) "," " ")
     :else (str value)))
 
 (defn kpi-card
