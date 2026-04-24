@@ -453,6 +453,27 @@
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 
+;; ---------------------------------------------------------------------------
+;; Drill-down Side Panel Component
+;; ---------------------------------------------------------------------------
+
+(defn drill-panel
+  "Empty shell for per-article drill-down side panel. Content loaded by JS via fetch on row click."
+  [_]
+  [:div#drill-panel.fixed.top-0.right-0.h-full.w-96.bg-white.border-l.border-gray-300.shadow-2xl.transform.translate-x-full.transition-transform.duration-200.z-40.overflow-y-auto.p-4
+   {:style "display:none;"}
+   [:div.flex.justify-between.items-center.mb-4
+    [:h3#drill-panel-title.text-lg.font-bold.text-gray-900 "—"]
+    [:button.text-gray-500.hover:text-gray-700.text-xl.close.cursor-pointer
+     {:onclick "window.closeDrillPanel()"}
+     "×"]]
+   [:div#drill-panel-content
+    [:div.text-sm.text-gray-500 "Загрузка…"]]])
+
+;; ---------------------------------------------------------------------------
+;; Data Coverage Bar Component
+;; ---------------------------------------------------------------------------
+
 (defn data-coverage-bar
   "Render a data coverage heatmap bar showing filled vs empty days.
   

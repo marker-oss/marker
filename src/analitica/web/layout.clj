@@ -1,7 +1,8 @@
 (ns analitica.web.layout
   (:require [hiccup.page :refer [html5 include-css include-js]]
             [hiccup.core :refer [html]]
-            [jsonista.core :as json]))
+            [jsonista.core :as json]
+            [analitica.web.components :as components]))
 
 ;; ---------------------------------------------------------------------------
 ;; CDN Resources
@@ -149,6 +150,7 @@
      [:link {:rel "stylesheet" :href (:tabulator-css cdn-resources)}]
      [:script {:src (:tabulator-js cdn-resources)}]
      [:script {:src "/js/table-columns.js"}]
+     [:script {:src "/js/drill-panel.js"}]
 
      ;; Custom styles
      [:style "
@@ -173,7 +175,8 @@
       [:div#main-container
        (header)
        [:main#main-content.bg-gray-50
-        content]]]
+        content]]
+     (components/drill-panel {})]
      
      ;; Initialize period selector from localStorage
      [:script "

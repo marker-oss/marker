@@ -238,3 +238,9 @@
       (is (re-find #"Extra" html))
       (is (re-find #"checked" html))  ;; article is visible by default
       (is (re-find #"data-table-id=\"ue-table\"" html)))))
+
+(deftest drill-panel-test
+  (testing "renders hidden side panel with close button"
+    (let [html (hiccup.core/html (c/drill-panel {}))]
+      (is (re-find #"drill-panel" html))
+      (is (re-find #"close" html)))))
