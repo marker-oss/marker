@@ -9,35 +9,40 @@
 
 (defn- columns-from-schema
   "Convert schema columns to grouped Tabulator columns.
-   Groups use schema :column-groups; columns retain :default-visible? filter.
+   Includes ALL columns — default-visible? false ones get :visible false in Tabulator
+   so they can be toggled via preset/chooser without reloading the page.
    Returns a vector of {:title :columns [...]}, ordered by :column-groups insertion order.
    Falls back to flat column list if :column-groups not defined."
   [schema]
   (let [groups (:column-groups schema)
-        visible-cols (filter :default-visible? (:columns schema))]
+        all-cols (:columns schema)]
     (if (seq groups)
-      (let [grouped (group-by :group visible-cols)]
+      (let [grouped (group-by :group all-cols)]
         (->> (keys groups)
              (filter #(seq (grouped %)))
              (mapv (fn [g-key]
                      {:title (get-in groups [g-key :title])
-                      :columns (mapv (fn [c] {:title (:title c)
-                                              :field (name (:key c))
-                                              :format (:format c)
-                                              :canon-anchor (:canon-anchor c)
-                                              :width (case (:format c)
-                                                       :rub 130 :int 100 :pct 100
-                                                       :text 150 :date 120 120)})
+                      :columns (mapv (fn [c]
+                                       (cond-> {:title (:title c)
+                                                :field (name (:key c))
+                                                :format (:format c)
+                                                :canon-anchor (:canon-anchor c)
+                                                :width (case (:format c)
+                                                         :rub 130 :int 100 :pct 100
+                                                         :text 150 :date 120 120)}
+                                         (not (:default-visible? c)) (assoc :visible false)))
                                      (grouped g-key))}))))
       ;; flat fallback: wrap everything in a single pseudo-group
-      (mapv (fn [c] {:title (:title c)
-                     :field (name (:key c))
-                     :format (:format c)
-                     :canon-anchor (:canon-anchor c)
-                     :width (case (:format c)
-                              :rub 130 :int 100 :pct 100
-                              :text 150 :date 120 120)})
-            visible-cols))))
+      (mapv (fn [c]
+              (cond-> {:title (:title c)
+                       :field (name (:key c))
+                       :format (:format c)
+                       :canon-anchor (:canon-anchor c)
+                       :width (case (:format c)
+                                :rub 130 :int 100 :pct 100
+                                :text 150 :date 120 120)}
+                (not (:default-visible? c)) (assoc :visible false)))
+            all-cols))))
 
 ;; ---------------------------------------------------------------------------
 ;; No Data Banner
