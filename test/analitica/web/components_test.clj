@@ -214,3 +214,16 @@
                    :columns [{:title "Маржа" :field "margin" :format :pct :canon-anchor "UE.7"}]}))]
       (is (re-find #"UE\.7" html))
       (is (re-find #"Canon:" html)))))
+
+(deftest preset-chips-test
+  (testing "renders all presets from schema"
+    (let [html (hiccup.core/html
+                (c/preset-chips {:presets {:basic [:a] :full :all-default-visible
+                                           :per-unit [:b]}
+                                 :active :basic
+                                 :table-id "ue-table"
+                                 :labels {:basic "Базовый" :full "Полный" :per-unit "Per-unit"}}))]
+      (is (re-find #"Базовый" html))
+      (is (re-find #"Полный" html))
+      (is (re-find #"Per-unit" html))
+      (is (re-find #"preset-chip-active" html)))))

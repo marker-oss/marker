@@ -390,6 +390,36 @@
    "]])
 
 ;; ---------------------------------------------------------------------------
+;; Preset Chips Component
+;; ---------------------------------------------------------------------------
+
+(defn preset-chips
+  "Row of chip buttons representing column presets for a report table.
+
+   Parameters:
+   - :presets  — map {preset-key preset-value}. Values may be vectors of column keys
+                 or the keyword :all-default-visible. Keys determine chip order via
+                 insertion order of the map.
+   - :active   — preset-key of the chip rendered with preset-chip-active class.
+   - :table-id — id of the Tabulator container the preset applies to; passed to
+                 window.applyPreset on click.
+   - :labels   — optional map {preset-key label-string}. Missing keys fall back to name."
+  [{:keys [presets active table-id labels]}]
+  [:div.flex.gap-2.flex-wrap.items-center.mb-3
+   [:span.text-xs.text-gray-600 "Колонки:"]
+   (for [[k _] presets]
+     (let [is-active? (= k active)
+           cls (str "px-3 py-1 text-xs rounded-full border cursor-pointer "
+                    (if is-active?
+                      "preset-chip-active bg-blue-600 text-white border-blue-600"
+                      "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"))]
+       [:button {:class cls
+                 :data-preset (name k)
+                 :data-table-id table-id
+                 :onclick (str "window.applyPreset('" table-id "', '" (name k) "')")}
+        (get labels k (name k))]))])
+
+;; ---------------------------------------------------------------------------
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 
