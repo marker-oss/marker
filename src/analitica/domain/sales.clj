@@ -15,32 +15,33 @@
   (registry/get-marketplace (or marketplace :wb)))
 
 (defn- resolve-dates [period]
-  (if (keyword? period)
-    (t/period period)
-    [(:from period) (:to period)]))
+  (cond
+    (keyword? period) (t/period period)
+    (vector? period)  period
+    :else             [(:from period) (:to period)]))
 
-(defn- db-sales [from to]
-  (->> (db/query ["SELECT * FROM sales WHERE date >= ? AND date <= ? ORDER BY date"
-                   from (str to "T23:59:59")])
-       (mapv #(-> %
-                  (update :type keyword)
-                  (assoc :marketplace :wb)))))
+(defn- db-sales [from to marketplace]
+  (let [mp-clause (when marketplace " AND marketplace = ?")
+        params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
+    (->> (db/query (into [(str "SELECT * FROM sales WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+         (mapv #(-> % (update :type keyword) (update :marketplace keyword))))))
 
 (defn fetch-sales
   "Fetch sales for a period. Reads from DB by default, :source :api for live."
   [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
-      :db  (db-sales from to)
+      :db  (db-sales from to marketplace)
       :api (proto/fetch-sales (get-mp marketplace) from to))))
 
 (defn fetch-orders
   [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
-      :db  (->> (db/query ["SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY date"
-                            from (str to "T23:59:59")])
-                (mapv #(-> % (update :status keyword) (assoc :marketplace :wb))))
+      :db  (let [mp-clause (when marketplace " AND marketplace = ?")
+                 params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
+             (->> (db/query (into [(str "SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+                  (mapv #(-> % (update :status keyword) (update :marketplace keyword)))))
       :api (proto/fetch-orders (get-mp marketplace) from to))))
 
 ;; ---------------------------------------------------------------------------
@@ -88,7 +89,9 @@
 (defn by-region [sales-data]
   (group-and-sum sales-data :region))
 
-(defn totals [sales-data]
+(defn totals
+  "Period rollup. See docs/canonical-formulas.md §Sales.4 for the canonical formulas."
+  [sales-data]
   (let [sales   (filter #(= :sale (:type %)) sales-data)
         returns (filter #(= :return (:type %)) sales-data)]
     {:total-sales    (count sales)

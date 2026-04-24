@@ -1693,4 +1693,269 @@ Inherits all UE.11 gaps (same ingest pipeline). Finance-specific additions:
 - Regression coverage: `clojure -M:test` green on the whole suite.
 
 ---
+
+## Sales
+
+The Sales report aggregates raw sales-event rows into dimension-grouped
+dashboards (by day, article, category, brand, warehouse, region) and a
+period-level rollup. Unlike Finance / UE / P&L — which query the `finance`
+table and carry per-event cost decompositions — Sales queries the `sales`
+table, which is a pure activity log: one row per unit event (sale or return).
+There is **no cost accounting** in Sales; for profitability views use UE or P&L.
+
+All metrics build on L1 fields in
+[`data-dictionary.md#sales`](data-dictionary.md#sales).
+
+Implementation: `src/analitica/domain/sales.clj`. Verification tests:
+`test/analitica/domain/sales_canon_test.clj`.
+
+Authored 2026-04-24 using the 5-point template from §Unit Economics.
+
+---
+
+### Sales.1 — Dimension rollups (`by-day` / `by-article` / `by-category` / `by-brand` / `by-warehouse` / `by-region`)
+
+**Formula**
+
+```
+group-and-sum(sales-data, group-fn) :=
+  group sales-data by group-fn(row) → groups
+  for each [key items]:
+    sales   := filter items where row.type = :sale
+    returns := filter items where row.type = :return
+    :group         := key
+    :sales-count   := count(sales)
+    :returns-count := count(returns)
+    :revenue       := SUM(row.for-pay   over sales)   [float, NOT rounded here]
+    :avg-price     := round2(SUM(row.finished-price over sales) / count(sales))
+                      via math/safe-div (0 when count = 0)
+  sort descending by :revenue
+
+by-day        := group-and-sum(sales-data, row → date[0..9])
+by-article    := group-and-sum(sales-data, row → row.article)
+by-category   := group-and-sum(sales-data, row → row.subject)
+by-brand      := group-and-sum(sales-data, row → row.brand)
+by-warehouse  := group-and-sum(sales-data, row → row.warehouse)
+by-region     := group-and-sum(sales-data, row → row.region)
+```
+
+**Economic justification.** Each dimension slices the activity log to answer
+"how much did we sell via channel X?". The shared `group-and-sum` helper
+ensures uniform semantics across all views: sales and returns are always
+counted separately; revenue is forward-only (sales rows only); average price
+uses the gross buyer price (`finished-price`) for market-shelf intuition.
+
+**Inputs.** `sales` table rows with at minimum:
+`:type` (`:sale` or `:return`), `:date`, `:article`, `:subject`, `:brand`,
+`:warehouse`, `:region`, `:for-pay`, `:finished-price`.
+
+**Edge cases.**
+
+- `nil` group key (e.g. `:warehouse` absent on Ozon/YM rows) produces a
+  `nil`-keyed group that still accumulates correctly.
+- Empty `sales-data` → empty vector from each `by-*` function.
+- Zero-sale groups (returns-only) get `:sales-count 0`, `:revenue 0.0`,
+  `:avg-price 0` (safe-div guard).
+
+**Verification.** `sales_canon_test.clj` › `by-day-groups-and-sums`,
+`by-article-groups-and-sums`, `by-category-groups-and-sums`.
+
+---
+
+### Sales.2 — `:avg-price` (per-group)
+
+**Formula**
+
+```
+avg-price(group-items) :=
+  round2(SUM(row.finished-price over sale-rows) / count(sale-rows))
+  using math/safe-div → 0 when count = 0
+```
+
+**Economic justification.** "Typical shelf price after applied promo
+discount" — the price the buyer actually paid, not the net amount the seller
+received after MP commission. This is the seller-intuitive market metric for
+pricing analysis. Using `:for-pay` instead would give "typical net per unit",
+which belongs in the UE / P&L view.
+
+**Inputs.** `:finished-price` field on `:sale`-type rows only. Return rows
+are excluded because a return cancels the original transaction — including
+its price in the average would dilute the "what buyers currently pay" signal.
+
+**Edge cases.**
+
+- Zero sales in group → `safe-div` returns `0`; `round2(0) = 0`.
+- `:finished-price` nil on a row → `(or (:finished-price %) 0)` coerce to 0.
+
+**Verification.** `sales_canon_test.clj` › `avg-price-uses-finished-not-forpay`.
+
+---
+
+### Sales.3 — `:revenue` (per-group, forward-only)
+
+**Formula**
+
+```
+revenue(group-items) :=
+  SUM(row.for-pay over sale-rows where row.type = :sale)
+  [returns are NOT subtracted]
+```
+
+**Economic justification.** Sales is an **activity log**, not a cash-flow
+statement. Revenue here means "total seller payout from goods dispatched in
+this group". Returns are tracked as a separate counter (`:returns-count`) so
+the seller can see both gross throughput and the return burden without one
+obscuring the other.
+
+This differs deliberately from Finance / UE / P&L where
+`for-pay := sales-pay − |returns-pay|`. For cash-flow revenue use
+`finance/totals → :total-for-pay` or `pnl/calculate → :for-pay`.
+
+**Inputs.** `:for-pay` on `:sale`-type rows only.
+
+**Edge cases.**
+
+- Return row with negative `:for-pay` is excluded by the `:type = :sale`
+  filter — it does not reduce revenue.
+- `:for-pay` nil on a sale row → coerced to 0 via `(or (:for-pay %) 0)`.
+
+**Verification.** `sales_canon_test.clj` › `returns-do-not-reduce-revenue`.
+
+---
+
+### Sales.4 — `totals` period rollup
+
+**Formula**
+
+```
+totals(sales-data) :=
+  sales   := filter sales-data where row.type = :sale
+  returns := filter sales-data where row.type = :return
+  :total-sales   := count(sales)
+  :total-returns := count(returns)
+  :total-revenue := round2(SUM(row.for-pay over sales))
+  :avg-price     := round2(SUM(row.finished-price over sales) / count(sales))
+                    via math/safe-div
+  :return-rate   := math/percentage(count(returns), count(sales) + count(returns))
+                    [= returns / (sales+returns) × 100, rounded per math/percentage]
+  :unique-skus   := count(distinct(map :article sales-data))
+                    [distinct article codes across sales AND returns]
+```
+
+**Economic justification.** Period-level KPIs for the Sales dashboard header.
+`return-rate` uses the conventional denominator "all units handled" so it
+represents the fraction of dispatched goods that came back.
+`unique-skus` counts articles across both directions because an article that
+had only returns (no new sales) is still an active SKU in the period.
+
+**Inputs.** Same raw `sales` rows as Sales.1.
+
+**Edge cases.**
+
+- Empty `sales-data` → `count(sales) = 0`, `count(returns) = 0`.
+  `safe-div` returns `0.0` (float) for `:avg-price`. `math/percentage(0,0)` returns nil
+  (division by zero guard). `:unique-skus = 0`.
+- `:unique-skus` uses `:article` keyword — cross-MP shared article codes
+  will merge into one SKU (see Sales.7 gap #3).
+
+**Verification.** `sales_canon_test.clj` › `totals-period-rollup`,
+`group-reconcile-empty`.
+
+---
+
+### Sales.5 — Orders vs Sales distinction
+
+**Formula / design**
+
+```
+fetch-orders(period, marketplace, source) → orders table rows
+fetch-sales (period, marketplace, source) → sales  table rows
+
+orders table: one row per order-intent event, :status keyword (e.g. :new, :cancelled)
+sales  table: one row per settlement event,   :type  keyword (:sale or :return)
+
+Sales dashboard: uses ONLY fetch-sales / sales table.
+fetch-orders is exposed for callers that want the order-funnel view.
+```
+
+**Economic justification.** Order intent and settlement are separate business
+events. An order may be placed but never settled (cancelled before dispatch).
+The `sales` table reflects what WB/Ozon/YM actually settled and reported to
+the seller. Mixing the two would conflate "orders accepted" with "revenue
+recognized". The `orders` table is exposed for conversion-funnel analysis;
+the `sales` table is the authoritative source for financial reporting.
+
+**Inputs.** `orders` table (`:status` keyword, order-lifecycle rows);
+`sales` table (`:type` keyword, settlement rows). Both filtered by date range
+and optionally by marketplace.
+
+**Edge cases.**
+
+- A marketplace may have orders but no corresponding settled sales in the
+  same date range (e.g. items still in transit at period close).
+- `fetch-orders` and `fetch-sales` use the same date-filter SQL pattern but
+  hit distinct tables — no join, no cross-contamination.
+
+**Verification.** No cross-table test needed. Each function is independently
+verifiable via the table it queries.
+
+---
+
+### Sales.6 — Marketplace coverage matrix
+
+| Field | WB | Ozon | YM |
+|---|---|---|---|
+| `:type` (`:sale`/`:return`) | ✅ | ✅ | ✅ |
+| `:article` | ✅ | ✅ | ✅ |
+| `:subject` (category) | ✅ | ✅ | ✅ |
+| `:brand` | ✅ | ✅ | ✅ |
+| `:for-pay` | ✅ | ✅ | ✅ |
+| `:finished-price` | ✅ | ✅ | ✅ |
+| `:warehouse` | ✅ | ⚠️ may be nil | ⚠️ may be nil |
+| `:region` | ✅ | ⚠️ may be nil | ⚠️ may be nil |
+| `:date` | ✅ ISO datetime | ✅ | ✅ |
+
+WB populates `:warehouse` and `:region` from the detailed sales report.
+Ozon and YM may omit these fields (nil), producing a nil-keyed group in
+`by-warehouse` / `by-region`. This is expected and handled by `group-and-sum`
+without special-casing.
+
+---
+
+### Sales.7 — Known gaps and quirks
+
+1. **No return-netting on revenue.** Sales `:revenue` is gross (sales only).
+   If the seller mentally equates it with cash-flow revenue, they will
+   overcount by the total return payout amount. Direct them to Finance /
+   UE / P&L for net cash-flow figures.
+
+2. **`:avg-price` uses `:finished-price` (gross buyer price), not `:for-pay`
+   (net seller payout).** The gap equals MP commission + promo subsidy.
+   This is intentional for market-pricing analysis, but sellers comparing
+   avg-price across the Sales and Finance reports will see different numbers.
+
+3. **`:unique-skus` counts distinct `:article` across sales AND returns.**
+   If two marketplaces share the same article code for different physical
+   SKUs (cross-MP article collision), they merge into one unique-sku count.
+   The metric underestimates true SKU diversity in multi-MP setups.
+
+4. **No cost or profit fields.** Sales has no `:cogs`, no `:margin`, no
+   `:unit-profit`. This is by design — the sales table carries no cost
+   information. For profitability use UE (per-article) or P&L (period total).
+
+---
+
+### Sales.8 — Verification summary
+
+- Every Sales.N group has a corresponding `deftest` in
+  `test/analitica/domain/sales_canon_test.clj`.
+- Test fixture uses pure in-memory `sales` rows (not `finance` rows) — a
+  distinct data model. No cross-report reconciliation is performed because
+  Sales and Finance read from different tables with different schemas.
+- `group-reconcile-empty`: empty input → all totals zero, `avg-price = 0`,
+  `return-rate = nil`, `unique-skus = 0`.
+- Regression coverage: `clojure -M:test` green on the whole suite.
+
+---
+
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj).
