@@ -21,6 +21,7 @@
             [analitica.web.api.export :as export-api]
             [analitica.web.api.cost-prices :as cost-prices-api]
             [analitica.web.api.report :as report]
+            [analitica.web.api.detail :as detail]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -659,6 +660,44 @@
               {:status 200 :body chart-data})
             {:status 400 :body {:error (str "Invalid parameters - marketplace: " marketplace-str ", period: " period-str)}})))))
   
+  ;; Per-article drill-down — must be listed BEFORE the /api/report/:type catch-all.
+  ;; Article names may contain '/' and Cyrillic; the client must encodeURIComponent
+  ;; so '/' becomes '%2F'. Compojure delivers the percent-decoded value in params;
+  ;; we re-decode the raw path segment using URLDecoder to handle double-encoding
+  ;; edge cases from some HTTP clients.
+  (GET "/api/report/:type/article/:article" {params :params}
+    (let [type-str      (:type params)
+          validated-type (validate-report-type type-str)
+          article        (try
+                           (java.net.URLDecoder/decode (str (:article params)) "UTF-8")
+                           (catch Exception _ (:article params)))
+          period-str     (get params :period "last-30-days")
+          validated-period (validate-period period-str)
+          marketplace-str (get params :marketplace)
+          validated-mp    (when marketplace-str (validate-marketplace marketplace-str))]
+      (cond
+        (not validated-type)
+        {:status 400 :body {:error (str "Invalid report type: " type-str)}}
+
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+
+        :else
+        (let [period (try
+                       (time/parse-period validated-period)
+                       (catch Exception _ nil))
+              [from to] (when period period)
+              mp         validated-mp]
+          (if period
+            (let [data (detail/article-detail
+                         validated-type article {:from from :to to}
+                         :marketplace mp)]
+              {:status 200 :body data})
+            {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
+
   (GET "/api/report/:type" {params :params}
     (let [report-type-str (:type params)
           validated-type  (validate-report-type report-type-str)
