@@ -154,7 +154,7 @@
    - Tab switcher driven by schema :tabs key
 
    Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 8.1, 9.1, 14.1"
-  [report-type period marketplace & {:keys [show-no-data article totals]}]
+  [report-type period marketplace & {:keys [show-no-data article totals compare]}]
   (let [schema (rs/get-schema report-type)
         _ (when-not schema
             (throw (ex-info "Unknown report-type" {:type report-type})))
@@ -166,6 +166,7 @@
                      (name chart-type-kw))
         grouped-cols (columns-from-schema schema)
         kpi-schema (:kpi schema)
+        compare-totals (when compare (:totals compare))
         tabs (or (:tabs schema) [:chart])
         active-tab (first tabs)
         tab-set (set tabs)
@@ -192,9 +193,9 @@
           (article-filter report-type article))]
        (export-buttons report-type period marketplace)]]
 
-     ;; KPI row (above tabs)
+     ;; KPI row (above tabs) — pass compare-totals for period-over-period deltas
      (when (and kpi-schema (seq totals))
-       (c/kpi-row kpi-schema totals))
+       (c/kpi-row kpi-schema totals compare-totals))
 
      ;; Tab switcher
      (c/tab-switcher {:tabs tabs

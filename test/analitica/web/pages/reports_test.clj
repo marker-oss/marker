@@ -41,3 +41,13 @@
     (let [html (h/html (pages/report-page :pnl "last-30-days" nil :totals {:revenue 1}))]
       (is (re-find #"data-tab=\"chart\"" html))
       (is (not (re-find #"data-tab=\"table\"" html))))))
+
+(deftest report-page-compare-test
+  (testing "KPI row renders delta when :compare payload provided"
+    (let [html (h/html
+                 (pages/report-page :ue "last-30-days" nil
+                   :totals {:total-revenue 1100 :total-profit 220 :margin-pct 20.0 :drr-pct 8.0}
+                   :compare {:totals {:total-revenue 1000 :total-profit 200 :margin-pct 20.0 :drr-pct 8.5}}))]
+      ;; Revenue delta: (1100-1000)/1000 = 10% → up arrow + text-green
+      (is (re-find #"↑" html))
+      (is (re-find #"text-green" html)))))
