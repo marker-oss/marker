@@ -473,6 +473,74 @@
     [:div.text-sm.text-gray-500 "Загрузка…"]]])
 
 ;; ---------------------------------------------------------------------------
+;; Period Picker (global header)
+;; ---------------------------------------------------------------------------
+
+(defn- fmt-date-ru
+  "\"2026-04-01\" → \"01.04.2026\". Returns nil for nil input."
+  [iso]
+  (when (seq iso)
+    (let [[y m d] (str/split iso #"-")]
+      (str d "." m "." y))))
+
+(defn period-picker
+  "Chip trigger + popover shell for the global period selector.
+
+   :from / :to           — ISO date strings (YYYY-MM-DD)
+   :compare              — :none | :prev
+   :supports-compare?    — default true; when false, compare toggle is hidden
+
+   All interactivity (calendar, preset buttons, apply, compare-toggle) is wired
+   by resources/public/js/period-picker.js. This fn emits only the shell."
+  [{:keys [from to compare supports-compare?]
+    :or {compare :none supports-compare? true}}]
+  [:div#period-picker.relative.inline-block
+   ;; Chip trigger
+   [:button#period-picker-trigger.flex.items-center.gap-2.bg-white.border.border-gray-300.px-3.py-1.5.rounded.text-sm.hover:bg-gray-50
+    {:onclick "window.togglePeriodPicker()"}
+    [:span "📅"]
+    [:span.font-semibold (str (fmt-date-ru from) " — " (fmt-date-ru to))]
+    (when (= compare :prev)
+      [:span.text-xs.text-gray-500 "↻ vs пред."])
+    [:span.text-gray-400 "▾"]]
+
+   ;; Popover (hidden by default; JS toggles display)
+   [:div#period-picker-popover.absolute.right-0.mt-1.bg-white.border.border-gray-200.rounded-lg.shadow-xl.p-4.z-50
+    {:style "width: 520px; display: none;"}
+    [:div {:style "display: grid; grid-template-columns: 170px 1fr; gap: 12px;"}
+     ;; Preset list (5 options)
+     [:div.flex.flex-col.gap-1
+      [:button.preset-option.px-3.py-2.text-sm.text-left.rounded.hover:bg-blue-50.cursor-pointer
+       {:data-preset "last-7-days"} "7 дней"]
+      [:button.preset-option.px-3.py-2.text-sm.text-left.rounded.hover:bg-blue-50.cursor-pointer
+       {:data-preset "last-30-days"} "30 дней"]
+      [:button.preset-option.px-3.py-2.text-sm.text-left.rounded.hover:bg-blue-50.cursor-pointer
+       {:data-preset "this-month"} "Этот месяц"]
+      [:button.preset-option.px-3.py-2.text-sm.text-left.rounded.hover:bg-blue-50.cursor-pointer
+       {:data-preset "prev-month"} "Пред. месяц"]
+      [:button.preset-option.px-3.py-2.text-sm.text-left.rounded.hover:bg-blue-50.cursor-pointer
+       {:data-preset "custom"} "Custom…"]]
+
+     ;; Calendar container (JS renders the grid inside)
+     [:div#period-picker-calendar
+      [:div.text-xs.text-gray-500 "Загрузка календаря…"]]]
+
+    (when supports-compare?
+      [:div.border-t.border-gray-200.mt-3.pt-3.flex.items-center.gap-2
+       [:label.text-sm {:for "compare-toggle"} "Сравнить с:"]
+       [:input#compare-toggle {:type "checkbox" :checked (= compare :prev)}]
+       [:select#compare-mode.text-xs.px-2.py-1.border.rounded
+        [:option {:value "prev"} "Пред. периодом"]]])
+
+    [:div.border-t.border-gray-200.mt-3.pt-3.flex.justify-between.items-center
+     [:span#period-picker-summary.text-xs.text-gray-600 "—"]
+     [:div.flex.gap-2
+      [:button.px-3.py-1.text-xs.border.border-gray-300.rounded
+       {:onclick "window.closePeriodPicker()"} "Отмена"]
+      [:button#period-picker-apply.px-3.py-1.text-xs.bg-blue-600.text-white.rounded
+       "Применить"]]]]])
+
+;; ---------------------------------------------------------------------------
 ;; Data Coverage Bar Component
 ;; ---------------------------------------------------------------------------
 

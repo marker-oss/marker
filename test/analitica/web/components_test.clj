@@ -244,3 +244,31 @@
     (let [html (hiccup.core/html (c/drill-panel {}))]
       (is (re-find #"drill-panel" html))
       (is (re-find #"close" html)))))
+
+(deftest period-picker-test
+  (testing "renders chip with current range"
+    (let [html (hiccup.core/html
+                (c/period-picker {:from "2026-04-01" :to "2026-04-30"
+                                  :compare :none}))]
+      (is (re-find #"01\.04\.2026|2026-04-01" html))
+      (is (re-find #"period-picker" html))))
+
+  (testing "popover contains 5 presets"
+    (let [html (hiccup.core/html
+                (c/period-picker {:from "2026-04-01" :to "2026-04-30" :compare :none}))]
+      (is (re-find #"7 дней" html))
+      (is (re-find #"30 дней" html))
+      (is (re-find #"Этот месяц" html))
+      (is (re-find #"Пред\. месяц" html))
+      (is (re-find #"Custom" html))))
+
+  (testing "compare toggle present by default"
+    (let [html (hiccup.core/html
+                (c/period-picker {:from "2026-04-01" :to "2026-04-30" :compare :none}))]
+      (is (re-find #"Сравнить" html))))
+
+  (testing "compare toggle hidden when :supports-compare? false"
+    (let [html (hiccup.core/html
+                (c/period-picker {:from "2026-04-01" :to "2026-04-30"
+                                  :compare :none :supports-compare? false}))]
+      (is (not (re-find #"Сравнить" html))))))
