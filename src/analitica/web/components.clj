@@ -197,42 +197,6 @@
       ")]]))
 
 ;; ---------------------------------------------------------------------------
-;; Period Selector Component
-;; ---------------------------------------------------------------------------
-
-(defn period-selector
-  "Render a period selector dropdown with HTMX integration.
-  
-  Parameters:
-  - opts: Map with keys:
-    - :current-period - Currently selected period (string, optional)
-    - :target - HTMX target selector (string, optional, default: main-content)
-  
-  Example:
-    (period-selector {:current-period \"last-week\"
-                      :target \"#dashboard-content\"})"
-  [{:keys [current-period target]
-    :or {target "#main-content"}}]
-  [:div.flex.items-center.gap-2
-   [:label.text-sm.font-medium.text-gray-700 {:for "period-select"} "Период:"]
-   [:select#period-select.px-3.py-1.5.border.border-gray-300.rounded-md.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-    {:name "period"
-     :hx-get ""
-     :hx-trigger "change"
-     :hx-target target
-     :hx-swap "innerHTML"}
-    [:option {:value "last-week" :selected (= current-period "last-week")} 
-     "Прошлая неделя"]
-    [:option {:value "last-7-days" :selected (= current-period "last-7-days")} 
-     "Последние 7 дней"]
-    [:option {:value "last-30-days" :selected (= current-period "last-30-days")} 
-     "Последние 30 дней"]
-    [:option {:value "this-month" :selected (= current-period "this-month")} 
-     "Этот месяц"]
-    [:option {:value "custom" :selected (= current-period "custom")} 
-     "Произвольный диапазон"]]])
-
-;; ---------------------------------------------------------------------------
 ;; Sync Log Component
 ;; ---------------------------------------------------------------------------
 

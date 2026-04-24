@@ -70,29 +70,6 @@
 ;; Filter Components
 ;; ---------------------------------------------------------------------------
 
-(defn- period-filter
-  "Render period filter dropdown with HTMX update."
-  [report-type current-period marketplace]
-  (let [marketplace-param (if marketplace (str "&marketplace=" (name marketplace)) "")]
-    [:div.flex.items-center.gap-2
-     [:label.text-sm.font-medium.text-gray-700 {:for "period-filter"} "Период:"]
-     [:select#period-filter.px-3.py-2.border.border-gray-300.rounded-md.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-      {:name "period"
-       :hx-get (str "/reports/" (name report-type))
-       :hx-trigger "change"
-       :hx-target "#report-content"
-       :hx-swap "outerHTML"
-       :hx-select "#report-content"
-       :hx-include "#marketplace-filter, #article-filter"}
-      [:option {:value "last-week" :selected (= current-period "last-week")}
-       "Прошлая неделя"]
-      [:option {:value "last-7-days" :selected (= current-period "last-7-days")}
-       "Последние 7 дней"]
-      [:option {:value "last-30-days" :selected (= current-period "last-30-days")}
-       "Последние 30 дней"]
-      [:option {:value "this-month" :selected (= current-period "this-month")}
-       "Этот месяц"]]]))
-
 (defn- marketplace-filter
   "Render marketplace filter dropdown with HTMX update."
   [report-type period current-marketplace]
@@ -105,7 +82,7 @@
      :hx-target "#report-content"
      :hx-swap "outerHTML"
      :hx-select "#report-content"
-     :hx-include "#period-filter, #article-filter"}
+     :hx-include "#article-filter"}
     [:option {:value "all" :selected (or (nil? current-marketplace) (= current-marketplace "all"))}
      "Все"]
     [:option {:value "wb" :selected (= current-marketplace "wb")}
@@ -130,7 +107,7 @@
      :hx-target "#report-content"
      :hx-swap "outerHTML"
      :hx-select "#report-content"
-     :hx-include "#period-filter, #marketplace-filter"}]])
+     :hx-include "#marketplace-filter"}]])
 
 (defn- export-buttons
   "Render Excel and CSV export buttons."
@@ -210,7 +187,6 @@
      [:div.bg-white.rounded-lg.shadow.p-4.mb-6
       [:div.flex.items-center.justify-between.flex-wrap.gap-4
        [:div.flex.items-center.gap-4.flex-wrap
-        (period-filter report-type period marketplace)
         (marketplace-filter report-type period marketplace)
         (when (= report-type :ue)
           (article-filter report-type article))]

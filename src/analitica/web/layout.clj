@@ -79,28 +79,6 @@
      (for [item nav-items]
        (nav-item item active-route))]]])
 
-(defn- period-selector
-  "Render the period selector: native date range inputs + preset buttons."
-  []
-  [:div.flex.flex-wrap.items-center.gap-2
-   [:label.text-sm.font-medium.text-gray-700 "Период:"]
-   [:input#period-from.px-2.py-1.5.border.border-gray-300.rounded-md.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-    {:type "date" :name "from"}]
-   [:span.text-gray-500 "—"]
-   [:input#period-to.px-2.py-1.5.border.border-gray-300.rounded-md.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-    {:type "date" :name "to"}]
-   [:button#period-apply.px-3.py-1.5.bg-blue-600.text-white.rounded-md.text-sm.font-medium.hover:bg-blue-700
-    "Применить"]
-   [:div.flex.items-center.gap-1.ml-2
-    [:button.px-2.py-1.text-xs.border.border-gray-300.rounded.hover:bg-gray-100
-     {:type "button" :data-preset "last-week"} "Пр. неделя"]
-    [:button.px-2.py-1.text-xs.border.border-gray-300.rounded.hover:bg-gray-100
-     {:type "button" :data-preset "last-7-days"} "7 дней"]
-    [:button.px-2.py-1.text-xs.border.border-gray-300.rounded.hover:bg-gray-100
-     {:type "button" :data-preset "last-30-days"} "30 дней"]
-    [:button.px-2.py-1.text-xs.border.border-gray-300.rounded.hover:bg-gray-100
-     {:type "button" :data-preset "this-month"} "Месяц"]]])
-
 (defn- header
   "Render the header: title, global period picker, sync button, last-sync label.
 
@@ -186,20 +164,5 @@
        (header)
        [:main#main-content.bg-gray-50
         content]]
-     (components/drill-panel {})]
-     
-     ;; Initialize period selector from localStorage
-     [:script "
-       (function() {
-         const select = document.getElementById('period-select');
-         const saved = localStorage.getItem('analitica-period');
-         if (saved && select) {
-           select.value = saved;
-         }
-         if (select) {
-           select.addEventListener('change', function() {
-             localStorage.setItem('analitica-period', this.value);
-           });
-         }
-       })();
-     "]]))
+     (components/drill-panel {})]]))
+

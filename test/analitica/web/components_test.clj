@@ -74,19 +74,6 @@
           html-str (html result)]
       (is (re-find #"frozen" html-str)))))
 
-(deftest period-selector-test
-  (testing "period-selector renders select element"
-    (let [result (c/period-selector {:current-period "last-week"})
-          html-str (html result)]
-      (is (re-find #"<select" html-str))
-      (is (re-find #"last-week" html-str))
-      (is (re-find #"hx-get" html-str))))
-
-  (testing "period-selector with custom target"
-    (let [result (c/period-selector {:target "#custom-target"})
-          html-str (html result)]
-      (is (re-find #"#custom-target" html-str)))))
-
 (deftest sync-log-test
   (testing "sync-log renders SSE container"
     (let [result (c/sync-log {})
