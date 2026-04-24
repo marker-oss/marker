@@ -17,11 +17,9 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- resolve-dates
-  "Convert period to [from to] date strings."
+  "Convert period to [from to] date strings. Handles keyword, vector, and map."
   [period]
-  (if (keyword? period)
-    (t/period period)
-    [(:from period) (:to period)]))
+  (t/resolve-period period))
 
 ;; ---------------------------------------------------------------------------
 ;; Report data functions

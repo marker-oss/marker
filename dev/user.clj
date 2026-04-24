@@ -1,5 +1,6 @@
 (ns user
-  (:require [analitica.web.server :as server]
+  (:require [analitica.core :as core]
+            [analitica.web.server :as server]
             [ring.middleware.reload :refer [wrap-reload]]
             [ring.adapter.jetty :as jetty]))
 
@@ -17,6 +18,7 @@
    no manual reload needed. Call (stop!) to shut it down, (go) to restart."
   [& {:keys [port] :or {port 3000}}]
   (stop!)
+  (core/start!)
   (let [handler (wrap-reload (fn [req] ((server/app) req))
                              {:dirs ["src"]})
         s (jetty/run-jetty handler {:port port :join? false})]

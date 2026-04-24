@@ -96,12 +96,17 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- enrich-column [c]
-  (let [numeric? (contains? #{:rub :int :pct} (:format c))]
+  (let [fmt (:format c)
+        sum? (contains? #{:rub :int} fmt)
+        avg? (= :pct fmt)]
     (cond-> (assoc c "headerFilter" true
                      "headerFilterPlaceholder" "Фильтр...")
-      numeric? (assoc "bottomCalc" "sum"
-                      "bottomCalcFormatter" "money"
-                      "bottomCalcFormatterParams" {"thousand" " " "precision" 0}))))
+      sum? (assoc "bottomCalc" "sum"
+                  "bottomCalcFormatter" "money"
+                  "bottomCalcFormatterParams" {"thousand" " " "precision" 0})
+      avg? (assoc "bottomCalc" "avg"
+                  "bottomCalcFormatter" "money"
+                  "bottomCalcFormatterParams" {"precision" 1 "symbol" "%" "symbolAfter" "p"}))))
 
 (defn tabulator-table
   "Render a container for Tabulator interactive table.
@@ -250,6 +255,7 @@
 (defn- format-value [value fmt]
   (cond
     (nil? value) "—"
+    (not (number? value)) (str value)
     (= fmt :rub) (str (str/replace (format "%,.0f" (double value)) "," " ") " ₽")
     (= fmt :pct) (str (format "%.1f" (double value)) "%")
     (= fmt :int) (str/replace (format "%,d" (long value)) "," " ")
