@@ -175,18 +175,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :sales period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :sales period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Продажи"
                               (reports-page/report-page :sales (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/sales")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -199,18 +201,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :finance period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :finance period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Финансы"
                               (reports-page/report-page :finance (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/finance")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -224,18 +228,20 @@
           marketplace-str (get params :marketplace)
           article-str     (get params :article)
           validated-period (validate-period period-str)
-          validated-mp     (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp     (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw       (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :ue period-kw :marketplace (when validated-mp (keyword validated-mp)) :article article-str) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :ue period-kw :marketplace (when validated-mp (keyword validated-mp)) :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Юнит-экономика"
                               (reports-page/report-page :ue (or validated-period "last-week") validated-mp
-                                                        :article article-str :show-no-data show-no-data? :totals totals)
+                                                        :article article-str :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/ue")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -248,18 +254,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :pnl period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :pnl period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: P&L"
                               (reports-page/report-page :pnl (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/pnl")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -272,18 +280,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :abc period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :abc period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: ABC-анализ"
                               (reports-page/report-page :abc (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/abc")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -296,18 +306,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :stock period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :stock period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Остатки"
                               (reports-page/report-page :stock (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/stock")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -320,18 +332,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :returns period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :returns period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Возвраты"
                               (reports-page/report-page :returns (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/returns")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -344,18 +358,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :buyout period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :buyout period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Выкуп"
                               (reports-page/report-page :buyout (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/buyout")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -368,18 +384,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :geo period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :geo period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: География"
                               (reports-page/report-page :geo (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/geo")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -392,18 +410,20 @@
     (let [period-str (get params :period "last-week")
           marketplace-str (get params :marketplace)
           validated-period (validate-period period-str)
-          validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
+          validated-mp (when marketplace-str (validate-marketplace marketplace-str))
+          compare-kw (if (= (get params :compare) "prev") :prev :none)]
       (if (and (or validated-period (nil? period-str))
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
         (let [period-kw (keyword (or validated-period "last-week"))
-              data (try (report/report-data :trends period-kw :marketplace (when validated-mp (keyword validated-mp))) (catch Exception _ {:rows [] :totals {}}))
+              data (try (report/report-data :trends period-kw :marketplace (when validated-mp (keyword validated-mp)) :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
               totals (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body (layout/page "Отчёт: Тренды"
                               (reports-page/report-page :trends (or validated-period "last-week") validated-mp
-                                                        :show-no-data show-no-data? :totals totals)
+                                                        :show-no-data show-no-data? :totals totals
+                                                        :compare (:compare data))
                               :active-route "/reports/trends")})
         {:status 400
          :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -708,7 +728,8 @@
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))
           trend-type-str  (get params :trend-type)
           trend-type      (when trend-type-str (keyword trend-type-str))
-          article-str     (get params :article)]
+          article-str     (get params :article)
+          compare-kw      (if (= (get params :compare) "prev") :prev :none)]
       (cond
         (not validated-type)
         {:status 400 :body {:error (str "Invalid report type: " report-type-str)}}
@@ -728,7 +749,8 @@
                                validated-type period
                                :marketplace validated-mp
                                :trend-type  trend-type
-                               :article     article-str)]
+                               :article     article-str
+                               :compare     compare-kw)]
               {:status 200 :body report-data})
             {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
   (GET "/api/export/:report" {params :params}

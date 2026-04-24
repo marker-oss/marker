@@ -49,3 +49,16 @@
       (is (contains? result :totals))
       (is (vector? (:rows result)))
       (is (map? (:totals result))))))
+
+(deftest report-data-compare-test
+  (testing "when :compare :prev, result includes :compare {:totals :rows}"
+    (let [result (report/report-data :ue {:from "2026-04-01" :to "2026-04-30"}
+                                      :compare :prev)]
+      (is (contains? result :compare))
+      (is (map? (:compare result)))
+      (is (contains? (:compare result) :totals))
+      (is (contains? (:compare result) :rows))))
+
+  (testing "when :compare not provided (default :none), no :compare key"
+    (let [result (report/report-data :ue {:from "2026-04-01" :to "2026-04-30"})]
+      (is (not (contains? result :compare))))))

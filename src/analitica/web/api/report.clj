@@ -10,7 +10,8 @@
             [analitica.domain.buyout :as buyout]
             [analitica.domain.geography :as geography]
             [analitica.domain.trends :as trends]
-            [analitica.util.time :as t]))
+            [analitica.util.time :as t]
+            [analitica.util.period :as period]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helper functions
@@ -25,30 +26,8 @@
 ;; Report data functions
 ;; ---------------------------------------------------------------------------
 
-(defn report-data
-  "Returns map {:rows [...] :totals {...}} for all report types.
-   Callers may be lenient: if result is a vector (old shape), treat as {:rows result :totals {}}.
-
-   Parameters:
-   - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
-   - period: keyword or map with :from/:to keys
-   - marketplace: optional keyword (:wb, :ozon, :ym)
-   - trend-type: optional keyword for trends report (:wow, :mom, :daily)
-   - article: optional string to filter UE report to a single article
-
-   Report type mappings:
-   - sales:   sales/fetch-sales + sales/by-day; :totals {}
-   - finance: finance/by-article; :totals from finance/totals
-   - ue:      unit-economics/calculate (storage+ad from DB); :totals from ue/totals
-   - pnl:     pnl/calculate → :totals; :rows []
-   - abc:     abc/analyze-by :revenue; :totals {}
-   - stock:   stock/by-article; :totals {}
-   - returns: returns/by-article; :totals {}
-   - buyout:  buyout/analyze; :totals {}
-   - geo:     geography/by-region; :totals {}
-   - trends:  wow/mom/daily; :totals {}
-
-   Requirements: 7.2, 13.1-13.12"
+(defn- compute-report
+  "Pure computation for a single period window. No compare awareness."
   [report-type period & {:keys [marketplace trend-type article]}]
   (try
     (case report-type
@@ -143,3 +122,45 @@
 
     (catch Exception _
       {:rows [] :totals {}})))
+
+(defn report-data
+  "Returns map {:rows :totals [:compare {:rows :totals}]}.
+
+   Parameters:
+   - report-type: keyword (:sales, :finance, :ue, :pnl, :abc, :stock, :returns, :buyout, :geo, :trends)
+   - period: keyword or map with :from/:to keys
+   - marketplace: optional keyword (:wb, :ozon, :ym)
+   - trend-type: optional keyword for trends report (:wow, :mom, :daily)
+   - article: optional string to filter UE report to a single article
+   - compare: :prev → computes same-length prior window and attaches as :compare key.
+              :none (default) → no :compare key.
+
+   Report type mappings:
+   - sales:   sales/fetch-sales + sales/by-day; :totals {}
+   - finance: finance/by-article; :totals from finance/totals
+   - ue:      unit-economics/calculate (storage+ad from DB); :totals from ue/totals
+   - pnl:     pnl/calculate → :totals; :rows []
+   - abc:     abc/analyze-by :revenue; :totals {}
+   - stock:   stock/by-article; :totals {}
+   - returns: returns/by-article; :totals {}
+   - buyout:  buyout/analyze; :totals {}
+   - geo:     geography/by-region; :totals {}
+   - trends:  wow/mom/daily; :totals {}
+
+   Requirements: 7.2, 13.1-13.12"
+  [report-type period-arg & {:keys [marketplace trend-type article compare]
+                              :or   {compare :none}}]
+  (let [current (compute-report report-type period-arg
+                                :marketplace marketplace
+                                :trend-type  trend-type
+                                :article     article)]
+    (if (= compare :prev)
+      (let [[from to]  (t/resolve-period period-arg)
+            [pf pt]    (period/compare-period {:from from :to to})
+            prev-period {:from pf :to pt}
+            prev        (compute-report report-type prev-period
+                                        :marketplace marketplace
+                                        :trend-type  trend-type
+                                        :article     article)]
+        (assoc current :compare prev))
+      current)))
