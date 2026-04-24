@@ -21,6 +21,7 @@
             [analitica.domain.ads :as ads]
             [analitica.domain.prices :as prices]
             [analitica.domain.cost-price :as cost-price]
+            [analitica.schema.loader :as schema-loader]
             [analitica.domain.pnl :as pnl]
             [analitica.domain.geography :as geo]
             [analitica.domain.trends :as trends]
@@ -59,6 +60,12 @@
           (try (sync/sync-1c!)
                (catch Throwable t
                  (println "  Bootstrap failed:" (.getMessage t)))))))
+  ;; Load OpenAPI schemas so ingest/sync paths have validation coverage.
+  ;; Errors are non-fatal — partial registry is acceptable.
+  (let [{:keys [loaded errors]} (schema-loader/load-all!)]
+    (println (str "Registered " loaded " API schemas from resources/schemas/"))
+    (when (seq errors)
+      (println (str "  " (count errors) " schema files failed to load (see warnings above)"))))
   (sync/status)
   (println "\nTry (help) for available commands."))
 
