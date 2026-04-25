@@ -173,7 +173,9 @@
       (doseq [mat mats]
         (let [mp        (:marketplace mat)
               etype     (:entity-type mat)
-              ingest-id (str (name mp) "/" (name etype) "/ingest")
+              ;; Task IDs are prefixed with the run-id (Phase 4
+              ;; follow-up) so reruns don't trip the PRIMARY KEY.
+              ingest-id (str (:run-id mat) "/" (name mp) "/" (name etype) "/ingest")
               dep-id    (first (:depends-on mat))]
           (is (= ingest-id dep-id)
               (str "Materialize task " (:id mat)

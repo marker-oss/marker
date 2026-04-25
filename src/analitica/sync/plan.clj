@@ -37,15 +37,18 @@
   (contains? (get mp-entity-matrix mp #{}) entity-type))
 
 (defn- task-id
-  "Build canonical task ID string: '<mp>/<entity>/<phase>'."
-  [mp entity-type phase]
-  (str (name mp) "/" (name entity-type) "/" (name phase)))
+  "Build canonical task ID string: '<run-id>/<mp>/<entity>/<phase>'.
+
+   The run-id prefix is what makes IDs unique across runs — without it
+   the second invocation hits a sync_tasks PRIMARY KEY collision."
+  [run-id mp entity-type phase]
+  (str run-id "/" (name mp) "/" (name entity-type) "/" (name phase)))
 
 (defn- make-task-pair
   "Return [ingest-descriptor materialize-descriptor] for one (mp, entity-type) pair."
   [run-id mp entity-type period-from period-to]
-  (let [ingest-id  (task-id mp entity-type :ingest)
-        mat-id     (task-id mp entity-type :materialize)
+  (let [ingest-id  (task-id run-id mp entity-type :ingest)
+        mat-id     (task-id run-id mp entity-type :materialize)
         period-vec [period-from period-to]]
     [{:id           ingest-id
       :run-id       run-id
