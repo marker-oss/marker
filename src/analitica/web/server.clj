@@ -17,6 +17,8 @@
             [analitica.web.pages.dashboard :as dashboard-page]
             [analitica.web.pages.reports :as reports-page]
             [analitica.web.api.sync :as sync-api]
+            [analitica.sync.plan :as sync-plan]
+            [analitica.sync.executor :as sync-executor]
             [analitica.web.api.sync-coverage :as sync-coverage]
             [analitica.web.api.metrics :as metrics-api]
             [analitica.web.api.charts :as charts-api]
@@ -51,6 +53,17 @@
 
 (def valid-sync-what
   #{"sales" "orders" "finance" "storage" "stocks" "stats" "prices" "regions" "1c" "all"})
+
+;; Superset of valid-sync-what for the plan-based /run endpoint —
+;; adds cashflow (Ozon-only) which the legacy /start did not expose.
+(def valid-run-what
+  #{"sales" "orders" "finance" "storage" "stocks" "stats" "prices" "regions" "cashflow" "all"})
+
+(defn- validate-run-what
+  "Validate 'what' for the /api/sync/run endpoint. Returns keyword if valid, nil otherwise."
+  [what-str]
+  (when (and what-str (valid-run-what what-str))
+    (keyword what-str)))
 
 (defn validate-period
   "Validate period parameter. Returns period string if valid, nil otherwise.
@@ -903,6 +916,57 @@
             {:status 409 :body result}
             {:status 200 :body result})))))
   
+  ;; Plan-based sync run: generates a task plan, persists it, then executes
+  ;; sequentially in a background future. Uses the same single-flight atom
+  ;; as /api/sync/start to prevent two concurrent runs.
+  (POST "/api/sync/run" {body :body params :params}
+    (let [body-str  (when body (slurp body))
+          body-data (when (and body-str (not (empty? body-str)))
+                      (json/read-value body-str json/keyword-keys-object-mapper))
+          what-str        (or (:what body-data) (:what params))
+          period-str      (or (:period body-data) (:period params))
+          marketplace-str (or (:marketplace body-data) (:marketplace params))
+          validated-what  (when what-str
+                            (validate-run-what
+                              (if (keyword? what-str) (name what-str) what-str)))
+          validated-period (when period-str (validate-period period-str))
+          mp-name          (when marketplace-str
+                             (if (keyword? marketplace-str) (name marketplace-str) marketplace-str))
+          all-mp?          (= mp-name "all")
+          validated-mp     (when (and marketplace-str (not all-mp?))
+                             (validate-marketplace mp-name))]
+      (cond
+        (not validated-what)
+        {:status 400 :body {:error (str "Invalid 'what' parameter: " what-str)}}
+
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        (and marketplace-str (not validated-mp) (not all-mp?))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+
+        (not (compare-and-set! sync-api/sync-running? false true))
+        {:status 409 :body {:error "already running"}}
+
+        :else
+        (let [run-id  (str (java.util.UUID/randomUUID))
+              period  (if validated-period
+                        (try (time/parse-period validated-period)
+                             (catch Exception _ :last-30-days))
+                        :last-30-days)
+              mp      (if all-mp? :all (or validated-mp :wb))
+              plan    (sync-plan/expand-plan :run-id      run-id
+                                             :what        validated-what
+                                             :marketplace mp
+                                             :period      period)
+              _       (sync-plan/persist-plan! plan)]
+          (future
+            (try
+              (sync-executor/run-sequential! plan)
+              (finally
+                (reset! sync-api/sync-running? false))))
+          {:status 202 :body {:run-id run-id :total (count plan)}}))))
+
   (POST "/api/sync/stop" []
     (let [result (sync-api/stop-sync!)]
       (if (:error result)
