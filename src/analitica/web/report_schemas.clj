@@ -33,16 +33,16 @@
    [{:key :article     :title "Артикул"  :group :identity :format :text :default-visible? true}
     {:key :brand       :title "Бренд"    :group :identity :format :text :default-visible? true}
     {:key :subject     :title "Категория" :group :identity :format :text :default-visible? false}
-    {:key :sales-qty   :title "Продажи"  :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true}
+    {:key :sales-qty   :title "Продажи"  :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true :delta-supported? true}
     {:key :returns-qty :title "Возвраты" :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true}
     {:key :buyout-rate :title "% выкупа" :group :ue1 :format :pct :canon-anchor "UE.1" :default-visible? true}
-    {:key :revenue     :title "Выручка"  :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? true}
+    {:key :revenue     :title "Выручка"  :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? true :delta-supported? true}
     {:key :wb-reward   :title "wb-reward" :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :logistics   :title "Логистика" :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :storage     :title "Хранение"  :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :for-pay     :title "for-pay"   :group :ue4 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :total-cost  :title "Себестоимость" :group :ue4 :format :rub :canon-anchor "UE.2" :default-visible? false}
-    {:key :profit      :title "Прибыль"  :group :ue4 :format :rub :canon-anchor "UE.4" :default-visible? true}
+    {:key :profit      :title "Прибыль"  :group :ue4 :format :rub :canon-anchor "UE.4" :default-visible? true :delta-supported? true}
     {:key :margin-pct  :title "Маржа %"  :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? true}
     {:key :drr-pct     :title "ДРР %"    :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
     {:key :wb-cost-pct :title "МП-затраты %" :group :ue7 :format :pct :canon-anchor "UE.7" :default-visible? false}
@@ -73,15 +73,17 @@
   {:report-type       :pnl
    :title             "P&L"
    :uses-period?      true
-   :supports-compare? false
+   ;; compare-mode: compute pnl/calculate for prev period; KPI tiles show prev + delta.
+   ;; No table rows (rows-mode :none) so delta-supported? columns are not applicable.
+   :supports-compare? true
    :rows-mode         :none
    :tabs              [:chart :drawer]
 
    :kpi
-   [{:key :revenue      :title "Revenue"     :format :rub}
-    {:key :gross-profit :title "Gross Profit" :format :rub}
-    {:key :net-profit   :title "Net Profit"  :format :rub}
-    {:key :margin-net   :title "Net Margin"  :format :pct}]
+   [{:key :revenue      :title "Revenue"     :format :rub :delta-from :revenue}
+    {:key :gross-profit :title "Gross Profit" :format :rub :delta-from :gross-profit}
+    {:key :net-profit   :title "Net Profit"  :format :rub :delta-from :net-profit}
+    {:key :margin-net   :title "Net Margin"  :format :pct :delta-from :margin-net}]
 
    :chart
    {:type :waterfall
@@ -102,9 +104,9 @@
          {:key :total-sales :title "Продажи" :format :int}
          {:key :total-returns :title "Возвраты" :format :int}]
    :columns [{:key :group :title "Дата" :group :identity :format :date :default-visible? true}
-             {:key :sales-count :title "Продажи" :group :volume :format :int :default-visible? true}
+             {:key :sales-count :title "Продажи" :group :volume :format :int :default-visible? true :delta-supported? true}
              {:key :returns-count :title "Возвраты" :group :volume :format :int :default-visible? true}
-             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
              {:key :avg-price :title "Средняя цена" :group :money :format :rub :default-visible? true}]
    :column-groups {:identity {:title "Identity"}
                    :volume   {:title "Объём"}
@@ -119,30 +121,34 @@
          {:key :total-for-pay :title "К оплате" :format :rub}
          {:key :total-cost :title "Затраты" :format :rub}]
    :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
-             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}
-             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true :delta-supported? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
              {:key :wb-reward :title "Вознаграждение WB" :group :money :format :rub :default-visible? true}
              {:key :logistics :title "Логистика" :group :money :format :rub :default-visible? true}
              {:key :storage :title "Хранение" :group :money :format :rub :default-visible? true}
-             {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true}
+             {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true :delta-supported? true}
              {:key :total-cost :title "Общие затраты" :group :money :format :rub :default-visible? true}]
    :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :money {:title "Деньги"}}
    :chart {:type :bar :title "Разбивка затрат" :x :article :y :for-pay :limit 20}})
 
 (def ^:private abc-schema
   {:report-type :abc :title "ABC-анализ"
-   :uses-period? true :supports-compare? false :rows-mode :per-article
+   :uses-period? true
+   ;; compare-mode: revenue/qty delta columns enabled. ABC class migration (was-B-now-A)
+   ;; is deferred — the compare data carries prev revenue/sales-qty and their deltas only.
+   :supports-compare? true
+   :rows-mode :per-article
    :tabs [:table :chart :drawer]
-   :kpi [{:key :total-revenue :title "Выручка" :format :rub}
+   :kpi [{:key :total-revenue :title "Выручка" :format :rub :delta-from :total-revenue}
          {:key :a-count :title "А-класс" :format :int}
          {:key :b-count :title "B-класс" :format :int}
          {:key :c-count :title "C-класс" :format :int}]
    :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
              {:key :abc-category :title "Категория" :group :identity :format :text :default-visible? true}
              {:key :cum-pct :title "Накопленный %" :group :pct :format :pct :default-visible? true}
-             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true}
+             {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
              {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true}
-             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}]
+             {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true :delta-supported? true}]
    :column-groups {:identity {:title "Identity"} :pct {:title "%"} :money {:title "Деньги"} :volume {:title "Объём"}}
    :chart {:type :line :title "Парето-кривая" :x :article :y :cum-pct}})
 
@@ -207,7 +213,14 @@
 
 (def ^:private trends-schema
   {:report-type :trends :title "Тренды"
-   :uses-period? true :supports-compare? false :rows-mode :per-metric
+   :uses-period? true
+   ;; supports-compare? intentionally false: the Trends report is ALREADY inherently
+   ;; compare-based — every row carries :current, :previous, :change, :change-pct.
+   ;; Adding an outer compare layer would produce compare-of-compares, which is
+   ;; meaningless. Users who want cross-period trends should change the WoW/MoM window
+   ;; via period-picker instead.
+   :supports-compare? false
+   :rows-mode :per-metric
    :tabs [:table :chart]
    :kpi [{:key :revenue-current :title "Выручка сейчас" :format :rub}
          {:key :orders-current :title "Заказы сейчас" :format :int}

@@ -67,7 +67,8 @@
     (let [s (rs/get-schema :pnl)]
       (is (some? s))
       (is (= :none (:rows-mode s)))
-      (is (false? (:supports-compare? s)))
+      ;; P&L supports compare: KPI tiles show prev-period deltas (Phase 3)
+      (is (true? (:supports-compare? s)))
       (is (not (contains? (set (:tabs s)) :table)))
       (is (contains? (set (:tabs s)) :chart)))))
 

@@ -7,13 +7,52 @@
 ;; Schema Column Helpers
 ;; ---------------------------------------------------------------------------
 
+(defn- schema-col->tabulator
+  "Convert a single schema column map to a Tabulator column definition map."
+  [c]
+  (cond-> {:title (:title c)
+           :field (name (:key c))
+           :format (:format c)
+           :canon-anchor (:canon-anchor c)
+           :width (case (:format c)
+                    :rub 130 :int 100 :pct 100
+                    :text 150 :date 120 120)}
+    (not (:default-visible? c)) (assoc :visible false)))
+
+(defn- delta-triplet
+  "Return the 3 extra Tabulator column definitions for a delta-supported column.
+   Fields: <key>_prev, <key>_delta, <key>_delta_pct."
+  [col]
+  (let [base  (name (:key col))
+        fmt   (:format col)
+        label (:title col)]
+    [{:title (str label " пред.") :field (str base "_prev")   :format fmt  :width (case fmt :rub 130 :int 100 80) :visible false}
+     {:title (str "Δ " label)    :field (str base "_delta")   :format fmt  :width (case fmt :rub 130 :int 100 80)}
+     {:title (str "Δ% " label)   :field (str base "_delta_pct") :format :pct :width 90}]))
+
+(defn- expand-delta-cols
+  "Given a seq of schema column maps and compare-active? flag, return a flat vector
+   of Tabulator column defs. For each delta-supported column when compare is active,
+   inject <col> followed immediately by its _prev/_delta/_delta_pct triplet."
+  [cols compare-active?]
+  (reduce (fn [acc c]
+            (let [base (schema-col->tabulator c)]
+              (if (and compare-active? (:delta-supported? c))
+                (into acc (cons base (delta-triplet c)))
+                (conj acc base))))
+          []
+          cols))
+
 (defn- columns-from-schema
   "Convert schema columns to grouped Tabulator columns.
    Includes ALL columns — default-visible? false ones get :visible false in Tabulator
    so they can be toggled via preset/chooser without reloading the page.
    Returns a vector of {:title :columns [...]}, ordered by :column-groups insertion order.
-   Falls back to flat column list if :column-groups not defined."
-  [schema]
+   Falls back to flat column list if :column-groups not defined.
+
+   When compare-active? is true, delta-supported columns get an injected triplet of
+   _prev / _delta / _delta_pct sub-columns immediately after the primary column."
+  [schema & {:keys [compare-active?]}]
   (let [groups (:column-groups schema)
         all-cols (:columns schema)]
     (if (seq groups)
@@ -22,27 +61,9 @@
              (filter #(seq (grouped %)))
              (mapv (fn [g-key]
                      {:title (get-in groups [g-key :title])
-                      :columns (mapv (fn [c]
-                                       (cond-> {:title (:title c)
-                                                :field (name (:key c))
-                                                :format (:format c)
-                                                :canon-anchor (:canon-anchor c)
-                                                :width (case (:format c)
-                                                         :rub 130 :int 100 :pct 100
-                                                         :text 150 :date 120 120)}
-                                         (not (:default-visible? c)) (assoc :visible false)))
-                                     (grouped g-key))}))))
-      ;; flat fallback: wrap everything in a single pseudo-group
-      (mapv (fn [c]
-              (cond-> {:title (:title c)
-                       :field (name (:key c))
-                       :format (:format c)
-                       :canon-anchor (:canon-anchor c)
-                       :width (case (:format c)
-                                :rub 130 :int 100 :pct 100
-                                :text 150 :date 120 120)}
-                (not (:default-visible? c)) (assoc :visible false)))
-            all-cols))))
+                      :columns (expand-delta-cols (grouped g-key) compare-active?)}))))
+      ;; flat fallback
+      (expand-delta-cols all-cols compare-active?))))
 
 ;; ---------------------------------------------------------------------------
 ;; No Data Banner
@@ -178,7 +199,8 @@
                      :waterfall "bar"           ;; Chart.js has no waterfall; bar placeholder
                      :horizontalBar "bar"
                      (name chart-type-kw))
-        grouped-cols (columns-from-schema schema)
+        compare-active? (some? compare)
+        grouped-cols (columns-from-schema schema :compare-active? compare-active?)
         kpi-schema (:kpi schema)
         compare-totals (when compare (:totals compare))
         tabs (or (:tabs schema) [:chart])
@@ -190,7 +212,8 @@
                         (str "&article=" (java.net.URLEncoder/encode article "UTF-8")))
         period-frag (period->url-frag period)
         api-url (str "/api/report/" (name report-type) "?" period-frag
-                     marketplace-param (or article-param ""))
+                     marketplace-param (or article-param "")
+                     (when compare "&compare=prev"))
         chart-api-url (str "/api/chart/report?type=" (name report-type)
                            "&" period-frag marketplace-param
                            (when compare "&compare=prev"))]
