@@ -8,76 +8,93 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- sync-controls
-  "Render marketplace selector and sync buttons. Period comes from the
-   global header picker (URL ?from&to) — single source of truth across
-   the whole UI, no second dropdown to keep in sync."
+  "Hero 'Обновить данные за <period>' button as the default flow:
+   one click → ingest+materialize across all 3 MPs sequentially. Power
+   users get the per-MP / per-type / re-materialize controls inside an
+   <details> 'Расширенный режим' block — closed by default so the seller
+   isn't faced with 16 buttons just to refresh their numbers.
+
+   Period is the global header picker (URL ?from&to), single source of
+   truth for the whole UI."
   []
   [:div.bg-white.rounded-lg.shadow.p-6.mb-6
-   [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Управление синхронизацией"]
+   [:h3.text-lg.font-semibold.text-gray-900.mb-2 "Обновить данные"]
+   [:p.text-sm.text-gray-600.mb-4
+    "Один клик — данные за выбранный период скачиваются по всем маркетплейсам и пересчитываются. "
+    "Период: " [:span#sync-hero-period.font-mono.text-gray-900 "—"]]
 
-   ;; Selectors row — only marketplace; period is taken from the global picker.
-   [:div.flex.flex-wrap.items-center.gap-4.mb-4
-    [:div.flex.items-center.gap-2
-     [:label.text-sm.font-medium.text-gray-700 "Маркетплейс:"]
-     [:select#sync-marketplace.border.border-gray-300.rounded-md.px-3.py-1.5.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-      [:option {:value "wb"}   "Wildberries"]
-      [:option {:value "ozon"} "Ozon"]
-      [:option {:value "ym"}   "Яндекс Маркет"]]]
-    [:div.flex.items-center.gap-2.text-xs.text-gray-500
-     "Период берётся из календаря в шапке"
-     [:span#sync-period-display.ml-2.font-mono.text-gray-700 "—"]]]
-
-   ;; Buttons — period comes from URL ?from&to, marketplace from the dropdown.
-   [:div.flex.flex-wrap
-    (for [[label what] [["Sync All"  "all"]
-                        ["Sales"     "sales"]
-                        ["Orders"    "orders"]
-                        ["Finance"   "finance"]
-                        ["Storage"   "storage"]
-                        ["Stocks"    "stocks"]
-                        ["Stats"     "stats"]
-                        ["Prices"    "prices"]
-                        ["Regions"   "regions"]
-                        ["1C"        "1c"]]]
-      [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.mr-2.mb-2
-       {:hx-post    "/api/sync/start"
-        :hx-include "#sync-marketplace"
-        :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
-        :hx-swap    "none"
-        "hx-on:htmx:responseError"
-        "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена.');}"}
-       label])
-    [:button.px-4.py-2.bg-red-600.text-white.rounded-md.hover:bg-red-700.transition-colors.text-sm.font-medium.mr-2.mb-2
+   ;; Hero button + Stop side-by-side. js:{what:'all', marketplace:'all'}
+   ;; tells the server to fan out across [:wb :ozon :ym].
+   [:div.flex.flex-wrap.items-center.gap-3.mb-2
+    [:button#sync-hero-btn.px-6.py-3.bg-blue-600.text-white.rounded-lg.hover:bg-blue-700.transition-colors.text-base.font-semibold.shadow
+     {:hx-post "/api/sync/start"
+      :hx-vals "js:{what:'all',marketplace:'all',period:window.__resolveSyncPeriod()}"
+      :hx-swap "none"
+      "hx-on:htmx:responseError"
+      "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена. Дождитесь завершения.');}"}
+     "↻ Обновить данные"]
+    [:button.px-4.py-3.bg-red-600.text-white.rounded-lg.hover:bg-red-700.transition-colors.text-sm.font-medium
      {:hx-post "/api/sync/stop"
       :hx-swap "none"
       "hx-on:htmx:responseError"
       "if(event.detail.xhr.status===409){alert('Сейчас нет активной синхронизации.');}"}
-     "⛔ Stop"]]
+     "⛔ Остановить"]
+    [:span.text-xs.text-gray-500
+     "Прогресс — ниже в логе, обычно 5–15 мин на полный refresh"]]
 
-   ;; Rematerialize-only buttons: re-run transform/canon over raw_data
-   ;; that is already on disk, no marketplace HTTP. Useful after fixing
-   ;; a bug in transform code without burning MP rate-limit budget.
-   [:div.mt-4
-    [:p.text-xs.text-gray-500.mb-2 "Пересчитать отчёты на уже скачанных данных (без обращения в MP):"]
-    [:div.flex.flex-wrap
-     (for [[label what] [["Пересчитать всё"  "all"]
-                         ["Пересч. Sales"    "sales"]
-                         ["Пересч. Orders"   "orders"]
-                         ["Пересч. Finance"  "finance"]
-                         ["Пересч. Stocks"   "stocks"]
-                         ["Пересч. Prices"   "prices"]]]
-       [:button.px-3.py-1.5.bg-amber-600.text-white.rounded.hover:bg-amber-700.transition-colors.text-xs.mr-2.mb-2
-        {:hx-post    "/api/sync/rematerialize"
-         :hx-include "#sync-marketplace"
-         :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
-         :hx-swap    "none"
-         "hx-on:htmx:responseError"
-         "if(event.detail.xhr.status===409){alert('Уже что-то выполняется. Дождитесь завершения.');}"}
-        label])]]
+   ;; Power-user controls: per-MP, per-type ingest + rematerialize.
+   ;; Closed by default — only opens if user explicitly needs granularity.
+   [:details.mt-6.border-t.border-gray-200.pt-4
+    [:summary.cursor-pointer.text-sm.font-medium.text-gray-700.hover:text-blue-600
+     "Расширенный режим — отдельные маркетплейсы и типы данных"]
+    [:div.mt-4
+     [:div.flex.flex-wrap.items-center.gap-4.mb-3
+      [:div.flex.items-center.gap-2
+       [:label.text-sm.font-medium.text-gray-700 "Маркетплейс:"]
+       [:select#sync-marketplace.border.border-gray-300.rounded-md.px-3.py-1.5.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
+        [:option {:value "wb"}   "Wildberries"]
+        [:option {:value "ozon"} "Ozon"]
+        [:option {:value "ym"}   "Яндекс Маркет"]]]]
+
+     [:p.text-xs.text-gray-500.mb-1 "Скачать с MP + пересчитать (для выбранного маркетплейса):"]
+     [:div.flex.flex-wrap.mb-3
+      (for [[label what] [["Sync All"  "all"]
+                          ["Sales"     "sales"]
+                          ["Orders"    "orders"]
+                          ["Finance"   "finance"]
+                          ["Storage"   "storage"]
+                          ["Stocks"    "stocks"]
+                          ["Stats"     "stats"]
+                          ["Prices"    "prices"]
+                          ["Regions"   "regions"]
+                          ["1C"        "1c"]]]
+        [:button.px-3.py-1.5.bg-blue-600.text-white.rounded.hover:bg-blue-700.transition-colors.text-xs.font-medium.mr-2.mb-2
+         {:hx-post    "/api/sync/start"
+          :hx-include "#sync-marketplace"
+          :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
+          :hx-swap    "none"
+          "hx-on:htmx:responseError"
+          "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена.');}"}
+         label])]
+
+     [:p.text-xs.text-gray-500.mb-1 "Только пересчитать отчёты на уже скачанных данных (без обращения в MP):"]
+     [:div.flex.flex-wrap
+      (for [[label what] [["Пересчитать всё"  "all"]
+                          ["Пересч. Sales"    "sales"]
+                          ["Пересч. Orders"   "orders"]
+                          ["Пересч. Finance"  "finance"]
+                          ["Пересч. Stocks"   "stocks"]
+                          ["Пересч. Prices"   "prices"]]]
+        [:button.px-3.py-1.5.bg-amber-600.text-white.rounded.hover:bg-amber-700.transition-colors.text-xs.mr-2.mb-2
+         {:hx-post    "/api/sync/rematerialize"
+          :hx-include "#sync-marketplace"
+          :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
+          :hx-swap    "none"
+          "hx-on:htmx:responseError"
+          "if(event.detail.xhr.status===409){alert('Уже что-то выполняется. Дождитесь завершения.');}"}
+         label])]]]
 
    ;; Single source of truth for the sync period: URL → localStorage → default.
-   ;; Mirrors period-picker.js' loadInitial() so what users see in the chip
-   ;; matches what gets POSTed to /api/sync/start.
    [:script "
      window.__resolveSyncPeriod = function() {
        var q = new URLSearchParams(location.search);
@@ -89,7 +106,7 @@
        return 'last-30-days';
      };
      (function() {
-       var el = document.getElementById('sync-period-display');
+       var el = document.getElementById('sync-hero-period');
        if (!el) return;
        var p = window.__resolveSyncPeriod();
        el.textContent = p === 'last-30-days' ? 'последние 30 дней (по умолчанию)' : p.replace(',', ' — ');

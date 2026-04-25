@@ -59,13 +59,34 @@
 ;; Sync management
 ;; ---------------------------------------------------------------------------
 
+(def ^:private all-marketplaces
+  "Marketplaces fan-out target for the hero 'Обновить данные' button.
+   Order matches the canonical sidebar (WB, Ozon, YM)."
+  [:wb :ozon :ym])
+
+(defn- run-one-mp!
+  "ingest! + materialize! for one (what, mp) pair, isolated by try/catch
+   so a failure on one MP doesn't abort the rest of the fan-out."
+  [what period mp]
+  (try
+    (println (str "\n>>> Marketplace: " (name mp) " <<<"))
+    (ingest/ingest! what :period period :marketplace mp)
+    (materialize/materialize! what :period period :marketplace mp)
+    (catch Exception e
+      (println (str "[SYNC] " (name mp) " failed: " (.getMessage e)))
+      (μ/log ::sync-mp-error
+             :what what :period period :marketplace mp
+             :error-message (.getMessage e) :error-type (type e)))))
+
 (defn start-sync!
   "Start sync in a separate thread.
 
    Parameters:
-   - what:        keyword (:sales, :orders, :finance, :stocks, etc.)
+   - what:        keyword (:sales, :orders, :finance, :stocks, :all, etc.)
    - :period      period keyword or map (optional)
-   - :marketplace marketplace keyword (optional, default :wb)
+   - :marketplace marketplace keyword. :wb / :ozon / :ym for one MP, or
+                  :all to fan out across [:wb :ozon :ym] sequentially —
+                  failures on one MP don't abort the others.
 
    Returns {:ok true} or {:error \"already running\"}."
   [what & {:keys [period marketplace]}]
@@ -76,11 +97,18 @@
                     (println (str "[SYNC] Starting: what=" what ", period=" period ", marketplace=" marketplace))
                     (capture-output-to-queue queue
                       (fn []
-                        (let [mp (or marketplace :wb)]
-                          (case what
-                            :1c (sync/sync-1c!)
-                            (do (ingest/ingest! what :period period :marketplace mp)
-                                (materialize/materialize! what :period period :marketplace mp))))))
+                        (cond
+                          (= what :1c)
+                          (sync/sync-1c!)
+
+                          (= marketplace :all)
+                          (doseq [mp all-marketplaces]
+                            (run-one-mp! what period mp))
+
+                          :else
+                          (let [mp (or marketplace :wb)]
+                            (ingest/ingest! what :period period :marketplace mp)
+                            (materialize/materialize! what :period period :marketplace mp)))))
                     (.offer queue {:type :done})
                     (println "[SYNC] Completed")
                     (catch InterruptedException _

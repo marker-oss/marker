@@ -877,7 +877,9 @@
           marketplace-str (or (:marketplace body-data) (:marketplace params))
           validated-what (when what-str (validate-sync-what (if (keyword? what-str) (name what-str) what-str)))
           validated-period (when period-str (validate-period period-str))
-          validated-mp (when marketplace-str (validate-marketplace (if (keyword? marketplace-str) (name marketplace-str) marketplace-str)))]
+          mp-name        (when marketplace-str (if (keyword? marketplace-str) (name marketplace-str) marketplace-str))
+          all-mp?        (= mp-name "all")
+          validated-mp   (when (and marketplace-str (not all-mp?)) (validate-marketplace mp-name))]
       (cond
         (not validated-what)
         {:status 400 :body {:error (str "Invalid 'what' parameter: " what-str)}}
@@ -885,16 +887,18 @@
         (and period-str (not validated-period))
         {:status 400 :body {:error (str "Invalid period: " period-str)}}
 
-        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        (and marketplace-str (not validated-mp) (not all-mp?))
         {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
 
         :else
         (let [period (when validated-period
                        (try (time/parse-period validated-period)
                             (catch Exception _ nil)))
+              ;; :all fans out across [:wb :ozon :ym] in start-sync!.
+              mp     (if all-mp? :all validated-mp)
               result (sync-api/start-sync! validated-what
                                            :period      period
-                                           :marketplace validated-mp)]
+                                           :marketplace mp)]
           (if (:error result)
             {:status 409 :body result}
             {:status 200 :body result})))))
