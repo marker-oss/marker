@@ -43,21 +43,21 @@
 
 (defn get-request
   "GET request to WB API."
-  [^WBClient client section path & {:keys [query-params]}]
+  [^WBClient client section path & {:keys [query-params limiter-key limiter-rpm]}]
   (http/request {:method       :get
                  :url          (api-url section path)
                  :token        (:token client)
                  :query-params query-params
-                 :limiter-key  (keyword "wb" (name section))
-                 :limiter-rpm  (get (:rate-limits client) section 5)}))
+                 :limiter-key  (or limiter-key (keyword "wb" (name section)))
+                 :limiter-rpm  (or limiter-rpm (get (:rate-limits client) section 5))}))
 
 (defn post-request
   "POST request to WB API."
-  [^WBClient client section path & {:keys [body query-params]}]
+  [^WBClient client section path & {:keys [body query-params limiter-key limiter-rpm]}]
   (http/request {:method       :post
                  :url          (api-url section path)
                  :token        (:token client)
                  :body         body
                  :query-params query-params
-                 :limiter-key  (keyword "wb" (name section))
-                 :limiter-rpm  (get (:rate-limits client) section 5)}))
+                 :limiter-key  (or limiter-key (keyword "wb" (name section)))
+                 :limiter-rpm  (or limiter-rpm (get (:rate-limits client) section 5))}))
