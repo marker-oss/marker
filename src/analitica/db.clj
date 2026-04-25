@@ -329,7 +329,23 @@
     )"
    "CREATE INDEX IF NOT EXISTS idx_sync_tasks_run_id ON sync_tasks (run_id)"
    "CREATE INDEX IF NOT EXISTS idx_sync_tasks_status ON sync_tasks (status)"
-   "CREATE INDEX IF NOT EXISTS idx_sync_tasks_finished_at ON sync_tasks (finished_at)"])
+   "CREATE INDEX IF NOT EXISTS idx_sync_tasks_finished_at ON sync_tasks (finished_at)"
+
+   ;; sync_schedule — V4 Phase 9: daily auto-refresh scheduler (singleton row)
+   "CREATE TABLE IF NOT EXISTS sync_schedule (
+      id              INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled         INTEGER NOT NULL DEFAULT 0,
+      hour            INTEGER NOT NULL DEFAULT 6,
+      minute          INTEGER NOT NULL DEFAULT 0,
+      what            TEXT NOT NULL DEFAULT 'all',
+      marketplace     TEXT NOT NULL DEFAULT 'all',
+      period          TEXT NOT NULL DEFAULT 'last-7-days',
+      last_run_at     TEXT,
+      last_run_id     TEXT,
+      next_run_at     TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    )"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
@@ -577,6 +593,14 @@
         (println "Migrated ad_stats: new PRIMARY KEY (campaign_id, date, nm_id)")))
     ;; Ensure index exists (for both migrated and fresh DBs)
     (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_product_stats_marketplace ON product_stats(marketplace)"])
+    ;; Seed the sync_schedule singleton row if not yet present.
+    ;; INSERT OR IGNORE is idempotent — safe to run on every startup.
+    (let [now-str (.format (java.time.LocalDateTime/now)
+                           (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss"))]
+      (jdbc/execute! ds
+                     ["INSERT OR IGNORE INTO sync_schedule (id, created_at, updated_at)
+                       VALUES (1, ?, ?)"
+                      now-str now-str]))
     (println "SQLite database initialized: analitica.db (WAL mode enabled)")
     ds))
 

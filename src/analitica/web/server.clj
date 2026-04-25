@@ -21,6 +21,7 @@
             [analitica.sync.executor :as sync-executor]
             [analitica.sync.registry :as sync-registry]
             [analitica.sync.runner :as sync-runner]
+            [analitica.sync.scheduler :as sync-scheduler]
             [analitica.web.api.sync-coverage :as sync-coverage]
             [analitica.web.api.metrics :as metrics-api]
             [analitica.web.api.charts :as charts-api]
@@ -1134,6 +1135,56 @@
                 [:td {:style "padding:6px;border-bottom:1px solid #eee"} (or (:notes r) "")]])
              [:tr [:td {:colspan 7 :style "padding:1em;color:#666;text-align:center"}
                    "Импортов пока не было."]])]]])))
+
+  ;; Phase 9 — schedule CRUD
+  (GET "/api/sync/schedule" []
+    (let [sched (sync-scheduler/get-schedule)]
+      (if sched
+        {:status 200 :body sched}
+        {:status 404 :body {:error "schedule not initialized"}})))
+
+  (POST "/api/sync/schedule" {body :body params :params}
+    (let [body-str  (when body (slurp body))
+          body-data (when (and body-str (not (empty? body-str)))
+                      (json/read-value body-str json/keyword-keys-object-mapper))
+          raw-enabled (or (:enabled body-data) (:enabled params))
+          enabled?    (if (boolean? raw-enabled)
+                        raw-enabled
+                        (contains? #{true 1 "true" "1"} raw-enabled))
+          hour-raw    (or (:hour body-data) (:hour params))
+          minute-raw  (or (:minute body-data) (:minute params))
+          hour        (when hour-raw (try (Integer/parseInt (str hour-raw)) (catch Exception _ nil)))
+          minute      (when minute-raw (try (Integer/parseInt (str minute-raw)) (catch Exception _ nil)))
+          what-str    (or (:what body-data) (:what params))
+          mp-str      (or (:marketplace body-data) (:marketplace params))
+          period-str  (or (:period body-data) (:period params))]
+      (cond
+        (and (some? hour) (not (<= 0 hour 23)))
+        {:status 400 :body {:error "hour must be 0-23"}}
+
+        (and (some? minute) (not (<= 0 minute 59)))
+        {:status 400 :body {:error "minute must be 0-59"}}
+
+        (and what-str
+             (not (contains? (conj valid-run-what "all") what-str)))
+        {:status 400 :body {:error (str "Invalid what: " what-str)}}
+
+        (and mp-str
+             (not (contains? (conj valid-marketplaces "all") mp-str)))
+        {:status 400 :body {:error (str "Invalid marketplace: " mp-str)}}
+
+        (and period-str (not (validate-period period-str)))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        :else
+        (let [updated (sync-scheduler/update-schedule!
+                       {:enabled?    enabled?
+                        :hour        (or hour 6)
+                        :minute      (or minute 0)
+                        :what        (or what-str "all")
+                        :marketplace (or mp-str "all")
+                        :period      (or period-str "last-7-days")})]
+          {:status 200 :body updated}))))
 
   ;; 404
   (route/not-found {:status 404 :body "Not Found"}))

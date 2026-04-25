@@ -2,6 +2,7 @@
   (:require [analitica.config :as config]
             [analitica.db :as db]
             [analitica.sync :as sync]
+            [analitica.sync.scheduler :as scheduler]
             [analitica.ingest :as ingest]
             [analitica.materialize :as materialize]
             [analitica.marketplace.registry :as registry]
@@ -67,6 +68,8 @@
     (when (seq errors)
       (println (str "  " (count errors) " schema files failed to load (see warnings above)"))))
   (sync/status)
+  ;; Start the daily auto-refresh scheduler (reads sync_schedule, arms if enabled).
+  (scheduler/start!)
   (println "\nTry (help) for available commands."))
 
 (defn mp

@@ -1,7 +1,127 @@
 (ns analitica.web.pages.sync
   (:require [hiccup.core :refer [html]]
             [analitica.web.components :as c]
-            [analitica.web.api.metrics :as metrics-api]))
+            [analitica.web.api.metrics :as metrics-api]
+            [analitica.sync.scheduler :as scheduler]))
+
+;; ---------------------------------------------------------------------------
+;; Auto-refresh section (Phase 9)
+;; ---------------------------------------------------------------------------
+
+(defn- auto-refresh-section
+  "Render the daily auto-refresh scheduler toggle and settings form."
+  []
+  (let [sched   (try (scheduler/get-schedule) (catch Exception _ nil))
+        enabled (= 1 (:enabled sched 0))
+        hour    (or (:hour sched) 6)
+        minute  (or (:minute sched) 0)
+        what    (or (:what sched) "all")
+        mp      (or (:marketplace sched) "all")
+        period  (or (:period sched) "last-7-days")]
+    [:div.bg-white.rounded-lg.shadow.p-6.mb-6
+     [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Авто-обновление"]
+     [:p.text-sm.text-gray-600.mb-4
+      "Ежедневно запускает синхронизацию в указанное время. "
+      "Пропускает запуск, если уже выполняется ручная синхронизация."]
+
+     ;; Settings form — POSTs JSON to /api/sync/schedule
+     [:form#schedule-form.space-y-4
+      {:hx-post     "/api/sync/schedule"
+       :hx-swap     "none"
+       :hx-encoding "application/json"
+       "hx-on:htmx:afterRequest"
+       (str "if(event.detail.xhr.status===200){"
+            "document.getElementById('schedule-saved-msg').style.display='inline';"
+            "setTimeout(function(){document.getElementById('schedule-saved-msg').style.display='none';},3000);"
+            "}else{alert('Ошибка: '+event.detail.xhr.responseText);}")}
+
+      ;; Enabled toggle
+      [:div.flex.items-center.gap-3
+       [:input#schedule-enabled
+        {:type    "checkbox"
+         :name    "enabled"
+         :value   "true"
+         :checked (when enabled "checked")
+         :class   "h-4 w-4 text-blue-600 border-gray-300 rounded"}]
+       [:label.text-sm.font-medium.text-gray-700 {:for "schedule-enabled"} "Включено"]]
+
+      ;; Time row
+      [:div.flex.flex-wrap.items-center.gap-4
+       [:div.flex.items-center.gap-2
+        [:label.text-sm.text-gray-700 {:for "schedule-hour"} "Час (0–23):"]
+        [:input#schedule-hour.border.border-gray-300.rounded-md.px-2.py-1.text-sm.w-16
+         {:type "number" :name "hour" :min "0" :max "23" :value hour}]]
+       [:div.flex.items-center.gap-2
+        [:label.text-sm.text-gray-700 {:for "schedule-minute"} "Минута (0–59):"]
+        [:input#schedule-minute.border.border-gray-300.rounded-md.px-2.py-1.text-sm.w-16
+         {:type "number" :name "minute" :min "0" :max "59" :value minute}]]]
+
+      ;; Period / marketplace / what row
+      [:div.flex.flex-wrap.items-center.gap-4
+       [:div.flex.items-center.gap-2
+        [:label.text-sm.text-gray-700 {:for "schedule-period"} "Период:"]
+        [:select#schedule-period.border.border-gray-300.rounded-md.px-2.py-1.text-sm
+         {:name "period"}
+         (for [[v label] [["last-7-days"  "Последние 7 дней"]
+                          ["last-30-days" "Последние 30 дней"]
+                          ["last-week"    "Прошлая неделя"]
+                          ["this-month"   "Текущий месяц"]]]
+           [:option (merge {:value v} (when (= v period) {:selected "selected"})) label])]]
+       [:div.flex.items-center.gap-2
+        [:label.text-sm.text-gray-700 {:for "schedule-mp"} "Маркетплейс:"]
+        [:select#schedule-mp.border.border-gray-300.rounded-md.px-2.py-1.text-sm
+         {:name "marketplace"}
+         (for [[v label] [["all"  "Все"] ["wb" "Wildberries"] ["ozon" "Ozon"] ["ym" "Яндекс Маркет"]]]
+           [:option (merge {:value v} (when (= v mp) {:selected "selected"})) label])]]
+       [:div.flex.items-center.gap-2
+        [:label.text-sm.text-gray-700 {:for "schedule-what"} "Тип данных:"]
+        [:select#schedule-what.border.border-gray-300.rounded-md.px-2.py-1.text-sm
+         {:name "what"}
+         (for [[v label] [["all"     "Все"]
+                          ["sales"   "Продажи"]
+                          ["orders"  "Заказы"]
+                          ["finance" "Финансы"]
+                          ["stocks"  "Остатки"]]]
+           [:option (merge {:value v} (when (= v what) {:selected "selected"})) label])]]]
+
+      ;; Submit
+      [:div.flex.items-center.gap-3
+       [:button.px-4.py-2.bg-blue-600.text-white.rounded-lg.hover:bg-blue-700.text-sm.font-medium
+        {:type "submit"} "Сохранить"]
+       [:span#schedule-saved-msg.text-sm.text-green-600
+        {:style "display:none"} "Сохранено"]]]
+
+     ;; Status info
+     [:div.mt-4.pt-4.border-t.border-gray-200.text-sm.text-gray-600.space-y-1
+      [:div "Последний авто-запуск: "
+       [:span.font-mono (or (:last-run-at sched) "—")]
+       (when (:last-run-id sched)
+         [:span.text-gray-400 (str "  (run-id: " (:last-run-id sched) ")")])]
+      [:div "Следующий запуск: "
+       [:span.font-mono (or (:next-run-at sched) (if enabled "вычисляется…" "—"))]]]
+
+     ;; JS: serialize form as JSON on submit (HTMX sends form-data by default;
+     ;; override with hx-vals to send JSON that the server can parse via slurp).
+     [:script "
+       (function() {
+         var form = document.getElementById('schedule-form');
+         if (!form) return;
+         form.addEventListener('htmx:configRequest', function(evt) {
+           var params = evt.detail.parameters;
+           var enabled = document.getElementById('schedule-enabled').checked;
+           var body = {
+             enabled: enabled,
+             hour: parseInt(document.getElementById('schedule-hour').value, 10),
+             minute: parseInt(document.getElementById('schedule-minute').value, 10),
+             period: document.getElementById('schedule-period').value,
+             marketplace: document.getElementById('schedule-mp').value,
+             what: document.getElementById('schedule-what').value
+           };
+           evt.detail.parameters = body;
+           evt.detail.headers['Content-Type'] = 'application/json';
+         });
+       })();
+     "]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Sync Buttons
@@ -337,6 +457,9 @@
   Requirements: 6.1, 6.4, 6.5"
   []
   [:div
+   ;; Daily auto-refresh scheduler toggle (Phase 9)
+   (auto-refresh-section)
+
    ;; Sync control buttons
    (sync-controls)
 
