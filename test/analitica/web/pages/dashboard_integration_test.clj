@@ -9,9 +9,9 @@
     (db/init!)
     (f)))
 
-(deftest summary-dashboard-integration-test
-  (testing "summary-dashboard renders complete HTML structure"
-    (let [result (dashboard/summary-dashboard :last-week)
+(deftest summary-page-integration-test
+  (testing "summary-page renders complete HTML structure"
+    (let [result (dashboard/summary-page :last-week)
           html-str (str result)]
       
       ;; Check for metrics container with HTMX attributes
@@ -38,15 +38,15 @@
       (is (str/includes? html-str "/api/chart/sales"))
       (is (str/includes? html-str "/api/chart/share"))))
   
-  (testing "summary-dashboard includes period parameter in API URLs"
-    (let [result (dashboard/summary-dashboard {:from "2026-04-01" :to "2026-04-30"})
+  (testing "summary-page includes period parameter in API URLs"
+    (let [result (dashboard/summary-page {:from "2026-04-01" :to "2026-04-30"})
           html-str (str result)]
       
       ;; Check that period is included in API URLs
       (is (str/includes? html-str "period=2026-04-01,2026-04-30"))))
   
-  (testing "summary-dashboard with keyword period"
-    (let [result (dashboard/summary-dashboard :last-30-days)
+  (testing "summary-page with keyword period"
+    (let [result (dashboard/summary-page :last-30-days)
           html-str (str result)]
       
       ;; Check that keyword period is converted to string

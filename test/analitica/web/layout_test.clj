@@ -19,8 +19,8 @@
   
   (testing "page includes sidebar navigation"
     (let [html (layout/page "Test" [:div "Content"])]
-      (is (re-find #"Дашборд" html))
-      (is (re-find #"Отчёты" html))
+      (is (re-find #"Главная" html))
+      (is (re-find #"Финансы" html))
       (is (re-find #"Синхронизация" html))))
   
   (testing "page includes header elements"

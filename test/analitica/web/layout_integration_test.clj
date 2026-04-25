@@ -9,7 +9,7 @@
       (is (= 200 (:status response)))
       (is (= "text/html; charset=utf-8" (get-in response [:headers "Content-Type"])))
       (is (string? (:body response)))
-      (is (re-find #"Дашборд" (:body response)))
+      (is (re-find #"Главная" (:body response)))
       (is (re-find #"Analitica" (:body response)))))
   
   (testing "WB route renders layout with WB active"

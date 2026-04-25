@@ -179,13 +179,13 @@
 ;; Summary Dashboard
 ;; ---------------------------------------------------------------------------
 
-(defn summary-dashboard
-  "Render summary dashboard page with metrics, charts, and marketplace comparison.
-   
+(defn summary-page
+  "Render the Главная (home) page with metrics, charts, and marketplace comparison.
+
    Parameters:
    - period: period parameter (keyword or map)
    - metrics: optional metrics data (if provided, checks for no data)
-   
+
    Displays:
    - 4 metric cards (Revenue, Orders, Profit, Return Rate) with WoW deltas
    - Marketplace comparison table
@@ -193,7 +193,7 @@
    - Marketplace share chart (donut chart)
    - HTMX polling for auto-refresh every 5 minutes
    - No data banner when data is missing
-   
+
    Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 14.1"
   [period & {:keys [metrics]}]
   (let [period-param (cond

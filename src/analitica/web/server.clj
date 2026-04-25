@@ -147,8 +147,8 @@
     (if-let [period (resolve-period-from-params params)]
       {:status 200
        :headers {"Content-Type" "text/html; charset=utf-8"}
-       :body (layout/page "Дашборд"
-                          (dashboard-page/summary-dashboard period)
+       :body (layout/page "Главная"
+                          (dashboard-page/summary-page period)
                           :active-route "/")}
       {:status 400
        :headers {"Content-Type" "text/html; charset=utf-8"}

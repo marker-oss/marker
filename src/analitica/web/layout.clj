@@ -21,42 +21,60 @@
 ;; ---------------------------------------------------------------------------
 
 (def nav-items
-  [{:label "Дашборд" :route "/" :children
-    [{:label "Все" :route "/"}
-     {:label "WB" :route "/wb"}
-     {:label "Ozon" :route "/ozon"}
-     {:label "YM" :route "/ym"}]}
-   {:label "Отчёты" :route "/reports" :children
-    [{:label "Продажи" :route "/reports/sales"}
-     {:label "Финансы" :route "/reports/finance"}
-     {:label "Юнит-экономика" :route "/reports/ue"}
-     {:label "P&L" :route "/reports/pnl"}
-     {:label "ABC-анализ" :route "/reports/abc"}
-     {:label "Остатки" :route "/reports/stock"}
-     {:label "Возвраты" :route "/reports/returns"}
-     {:label "Выкуп" :route "/reports/buyout"}
-     {:label "География" :route "/reports/geo"}
-     {:label "Тренды" :route "/reports/trends"}]}
-   {:label "Синхронизация" :route "/sync"}])
+  [{:label "Главная" :icon "🏠" :route "/"}
+   {:label "Финансы" :icon "💰" :route "/reports/pnl"
+    :children [{:label "P&L"              :route "/reports/pnl"}
+               {:label "Юнит-экономика"  :route "/reports/ue"}
+               {:label "Финансы (детали)" :route "/reports/finance"}
+               {:label "Возвраты"         :route "/reports/returns"}]}
+   {:label "Товары" :icon "📦" :route "/reports/sales"
+    :children [{:label "Продажи"   :route "/reports/sales"}
+               {:label "ABC-анализ" :route "/reports/abc"}
+               {:label "Тренды"    :route "/reports/trends"}
+               {:label "Выкуп"     :route "/reports/buyout"}
+               {:label "География" :route "/reports/geo"}]}
+   {:label "Склады" :icon "🏬" :route "/reports/stock"
+    :children [{:label "Остатки" :route "/reports/stock"}]}
+   {:label "Управление" :icon "⚙" :route "/sync"
+    :children [{:label "Синхронизация" :route "/sync"}]}])
+
+;; ---------------------------------------------------------------------------
+;; Helpers
+;; ---------------------------------------------------------------------------
+
+(defn- group-active?
+  "True when active-route is within a group: either the group's own route
+   or any of its children's routes."
+  [item active-route]
+  (let [{:keys [route children]} item]
+    (or (= route active-route)
+        (and (seq children)
+             (some #(or (= (:route %) active-route)
+                        (and (seq active-route)
+                             (clojure.string/starts-with? active-route (:route %))))
+                   children)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Components
 ;; ---------------------------------------------------------------------------
 
 (defn- nav-item
-  "Render a single navigation item with optional children."
+  "Render a navigation item.
+   - Items with :children render as a collapsible <details> group.
+     The group is open by default when any child matches active-route.
+   - Items without :children render as a plain link (e.g. Главная)."
   [item active-route]
-  (let [{:keys [label route children]} item
-        is-active? (or (= route active-route)
-                       (some #(= (:route %) active-route) children))
-        base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
-        active-classes "bg-blue-600 text-white"
-        inactive-classes "text-gray-300 hover:bg-gray-700 hover:text-white"]
-    [:div.mb-1
-     [:a {:href route
-          :class (str base-classes " " (if is-active? active-classes inactive-classes))}
-      label]
-     (when children
+  (let [{:keys [label icon route children]} item
+        display-label (if icon (str icon " " label) label)
+        active? (group-active? item active-route)]
+    (if children
+      ;; Collapsible group via HTML5 <details>/<summary>
+      [:details.mb-1 (merge {} (when active? {:open true}))
+       [:summary.flex.items-center.px-4.py-2.text-sm.rounded-md.cursor-pointer.transition-colors.select-none.list-none
+        {:class (if active?
+                  "bg-gray-700 text-white font-semibold"
+                  "text-gray-300 hover:bg-gray-700 hover:text-white")}
+        display-label]
        [:div.ml-4.mt-1
         (for [child children]
           (let [child-active? (= (:route child) active-route)
@@ -66,7 +84,16 @@
                                      "text-gray-400 hover:bg-gray-700 hover:text-white"))]
             [:a {:href (:route child)
                  :class child-classes}
-             (:label child)]))])]))
+             (:label child)]))]]
+      ;; Plain leaf link (Главная — no sub-items)
+      (let [is-active? active?
+            base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
+            active-classes "bg-blue-600 text-white"
+            inactive-classes "text-gray-300 hover:bg-gray-700 hover:text-white"]
+        [:div.mb-1
+         [:a {:href route
+              :class (str base-classes " " (if is-active? active-classes inactive-classes))}
+          display-label]]))))
 
 (defn- sidebar
   "Render the sidebar with navigation."
