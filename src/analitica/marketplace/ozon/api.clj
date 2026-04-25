@@ -15,6 +15,14 @@
     (str date-str "T00:00:00Z")))
 
 ;; ---------------------------------------------------------------------------
+;; Pagination constant — shared by FBO and FBS request bodies and loop guards
+;; ---------------------------------------------------------------------------
+
+(def ^:private page-limit
+  "Maximum number of postings per page for Ozon FBO/FBS list endpoints."
+  100)
+
+;; ---------------------------------------------------------------------------
 ;; FBO Orders — cursor pagination via last_id
 ;; ---------------------------------------------------------------------------
 
@@ -23,22 +31,52 @@
                   :body {"dir"     "asc"
                          "filter"  {"since" (->timestamp date-from)
                                     "to"    (->timestamp date-to)}
-                         "limit"   100
+                         "limit"   page-limit
                          "with"    {"analytics_data" true "financial_data" true}
                          "last_id" last-id}))
 
 (defn fbo-orders
-  "Fetch all FBO orders for the given date range. Paginates via cursor (last_id)."
+  "Fetch all FBO orders for the given date range. Paginates via cursor (last_id).
+
+   Primary exit: page has fewer than page-limit items (short page = last page).
+   Safety exit: full page where the returned cursor equals what we sent AND we
+   are not on the first page (first-page cursor is always \"\", so an API that
+   returns last_id \"\" on a full first page gets one free retry — the next
+   call uses first? false, so a repeated \"\" cursor at that point bails).
+
+   This prevents both the original bug (exits at page 1 when last_id is \"\")
+   and infinite loops when the cursor genuinely stalls."
   [client date-from date-to]
-  (loop [last-id "" result []]
-    (let [resp     (fbo-orders-page client date-from date-to last-id)
-          postings (get-in resp [:result :postings] [])]
-      (if (empty? postings)
+  (loop [cursor "" first? true result []]
+    (let [resp        (fbo-orders-page client date-from date-to cursor)
+          postings    (get-in resp [:result :postings] [])
+          new-last-id (get-in resp [:result :last_id] "")
+          acc         (into result postings)]
+      (cond
+        ;; Empty page — nothing to add
+        (empty? postings)
         result
-        (let [new-last-id (get-in resp [:result :last_id] "")]
-          (if (= new-last-id last-id)
-            (into result postings)
-            (recur new-last-id (into result postings))))))))
+
+        ;; Short page — definitely the last one
+        (< (count postings) page-limit)
+        acc
+
+        ;; Full page, cursor advanced — keep paginating
+        (not= new-last-id cursor)
+        (recur new-last-id false acc)
+
+        ;; Full page, cursor unchanged, but this is the first call — the Ozon
+        ;; API legitimately returns last_id \"\" on the first page even when
+        ;; more pages exist; allow one retry with the same cursor
+        first?
+        (recur new-last-id false acc)
+
+        ;; Full page, cursor unchanged, not first call — truly stalled
+        :else
+        (do
+          (println (str "WARNING: ozon fbo-orders cursor stalled at \"" new-last-id
+                        "\" on a full page; stopping pagination to avoid infinite loop."))
+          acc)))))
 
 ;; ---------------------------------------------------------------------------
 ;; FBS Orders — cursor pagination via last_id
@@ -49,22 +87,52 @@
                   :body {"dir"     "asc"
                          "filter"  {"since" (->timestamp date-from)
                                     "to"    (->timestamp date-to)}
-                         "limit"   100
+                         "limit"   page-limit
                          "with"    {"analytics_data" true "financial_data" true}
                          "last_id" last-id}))
 
 (defn fbs-orders
-  "Fetch all FBS orders for the given date range. Paginates via cursor (last_id)."
+  "Fetch all FBS orders for the given date range. Paginates via cursor (last_id).
+
+   Primary exit: page has fewer than page-limit items (short page = last page).
+   Safety exit: full page where the returned cursor equals what we sent AND we
+   are not on the first page (first-page cursor is always \"\", so an API that
+   returns last_id \"\" on a full first page gets one free retry — the next
+   call uses first? false, so a repeated \"\" cursor at that point bails).
+
+   This prevents both the original bug (exits at page 1 when last_id is \"\")
+   and infinite loops when the cursor genuinely stalls."
   [client date-from date-to]
-  (loop [last-id "" result []]
-    (let [resp     (fbs-orders-page client date-from date-to last-id)
-          postings (get-in resp [:result :postings] [])]
-      (if (empty? postings)
+  (loop [cursor "" first? true result []]
+    (let [resp        (fbs-orders-page client date-from date-to cursor)
+          postings    (get-in resp [:result :postings] [])
+          new-last-id (get-in resp [:result :last_id] "")
+          acc         (into result postings)]
+      (cond
+        ;; Empty page — nothing to add
+        (empty? postings)
         result
-        (let [new-last-id (get-in resp [:result :last_id] "")]
-          (if (= new-last-id last-id)
-            (into result postings)
-            (recur new-last-id (into result postings))))))))
+
+        ;; Short page — definitely the last one
+        (< (count postings) page-limit)
+        acc
+
+        ;; Full page, cursor advanced — keep paginating
+        (not= new-last-id cursor)
+        (recur new-last-id false acc)
+
+        ;; Full page, cursor unchanged, but this is the first call — the Ozon
+        ;; API legitimately returns last_id \"\" on the first page even when
+        ;; more pages exist; allow one retry with the same cursor
+        first?
+        (recur new-last-id false acc)
+
+        ;; Full page, cursor unchanged, not first call — truly stalled
+        :else
+        (do
+          (println (str "WARNING: ozon fbs-orders cursor stalled at \"" new-last-id
+                        "\" on a full page; stopping pagination to avoid infinite loop."))
+          acc)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Finance Transactions — /v3/finance/transaction/list
