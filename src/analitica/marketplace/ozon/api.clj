@@ -19,8 +19,13 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private page-limit
-  "Maximum number of postings per page for Ozon FBO/FBS list endpoints."
-  100)
+  "Maximum postings per page for /v3/posting/fbo/list and /v3/posting/fbs/list.
+
+   Ozon documents 1000 as the cap for these endpoints; larger requests
+   are silently truncated. Bumping from the original 100 reduces the
+   number of round-trips by 10× and leaves more headroom before the
+   cursor-stall safety net (see fbo-orders / fbs-orders) kicks in."
+  1000)
 
 ;; ---------------------------------------------------------------------------
 ;; FBO Orders — cursor pagination via last_id

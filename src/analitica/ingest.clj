@@ -159,13 +159,26 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- ingest-ozon-postings!
-  "Fetch FBO + FBS postings once. Both orders and sales derive from this."
+  "Fetch FBO + FBS postings, chunking by week to defend against Ozon's
+   cursor-pagination quirks: in the wild we've observed `last_id` returning
+   `\"\"` on a full page (the cursor-stall safety net in fbo-orders/fbs-orders
+   then bails out at 200–300 items even when the store has thousands). Splitting
+   by 7-day windows means each window's pagination loop is bounded by the
+   real per-week posting count, so even if the cursor stalls we lose at most
+   one week's overflow rather than the entire range.
+
+   Concatenates results across all chunks before persisting one raw_data row
+   for the full [from..to] range — keeps the materialize layer's load-raw
+   semantics unchanged."
   [client from to]
-  (let [fbo  (ozon-api/fbo-orders client from to)
-        fbs  (ozon-api/fbs-orders client from to)
-        data (into (vec fbo) fbs)]
+  (let [chunks (t/date-chunks from to 7)
+        fbo    (vec (mapcat (fn [[cf ct]] (ozon-api/fbo-orders client cf ct)) chunks))
+        fbs    (vec (mapcat (fn [[cf ct]] (ozon-api/fbs-orders client cf ct)) chunks))
+        data   (into fbo fbs)]
     (db/insert-raw! :ozon :postings from to data)
-    (println (str "  Ingested Ozon postings: " (count data) " items (FBO: " (count fbo) ", FBS: " (count fbs) ")"))
+    (println (str "  Ingested Ozon postings: " (count data) " items "
+                  "(FBO: " (count fbo) ", FBS: " (count fbs) ", "
+                  (count chunks) " weekly chunks)"))
     (count data)))
 
 (defn- ingest-ozon-stocks! [client]
@@ -261,25 +274,41 @@
         ld-last  (.withDayOfMonth ld-first (.lengthOfMonth ld-first))]
     [(.toString ld-first) (.toString ld-last)]))
 
+(defn- not-yet-published?
+  "Ozon realization is published mid-next-month; an early request for the
+   current or last-week month commonly comes back as HTTP 404. Treat that
+   as 'data not ready', not as an error, so :all ingest doesn't surface
+   noisy red lines for an external publication delay we can't fix."
+  [throwable]
+  (let [d (ex-data throwable)]
+    (or (and d (= 404 (:status d)))
+        (some-> throwable .getMessage (.contains "status: 404")))))
+
 (defn- ingest-ozon-realization! [client from to]
   (let [months (months-in-range from to)
         total  (volatile! 0)]
     (doseq [[y m] months]
-      (let [[mf mt] (month-range y m)
-            data    (schema-validator/with-validation
-                      :ozon/finance-realization
-                      #(ozon-api/finance-realization client y m)
-                      (fn [resp]
-                        ;; Only store if the API returned any rows (a not-yet-closed month
-                        ;; returns an empty report; we don't overwrite existing raw_data
-                        ;; with an empty snapshot in that case).
-                        (when (seq (get resp :rows []))
-                          (db/insert-raw! :ozon :realization mf mt resp))))
-            rows    (get data :rows [])]
-        (when (seq rows)
-          (vswap! total + (count rows))
-          (println (str "  Ingested Ozon realization " mf " .. " mt ": "
-                        (count rows) " per-article rows")))))
+      (let [[mf mt] (month-range y m)]
+        (try
+          (let [data (schema-validator/with-validation
+                       :ozon/finance-realization
+                       #(ozon-api/finance-realization client y m)
+                       (fn [resp]
+                         ;; Only store if the API returned any rows. A
+                         ;; not-yet-closed month returns empty; don't
+                         ;; overwrite existing raw_data with [].
+                         (when (seq (get resp :rows []))
+                           (db/insert-raw! :ozon :realization mf mt resp))))
+                rows (get data :rows [])]
+            (when (seq rows)
+              (vswap! total + (count rows))
+              (println (str "  Ingested Ozon realization " mf " .. " mt ": "
+                            (count rows) " per-article rows"))))
+          (catch Throwable t
+            (if (not-yet-published? t)
+              (println (str "  Ozon realization " mf " .. " mt
+                            " not yet published (Ozon publishes mid-next-month) — skipping"))
+              (throw t))))))
     @total))
 
 (defn- ingest-ozon-transactions!
@@ -305,34 +334,10 @@
     (println (str "  Ingested Ozon transactions " from " .. " to ": " cnt " operations"))
     cnt))
 
-(defn- ingest-ozon-storage-chunk! [client chunk-from chunk-to]
-  (let [report-id (ozon-api/storage-report-create client chunk-from chunk-to)]
-    (when-not report-id
-      (throw (ex-info "Ozon storage report id is missing"
-                      {:date-from chunk-from :date-to chunk-to})))
-    (loop [attempts 0]
-      (Thread/sleep 10000)
-      (let [result (ozon-api/storage-report-status client report-id)
-            status (get result :status)]
-        (cond
-          (= "ready" status)
-          (let [url  (get result :file)
-                data (let [d (ozon-api/storage-report-download client url)]
-                       (if (sequential? d) d []))]
-            (db/insert-raw! :ozon :storage chunk-from chunk-to data)
-            (println (str "  Ingested Ozon storage " chunk-from " .. " chunk-to ": " (count data) " items"))
-            (count data))
-
-          (= "error" status)
-          (throw (ex-info "Ozon storage report failed"
-                          {:report-id report-id :status status}))
-
-          (>= attempts 23)
-          (throw (ex-info "Ozon storage report timed out"
-                          {:report-id report-id :status status}))
-
-          :else
-          (recur (inc attempts)))))))
+;; (Removed ingest-ozon-storage-chunk! — it pointed at /v1/report/postings/create
+;; which is the postings export, not a storage report. Ozon paid storage flows
+;; through transactions/list as service operations and is materialized into
+;; finance directly. See ingest-storage! for the new no-op behaviour.)
 
 ;; ---------------------------------------------------------------------------
 ;; YM ingest
@@ -615,21 +620,34 @@
               0 (t/date-chunks from to 30)))))
 
 (defn ingest-storage!
+  "Daily paid-storage costs.
+
+   - WB:   real per-day storage report (`/api/v1/paid_storage`).
+   - Ozon: no-op. The previous code POSTed to `/v1/report/postings/create`
+           which is the *postings* export, not storage; it returned 4×
+           HTTP 400 ('Filter is required'). Ozon paid storage is billed
+           via `transactions/list` line items
+           (MarketplaceServiceItemTemporaryStorage / WarehouseStock) which
+           the finance ingest already pulls; materialize-finance maps
+           those services into the existing storage cost columns. A
+           separate paid_storage row per day for Ozon would be redundant
+           and the API endpoint to produce it doesn't exist here.
+   - YM:   not exposed in YM API."
   [period & {:keys [marketplace] :or {marketplace :wb}}]
   (let [[from to] (resolve-period period)
-        client    (get-mp marketplace)
-        chunks    (t/date-chunks from to 8)]
+        client    (get-mp marketplace)]
     (println (str "Ingesting storage for " (name marketplace) " " from " .. " to))
-    (reduce (fn [acc [chunk-from chunk-to]]
-              (try
-                (+ acc (case marketplace
-                         :wb   (ingest-wb-storage-chunk! client chunk-from chunk-to)
-                         :ozon (ingest-ozon-storage-chunk! client chunk-from chunk-to)
-                         :ym   (do (println "  YM storage not supported") 0)))
-                (catch Exception e
-                  (println (str "  ERROR " chunk-from ".." chunk-to ": " (.getMessage e)))
-                  acc)))
-            0 chunks)))
+    (case marketplace
+      :wb   (let [chunks (t/date-chunks from to 8)]
+              (reduce (fn [acc [chunk-from chunk-to]]
+                        (try
+                          (+ acc (ingest-wb-storage-chunk! client chunk-from chunk-to))
+                          (catch Exception e
+                            (println (str "  ERROR " chunk-from ".." chunk-to ": " (.getMessage e)))
+                            acc)))
+                      0 chunks))
+      :ozon (do (println "  Ozon paid storage flows through transactions/list (services)") 0)
+      :ym   (do (println "  YM storage not supported") 0))))
 
 (defn ingest-stocks!
   [& {:keys [marketplace] :or {marketplace :wb}}]
