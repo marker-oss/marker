@@ -106,6 +106,22 @@
           (is (= 1 @call-count))
           (is (= 7 (count result))))))))
 
+(deftest fbs-empty-cursor-on-full-page-still-recurses
+  (testing "FBS: original-bug scenario — full first page with last_id \"\" must not exit at page 1"
+    ;; Paste-twin parity with fbo-empty-cursor-on-full-page-still-recurses.
+    ;; If fbo gets the fix but fbs drifts, this guards against asymmetric edits.
+    (let [call-count (atom 0)
+          result-box (atom nil)]
+      (with-redefs [analitica.marketplace.ozon.client/post-request
+                    (fn [_client _path & _opts]
+                      (let [n (swap! call-count inc)]
+                        (if (= 1 n)
+                          {:result {:postings (make-postings 100) :last_id ""}}
+                          {:result {:postings (make-postings 25)  :last_id ""}})))]
+        (reset! result-box (ozon-api/fbs-orders (make-client) "2024-01-01" "2024-01-31"))
+        (is (= 2 @call-count) "FBS: 2 API calls despite last_id \"\" on page 1")
+        (is (= 125 (count @result-box)) "FBS: 100 + 25 = 125 postings")))))
+
 (deftest fbs-multiple-full-pages
   (testing "FBS: 2 full pages + 1 short → 3 calls, correct total"
     (let [call-count (atom 0)
