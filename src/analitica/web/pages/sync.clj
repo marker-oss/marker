@@ -82,7 +82,13 @@
           :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
           :hx-swap    "none"
           "hx-on:htmx:responseError"
-          "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена.');}"}
+          "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена.');}"
+          "hx-on:htmx:afterRequest"
+          (str "try{var d=JSON.parse(event.detail.xhr.responseText);"
+               "if(d&&d['run-id']){"
+               "window.__activeRunId=d['run-id'];"
+               "window.dispatchEvent(new CustomEvent('analitica:run-started',{detail:{runId:d['run-id']}}));"
+               "}}catch(e){console.error('run-started dispatch failed',e)}")}
          label])]
 
      [:p.text-xs.text-gray-500.mb-1 "Только пересчитать отчёты на уже скачанных данных (без обращения в MP):"]

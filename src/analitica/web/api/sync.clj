@@ -2,6 +2,8 @@
   (:require [analitica.sync :as sync]
             [analitica.ingest :as ingest]
             [analitica.materialize :as materialize]
+            [analitica.sync.plan :as plan]
+            [analitica.sync.executor :as executor]
             [ring.core.protocols :as ring-protocols]
             [com.brunobonacci.mulog :as μ])
   (:import [java.util.concurrent LinkedBlockingQueue]
@@ -59,74 +61,103 @@
 ;; Sync management
 ;; ---------------------------------------------------------------------------
 
-(def ^:private all-marketplaces
-  "Marketplaces fan-out target for the hero 'Обновить данные' button.
-   Order matches the canonical sidebar (WB, Ozon, YM)."
-  [:wb :ozon :ym])
-
-(defn- run-one-mp!
-  "ingest! + materialize! for one (what, mp) pair, isolated by try/catch
-   so a failure on one MP doesn't abort the rest of the fan-out."
-  [what period mp]
-  (try
-    (println (str "\n>>> Marketplace: " (name mp) " <<<"))
-    (ingest/ingest! what :period period :marketplace mp)
-    (materialize/materialize! what :period period :marketplace mp)
-    (catch Exception e
-      (println (str "[SYNC] " (name mp) " failed: " (.getMessage e)))
-      (μ/log ::sync-mp-error
-             :what what :period period :marketplace mp
-             :error-message (.getMessage e) :error-type (type e)))))
 
 (defn start-sync!
   "Start sync in a separate thread.
 
    Parameters:
    - what:        keyword (:sales, :orders, :finance, :stocks, :all, etc.)
-   - :period      period keyword or map (optional)
+   - :period      period keyword, [from to] vector, or {:from :to} map (optional)
    - :marketplace marketplace keyword. :wb / :ozon / :ym for one MP, or
-                  :all to fan out across [:wb :ozon :ym] sequentially —
-                  failures on one MP don't abort the others.
+                  :all to fan out across [:wb :ozon :ym].
 
-   Returns {:ok true} or {:error \"already running\"}."
+   Phase 8: for non-:1c `what`, delegates to plan/expand-plan + executor/run-parallel!
+   so every trigger flows through the registry and is visible in the task matrix.
+
+   Special case — :1c:
+     1C is an in-process CSV upload, not a marketplace API call. It does not fit
+     the registry model (no mp/entity-type/phase columns make sense for it, and it
+     is rare). The pre-Phase-3 direct path is preserved: sync/sync-1c! runs directly
+     under the SSE-streamed legacy log, and no sync_tasks rows are created.
+
+   SSE stream (option a):
+     The outer future is wrapped in capture-output-to-queue so the SSE /stream
+     endpoint stays alive for backward compat. Per-task worker-thread stdout does
+     NOT propagate through the binding (Java thread-pool inheritance caveat), so
+     the log will show '[SYNC] Starting…' and '[SYNC] Completed' but not per-task
+     lines. The task matrix is the canonical progress view.
+
+   Returns {:ok true :run-id <uuid>} for non-:1c, {:ok true} for :1c,
+   or {:error \"already running\"}."
   [what & {:keys [period marketplace]}]
   (if (compare-and-set! sync-running? false true)
-    (let [queue (LinkedBlockingQueue. 1000)
-          fut   (future
-                  (try
-                    (println (str "[SYNC] Starting: what=" what ", period=" period ", marketplace=" marketplace))
-                    (capture-output-to-queue queue
-                      (fn []
-                        (cond
-                          (= what :1c)
-                          (sync/sync-1c!)
-
-                          (= marketplace :all)
-                          (doseq [mp all-marketplaces]
-                            (run-one-mp! what period mp))
-
-                          :else
-                          (let [mp (or marketplace :wb)]
-                            (ingest/ingest! what :period period :marketplace mp)
-                            (materialize/materialize! what :period period :marketplace mp)))))
-                    (.offer queue {:type :done})
-                    (println "[SYNC] Completed")
-                    (catch InterruptedException _
-                      (println "[SYNC] Cancelled by user")
-                      (.offer queue {:type :error :text "Прервано пользователем"}))
-                    (catch Exception e
-                      (println (str "[SYNC] Error: " (.getMessage e)))
-                      (μ/log ::sync-error
-                             :what what :period period :marketplace marketplace
-                             :error-message (.getMessage e) :error-type (type e))
-                      (.offer queue {:type :error :text (str "Error: " (.getMessage e))}))
-                    (finally
-                      (reset! sync-running? false)
-                      (reset! sync-future nil)
-                      (println "[SYNC] Flag reset"))))]
-      (reset! progress-channel queue)
-      (reset! sync-future fut)
-      {:ok true})
+    (if (= what :1c)
+      ;; -----------------------------------------------------------------------
+      ;; :1c path — legacy direct sync, no registry rows, SSE streamed
+      ;; -----------------------------------------------------------------------
+      (let [queue (LinkedBlockingQueue. 1000)
+            fut   (future
+                    (try
+                      (println "[SYNC:1c] Starting 1C sync")
+                      (capture-output-to-queue queue
+                        (fn []
+                          (sync/sync-1c!)))
+                      (.offer queue {:type :done})
+                      (println "[SYNC:1c] Completed")
+                      (catch InterruptedException _
+                        (println "[SYNC:1c] Cancelled by user")
+                        (.offer queue {:type :error :text "Прервано пользователем"}))
+                      (catch Exception e
+                        (println (str "[SYNC:1c] Error: " (.getMessage e)))
+                        (μ/log ::sync-1c-error :error-message (.getMessage e) :error-type (type e))
+                        (.offer queue {:type :error :text (str "Error: " (.getMessage e))}))
+                      (finally
+                        (reset! sync-running? false)
+                        (reset! sync-future nil)
+                        (println "[SYNC:1c] Flag reset"))))]
+        (reset! progress-channel queue)
+        (reset! sync-future fut)
+        {:ok true})
+      ;; -----------------------------------------------------------------------
+      ;; Plan-based path — registry + parallel executor
+      ;; -----------------------------------------------------------------------
+      (let [run-id (str (java.util.UUID/randomUUID))
+            mp     (or marketplace :wb)
+            pln    (plan/expand-plan :run-id      run-id
+                                     :what        what
+                                     :marketplace mp
+                                     :period      period)
+            _      (plan/persist-plan! pln)
+            queue  (LinkedBlockingQueue. 1000)
+            fut    (future
+                     (try
+                       (println (str "[SYNC] Starting: run-id=" run-id " what=" what
+                                     " marketplace=" mp " tasks=" (count pln)))
+                       ;; Wrap in capture-output-to-queue for SSE backward compat.
+                       ;; Note: worker thread *out* does not propagate through bindings,
+                       ;; so only the outer println lines appear in the SSE log.
+                       ;; The task matrix is the canonical progress view.
+                       (capture-output-to-queue queue
+                         (fn []
+                           (executor/run-parallel! pln :workers 8)))
+                       (.offer queue {:type :done})
+                       (println "[SYNC] Completed")
+                       (catch InterruptedException _
+                         (println "[SYNC] Cancelled by user")
+                         (.offer queue {:type :error :text "Прервано пользователем"}))
+                       (catch Exception e
+                         (println (str "[SYNC] Error: " (.getMessage e)))
+                         (μ/log ::sync-error
+                                :run-id run-id :what what :marketplace mp
+                                :error-message (.getMessage e) :error-type (type e))
+                         (.offer queue {:type :error :text (str "Error: " (.getMessage e))}))
+                       (finally
+                         (reset! sync-running? false)
+                         (reset! sync-future nil)
+                         (println "[SYNC] Flag reset"))))]
+        (reset! progress-channel queue)
+        (reset! sync-future fut)
+        {:ok true :run-id run-id :total (count pln)}))
     {:error "already running"}))
 
 (defn start-rematerialize!
