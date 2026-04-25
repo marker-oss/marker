@@ -1,5 +1,6 @@
 (ns analitica.web.pages.dashboard
-  (:require [hiccup.core :refer [html]]
+  (:require [clojure.string :as str]
+            [hiccup.core :refer [html]]
             [analitica.web.components :as c]))
 
 ;; ---------------------------------------------------------------------------
@@ -7,12 +8,23 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- format-number
-  "Format number with thousand separators."
+  "Format integer N with space as the thousands separator: 31449 → '31 449'.
+
+   The previous (reverse (partition-all 3 (reverse s))) implementation
+   reversed the *order* of groups but left the digits inside each group
+   in reversed form, so 10944 rendered as '01 449' instead of '10 944'.
+   We now group from the right by repeatedly slicing the last 3 chars."
   [n]
   (when n
     (let [s (str (long n))
-          parts (reverse (partition-all 3 (reverse s)))]
-      (clojure.string/join " " (map #(apply str %) parts)))))
+          neg? (and (pos? (count s)) (= \- (.charAt s 0)))
+          digits (if neg? (subs s 1) s)
+          groups (loop [d digits, acc ()]
+                   (if (<= (count d) 3)
+                     (cons d acc)
+                     (recur (subs d 0 (- (count d) 3))
+                            (cons (subs d (- (count d) 3)) acc))))]
+      (str (when neg? "-") (str/join " " groups)))))
 
 (defn- format-currency
   "Format number as currency with ₽ symbol."
