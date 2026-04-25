@@ -201,22 +201,24 @@
 ;; ---------------------------------------------------------------------------
 
 (defn sync-log
-  "Render a container for SSE-based sync progress log.
-  
-  Parameters:
-  - opts: Map with keys:
-    - :id - Container ID (string, optional, default: sync-log)
-    - :stream-url - SSE stream endpoint (string, optional, default: /api/sync/stream)
-    - :height - Container height (string, optional, default: 400px)
-  
-  Example:
-    (sync-log {:id \"sync-progress\"
-               :stream-url \"/api/sync/stream\"
-               :height \"500px\"})"
+  "SSE-driven sync progress log with structured frontend rendering:
+   stage counter, elapsed timer, color-coded lines, auto-scroll.
+
+   Backend still streams plain text — the frontend parses well-known
+   patterns ('=== Ingest: X ===', 'Ingested ... N items', 'ERROR ...')
+   to render a header bar above the raw log. A full structured-events
+   refactor across all ingest/materialize call sites is deferred."
   [{:keys [id stream-url height]
     :or {id "sync-log" stream-url "/api/sync/stream" height "400px"}}]
   [:div.bg-white.rounded-lg.shadow.p-6
    [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Прогресс синхронизации"]
+   ;; Status bar — populated by JS as SSE messages arrive
+   [:div#sync-log-status.flex.flex-wrap.gap-4.items-center.text-sm.mb-2.text-gray-500
+    [:span#sync-log-state.font-medium "—"]
+    [:span#sync-log-stage "стадия: —"]
+    [:span#sync-log-counter "—"]
+    [:span#sync-log-elapsed.text-xs.font-mono "00:00"]]
+   ;; Live log
    [:div.bg-gray-900.text-green-400.font-mono.text-sm.p-4.rounded.overflow-y-auto
     {:id id
      :style (str "height: " height ";")
@@ -224,7 +226,92 @@
      :sse-connect stream-url
      :sse-swap "message"
      :hx-swap "beforeend"}
-    [:div.text-gray-500 "Ожидание запуска синхронизации..."]]])
+    [:div.text-gray-500 "Ожидание запуска синхронизации..."]]
+   [:script (str "
+     (function() {
+       const log     = document.getElementById('" id "');
+       const elState = document.getElementById('sync-log-state');
+       const elStage = document.getElementById('sync-log-stage');
+       const elCount = document.getElementById('sync-log-counter');
+       const elTime  = document.getElementById('sync-log-elapsed');
+       if (!log) return;
+
+       let startedAt = null;
+       let timerHandle = null;
+       let stages = [];          // each '=== Ingest/Materialize: NAME ===' bumps this
+       let itemsInStage = 0;     // sum of N from 'Ingested … N items' since stage start
+
+       function fmtElapsed(sec) {
+         const m = Math.floor(sec / 60), s = sec % 60;
+         return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+       }
+       function tick() {
+         if (!startedAt) return;
+         elTime.textContent = fmtElapsed(Math.floor((Date.now() - startedAt) / 1000));
+       }
+
+       // ---- post-process appended SSE rows ----------------------------------
+       // HTMX inserts each event as a text/HTML node into log. We re-style the
+       // most recent text node based on regex patterns and update the header.
+       const observer = new MutationObserver(muts => {
+         for (const m of muts) {
+           m.addedNodes.forEach(n => {
+             if (n.nodeType !== Node.ELEMENT_NODE && n.nodeType !== Node.TEXT_NODE) return;
+             const text = (n.textContent || '').trim();
+             if (!text) return;
+
+             if (!startedAt) {
+               startedAt = Date.now();
+               elState.textContent = '⏳ Идёт…';
+               elState.className = 'font-medium text-yellow-700';
+               timerHandle = setInterval(tick, 500);
+             }
+
+             // Color the new line in place
+             if (n.nodeType === Node.ELEMENT_NODE) {
+               const lc = text.toLowerCase();
+               if (text.match(/^=== /))                  n.classList.add('text-cyan-300','font-semibold','mt-2','block');
+               else if (lc.includes('error') || lc.includes('ошибка'))
+                                                          n.classList.add('text-red-400');
+               else if (text.match(/^\\s*Ingested|Materialized|^\\s*✓/))
+                                                          n.classList.add('text-green-300');
+               else if (text.match(/^\\s*Warning|^\\s*⚠/))
+                                                          n.classList.add('text-yellow-300');
+             }
+
+             // Update header bar
+             const stageMatch = text.match(/^=== (?:Ingest|Materialize): (\\S+) ===/);
+             if (stageMatch) {
+               stages.push(stageMatch[1]);
+               itemsInStage = 0;
+               elStage.textContent = 'стадия ' + stages.length + ': ' + stageMatch[1];
+             }
+             const itemsMatch = text.match(/(\\d+)\\s+items/);
+             if (itemsMatch) {
+               itemsInStage += parseInt(itemsMatch[1], 10);
+               elCount.textContent = 'строк: ' + itemsInStage.toLocaleString('ru-RU');
+             }
+             if (text.includes('Completed') || text.includes('=== Ingest complete') ||
+                 text.includes('Ingest complete')) {
+               elState.textContent = '✓ Готово';
+               elState.className = 'font-medium text-green-700';
+               if (timerHandle) clearInterval(timerHandle);
+             } else if (text.toLowerCase().includes('cancelled') || text.toLowerCase().includes('прервано')) {
+               elState.textContent = '⛔ Прервано';
+               elState.className = 'font-medium text-gray-600';
+               if (timerHandle) clearInterval(timerHandle);
+             } else if (text.toLowerCase().includes('error') && stages.length > 0) {
+               elState.textContent = '✗ Ошибка';
+               elState.className = 'font-medium text-red-700';
+             }
+           });
+         }
+         // Auto-scroll to bottom
+         log.scrollTop = log.scrollHeight;
+       });
+       observer.observe(log, { childList: true, subtree: false });
+     })();
+   ")]])
 
 ;; ---------------------------------------------------------------------------
 ;; KPI Card Components
