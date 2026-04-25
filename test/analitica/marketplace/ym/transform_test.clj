@@ -166,3 +166,35 @@
       (is (= "cancelled" (:operation row)))
       (is (= 0.0 (:ad-cost row)) "no AUCTION_PROMOTION commission ⇒ no ad-cost")
       (is (= 0.0 (:for-pay row)) "0 − 0 = 0"))))
+
+;; ---------------------------------------------------------------------------
+;; Date normalization — YM /stats/orders DD-MM-YYYY → ISO at the boundary
+;;
+;; Live YM API returns creationDate as "15-04-2026 21:55:46". Storing it raw
+;; broke SQL ORDER BY/MIN/MAX (lex "01-04…" < "31-03…") and dashboard
+;; last-sync-time. Tests guard the new normalization in ->order/->sale.
+;; ---------------------------------------------------------------------------
+
+(deftest order-creation-date-dd-mm-yyyy-with-time
+  (let [out (transform/->orders
+             [{:id 1 :status "DELIVERED" :creationDate "15-04-2026 21:55:46"
+               :buyerTotal 1000 :items [{:offerId "A" :count 1}]}])]
+    (is (= "2026-04-15T21:55:46" (:date (first out))))))
+
+(deftest order-creation-date-dd-mm-yyyy-date-only
+  (let [out (transform/->orders
+             [{:id 1 :status "DELIVERED" :creationDate "01-04-2026"
+               :buyerTotal 500 :items [{:offerId "A" :count 1}]}])]
+    (is (= "2026-04-01" (:date (first out))))))
+
+(deftest order-iso-date-passthrough
+  (let [out (transform/->orders
+             [{:id 1 :status "DELIVERED" :creationDate "2026-04-15T08:00:00"
+               :buyerTotal 500 :items [{:offerId "A" :count 1}]}])]
+    (is (= "2026-04-15T08:00:00" (:date (first out))))))
+
+(deftest sale-creation-date-normalized
+  (let [out (transform/->sales
+             [{:id 1 :status "DELIVERED" :creationDate "31-03-2026 12:00:00"
+               :buyerTotal 500 :forPay 470 :items [{:offerId "A" :count 1}]}])]
+    (is (= "2026-03-31T12:00:00" (:date (first out))))))

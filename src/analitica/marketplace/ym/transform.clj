@@ -20,6 +20,27 @@
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
+(defn- ->iso-datetime
+  "YM /stats/orders returns `creationDate` and friends as 'DD-MM-YYYY HH:MM:SS'
+   while WB and Ozon emit ISO 8601. Storing the raw YM string broke SQL
+   ORDER BY/MIN/MAX (lexicographic '01-04-…' sorts before '31-03-…') and
+   the dashboard last-sync-time. Normalize at the transform boundary so
+   nothing downstream has to know about the dialect.
+
+   Accepts:
+     'DD-MM-YYYY HH:MM:SS' → 'YYYY-MM-DDTHH:MM:SS'
+     'DD-MM-YYYY'          → 'YYYY-MM-DD'
+     ISO already           → returned as-is
+     nil / unrecognized    → returned as-is (no throw)"
+  [s]
+  (when s
+    (cond
+      (re-matches #"\d{4}-\d{2}-\d{2}.*" s) s
+      (re-matches #"(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}:\d{2}:\d{2}))?" s)
+      (let [[_ d m y t] (re-matches #"(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}:\d{2}:\d{2}))?" s)]
+        (if t (str y "-" m "-" d "T" t) (str y "-" m "-" d)))
+      :else s)))
+
 (defn- ym-sale-type
   "Legacy order-level classification. Kept for `->sale` / `->sales`
    which operate on raw orders without item-level details. FinanceRow
@@ -85,7 +106,7 @@
         qty      (reduce + 0 (map #(get % :count 0) items))]
     {:marketplace :ym
      :order-id    (or (get raw :id) (get raw :orderId))
-     :date        (or (get raw :creationDate) (get raw :date))
+     :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
      :article     (get item :offerId)
      :quantity    (when (seq items) qty)
      :price       (or (get raw :buyerTotal) (get raw :total))
@@ -107,7 +128,7 @@
         status (get raw :status)]
     {:marketplace :ym
      :sale-id     (or (get raw :id) (get raw :orderId))
-     :date        (or (get raw :creationDate) (get raw :date))
+     :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
      :article     (get item :offerId)
      :quantity    (when (seq items) qty)
      :total-price (or (get raw :buyerTotal) (get raw :total))
@@ -301,9 +322,9 @@
 
 (defn- ->finance-line [raw]
   {:marketplace    :ym
-   :date-from      (or (get raw :dateFrom) (get raw :date))
-   :date-to        (or (get raw :dateTo) (get raw :date))
-   :event-date     (let [d (or (get raw :date) (get raw :dateFrom))]
+   :date-from      (->iso-datetime (or (get raw :dateFrom) (get raw :date)))
+   :date-to        (->iso-datetime (or (get raw :dateTo) (get raw :date)))
+   :event-date     (let [d (->iso-datetime (or (get raw :date) (get raw :dateFrom)))]
                      (when (and d (>= (count d) 10)) (subs d 0 10)))
    :article        (or (get raw :offerId) (get raw :shopSku))
    :operation      (or (get raw :type) (get raw :operationType))
