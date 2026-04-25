@@ -42,7 +42,9 @@
     id run-id marketplace entity-type phase chunk
     (or max-attempts 1)
     period-from period-to parent-id
-    (when depends-on (str/join "," depends-on))])
+    ;; Spec separator is ", " (comma-space) so consumers that split on ", "
+    ;; round-trip cleanly when the list has multiple items.
+    (when depends-on (str/join ", " depends-on))])
   (first (db/query ["SELECT * FROM sync_tasks WHERE id = ?" id])))
 
 (defn set-running!
