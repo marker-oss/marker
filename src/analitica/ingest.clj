@@ -183,14 +183,41 @@
     (println "  Ingested Ozon product stats")
     1))
 
-(defn- ingest-ozon-prices! [client]
-  (let [today    (today-str)
-        items    (ozon-api/product-list client)
-        offer-ids (mapv #(get % :offer_id) items)
-        resp     (ozon-api/product-info client offer-ids)
-        products (get-in resp [:result :items] [])]
+(defn- ingest-ozon-prices!
+  "Pull every product's price details via /v3/product/info/list, batched
+   to stay under Ozon's per-request offer_id cap. Two issues this code
+   used to have, both silently swallowed by the safe-do wrapper:
+
+     1. Response path. The previous code read `[:result :items]`, but v3
+        emits `{:items [...]}` at the top level (see impl.clj sync-sku-map!).
+        Result: products always [], item_count=0 — but actually the call
+        threw on big stores (see #2), so even the empty insert never ran.
+     2. No batching. /v3/product/info/list rejects requests with too many
+        offer_ids. impl.clj already mirrors a 500-item batch size for
+        sync-sku-map!. We do the same here and concatenate.
+
+   Errors per batch are logged but do not abort the whole ingest — a
+   single bad batch shouldn't leave raw_data empty."
+  [client]
+  (let [today      (today-str)
+        items      (ozon-api/product-list client)
+        offer-ids  (mapv #(get % :offer_id) items)
+        batch-size 500
+        products   (->> offer-ids
+                        (partition-all batch-size)
+                        (mapcat (fn [batch]
+                                  (try
+                                    (-> (ozon-api/product-info client (vec batch))
+                                        (get :items []))
+                                    (catch Exception e
+                                      (println (str "  WARNING Ozon prices batch (" (count batch)
+                                                    " items): " (.getMessage e)))
+                                      []))))
+                        vec)]
     (db/insert-raw! :ozon :prices today today products)
-    (println (str "  Ingested Ozon prices: " (count products) " items"))
+    (println (str "  Ingested Ozon prices: " (count products) " items "
+                  "(" (count offer-ids) " offer_ids in "
+                  (quot (+ (count offer-ids) (dec batch-size)) batch-size) " batches)"))
     (count products)))
 
 (defn- ingest-ozon-sku-map!
