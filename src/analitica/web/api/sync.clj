@@ -101,14 +101,60 @@
       {:ok true})
     {:error "already running"}))
 
+(defn start-rematerialize!
+  "Re-run materialize/materialize! over already-ingested raw_data — no
+   HTTP calls to marketplaces. Useful after fixes to transform/canon
+   logic, when the API data is fine but the analytical tables need
+   recomputing without burning the rate-limit budget.
+
+   Same single-flight + SSE plumbing as start-sync!."
+  [what & {:keys [period marketplace]}]
+  (if (compare-and-set! sync-running? false true)
+    (let [queue (LinkedBlockingQueue. 1000)
+          fut   (future
+                  (try
+                    (println (str "[REMATERIALIZE] Starting: what=" what
+                                  ", period=" period ", marketplace=" marketplace))
+                    (capture-output-to-queue queue
+                      (fn []
+                        (let [mp (or marketplace :wb)]
+                          (materialize/materialize! what :period period :marketplace mp))))
+                    (.offer queue {:type :done})
+                    (println "[REMATERIALIZE] Completed")
+                    (catch InterruptedException _
+                      (println "[REMATERIALIZE] Cancelled by user")
+                      (.offer queue {:type :error :text "Прервано пользователем"}))
+                    (catch Exception e
+                      (println (str "[REMATERIALIZE] Error: " (.getMessage e)))
+                      (μ/log ::rematerialize-error
+                             :what what :period period :marketplace marketplace
+                             :error-message (.getMessage e) :error-type (type e))
+                      (.offer queue {:type :error :text (str "Error: " (.getMessage e))}))
+                    (finally
+                      (reset! sync-running? false)
+                      (reset! sync-future nil)
+                      (println "[REMATERIALIZE] Flag reset"))))]
+      (reset! progress-channel queue)
+      (reset! sync-future fut)
+      {:ok true})
+    {:error "already running"}))
+
 (defn stop-sync!
   "Interrupt any running sync. Returns {:ok true} if a sync was running and
-   cancellation was requested, or {:error \"not running\"}."
+   cancellation was requested, or {:error \"not running\"}.
+
+   Also clears stuck atoms when the future already completed but the
+   `finally` block somehow did not run (e.g. JVM-level interrupt that
+   bypassed Clojure's stack). Without this, the system gets wedged
+   in 'already running' until restart."
   []
-  (if-let [fut @sync-future]
-    (do (future-cancel fut)
-        {:ok true})
-    {:error "not running"}))
+  (let [fut @sync-future]
+    (when fut (future-cancel fut))
+    (reset! sync-running? false)
+    (reset! sync-future nil)
+    (if fut
+      {:ok true}
+      {:error "not running"})))
 
 ;; ---------------------------------------------------------------------------
 ;; SSE Stream

@@ -905,6 +905,39 @@
         {:status 409 :body result}
         {:status 200 :body result})))
 
+  ;; Rematerialize: replay materialize over existing raw_data, no MP
+  ;; HTTP. Same shape as /api/sync/start (what / period / marketplace).
+  (POST "/api/sync/rematerialize" {body :body params :params}
+    (let [body-str (when body (slurp body))
+          body-data (when (and body-str (not (empty? body-str)))
+                      (json/read-value body-str json/keyword-keys-object-mapper))
+          what-str (or (:what body-data) (:what params))
+          period-str (or (:period body-data) (:period params))
+          marketplace-str (or (:marketplace body-data) (:marketplace params))
+          validated-what (when what-str (validate-sync-what (if (keyword? what-str) (name what-str) what-str)))
+          validated-period (when period-str (validate-period period-str))
+          validated-mp (when marketplace-str (validate-marketplace (if (keyword? marketplace-str) (name marketplace-str) marketplace-str)))]
+      (cond
+        (not validated-what)
+        {:status 400 :body {:error (str "Invalid 'what' parameter: " what-str)}}
+
+        (and period-str (not validated-period))
+        {:status 400 :body {:error (str "Invalid period: " period-str)}}
+
+        (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
+        {:status 400 :body {:error (str "Invalid marketplace: " marketplace-str)}}
+
+        :else
+        (let [period (when validated-period
+                       (try (time/parse-period validated-period)
+                            (catch Exception _ nil)))
+              result (sync-api/start-rematerialize! validated-what
+                                                    :period      period
+                                                    :marketplace validated-mp)]
+          (if (:error result)
+            {:status 409 :body result}
+            {:status 200 :body result})))))
+
   (GET "/api/sync/stream" request
     (sync-api/sse-stream request))
   

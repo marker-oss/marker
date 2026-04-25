@@ -521,18 +521,32 @@
                       :backoff-seq backoff-seq)
               nil))))))
 
-;; YM API surface was trimmed (US1, commit 1de89e6) to only the
-;; authoritative /stats/orders endpoint. Stocks/sku-stats/prices no
-;; longer have wrappers on this branch; stub-throw keeps compilation
-;; healthy and gives callers a clear error if they ever dispatch here.
-(defn- ingest-ym-stocks! [_client]
-  (throw (ex-info "YM stocks ingest is not available on this branch" {})))
+;; YM stocks/prices/product-stats: the API client (ym/api.clj) has
+;; full paginating wrappers — `ym-api/stocks`, `ym-api/prices`,
+;; `ym-api/sku-stats`. Earlier (US1, commit 1de89e6) the ingest layer
+;; was trimmed to only /stats/orders; the API wrappers stayed. Wire
+;; them back into raw_data so /sync 'Stocks' / 'Prices' / 'Stats'
+;; buttons stop throwing for YM.
 
-(defn- ingest-ym-product-stats! [_client _from _to]
-  (throw (ex-info "YM product-stats ingest is not available on this branch" {})))
+(defn- ingest-ym-stocks! [client]
+  (let [today (today-str)
+        data  (ym-api/stocks client)]
+    (db/insert-raw! :ym :stocks today today data)
+    (println (str "  Ingested YM stocks: " (count data) " warehouse rows"))
+    (count data)))
 
-(defn- ingest-ym-prices! [_client]
-  (throw (ex-info "YM prices ingest is not available on this branch" {})))
+(defn- ingest-ym-product-stats! [client from to]
+  (let [data (ym-api/sku-stats client from to)]
+    (db/insert-raw! :ym :product_stats from to data)
+    (println (str "  Ingested YM product-stats " from " .. " to))
+    1))
+
+(defn- ingest-ym-prices! [client]
+  (let [today (today-str)
+        data  (ym-api/prices client)]
+    (db/insert-raw! :ym :prices today today data)
+    (println (str "  Ingested YM prices: " (count data) " offers"))
+    (count data)))
 
 ;; ---------------------------------------------------------------------------
 ;; Public API

@@ -54,6 +54,27 @@
       "if(event.detail.xhr.status===409){alert('Сейчас нет активной синхронизации.');}"}
      "⛔ Stop"]]
 
+   ;; Rematerialize-only buttons: re-run transform/canon over raw_data
+   ;; that is already on disk, no marketplace HTTP. Useful after fixing
+   ;; a bug in transform code without burning MP rate-limit budget.
+   [:div.mt-4
+    [:p.text-xs.text-gray-500.mb-2 "Пересчитать отчёты на уже скачанных данных (без обращения в MP):"]
+    [:div.flex.flex-wrap
+     (for [[label what] [["Пересчитать всё"  "all"]
+                         ["Пересч. Sales"    "sales"]
+                         ["Пересч. Orders"   "orders"]
+                         ["Пересч. Finance"  "finance"]
+                         ["Пересч. Stocks"   "stocks"]
+                         ["Пересч. Prices"   "prices"]]]
+       [:button.px-3.py-1.5.bg-amber-600.text-white.rounded.hover:bg-amber-700.transition-colors.text-xs.mr-2.mb-2
+        {:hx-post    "/api/sync/rematerialize"
+         :hx-include "#sync-marketplace"
+         :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
+         :hx-swap    "none"
+         "hx-on:htmx:responseError"
+         "if(event.detail.xhr.status===409){alert('Уже что-то выполняется. Дождитесь завершения.');}"}
+        label])]]
+
    ;; Single source of truth for the sync period: URL → localStorage → default.
    ;; Mirrors period-picker.js' loadInitial() so what users see in the chip
    ;; matches what gets POSTed to /api/sync/start.
