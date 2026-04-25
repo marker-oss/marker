@@ -144,9 +144,9 @@
 
    For each current row:
    - If a matching prev row exists (same key-fn value):
-       :<col>_prev       = prev value (or 0 when nil)
-       :<col>_delta      = current - prev  (rounded to 2 decimals)
-       :<col>_delta_pct  = 100 × delta / |prev|  (nil when prev = 0)
+       :<col>_prev       = prev value, or nil if the column is missing from the prev row
+       :<col>_delta      = current - prev  (rounded to 2 decimals); nil if either value is non-numeric
+       :<col>_delta_pct  = 100 × delta / |prev|  (nil when prev = 0 or prev is nil)
    - If no matching prev row: _prev = nil, _delta = nil, _delta_pct = nil
 
    Returns a vector of enriched rows."

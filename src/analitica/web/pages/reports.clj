@@ -26,8 +26,8 @@
   (let [base  (name (:key col))
         fmt   (:format col)
         label (:title col)]
-    [{:title (str label " пред.") :field (str base "_prev")   :format fmt  :width (case fmt :rub 130 :int 100 80) :visible false}
-     {:title (str "Δ " label)    :field (str base "_delta")   :format fmt  :width (case fmt :rub 130 :int 100 80)}
+    [{:title (str label " пред.") :field (str base "_prev")   :format fmt  :width (case fmt :rub 130 :int 100 :pct 100 80) :visible false}
+     {:title (str "Δ " label)    :field (str base "_delta")   :format fmt  :width (case fmt :rub 130 :int 100 :pct 100 80)}
      {:title (str "Δ% " label)   :field (str base "_delta_pct") :format :pct :width 90}]))
 
 (defn- expand-delta-cols
@@ -199,6 +199,7 @@
                      :waterfall "bar"           ;; Chart.js has no waterfall; bar placeholder
                      :horizontalBar "bar"
                      (name chart-type-kw))
+        ;; compare is nil when no compare period is active (report-data omits :compare for :none)
         compare-active? (some? compare)
         grouped-cols (columns-from-schema schema :compare-active? compare-active?)
         kpi-schema (:kpi schema)

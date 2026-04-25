@@ -132,7 +132,7 @@
         (is (= -66.67 (:revenue_delta_pct r)))))))
 
 ;; ---------------------------------------------------------------------------
-;; 3.3 — delta-supported? column flags
+;; 3.4 — delta-supported? column flags
 ;; ---------------------------------------------------------------------------
 
 (deftest ue-delta-supported-columns-test
@@ -171,13 +171,27 @@
               (str "text col " (:key c) " in " rt " should not be delta-supported")))))))
 
 ;; ---------------------------------------------------------------------------
-;; 3.4 — Integration smoke test (tagged ^:integration — skipped in unit suite)
+;; 3.5 — Enriched-rows smoke test (unit — no DB needed)
 ;; ---------------------------------------------------------------------------
 
-(deftest ^:integration report-data-ue-compare-enriches-rows-test
-  (testing "When compare is active and DB has data, rows include _delta fields"
-    (let [result (report/report-data :ue {:from "2026-04-01" :to "2026-04-30"}
-                                     :compare :prev)]
-      ;; Rows may be empty in test env — just verify structure is sane
-      (is (vector? (:rows result)))
-      (is (map? (:compare result))))))
+(deftest enrich-with-compare-revenue-delta-test
+  (testing "enrich-with-compare injects :revenue_delta for matching article rows"
+    (let [current-rows [{:article "ART-1" :revenue 1200.0 :profit 400.0 :sales-qty 12}
+                        {:article "ART-2" :revenue 800.0  :profit 200.0 :sales-qty 8}]
+          prev-rows    [{:article "ART-1" :revenue 1000.0 :profit 300.0 :sales-qty 10}]
+          result       (report/enrich-with-compare current-rows prev-rows :article
+                                                   [:revenue :profit :sales-qty])]
+      ;; ART-1 matches prev — should have revenue_delta injected
+      (let [art1 (first result)]
+        (is (= 200.0 (:revenue_delta art1))
+            "ART-1 revenue delta should be 1200 - 1000 = 200")
+        (is (some? (:revenue_delta_pct art1))
+            "ART-1 revenue_delta_pct should be computed")
+        (is (= 1000.0 (:revenue_prev art1))
+            "ART-1 revenue_prev should be the previous period value"))
+      ;; ART-2 has no prev match — delta fields should be nil
+      (let [art2 (second result)]
+        (is (nil? (:revenue_delta art2))
+            "ART-2 has no prev row, revenue_delta must be nil")
+        (is (nil? (:revenue_prev art2))
+            "ART-2 has no prev row, revenue_prev must be nil")))))
