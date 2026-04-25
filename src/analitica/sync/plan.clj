@@ -1,7 +1,10 @@
 (ns analitica.sync.plan
-  "V4 Sync Plan Generator — Phase 3.
+  "V4 Sync Plan Generator — Phase 3/5.
    Pure planning logic (no I/O except persist-plan! which writes to the registry).
-   Produces a vector of task descriptors in topological order (ingest before materialize)."
+   Produces a vector of task descriptors in topological order (ingest before materialize).
+
+   Phase 5: WB storage ingest is expanded into weekly-chunked sub-tasks so that
+   progress is visible per chunk; materialize depends on ALL chunk tasks."
   (:require [analitica.sync.registry :as registry]
             [analitica.util.time :as time]
             [analitica.ingest :as ingest]
@@ -44,36 +47,67 @@
   [run-id mp entity-type phase]
   (str run-id "/" (name mp) "/" (name entity-type) "/" (name phase)))
 
-(defn- make-task-pair
-  "Return [ingest-descriptor materialize-descriptor] for one (mp, entity-type) pair."
+(defn chunk-spec
+  "Return the set of [chunk-from chunk-to] period pairs for one (mp, entity-type).
+
+   For WB storage: splits the full period into 7-day chunks so each chunk
+   becomes its own ingest task (progress visible per chunk, avoids large API calls).
+   For everything else: returns a single-element vector [[period-from period-to]].
+
+   This is the extension point for future per-(mp, type) chunking strategies."
+  [mp entity-type period-from period-to]
+  (if (and (= mp :wb) (= entity-type :storage))
+    (time/date-chunks period-from period-to 7)
+    [[period-from period-to]]))
+
+(defn- make-task-group
+  "Return a flat vector of task descriptors for one (mp, entity-type) pair.
+
+   For most pairs: [ingest-descriptor materialize-descriptor] (unchanged from Phase 3).
+   For WB storage: [chunk-ingest-1 ... chunk-ingest-N materialize-descriptor]
+     where the materialize task depends on ALL chunk-ingest IDs."
   [run-id mp entity-type period-from period-to]
-  (let [ingest-id  (task-id run-id mp entity-type :ingest)
-        mat-id     (task-id run-id mp entity-type :materialize)
-        period-vec [period-from period-to]]
-    [{:id           ingest-id
-      :run-id       run-id
-      :marketplace  mp
-      :entity-type  entity-type
-      :phase        :ingest
-      :period-from  period-from
-      :period-to    period-to
-      :depends-on   []
-      :thunk        #(or (ingest/ingest! entity-type
-                                         :marketplace mp
-                                         :period period-vec)
-                         0)}
-     {:id           mat-id
-      :run-id       run-id
-      :marketplace  mp
-      :entity-type  entity-type
-      :phase        :materialize
-      :period-from  period-from
-      :period-to    period-to
-      :depends-on   [ingest-id]
-      :thunk        #(or (materialize/materialize! entity-type
-                                                   :marketplace mp
-                                                   :period period-vec)
-                         0)}]))
+  (let [chunks      (chunk-spec mp entity-type period-from period-to)
+        mat-id      (task-id run-id mp entity-type :materialize)
+        mat-period  [period-from period-to]
+        ;; Build one ingest descriptor per chunk
+        ingest-tasks
+        (mapv (fn [[chunk-from chunk-to]]
+                (let [chunked? (> (count chunks) 1)
+                      ;; Chunked tasks get a sub-id; single tasks keep the plain id
+                      id       (if chunked?
+                                 (str (task-id run-id mp entity-type :ingest)
+                                      "/" chunk-from "_to_" chunk-to)
+                                 (task-id run-id mp entity-type :ingest))
+                      period-vec [chunk-from chunk-to]]
+                  (cond-> {:id           id
+                           :run-id       run-id
+                           :marketplace  mp
+                           :entity-type  entity-type
+                           :phase        :ingest
+                           :period-from  chunk-from
+                           :period-to    chunk-to
+                           :depends-on   []
+                           :thunk        #(or (ingest/ingest! entity-type
+                                                              :marketplace mp
+                                                              :period period-vec)
+                                              0)}
+                    chunked? (assoc :chunk (str chunk-from "_to_" chunk-to)))))
+              chunks)
+        ingest-ids  (mapv :id ingest-tasks)
+        mat-task    {:id           mat-id
+                     :run-id       run-id
+                     :marketplace  mp
+                     :entity-type  entity-type
+                     :phase        :materialize
+                     :period-from  period-from
+                     :period-to    period-to
+                     :depends-on   ingest-ids
+                     :thunk        #(or (materialize/materialize! entity-type
+                                                                  :marketplace mp
+                                                                  :period mat-period)
+                                        0)}]
+    (conj ingest-tasks mat-task)))
 
 ;; ---------------------------------------------------------------------------
 ;; Public API
@@ -119,9 +153,9 @@
                     etype types
                     :when (compatible? mp etype)]
                 [mp etype])
-        ;; Build task pairs — ingest first, materialize second (topological order)
+        ;; Build task groups — ingest first (possibly chunked), materialize second
         all-tasks (mapcat (fn [[mp etype]]
-                            (make-task-pair run-id mp etype period-from period-to))
+                            (make-task-group run-id mp etype period-from period-to))
                           pairs)
         ;; Re-sort: all ingest tasks first, then all materialize tasks
         ;; This ensures topological order across the full plan vector.

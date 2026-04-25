@@ -1,14 +1,17 @@
 (ns analitica.sync.executor
-  "V4 Sync Executor — Phase 3/4.
-   Sequential execution of a plan (vector of task descriptors with :thunks),
-   honoring :depends-on dependency constraints.
-   No parallelism (Phase 5). No retries (Phase 6).
+  "V4 Sync Executor — Phase 3/4/5.
+   Sequential and DAG-parallel execution of a plan (vector of task
+   descriptors with :thunks), honoring :depends-on dependency constraints.
+   No retries (Phase 6).
 
-   Phase 4 adds run-summary and recent-runs for the task-matrix API."
+   Phase 4 adds run-summary and recent-runs for the task-matrix API.
+   Phase 5 adds run-parallel! using ExecutorCompletionService."
   (:require [analitica.db :as db]
             [analitica.sync.registry :as registry]
             [analitica.sync.runner :as runner]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.util.concurrent
+            Executors ExecutorCompletionService Callable TimeUnit]))
 
 ;; ---------------------------------------------------------------------------
 ;; Private helpers
@@ -92,6 +95,122 @@
      :failed      (:failed counters)
      :skipped     (:skipped counters)
      :duration-ms (- end-ms start-ms)}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 5 — DAG-aware parallel executor
+;;
+;; Strategy: ExecutorCompletionService + a "ready set" we re-evaluate after
+;; each task finishes. Workers (default 8) consume from the completion
+;; service's queue; the dispatcher loop submits tasks as their deps clear.
+;;
+;; The per-MP rate-limiters in analitica.util.http already serialize same-MP
+;; requests at the HTTP boundary, so a worker pool > 1 is safe — concurrent
+;; tasks for different MPs proceed in parallel; concurrent tasks for the
+;; same MP queue at the rate-limiter, which is the desired behaviour.
+;; ---------------------------------------------------------------------------
+
+(defn- deps-resolution
+  "Inspect deps for the given task. Returns one of:
+     :ready       — every dep is :ok or no deps at all
+     :failed      — at least one dep is :failed/:skipped (mark dependent skipped)
+     :pending     — at least one dep still pending/running/retrying"
+  [dep-ids]
+  (if (empty? dep-ids)
+    :ready
+    (loop [remaining dep-ids any-pending? false]
+      (if (empty? remaining)
+        (if any-pending? :pending :ready)
+        (let [row    (registry/find-task (first remaining))
+              status (:status row)]
+          (cond
+            (terminal-failure-statuses status) :failed
+            (= "ok" status)                    (recur (rest remaining) any-pending?)
+            :else                              (recur (rest remaining) true)))))))
+
+(defn run-parallel!
+  "Run a plan in parallel across `workers` worker threads (default 8).
+
+   Honors :depends-on edges: a task waits until all deps reach :ok. If any
+   dep is :failed or :skipped, the dependent is recorded :skipped via
+   registry/record-skipped! (no thunk invocation).
+
+   Returns the same summary shape as run-sequential!.
+
+   Idempotency: tasks already in a terminal state are skipped at submit
+   time (they pass through the counters un-counted because they were
+   counted on the previous run).
+
+   Shutdown is clean — pool is .shutdown and .awaitTermination'd in
+   try/finally even on exceptions."
+  [plan & {:keys [workers] :or {workers 8}}]
+  (let [start-ms (System/currentTimeMillis)
+        run-id   (:run-id (first plan))
+        n-tasks  (count plan)]
+    (if (zero? n-tasks)
+      {:run-id run-id :total 0 :ok 0 :failed 0 :skipped 0
+       :duration-ms (- (System/currentTimeMillis) start-ms)}
+      (let [pool   (Executors/newFixedThreadPool workers)
+            ecs   (ExecutorCompletionService. pool)
+            ;; Mutable bookkeeping
+            in-flight (atom #{})         ; set of task IDs currently submitted
+            done      (atom #{})         ; set of task IDs whose terminal status is committed
+            counters  (atom {:ok 0 :failed 0 :skipped 0})
+            by-id     (into {} (map (juxt :id identity) plan))]
+        (try
+          ;; Submit tasks whose deps are :ready (or empty). Loop until every
+          ;; task is done.
+          (loop []
+            ;; 1) Submit any newly-ready tasks not yet in-flight or done.
+            (doseq [{:keys [id depends-on thunk]} plan
+                    :when (not (or (@in-flight id) (@done id)))]
+              (cond
+                (already-terminal? id)
+                ;; Pre-existing terminal task → mark done, don't count
+                (swap! done conj id)
+
+                :else
+                (case (deps-resolution depends-on)
+                  :ready
+                  (do (swap! in-flight conj id)
+                      (.submit ecs ^Callable
+                               (fn []
+                                 (let [row (runner/run-task! id thunk)]
+                                   {:id id :status (:status row)}))))
+
+                  :failed
+                  (let [reason (dep-failure-reason depends-on)]
+                    (registry/record-skipped! id (or reason "dependency failed"))
+                    (swap! counters update :skipped inc)
+                    (swap! done conj id))
+
+                  :pending
+                  nil)))                ; wait for an in-flight dep to finish
+
+            ;; 2) If everything is done, exit
+            (if (= (count @done) n-tasks)
+              nil
+              (let [;; Block on next completion
+                    fut    (.take ecs)
+                    result (.get fut)
+                    {:keys [id status]} result]
+                (swap! in-flight disj id)
+                (swap! done conj id)
+                (case status
+                  "ok"      (swap! counters update :ok inc)
+                  "failed"  (swap! counters update :failed inc)
+                  "skipped" (swap! counters update :skipped inc)
+                  nil)
+                (recur))))
+          (finally
+            (.shutdown pool)
+            (when-not (.awaitTermination pool 30 TimeUnit/SECONDS)
+              (.shutdownNow pool))))
+        {:run-id      run-id
+         :total       n-tasks
+         :ok          (:ok @counters)
+         :failed      (:failed @counters)
+         :skipped     (:skipped @counters)
+         :duration-ms (- (System/currentTimeMillis) start-ms)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 4 — run-summary and recent-runs for the task-matrix API

@@ -55,28 +55,27 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest expand-plan-all-all
-  (testing ":what :all :marketplace :all yields 42 tasks total"
+  (testing ":what :all :marketplace :all yields 21 (mp,type) groups, with WB storage chunked"
     (let [run-id (unique-run-id)
           tasks  (plan/expand-plan :run-id run-id
                                    :what :all
                                    :marketplace :all
-                                   :period :last-30-days)]
-      ;; WB: 8 pairs, Ozon: 7 pairs, YM: 6 pairs → 21 pairs × 2 phases = 42
-      (is (= 42 (count tasks))
-          (str "Expected 42 tasks, got " (count tasks)
-               "\nTypes per mp: "
-               {:wb   (count (filter #(= :wb (:marketplace %)) tasks))
-                :ozon (count (filter #(= :ozon (:marketplace %)) tasks))
-                :ym   (count (filter #(= :ym (:marketplace %)) tasks))}))
+                                   :period :last-30-days)
+          by-phase (group-by :phase tasks)]
+      ;; 21 (mp, type) groups × 1 materialize = 21 materialize tasks total
+      (is (= 21 (count (:materialize by-phase))))
+      ;; Ingest count = 20 non-storage + N storage-chunks (~5 for 30 days).
       ;; All tasks share the same run-id
       (is (every? #(= run-id (:run-id %)) tasks))
-      ;; All period-from/to are populated
       (is (every? (comp some? :period-from) tasks))
       (is (every? (comp some? :period-to) tasks))
-      ;; Exactly half are ingest, half materialize
-      (let [by-phase (group-by :phase tasks)]
-        (is (= 21 (count (:ingest by-phase))))
-        (is (= 21 (count (:materialize by-phase))))))))
+      ;; WB storage gets multiple ingest chunks; the materialize is single.
+      (let [wb-storage-ingest (filter #(and (= :wb (:marketplace %))
+                                            (= :storage (:entity-type %))
+                                            (= :ingest (:phase %)))
+                                      tasks)]
+        (is (>= (count wb-storage-ingest) 4)
+            "WB storage ingest is split into weekly chunks (≥4 for 30 days)")))))
 
 ;; ---------------------------------------------------------------------------
 ;; 2. expand-plan-one-mp
@@ -84,18 +83,22 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest expand-plan-one-mp
-  (testing ":what :all :marketplace :wb yields 16 tasks (8 types × 2 phases)"
+  (testing ":what :all :marketplace :wb covers 8 types; storage ingest is chunked"
     (let [run-id (unique-run-id)
           tasks  (plan/expand-plan :run-id run-id
                                    :what :all
                                    :marketplace :wb
-                                   :period :last-30-days)]
-      (is (= 16 (count tasks)))
+                                   :period :last-30-days)
+          by-phase (group-by :phase tasks)]
       ;; All tasks are for :wb
       (is (every? #(= :wb (:marketplace %)) tasks))
       ;; 8 entity types present
       (let [types (->> tasks (map :entity-type) set)]
-        (is (= #{:sales :orders :finance :stocks :prices :stats :storage :regions} types))))))
+        (is (= #{:sales :orders :finance :stocks :prices :stats :storage :regions} types)))
+      ;; 8 materialize tasks (one per type)
+      (is (= 8 (count (:materialize by-phase))))
+      ;; >=12 ingest tasks (7 single + ≥5 storage chunks)
+      (is (>= (count (:ingest by-phase)) 12)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 3. expand-plan-one-type
@@ -160,30 +163,38 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest expand-plan-materialize-deps-on-ingest
-  (testing "every materialize task depends on exactly its matching ingest task"
+  (testing "every materialize task depends on its matching ingest task(s)"
     (let [run-id (unique-run-id)
           tasks  (plan/expand-plan :run-id run-id
                                    :what :all
                                    :marketplace :all
                                    :period :last-30-days)
-          mats   (filter #(= :materialize (:phase %)) tasks)]
-      ;; Every materialize task has exactly one dep
-      (is (every? #(= 1 (count (:depends-on %))) mats))
-      ;; The dep is the matching ingest task id
+          mats   (filter #(= :materialize (:phase %)) tasks)
+          ingests (filter #(= :ingest (:phase %)) tasks)
+          ingest-ids (set (map :id ingests))]
+      ;; Most materialize tasks have exactly 1 dep; WB storage has many
+      ;; (one per weekly chunk). Each dep must be a real ingest task.
       (doseq [mat mats]
-        (let [mp        (:marketplace mat)
-              etype     (:entity-type mat)
-              ;; Task IDs are prefixed with the run-id (Phase 4
-              ;; follow-up) so reruns don't trip the PRIMARY KEY.
-              ingest-id (str (:run-id mat) "/" (name mp) "/" (name etype) "/ingest")
-              dep-id    (first (:depends-on mat))]
-          (is (= ingest-id dep-id)
-              (str "Materialize task " (:id mat)
-                   " should depend on " ingest-id
-                   " but depends on " dep-id))))
+        (is (pos? (count (:depends-on mat)))
+            (str "Materialize " (:id mat) " should have at least one dep"))
+        (doseq [dep-id (:depends-on mat)]
+          (is (contains? ingest-ids dep-id)
+              (str "Materialize " (:id mat) " has dep " dep-id
+                   " that is not an ingest task in this plan"))))
+      ;; WB storage materialize is the only one with >1 dep — that's by
+      ;; design (chunked ingest fans into one materialize).
+      (let [storage-mat (first (filter #(and (= :storage (:entity-type %))
+                                             (= :wb (:marketplace %)))
+                                       mats))]
+        (is (>= (count (:depends-on storage-mat)) 4)
+            "WB storage materialize depends on ≥4 chunked ingest tasks"))
+      ;; All non-storage materialize tasks have exactly 1 dep
+      (let [non-storage-mats (filter #(not (and (= :wb (:marketplace %))
+                                                (= :storage (:entity-type %))))
+                                     mats)]
+        (is (every? #(= 1 (count (:depends-on %))) non-storage-mats)))
       ;; All ingest tasks have no deps
-      (let [ingest-tasks (filter #(= :ingest (:phase %)) tasks)]
-        (is (every? #(empty? (:depends-on %)) ingest-tasks))))))
+      (is (every? #(empty? (:depends-on %)) ingests)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 6. persist-plan-creates-rows

@@ -962,7 +962,10 @@
               _       (sync-plan/persist-plan! plan)]
           (future
             (try
-              (sync-executor/run-sequential! plan)
+              ;; Phase 5: parallel executor is default. Pool size 8 is
+              ;; the documented choice in docs/superpowers/plans/2026-04-25-
+              ;; sync-task-registry.md.
+              (sync-executor/run-parallel! plan :workers 8)
               (finally
                 (reset! sync-api/sync-running? false))))
           {:status 202 :body {:run-id run-id :total (count plan)}}))))
