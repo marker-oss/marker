@@ -63,16 +63,17 @@
                                   (if (seq data)
                                     {:revenue (:for-pay (first data))}
                                     {:revenue 0.0}))]
-      (let [result (charts/share-chart-data :last-7-days)]
+      (let [result (charts/share-chart-data :last-7-days)
+            data   (get-in result [:datasets 0 :data])]
         (is (map? result))
         (is (contains? result :labels))
-        (is (contains? result :data))
+        (is (contains? result :datasets))
         (is (vector? (:labels result)))
-        (is (vector? (:data result)))
+        (is (vector? data))
         (is (= 3 (count (:labels result))))
-        (is (= 3 (count (:data result))))
+        (is (= 3 (count data)))
         (is (= ["wb" "ozon" "ym"] (:labels result)))
-        (is (= [10000.0 8000.0 6000.0] (:data result)))))))
+        (is (= [10000.0 8000.0 6000.0] data))))))
 
 
 (deftest report-chart-data-test

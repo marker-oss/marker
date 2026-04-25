@@ -25,19 +25,18 @@
   
   (testing "page includes header elements"
     (let [html (layout/page "Test" [:div "Content"])]
-      (is (re-find #"Период:" html))
-      (is (re-find #"Sync All" html))
+      (is (re-find #"period-picker" html))
       (is (re-find #"Последняя синхронизация" html))))
-  
+
   (testing "page highlights active route"
     (let [html (layout/page "Test" [:div "Content"] :active-route "/wb")]
       (is (re-find #"bg-blue-600" html))
       (is (string? html))))
-  
+
   (testing "page includes period selector options"
     (let [html (layout/page "Test" [:div "Content"])]
-      (is (re-find #"Прошлая неделя" html))
-      (is (re-find #"Последние 7 дней" html))
-      (is (re-find #"Последние 30 дней" html))
+      (is (re-find #"7 дней" html))
+      (is (re-find #"30 дней" html))
       (is (re-find #"Этот месяц" html))
-      (is (re-find #"Произвольный диапазон" html)))))
+      (is (re-find #"Пред. месяц" html))
+      (is (re-find #"Custom" html)))))

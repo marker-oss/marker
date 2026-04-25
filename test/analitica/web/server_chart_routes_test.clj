@@ -73,12 +73,12 @@
           (let [body (json/read-value (:body response) json/keyword-keys-object-mapper)]
             (is (contains? body :labels)
                 "Response should contain :labels")
-            (is (contains? body :data)
-                "Response should contain :data")
+            (is (contains? body :datasets)
+                "Response should contain :datasets")
             (is (vector? (:labels body))
                 ":labels should be a vector")
-            (is (vector? (:data body))
-                ":data should be a vector"))))
+            (is (vector? (get-in body [:datasets 0 :data]))
+                "datasets[0].data should be a vector"))))
       
       (testing "with custom period"
         (let [request {:request-method :get

@@ -5,6 +5,7 @@
             [analitica.db :as db]
             [analitica.sync.registry :as reg]
             [analitica.sync.plan :as sync-plan]
+            [analitica.sync.executor]
             [analitica.util.time :as time]
             [jsonista.core :as json]
             [ring.core.protocols :as ring-protocols])
@@ -132,36 +133,49 @@
 
 (deftest ^:integration test-sync-start-with-period-and-marketplace
   (testing "POST /api/sync/start with period and marketplace"
-    (let [handler (server/app)]
+    (let [handler (server/app)
+          ;; The handler kicks off a real plan + executor in a background
+          ;; future; without these redefs, the production /sync flow would
+          ;; touch the real DB. Each sub-test resets sync-running? so the
+          ;; second/third call doesn't get rejected with 409.
+          stub-it  (fn []
+                     (reset! sync-api/sync-running? false)
+                     (reset! sync-api/progress-channel nil))]
+      (with-redefs [sync-plan/persist-plan! (fn [p] p)
+                    analitica.sync.executor/run-parallel!
+                    (fn [_p & _] {:ok 0 :failed 0 :skipped 0 :total 0})]
 
-      (testing "with period parameter"
-        (let [body-str (json/write-value-as-string {:what "sales" :period "last-week"})
-              request {:request-method :post
-                       :uri "/api/sync/start"
-                       :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
-              response (handler request)]
-          (is (= 200 (:status response))
-              "Should return 200 for sync with period")))
+        (testing "with period parameter"
+          (stub-it)
+          (let [body-str (json/write-value-as-string {:what "sales" :period "last-week"})
+                request  {:request-method :post
+                          :uri "/api/sync/start"
+                          :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
+                response (handler request)]
+            (is (= 200 (:status response))
+                "Should return 200 for sync with period")))
 
-      (testing "with marketplace parameter"
-        (let [body-str (json/write-value-as-string {:what "sales" :marketplace "wb"})
-              request {:request-method :post
-                       :uri "/api/sync/start"
-                       :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
-              response (handler request)]
-          (is (= 200 (:status response))
-              "Should return 200 for sync with marketplace")))
+        (testing "with marketplace parameter"
+          (stub-it)
+          (let [body-str (json/write-value-as-string {:what "sales" :marketplace "wb"})
+                request  {:request-method :post
+                          :uri "/api/sync/start"
+                          :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
+                response (handler request)]
+            (is (= 200 (:status response))
+                "Should return 200 for sync with marketplace")))
 
-      (testing "with both period and marketplace"
-        (let [body-str (json/write-value-as-string {:what "sales"
-                                                    :period "last-30-days"
-                                                    :marketplace "ozon"})
-              request {:request-method :post
-                       :uri "/api/sync/start"
-                       :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
-              response (handler request)]
-          (is (= 200 (:status response))
-              "Should return 200 for sync with both period and marketplace"))))))
+        (testing "with both period and marketplace"
+          (stub-it)
+          (let [body-str (json/write-value-as-string {:what "sales"
+                                                      :period "last-30-days"
+                                                      :marketplace "ozon"})
+                request  {:request-method :post
+                          :uri "/api/sync/start"
+                          :body (java.io.ByteArrayInputStream. (.getBytes body-str "UTF-8"))}
+                response (handler request)]
+            (is (= 200 (:status response))
+                "Should return 200 for sync with both period and marketplace")))))))
 
 (deftest test-sync-stream-route
   (testing "GET /api/sync/stream route"
