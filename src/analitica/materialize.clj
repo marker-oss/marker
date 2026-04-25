@@ -72,6 +72,10 @@
                                       (>= (compare to   (subs (:date %) 0 10)) 0))
                                 data)
                        data)
+        ;; orders.article is NOT NULL — drop rows that came back without
+        ;; one (cancelled YM orders / Ozon postings with no items). A
+        ;; single such row would 23 the whole batch insert.
+        data         (filterv :article data)
         rows         (mapv sync/order->row data)
         cnt          (db/insert-batch! :orders sync/orders-columns rows)]
     (println (str "Materialized orders: " cnt))
@@ -103,6 +107,9 @@
                                       (>= (compare to   (subs (:date %) 0 10)) 0))
                                 data)
                        data)
+        ;; sales.article is NOT NULL — drop articleless rows for the same
+        ;; reason as materialize-orders!.
+        data         (filterv :article data)
         rows         (mapv sync/sale->row data)
         cnt          (db/insert-batch! :sales sync/sales-columns rows)]
     (println (str "Materialized sales: " cnt))

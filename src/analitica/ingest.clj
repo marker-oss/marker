@@ -657,7 +657,7 @@
                                      (db/insert-raw! :ozon :product_stats chunk-from chunk-to data)
                                      (println (str "  Ingested Ozon product stats " chunk-from " .. " chunk-to))
                                      1))
-                         :ym   (throw (ex-info "YM product-stats ingest is not available on this branch" {}))))
+                         :ym   (ingest-ym-product-stats! client chunk-from chunk-to)))
                 (catch Exception e
                   (println (str "  ERROR " chunk-from ".." chunk-to ": " (.getMessage e)))
                   acc)))

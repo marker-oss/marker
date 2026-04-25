@@ -107,7 +107,10 @@
     {:marketplace :ym
      :order-id    (or (get raw :id) (get raw :orderId))
      :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
-     :article     (get item :offerId)
+     ;; YM /stats/orders returns the article as :shopSku, not :offerId.
+     ;; Keep :offerId as a fallback for the (theoretical) /stats endpoint
+     ;; shape; ->finance-line uses the same dual lookup.
+     :article     (or (get item :offerId) (get item :shopSku))
      :quantity    (when (seq items) qty)
      :price       (or (get raw :buyerTotal) (get raw :total))
      :status      (when-let [s (get raw :status)] (keyword s))
@@ -129,7 +132,8 @@
     {:marketplace :ym
      :sale-id     (or (get raw :id) (get raw :orderId))
      :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
-     :article     (get item :offerId)
+     ;; Same shopSku/offerId fallback as ->order — see comment there.
+     :article     (or (get item :offerId) (get item :shopSku))
      :quantity    (when (seq items) qty)
      :total-price (or (get raw :buyerTotal) (get raw :total))
      :for-pay     (get raw :forPay)
