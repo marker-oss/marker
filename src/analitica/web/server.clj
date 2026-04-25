@@ -15,6 +15,7 @@
             [analitica.web.layout :as layout]
             [analitica.web.pages.sync :as sync-page]
             [analitica.web.pages.dashboard :as dashboard-page]
+            [analitica.web.pages.digest :as digest-page]
             [analitica.web.pages.reports :as reports-page]
             [analitica.web.api.sync :as sync-api]
             [analitica.sync.plan :as sync-plan]
@@ -143,11 +144,23 @@
 
 (defroutes app-routes
   ;; Pages
+  ;; Phase 2: GET / now points to the action-first digest page.
+  ;; Legacy summary-page kept at /dashboard/summary.
   (GET "/" {params :params}
-    (if-let [period (resolve-period-from-params params)]
+    (let [from (get params :from)
+          to   (get params :to)
+          mp   (get params :marketplace)]
       {:status 200
        :headers {"Content-Type" "text/html; charset=utf-8"}
        :body (layout/page "Главная"
+                          (digest-page/page {:from from :to to :marketplace mp})
+                          :active-route "/")}))
+  ;; Legacy dashboard at /dashboard/summary (Phase 2: keep for backward compat)
+  (GET "/dashboard/summary" {params :params}
+    (if-let [period (resolve-period-from-params params)]
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Dashboard (legacy)"
                           (dashboard-page/summary-page period)
                           :active-route "/")}
       {:status 400
@@ -796,6 +809,22 @@
               {:status 200 :body chart-data})
             {:status 400 :body {:error (str "Invalid parameters - marketplace: " marketplace-str ", period: " period-str)}})))))
   
+  ;; Phase 2: Digest API — returns JSON data for async digest sub-section refresh.
+  ;; Accepts ?from=&to= or defaults to last-30-days.
+  (GET "/api/digest" {params :params}
+    (let [from (get params :from)
+          to   (get params :to)
+          mp   (get params :marketplace)
+          data (try
+                 (digest-page/collect-page-data!
+                  :from from :to to
+                  :marketplace (when (and mp (not= mp "all")) (keyword mp)))
+                 (catch Exception e
+                   {:error (.getMessage e)}))]
+      {:status 200
+       :headers {"Content-Type" "application/json"}
+       :body (json/write-value-as-string data)}))
+
   ;; Per-article drill-down — must be listed BEFORE the /api/report/:type catch-all.
   ;; Article names may contain '/' and Cyrillic; the client must encodeURIComponent
   ;; so '/' becomes '%2F'. Compojure delivers the percent-decoded value in params;
