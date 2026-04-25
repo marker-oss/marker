@@ -47,17 +47,35 @@
   [run-id mp entity-type phase]
   (str run-id "/" (name mp) "/" (name entity-type) "/" (name phase)))
 
+;; Per-(mp, entity-type) chunk size (days). nil = no chunking. Picked from
+;; observed API behaviour:
+;;
+;;   wb/storage  — 7  : weekly report splits, async pipeline already exists
+;;   wb/finance  — 30 : full-period requests scale linearly (241s on 7 days
+;;                      observed; chunking caps single-task duration ~80s)
+;;   wb/regions  — 30 : the regions endpoint returns 400 on >30-day windows
+;;                      (observed 2026-04-25 on a 84-day request)
+;;   ym/finance  — 30 : /stats/orders payload grows linearly with the
+;;                      window; 30 days keeps individual responses bounded
+;;
+;; Other endpoints either snapshot (stocks/prices), are already chunked
+;; internally (ozon/postings, ozon/transactions, ozon/realization), or are
+;; small enough that chunking adds overhead without benefit.
+(def ^:private chunk-days
+  {[:wb :storage]   7
+   [:wb :finance]   30
+   [:wb :regions]   30
+   [:ym :finance]   30})
+
 (defn chunk-spec
   "Return the set of [chunk-from chunk-to] period pairs for one (mp, entity-type).
 
-   For WB storage: splits the full period into 7-day chunks so each chunk
-   becomes its own ingest task (progress visible per chunk, avoids large API calls).
-   For everything else: returns a single-element vector [[period-from period-to]].
-
-   This is the extension point for future per-(mp, type) chunking strategies."
+   Chunking strategy is data-driven via the `chunk-days` table above. When
+   no entry exists for a pair, returns a single-element vector
+   [[period-from period-to]] (no chunking)."
   [mp entity-type period-from period-to]
-  (if (and (= mp :wb) (= entity-type :storage))
-    (time/date-chunks period-from period-to 7)
+  (if-let [days (get chunk-days [mp entity-type])]
+    (time/date-chunks period-from period-to days)
     [[period-from period-to]]))
 
 (defn- make-task-group

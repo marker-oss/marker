@@ -181,18 +181,24 @@
           (is (contains? ingest-ids dep-id)
               (str "Materialize " (:id mat) " has dep " dep-id
                    " that is not an ingest task in this plan"))))
-      ;; WB storage materialize is the only one with >1 dep — that's by
-      ;; design (chunked ingest fans into one materialize).
+      ;; Any (mp, type) pair listed in plan/chunk-days now produces multi-
+      ;; dep materialize tasks when the period exceeds the chunk size.
+      ;; WB storage is always chunked (7-day windows). Other chunked
+      ;; pairs may or may not depending on the period length, so we
+      ;; only assert about WB storage here.
       (let [storage-mat (first (filter #(and (= :storage (:entity-type %))
                                              (= :wb (:marketplace %)))
                                        mats))]
         (is (>= (count (:depends-on storage-mat)) 4)
             "WB storage materialize depends on ≥4 chunked ingest tasks"))
-      ;; All non-storage materialize tasks have exactly 1 dep
-      (let [non-storage-mats (filter #(not (and (= :wb (:marketplace %))
-                                                (= :storage (:entity-type %))))
-                                     mats)]
-        (is (every? #(= 1 (count (:depends-on %))) non-storage-mats)))
+      ;; Pairs that are NEVER chunked still have exactly 1 dep.
+      (let [never-chunked
+            (filter (fn [m]
+                      (let [k [(:marketplace m) (:entity-type m)]]
+                        (not (contains? #{[:wb :storage] [:wb :finance]
+                                          [:wb :regions] [:ym :finance]} k))))
+                    mats)]
+        (is (every? #(= 1 (count (:depends-on %))) never-chunked)))
       ;; All ingest tasks have no deps
       (is (every? #(empty? (:depends-on %)) ingests)))))
 
@@ -263,3 +269,54 @@
             "ingest rows in DB must have max_attempts=3")
         (is (every? #(= 1 (:max-attempts %)) materialize-rows)
             "materialize rows in DB must have max_attempts=1")))))
+
+;; ---------------------------------------------------------------------------
+;; 8. chunk-spec table per (mp, type)
+;;    Phase 9 follow-up: WB finance/regions and YM finance get window-chunked
+;;    so single-task duration stays bounded and the regions endpoint's
+;;    30-day window cap is respected.
+;; ---------------------------------------------------------------------------
+
+(deftest chunk-spec-wb-finance-30-days
+  (testing "WB finance: 90-day window splits into ~3 monthly chunks"
+    (let [chunks (plan/chunk-spec :wb :finance "2026-02-01" "2026-04-30")]
+      (is (>= (count chunks) 3)
+          "≥3 chunks for ~90 days at 30-day chunk size")
+      (is (every? vector? chunks))
+      (is (every? #(= 2 (count %)) chunks)
+          "each chunk is a [from to] pair"))))
+
+(deftest chunk-spec-wb-regions-30-days
+  (testing "WB regions: 84-day window splits — guards against the 400 we saw on long ranges"
+    (let [chunks (plan/chunk-spec :wb :regions "2026-02-01" "2026-04-25")]
+      (is (>= (count chunks) 3)))))
+
+(deftest chunk-spec-ym-finance-30-days
+  (testing "YM finance: long window splits to keep /stats/orders responses bounded"
+    (let [chunks (plan/chunk-spec :ym :finance "2026-02-01" "2026-04-25")]
+      (is (>= (count chunks) 3)))))
+
+(deftest chunk-spec-non-chunked-pairs
+  (testing "Pairs not in chunk-days table return single-element vector (no chunking)"
+    (doseq [[mp etype] [[:wb :sales] [:wb :orders] [:wb :stocks] [:wb :prices]
+                        [:wb :stats] [:ozon :sales] [:ozon :transactions]
+                        [:ym :sales] [:ym :stocks]]]
+      (is (= 1 (count (plan/chunk-spec mp etype "2026-02-01" "2026-04-25")))
+          (str (name mp) "/" (name etype) " should not be chunked")))))
+
+(deftest expand-plan-wb-finance-chunked-on-long-period
+  (testing ":what :finance :marketplace :wb :period 90 days → multiple ingest chunks + 1 materialize"
+    (let [run-id (unique-run-id)
+          tasks  (plan/expand-plan :run-id run-id
+                                   :what :finance
+                                   :marketplace :wb
+                                   :period {:from "2026-02-01" :to "2026-04-30"})
+          ingest-tasks     (filter #(= :ingest (:phase %)) tasks)
+          materialize-tasks (filter #(= :materialize (:phase %)) tasks)]
+      (is (>= (count ingest-tasks) 3)
+          "WB finance ingest splits into ≥3 monthly chunks")
+      (is (= 1 (count materialize-tasks))
+          "Single materialize task with multi-dep")
+      (is (= (count ingest-tasks)
+             (count (:depends-on (first materialize-tasks))))
+          "Materialize depends on ALL ingest chunks"))))
