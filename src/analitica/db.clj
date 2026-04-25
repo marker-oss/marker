@@ -303,7 +303,33 @@
    "CREATE INDEX IF NOT EXISTS idx_finance_marketplace ON finance(marketplace)"
    "CREATE INDEX IF NOT EXISTS idx_raw_lookup ON raw_data(source, entity_type, date_from)"
    "CREATE INDEX IF NOT EXISTS idx_cashflow_lookup ON cash_flow_periods(source, period_begin)"
-   "CREATE INDEX IF NOT EXISTS idx_kpi_mp_captured ON accuracy_kpi_measurements(marketplace, captured_at)"])
+   "CREATE INDEX IF NOT EXISTS idx_kpi_mp_captured ON accuracy_kpi_measurements(marketplace, captured_at)"
+
+   ;; sync_tasks — V4 Sync Task Registry (Phase 1)
+   "CREATE TABLE IF NOT EXISTS sync_tasks (
+      id            TEXT PRIMARY KEY,
+      run_id        TEXT NOT NULL,
+      marketplace   TEXT NOT NULL,
+      entity_type   TEXT NOT NULL,
+      phase         TEXT NOT NULL,
+      chunk         TEXT,
+      status        TEXT NOT NULL,
+      attempts      INTEGER NOT NULL DEFAULT 0,
+      max_attempts  INTEGER NOT NULL DEFAULT 1,
+      items         INTEGER,
+      error_msg     TEXT,
+      error_kind    TEXT,
+      started_at    TEXT,
+      finished_at   TEXT,
+      duration_ms   INTEGER,
+      period_from   TEXT,
+      period_to     TEXT,
+      parent_id     TEXT,
+      depends_on    TEXT
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_sync_tasks_run_id ON sync_tasks (run_id)"
+   "CREATE INDEX IF NOT EXISTS idx_sync_tasks_status ON sync_tasks (status)"
+   "CREATE INDEX IF NOT EXISTS idx_sync_tasks_finished_at ON sync_tasks (finished_at)"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
