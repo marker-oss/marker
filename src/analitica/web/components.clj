@@ -916,3 +916,201 @@
      })();
    "]])
 
+;; ---------------------------------------------------------------------------
+;; Task Matrix Component (Phase 4)
+;; ---------------------------------------------------------------------------
+
+(defn task-matrix
+  "Render a task-status matrix shell + JS that polls /api/sync/run/:run-id
+   every 2s and updates cells. Polling stops when status='done'|'failed'.
+
+   When no run is active (run-id nil), the matrix shows the (mp, type)
+   shape with all cells gray and the legend. Run-id is dynamic — JS reads
+   it from URL ?run= param OR from window.__activeRunId set by the
+   hero-button POST handler.
+
+   Args:
+     :id              container div id (default 'task-matrix')
+     :poll-url-prefix '/api/sync/run/' (the route)"
+  [{:keys [id poll-url-prefix]
+    :or   {id "task-matrix" poll-url-prefix "/api/sync/run/"}}]
+  (let [mps   [["wb" "WB"] ["ozon" "Ozon"] ["ym" "YM"]]
+        types ["sales" "orders" "finance" "stocks" "prices" "stats" "storage" "regions" "cashflow"]]
+    [:div.bg-white.rounded-lg.shadow.p-6
+     [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Статус задач синхронизации"]
+     [:div {:id id}
+      ;; Static shell rendered server-side; JS will replace cell contents on poll.
+      [:div.overflow-x-auto
+       [:table.border-collapse.text-xs
+        [:thead
+         [:tr
+          [:th.px-2.py-1.text-left.text-gray-500.font-medium.whitespace-nowrap.sticky.left-0.bg-white "MP"]
+          (for [t types]
+            [:th.px-2.py-1.text-center.text-gray-500.font-medium.whitespace-nowrap {:key t} t])]]
+        [:tbody
+         (for [[mp-key mp-label] mps]
+           [:tr {:key mp-key}
+            [:td.px-2.py-1.font-semibold.text-gray-700.whitespace-nowrap.sticky.left-0.bg-white
+             mp-label]
+            (for [t types]
+              [:td.px-1.py-1 {:key (str mp-key "-" t)}
+               [:div.w-16.h-7.rounded.bg-gray-100.text-gray-400.flex.items-center.justify-center.text-xs
+                {:id (str "cell-" mp-key "-" t)
+                 :title (str mp-label " / " t " — н/д")}
+                "·"]])])]]]
+      ;; Legend
+      [:div.flex.flex-wrap.gap-3.mt-3.text-xs.text-gray-600
+       [:span [:span.inline-block.w-3.h-3.rounded.bg-green-500.mr-1.align-middle] "ok"]
+       [:span [:span.inline-block.w-3.h-3.rounded.bg-yellow-300.mr-1.align-middle] "running"]
+       [:span [:span.inline-block.w-3.h-3.rounded.bg-red-500.mr-1.align-middle] "failed"]
+       [:span [:span.inline-block.w-3.h-3.rounded.bg-blue-300.mr-1.align-middle] "skipped"]
+       [:span [:span.inline-block.w-3.h-3.rounded.bg-gray-100.mr-1.align-middle] "н/д"]]
+      ;; Run status banner
+      [:div#task-matrix-banner.mt-2.text-xs.text-gray-500 ""]]
+     [:script
+      (str "
+(function() {
+  var POLL_URL_PREFIX = '" poll-url-prefix "';
+  var CONTAINER_ID    = '" id "';
+
+  // --- colour helpers ---
+  function cellClass(status) {
+    if (!status) return 'bg-gray-100 text-gray-400';
+    switch(status) {
+      case 'ok':       return 'bg-green-500 text-white';
+      case 'running':  return 'bg-yellow-300 text-gray-800 animate-pulse';
+      case 'pending':  return 'bg-yellow-300 text-gray-800 animate-pulse';
+      case 'retrying': return 'bg-yellow-300 text-gray-800 animate-pulse';
+      case 'failed':   return 'bg-red-500 text-white';
+      case 'skipped':  return 'bg-blue-300 text-gray-800';
+      default:         return 'bg-gray-100 text-gray-400';
+    }
+  }
+
+  function cellLabel(task) {
+    if (!task) return '·';
+    var items = task.items != null ? task.items.toLocaleString('ru-RU') : '—';
+    switch(task.status) {
+      case 'ok':      return items;
+      case 'failed':  return '✗';
+      case 'skipped': return '⊘';
+      case 'running':
+      case 'pending':
+      case 'retrying': return '⏳';
+      default:        return '·';
+    }
+  }
+
+  function cellTitle(mp, type, task) {
+    if (!task) return mp + ' / ' + type + ' — н/д';
+    var dur = task['duration-ms'] != null ? (task['duration-ms'] / 1000).toFixed(1) + 's' : '—';
+    var items = task.items != null ? task.items.toLocaleString('ru-RU') + ' items' : '— items';
+    var err = task['error-msg'] ? ' | err: ' + task['error-msg'].slice(0, 120) : '';
+    return mp + ' / ' + type + ' [' + task.phase + '] ' + task.status +
+           ' (' + items + ', ' + dur + ', ' + (task.attempts||0) + ' atts)' + err;
+  }
+
+  // Build a (mp+type+phase) → task lookup from the API tasks array.
+  // We merge ingest+materialize into a single cell per (mp, type).
+  // Cell status priority: failed > running/pending > skipped > ok.
+  function buildIndex(tasks) {
+    var idx = {};
+    tasks.forEach(function(t) {
+      var key = t.marketplace + '/' + t['entity-type'];
+      var prev = idx[key];
+      if (!prev) { idx[key] = t; return; }
+      // Merge: pick the \"worse\" status for the cell.
+      var order = { failed:4, running:3, retrying:3, pending:3, skipped:2, ok:1 };
+      var prevOrd = order[prev.status]  || 0;
+      var currOrd = order[t.status]     || 0;
+      if (currOrd > prevOrd) idx[key] = t;
+    });
+    return idx;
+  }
+
+  var pollTimer = null;
+  var currentRunId = null;
+
+  function render(data) {
+    var idx    = buildIndex(data.tasks || []);
+    var mps    = ['wb', 'ozon', 'ym'];
+    var types  = ['sales','orders','finance','stocks','prices','stats','storage','regions','cashflow'];
+    mps.forEach(function(mp) {
+      types.forEach(function(type) {
+        var cell = document.getElementById('cell-' + mp + '-' + type);
+        if (!cell) return;
+        var task = idx[mp + '/' + type];
+        var cls  = cellClass(task ? task.status : null);
+        cell.className = 'w-16 h-7 rounded flex items-center justify-center text-xs ' + cls;
+        cell.textContent = cellLabel(task);
+        cell.title = cellTitle(mp, type, task);
+      });
+    });
+    var banner = document.getElementById('task-matrix-banner');
+    if (banner) {
+      var total = data.total || 0;
+      var done  = (data.tasks||[]).filter(function(t){ return t.status==='ok'||t.status==='failed'||t.status==='skipped'; }).length;
+      banner.textContent = 'Run ' + (data['run-id']||'').slice(0,8) +
+        ' | статус: ' + data.status + ' | ' + done + '/' + total + ' завершено' +
+        (data['started-at'] ? ' | start: ' + data['started-at'] : '');
+    }
+  }
+
+  function renderError(msg) {
+    var banner = document.getElementById('task-matrix-banner');
+    if (banner) banner.textContent = 'Ошибка: ' + msg;
+  }
+
+  function clearPoll() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  }
+
+  function poll() {
+    if (!currentRunId) return;
+    fetch(POLL_URL_PREFIX + currentRunId)
+      .then(function(r) {
+        if (!r.ok) {
+          if (r.status === 404) {
+            renderError('run not found (' + currentRunId + ')');
+            clearPoll();
+          } else {
+            renderError('HTTP ' + r.status);
+            pollTimer = setTimeout(poll, 5000);
+          }
+          return null;
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data) return;
+        render(data);
+        if (data.status === 'running') {
+          pollTimer = setTimeout(poll, 2000);
+        } else {
+          clearPoll();
+        }
+      })
+      .catch(function(e) {
+        renderError(String(e));
+        pollTimer = setTimeout(poll, 5000);
+      });
+  }
+
+  // Start with ?run= URL param or window.__activeRunId
+  var params = new URLSearchParams(location.search);
+  currentRunId = params.get('run') || window.__activeRunId || null;
+
+  // Subscribe to run-started events (hero button fires this)
+  window.addEventListener('analitica:run-started', function(e) {
+    clearPoll();
+    currentRunId = e.detail && e.detail.runId;
+    poll();
+  });
+
+  // Cleanup on navigate away
+  window.addEventListener('pagehide', clearPoll);
+
+  if (currentRunId) poll();
+})();
+")]]))
+

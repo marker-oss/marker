@@ -27,11 +27,19 @@
    ;; tells the server to fan out across [:wb :ozon :ym].
    [:div.flex.flex-wrap.items-center.gap-3.mb-2
     [:button#sync-hero-btn.px-6.py-3.bg-blue-600.text-white.rounded-lg.hover:bg-blue-700.transition-colors.text-base.font-semibold.shadow
-     {:hx-post "/api/sync/start"
+     {:hx-post "/api/sync/run"
       :hx-vals "js:{what:'all',marketplace:'all',period:window.__resolveSyncPeriod()}"
       :hx-swap "none"
       "hx-on:htmx:responseError"
-      "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена. Дождитесь завершения.');}"}
+      "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена. Дождитесь завершения.');}"
+      "hx-on:htmx:afterRequest"
+      (str "try{"
+           "var d=JSON.parse(event.detail.xhr.responseText);"
+           "if(d&&d['run-id']){"
+           "window.__activeRunId=d['run-id'];"
+           "window.dispatchEvent(new CustomEvent('analitica:run-started',{detail:{runId:d['run-id']}}));"
+           "}"
+           "}catch(e){console.error('run-started dispatch failed',e)}")}
      "↻ Обновить данные"]
     [:button.px-4.py-3.bg-red-600.text-white.rounded-lg.hover:bg-red-700.transition-colors.text-sm.font-medium
      {:hx-post "/api/sync/stop"
@@ -318,19 +326,25 @@
 ;; ---------------------------------------------------------------------------
 
 (defn sync-page
-  "Render the sync management page with buttons, progress log, coverage, and status table.
+  "Render the sync management page with buttons, task matrix, progress log, coverage, and status table.
 
   Requirements: 6.1, 6.4, 6.5"
   []
   [:div
    ;; Sync control buttons
    (sync-controls)
-   
-   ;; Progress log with SSE
-   (c/sync-log {:id "sync-log"
-                :stream-url "/api/sync/stream"
-                :height "400px"})
-   
+
+   ;; Task matrix — primary progress view (Phase 4)
+   (c/task-matrix {})
+
+   ;; Stream log — collapsible debug panel (demoted in Phase 4)
+   [:details.mt-6
+    [:summary.cursor-pointer.text-sm.font-medium.text-gray-600.hover:text-blue-600.mb-2
+     "Подробный лог (потоковый вывод)"]
+    (c/sync-log {:id "sync-log"
+                 :stream-url "/api/sync/stream"
+                 :height "300px"})]
+
    ;; Data coverage heatmap (per-day × per-MP × per-type)
    (c/sync-heatmap {:id "sync-coverage-heatmap"
                     :api-url "/api/sync/coverage-days"})

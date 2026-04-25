@@ -1,10 +1,14 @@
 (ns analitica.sync.executor
-  "V4 Sync Executor — Phase 3.
+  "V4 Sync Executor — Phase 3/4.
    Sequential execution of a plan (vector of task descriptors with :thunks),
    honoring :depends-on dependency constraints.
-   No parallelism (Phase 5). No retries (Phase 6)."
-  (:require [analitica.sync.registry :as registry]
-            [analitica.sync.runner :as runner]))
+   No parallelism (Phase 5). No retries (Phase 6).
+
+   Phase 4 adds run-summary and recent-runs for the task-matrix API."
+  (:require [analitica.db :as db]
+            [analitica.sync.registry :as registry]
+            [analitica.sync.runner :as runner]
+            [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Private helpers
@@ -88,3 +92,86 @@
      :failed      (:failed counters)
      :skipped     (:skipped counters)
      :duration-ms (- end-ms start-ms)}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 4 — run-summary and recent-runs for the task-matrix API
+;; ---------------------------------------------------------------------------
+
+(def ^:private running-statuses  #{"pending" "running" "retrying"})
+(def ^:private terminal-statuses #{"ok" "failed" "skipped"})
+
+(defn- overall-status
+  "Compute top-level run status from a vector of task rows.
+   - any task :pending|:running|:retrying  → 'running'
+   - all terminal AND any :failed          → 'failed'
+   - else (all terminal, all ok/skipped)   → 'done'"
+  [rows]
+  (cond
+    (some #(running-statuses (:status %)) rows) "running"
+    (some #(= "failed" (:status %)) rows)       "failed"
+    :else                                        "done"))
+
+(defn- row->task-summary
+  "Convert a registry row map to the task-summary map for the API response.
+   Registry returns keys as kebab-case keywords (next.jdbc default)."
+  [row]
+  {:id           (:id row)
+   :marketplace  (:marketplace row)
+   :entity-type  (:entity-type row)
+   :phase        (:phase row)
+   :status       (:status row)
+   :items        (:items row)
+   :duration-ms  (:duration-ms row)
+   :attempts     (:attempts row)
+   :started-at   (:started-at row)
+   :finished-at  (:finished-at row)
+   :error-kind   (:error-kind row)
+   :error-msg    (:error-msg row)
+   :depends-on   (let [d (:depends-on row)]
+                   (if (and d (not (empty? d)))
+                     (str/split d #",\s*")
+                     []))})
+
+(defn run-summary
+  "Return a summary map for the given run-id, suitable for JSON serialization.
+
+   Returns nil when run-id is unknown (no tasks found) so the HTTP route
+   can 404.
+
+   Shape:
+     {:run-id       '...'
+      :total        N
+      :started-at   '...'   earliest started_at among all tasks (nil if none started)
+      :finished-at  '...'   latest finished_at if all terminal, else nil
+      :status       'running|done|failed'
+      :tasks        [{:id :marketplace :entity-type :phase :status :items ...}]}"
+  [run-id]
+  (let [rows (registry/find-tasks-for-run run-id)]
+    (when (seq rows)
+      (let [task-summaries (mapv row->task-summary rows)
+            status         (overall-status rows)
+            started-ats    (->> rows (map :started-at) (filter some?) sort)
+            finished-ats   (->> rows (map :finished-at) (filter some?) sort)
+            all-terminal?  (every? #(terminal-statuses (:status %)) rows)]
+        {:run-id      run-id
+         :total       (count rows)
+         :started-at  (first started-ats)
+         :finished-at (when all-terminal? (last finished-ats))
+         :status      status
+         :tasks       task-summaries}))))
+
+(defn recent-runs
+  "Return a vector of the last 10 distinct run-ids ordered by latest started_at DESC,
+   each with the same rollup shape as run-summary.
+
+   Used by GET /api/sync/runs/recent."
+  []
+  (let [rows (try
+               (db/query
+                 ["SELECT DISTINCT run_id, MAX(started_at) AS last_started
+                   FROM sync_tasks
+                   GROUP BY run_id
+                   ORDER BY last_started DESC
+                   LIMIT 10"])
+               (catch Exception _ []))]
+    (mapv #(run-summary (:run-id %)) rows)))

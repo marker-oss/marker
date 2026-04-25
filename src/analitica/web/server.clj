@@ -967,6 +967,16 @@
                 (reset! sync-api/sync-running? false))))
           {:status 202 :body {:run-id run-id :total (count plan)}}))))
 
+  ;; Phase 4 — task-matrix status API
+  (GET "/api/sync/run/:run-id" [run-id]
+    (let [summary (sync-executor/run-summary run-id)]
+      (if summary
+        {:status 200 :body summary}
+        {:status 404 :body {:error "Run not found"}})))
+
+  (GET "/api/sync/runs/recent" []
+    {:status 200 :body (sync-executor/recent-runs)})
+
   (POST "/api/sync/stop" []
     (let [result (sync-api/stop-sync!)]
       (if (:error result)
