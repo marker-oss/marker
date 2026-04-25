@@ -182,3 +182,35 @@
        :period-to    (:period-to task)
        :depends-on   (seq (:depends-on task))}))
   plan)
+
+(defn build-thunk-for-row
+  "Reconstruct the runtime thunk for a sync_tasks row. Used by the manual
+   retry endpoint to re-execute a single task without re-running the
+   whole plan.
+
+   Returns a 0-arity fn returning items count, or throws if the
+   (mp, entity-type, phase) tuple isn't recognised.
+
+   Row keys come from next.jdbc in kebab-case; values may be strings
+   (\"wb\", \"sales\", \"ingest\") rather than keywords — we convert with
+   keyword before dispatch."
+  [{:keys [marketplace entity-type phase period-from period-to]}]
+  (let [mp          (keyword marketplace)
+        etype       (keyword entity-type)
+        ph          (keyword phase)
+        period-vec  [period-from period-to]]
+    (case ph
+      :ingest
+      #(or (ingest/ingest! etype
+                           :marketplace mp
+                           :period period-vec)
+           0)
+
+      :materialize
+      #(or (materialize/materialize! etype
+                                     :marketplace mp
+                                     :period period-vec)
+           0)
+
+      (throw (ex-info "Unknown phase — cannot build thunk"
+                      {:phase phase :marketplace marketplace :entity-type entity-type})))))

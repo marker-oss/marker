@@ -4,6 +4,7 @@
             [analitica.web.api.sync :as sync-api]
             [analitica.db :as db]
             [analitica.sync.registry :as reg]
+            [analitica.sync.plan :as sync-plan]
             [analitica.util.time :as time]
             [jsonista.core :as json]
             [ring.core.protocols :as ring-protocols])
@@ -215,3 +216,101 @@
           (is (= 1 (get body :total)) "total should be 1")
           (is (vector? (get body :tasks)) "tasks should be a vector")
           (is (= 1 (count (get body :tasks)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 7 — POST /api/sync/tasks/:task-id/retry
+;; ---------------------------------------------------------------------------
+
+(deftest retry-route-404-on-unknown
+  (testing "POST /api/sync/tasks/:task-id/retry returns 404 for unknown task-id"
+    (let [handler  (server/app)
+          ;; Task-ids contain slashes; we use a path that looks realistic
+          request  {:request-method :post
+                    :uri            "/api/sync/tasks/unknownrun/wb/sales/ingest/retry"}
+          response (handler request)]
+      (is (= 404 (:status response))
+          "Should return 404 for unknown task-id")
+      (let [body (json/read-value (:body response) json/keyword-keys-object-mapper)]
+        (is (= "task not found" (:error body)))))))
+
+(deftest retry-route-409-on-running
+  (testing "POST /api/sync/tasks/:task-id/retry returns 409 when task is running"
+    (let [task-id "retry-test-run/wb/sales/ingest"]
+      ;; Seed a task and manually mark it running
+      (reg/create-task! {:id          task-id
+                         :run-id      "retry-test-run"
+                         :marketplace "wb"
+                         :entity-type "sales"
+                         :phase       "ingest"})
+      (reg/set-running! task-id)
+      (let [handler  (server/app)
+            ;; Task-ids contain slashes — use :uri directly
+            request  {:request-method :post
+                      :uri            (str "/api/sync/tasks/" task-id "/retry")}
+            response (handler request)]
+        (is (= 409 (:status response))
+            "Should return 409 when task is in running state")
+        (let [body (json/read-value (:body response) json/keyword-keys-object-mapper)]
+          (is (= "task is not in a terminal state" (:error body))))))))
+
+(deftest retry-route-202-on-failed
+  (testing "POST /api/sync/tasks/:task-id/retry returns 202 and requeues a failed task"
+    (let [task-id "retry202-run/wb/orders/ingest"]
+      ;; Seed a task with complete metadata, mark it failed
+      (reg/create-task! {:id          task-id
+                         :run-id      "retry202-run"
+                         :marketplace "wb"
+                         :entity-type "orders"
+                         :phase       "ingest"
+                         :period-from "2026-04-01"
+                         :period-to   "2026-04-08"
+                         :max-attempts 3})
+      (reg/set-running! task-id)
+      (reg/record-error! task-id "internal" "boom")
+      (with-redefs [sync-plan/build-thunk-for-row (fn [_row] (fn [] 0))]
+        (let [handler  (server/app)
+              request  {:request-method :post
+                        :uri            (str "/api/sync/tasks/" task-id "/retry")}
+              response (handler request)]
+          (is (= 202 (:status response))
+              "Should return 202 Accepted for a failed task")
+          (let [body (json/read-value (:body response) json/keyword-keys-object-mapper)]
+            (is (true? (:ok body)))
+            (is (= task-id (:task-id body)))
+            (is (= "queued" (:status body))))
+          ;; Give the future a moment to execute the stub thunk
+          (Thread/sleep 300)
+          ;; After retry the task should be in a terminal state (ok) or at least no longer failed
+          (let [row (reg/find-task task-id)]
+            (is (contains? #{"pending" "running" "retrying" "ok"}
+                           (:status row))
+                (str "task should have moved out of failed; got: " (:status row)))))))))
+
+(deftest retry-route-future-runs
+  (testing "Retry endpoint spawns a future that calls the thunk"
+    (let [task-id   "retry-future-run/ym/finance/ingest"
+          thunk-called? (atom false)
+          stub-thunk    (fn [] (reset! thunk-called? true) 99)]
+      (reg/create-task! {:id          task-id
+                         :run-id      "retry-future-run"
+                         :marketplace "ym"
+                         :entity-type "finance"
+                         :phase       "ingest"
+                         :period-from "2026-04-01"
+                         :period-to   "2026-04-30"
+                         :max-attempts 1})
+      ;; Put task in failed state so it is retryable
+      (reg/set-running! task-id)
+      (reg/record-error! task-id "internal" "forced failure")
+      (with-redefs [sync-plan/build-thunk-for-row (fn [_row] stub-thunk)]
+        (let [handler  (server/app)
+              request  {:request-method :post
+                        :uri            (str "/api/sync/tasks/" task-id "/retry")}
+              response (handler request)]
+          (is (= 202 (:status response))
+              "Should be 202 for a failed task")
+          ;; Wait for the future to complete
+          (Thread/sleep 300)
+          (is (true? @thunk-called?)
+              "Stub thunk should have been called by the spawned future"))))))
+

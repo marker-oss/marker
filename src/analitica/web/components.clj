@@ -966,7 +966,9 @@
        [:span [:span.inline-block.w-3.h-3.rounded.bg-blue-300.mr-1.align-middle] "skipped"]
        [:span [:span.inline-block.w-3.h-3.rounded.bg-gray-100.mr-1.align-middle] "н/д"]]
       ;; Run status banner
-      [:div#task-matrix-banner.mt-2.text-xs.text-gray-500 ""]]
+      [:div#task-matrix-banner.mt-2.text-xs.text-gray-500 ""]
+      ;; Retry feedback banner (hidden by default; JS shows/hides)
+      [:div#task-matrix-retry-banner.mt-1.text-xs {:style "display:none"} ""]]
      [:script
       (str "
 (function() {
@@ -1031,6 +1033,68 @@
   var pollTimer = null;
   var currentRunId = null;
 
+  // Retry banner for inline error/success messages
+  var retryBannerTimer = null;
+  function showRetryBanner(msg, isError) {
+    var banner = document.getElementById('task-matrix-retry-banner');
+    if (!banner) return;
+    banner.textContent = msg;
+    banner.className = isError
+      ? 'mt-1 text-xs text-red-600'
+      : 'mt-1 text-xs text-green-700';
+    banner.style.display = '';
+    if (retryBannerTimer) clearTimeout(retryBannerTimer);
+    retryBannerTimer = setTimeout(function() {
+      banner.style.display = 'none';
+      banner.textContent = '';
+    }, 4000);
+  }
+
+  // Fire a manual retry for the given task-id, then re-poll immediately.
+  function retryTask(taskId, event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    fetch('/api/sync/tasks/' + encodeURIComponent(taskId) + '/retry', { method: 'POST' })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status === 202) {
+          showRetryBanner('Повтор запущен: ' + taskId.split('/').slice(-3).join('/'), false);
+          if (currentRunId) { clearPoll(); poll(); }
+        } else {
+          var msg = (res.body && res.body.error) ? res.body.error : ('HTTP ' + res.status);
+          showRetryBanner('Ошибка повтора: ' + msg, true);
+        }
+      })
+      .catch(function(e) { showRetryBanner('Ошибка повтора: ' + String(e), true); });
+  }
+
+  // Expose retry handler globally so inline onclick can reach it
+  window.__retryTask = retryTask;
+
+  function renderCell(cell, task, mp, type) {
+    var retryable = task && (task.status === 'failed' || task.status === 'skipped');
+    var cls  = cellClass(task ? task.status : null);
+    if (retryable) {
+      var taskId = task.id || '';
+      cell.className = 'w-16 h-7 rounded relative group ' + cls;
+      cell.innerHTML =
+        '<span class=\"flex items-center justify-center w-full h-full text-xs pointer-events-none\">' +
+          cellLabel(task) +
+        '</span>' +
+        '<button ' +
+          'title=\"Повторить задачу\" ' +
+          'class=\"absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-400 ' +
+                  'text-gray-700 text-xs leading-none flex items-center justify-center ' +
+                  'opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10 ' +
+                  'hover:bg-blue-600 hover:text-white hover:border-blue-600\" ' +
+          'onclick=\"window.__retryTask(' + JSON.stringify(taskId) + ', event)\"' +
+        '>\\u21BB</button>';
+    } else {
+      cell.className = 'w-16 h-7 rounded flex items-center justify-center text-xs ' + cls;
+      cell.textContent = cellLabel(task);
+    }
+    cell.title = cellTitle(mp, type, task);
+  }
+
   function render(data) {
     var idx    = buildIndex(data.tasks || []);
     var mps    = ['wb', 'ozon', 'ym'];
@@ -1040,10 +1104,7 @@
         var cell = document.getElementById('cell-' + mp + '-' + type);
         if (!cell) return;
         var task = idx[mp + '/' + type];
-        var cls  = cellClass(task ? task.status : null);
-        cell.className = 'w-16 h-7 rounded flex items-center justify-center text-xs ' + cls;
-        cell.textContent = cellLabel(task);
-        cell.title = cellTitle(mp, type, task);
+        renderCell(cell, task, mp, type);
       });
     });
     var banner = document.getElementById('task-matrix-banner');

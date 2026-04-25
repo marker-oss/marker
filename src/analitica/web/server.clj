@@ -19,6 +19,8 @@
             [analitica.web.api.sync :as sync-api]
             [analitica.sync.plan :as sync-plan]
             [analitica.sync.executor :as sync-executor]
+            [analitica.sync.registry :as sync-registry]
+            [analitica.sync.runner :as sync-runner]
             [analitica.web.api.sync-coverage :as sync-coverage]
             [analitica.web.api.metrics :as metrics-api]
             [analitica.web.api.charts :as charts-api]
@@ -979,6 +981,36 @@
 
   (GET "/api/sync/runs/recent" []
     {:status 200 :body (sync-executor/recent-runs)})
+
+  ;; Phase 7 — manual retry for a single task by task-id.
+  ;; Task IDs contain slashes (run-id/mp/type/phase), so we match the full
+  ;; path via a wildcard route and strip the trailing /retry suffix.
+  ;; Does NOT require a sync to be active (independent of sync-running? atom).
+  (POST "/api/sync/tasks/*/retry" {uri :uri}
+    (let [;; URI looks like /api/sync/tasks/<task-id>/retry
+          ;; Strip the fixed prefix+suffix to recover the task-id.
+          task-id (when (and (string? uri)
+                             (re-find #"^/api/sync/tasks/.+/retry$" uri))
+                    (subs uri
+                          (count "/api/sync/tasks/")
+                          (- (count uri) (count "/retry"))))
+          row     (when task-id (sync-registry/find-task task-id))]
+      (cond
+        (nil? task-id)
+        {:status 400 :body {:error "malformed task-id in URL"}}
+
+        (nil? row)
+        {:status 404 :body {:error "task not found"}}
+
+        (#{:running :pending :retrying}
+         (keyword (:status row)))
+        {:status 409 :body {:error "task is not in a terminal state"}}
+
+        :else
+        (let [thunk (sync-plan/build-thunk-for-row row)
+              _     (sync-registry/reset-for-retry! task-id)]
+          (future (sync-runner/run-task! task-id thunk))
+          {:status 202 :body {:ok true :task-id task-id :status "queued"}}))))
 
   (POST "/api/sync/stop" []
     (let [result (sync-api/stop-sync!)]
