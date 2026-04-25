@@ -108,12 +108,14 @@
                 (:title c))
         ;; SKU-link formatter: wraps the cell value in a <button data-sku data-nm-id>
         ;; so sku-sheet.js click-delegation can open the drill-down panel.
+        ;; esc() escapes all user-supplied values to prevent XSS via article/nm-id strings.
         sku-formatter "function(cell){
+          function esc(s){return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
           var row=cell.getRow().getData();
           var v=cell.getValue();
           var sku=row.article||row.nm_id||row.nmId||'';
           var nmId=row.nm_id||row.nmId||'';
-          return '<button class=\"sku-link text-blue-600 hover:underline\" data-sku=\"'+sku+'\" data-nm-id=\"'+nmId+'\">'+v+'</button>';
+          return '<button class=\"sku-link text-blue-600 hover:underline\" data-sku=\"'+esc(sku)+'\" data-nm-id=\"'+esc(nmId)+'\">'+esc(v)+'</button>';
         }"]
     (cond-> (assoc c "headerFilter" true
                      "headerFilterPlaceholder" "Фильтр..."

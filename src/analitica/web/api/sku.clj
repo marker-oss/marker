@@ -8,23 +8,19 @@
   The fragment is consumed by sku-sheet.js via fetch() → dialog.innerHTML."
   (:require [analitica.domain.sku :as sku]
             [analitica.web.components.sku-sheet :as sheet]
-            [analitica.util.period :as period]))
+            [analitica.util.period :as period]
+            [hiccup.core :refer [html]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- today-str []
-  (subs (str (java.time.LocalDate/now)) 0 10))
-
-(defn- thirty-days-ago []
-  (subs (str (.minusDays (java.time.LocalDate/now) 29)) 0 10))
-
 (defn- resolve-from-to [params]
-  [(or (when (seq (get params :from "")) (get params :from))
-       (thirty-days-ago))
-   (or (when (seq (get params :to "")) (get params :to))
-       (today-str))])
+  (let [[d-from d-to] (period/resolve-preset :last-30-days)
+        from (get params :from "")
+        to   (get params :to   "")]
+    [(if (clojure.string/blank? from) (period/format-date d-from) from)
+     (if (clojure.string/blank? to)   (period/format-date d-to)   to)]))
 
 (defn- parse-marketplace [mp-str]
   (when (contains? #{"wb" "ozon" "ym"} mp-str)
@@ -44,7 +40,7 @@
     (if (empty? raw-id)
       {:status  404
        :headers {"Content-Type" "text/html; charset=utf-8"}
-       :body    (sheet/render-not-found "(пусто)")}
+       :body    (html (sheet/render-not-found "(пусто)"))}
       (let [summary (try
                       (sku/sku-summary raw-id from to :marketplace mp)
                       (catch Exception _
@@ -55,7 +51,7 @@
                      (empty? (:daily-revenue summary))))
           {:status  200
            :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body    (sheet/render-not-found raw-id)}
+           :body    (html (sheet/render-not-found raw-id))}
           {:status  200
            :headers {"Content-Type" "text/html; charset=utf-8"}
            :body    (sheet/render summary

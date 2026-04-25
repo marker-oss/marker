@@ -17,23 +17,19 @@
      :daily-revenue  [{:date str :revenue double}]  ; one row per day
      :recent-ops     [{:date str :type str :marketplace str :amount double}]}"
   (:require [analitica.db :as db]
+            [clojure.string :as str]
             [analitica.util.period :as period]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- today-str []
-  (subs (str (java.time.LocalDate/now)) 0 10))
-
-(defn- thirty-days-ago []
-  (subs (str (.minusDays (java.time.LocalDate/now) 29)) 0 10))
-
 (defn- resolve-dates
-  "Return [from to] strings. Defaults to last-30-days."
+  "Return [from to] strings. Defaults to last-30-days / today via period/resolve-preset."
   [from to]
-  [(or (when (seq from) from) (thirty-days-ago))
-   (or (when (seq to) to) (today-str))])
+  (let [[d-from d-to] (period/resolve-preset :last-30-days)]
+    [(if (str/blank? from) (period/format-date d-from) from)
+     (if (str/blank? to)   (period/format-date d-to)   to)]))
 
 (defn- mp-clause [marketplace]
   (when marketplace " AND marketplace = ?"))
@@ -86,7 +82,10 @@
   "Aggregate per-article metrics over [from to].
    article   — seller's internal article string (primary key in sales table)
    from / to — ISO date strings; default to last-30-days when blank/nil
-   :marketplace — keyword (:wb/:ozon/:ym) or nil for all MPs"
+   :marketplace — keyword (:wb/:ozon/:ym) or nil for all MPs
+
+   :daily-revenue is sorted ASC by date (chronological, for sparkline rendering).
+   :recent-ops is sorted DESC by date (newest first, for the operations table)."
   [article from to & {:keys [marketplace]}]
   (let [[from' to']   (resolve-dates from to)
         rows          (fetch-sales-rows article from' to' marketplace)

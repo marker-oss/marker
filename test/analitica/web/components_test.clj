@@ -232,6 +232,29 @@
       (is (re-find #"drill-panel" html))
       (is (re-find #"close" html)))))
 
+(deftest sku-formatter-xss-escape-test
+  (testing "linkable column formatter includes esc() helper to prevent XSS"
+    (let [html-str (hiccup.core/html
+                    (c/tabulator-table {:id "xss-test"
+                                        :api-url "/api/x"
+                                        :columns [{:title "Артикул" :field "article"
+                                                   :linkable? true}]}))]
+      (is (re-find #"function esc" html-str)
+          "formatter must contain the esc() XSS-escape helper")
+      (is (re-find #"replace.*&amp;" html-str)
+          "esc() must escape & → &amp;")
+      (is (re-find #"&quot;" html-str)
+          "esc() must escape \" → &quot;")))
+
+  (testing "non-linkable column does not include esc() helper"
+    (let [html-str (hiccup.core/html
+                    (c/tabulator-table {:id "no-link-test"
+                                        :api-url "/api/x"
+                                        :columns [{:title "Выручка" :field "revenue"
+                                                   :format :rub}]}))]
+      (is (not (re-find #"function esc" html-str))
+          "non-linkable column should not include esc() helper"))))
+
 (deftest period-picker-test
   (testing "renders chip with current range"
     (let [html (hiccup.core/html

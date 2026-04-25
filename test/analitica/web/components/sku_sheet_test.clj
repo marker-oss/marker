@@ -1,6 +1,7 @@
 (ns analitica.web.components.sku-sheet-test
   (:require [clojure.test :refer [deftest is testing]]
-            [analitica.web.components.sku-sheet :as sheet]))
+            [analitica.web.components.sku-sheet :as sheet]
+            [hiccup.core :refer [html]]))
 
 (def ^:private sample-summary
   {:article       "DRESS-3452"
@@ -89,11 +90,14 @@
       (is (re-find #"2026-04-26" html)))))
 
 (deftest render-not-found
-  (testing "render-not-found returns HTML with SKU identifier"
-    (let [html (sheet/render-not-found "ABC-999")]
-      (is (string? html))
-      (is (re-find #"ABC-999" html))
-      (is (re-find #"не найден" html)))))
+  (testing "render-not-found returns a Hiccup vector"
+    (let [result (sheet/render-not-found "ABC-999")]
+      (is (vector? result))))
+  (testing "render-not-found HTML contains identifier and not-found label"
+    (let [html-str (html (sheet/render-not-found "ABC-999"))]
+      (is (string? html-str))
+      (is (re-find #"ABC-999" html-str))
+      (is (re-find #"не найден" html-str)))))
 
 (deftest render-period-label
   (testing "period appears in output when from/to provided"

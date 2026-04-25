@@ -140,10 +140,12 @@
     ;; Ops table
     (ops-table (:recent-ops summary))]))
 
-(defn render-not-found [identifier]
-  (html
-   [:div.sku-sheet-body.text-center.py-8
-    [:div.text-gray-400.text-4xl.mb-3 "🔍"]
-    [:div.text-lg.font-semibold.text-gray-700.mb-2 "SKU не найден"]
-    [:div.text-sm.text-gray-500 (str "Идентификатор: " identifier)]
-    [:div.text-xs.text-gray-400.mt-2 "Проверьте период или попробуйте другой артикул."]]))
+(defn render-not-found
+  "Return Hiccup data (a vector) for the 'SKU not found' fragment.
+   Callers are responsible for calling (html ...) to produce the final string."
+  [identifier]
+  [:div.sku-sheet-body.text-center.py-8
+   [:div.text-gray-400.text-4xl.mb-3 "🔍"]
+   [:div.text-lg.font-semibold.text-gray-700.mb-2 "SKU не найден"]
+   [:div.text-sm.text-gray-500 (str "Идентификатор: " identifier)]
+   [:div.text-xs.text-gray-400.mt-2 "Проверьте период или попробуйте другой артикул."]])
