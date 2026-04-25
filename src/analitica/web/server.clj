@@ -11,6 +11,7 @@
             [analitica.db :as db]
             [analitica.core :as core]
             [analitica.util.time :as time]
+            [analitica.util.period :as period]
             [analitica.web.layout :as layout]
             [analitica.web.pages.sync :as sync-page]
             [analitica.web.pages.dashboard :as dashboard-page]
@@ -114,10 +115,11 @@
             {:from from :to to})
           (catch Exception _ nil)))
 
-      ;; Nothing provided — safe default: last 30 days as {:from :to} map
+      ;; Nothing provided — safe default: last 30 days as {:from :to} map.
+      ;; Use period/default-state so the server's default range matches the
+      ;; picker chip exactly (today − 29 → today, 30 days inclusive).
       :else
-      (let [[from to] (time/parse-period "last-30-days")]
-        {:from from :to to}))))
+      (select-keys (period/default-state) [:from :to]))))
 
 ;; ---------------------------------------------------------------------------
 ;; Routes
@@ -126,85 +128,61 @@
 (defroutes app-routes
   ;; Pages
   (GET "/" {params :params}
-    (let [period-str (get params :period "last-week")
-          validated-period (validate-period period-str)]
-      (if (or validated-period (nil? period-str))
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         :last-week))]
-          {:status 200 
-           :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body (layout/page "Дашборд" 
-                              (dashboard-page/summary-dashboard period)
-                              :active-route "/")})
-        {:status 400
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
-                            [:div.text-center.py-12
-                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
-                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
-                            :active-route "/")})))
+    (if-let [period (resolve-period-from-params params)]
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Дашборд"
+                          (dashboard-page/summary-dashboard period)
+                          :active-route "/")}
+      {:status 400
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Ошибка"
+                          [:div.text-center.py-12
+                           [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                           [:p.text-gray-600 "Недопустимое значение периода"]]
+                          :active-route "/")}))
   (GET "/wb" {params :params}
-    (let [period-str (get params :period "last-week")
-          validated-period (validate-period period-str)]
-      (if (or validated-period (nil? period-str))
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         :last-week))]
-          {:status 200 
-           :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body (layout/page "Wildberries" 
-                              (dashboard-page/marketplace-dashboard :wb period)
-                              :active-route "/wb")})
-        {:status 400
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
-                            [:div.text-center.py-12
-                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
-                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
-                            :active-route "/wb")})))
+    (if-let [period (resolve-period-from-params params)]
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Wildberries"
+                          (dashboard-page/marketplace-dashboard :wb period)
+                          :active-route "/wb")}
+      {:status 400
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Ошибка"
+                          [:div.text-center.py-12
+                           [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                           [:p.text-gray-600 "Недопустимое значение периода"]]
+                          :active-route "/wb")}))
   (GET "/ozon" {params :params}
-    (let [period-str (get params :period "last-week")
-          validated-period (validate-period period-str)]
-      (if (or validated-period (nil? period-str))
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         :last-week))]
-          {:status 200 
-           :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body (layout/page "Ozon" 
-                              (dashboard-page/marketplace-dashboard :ozon period)
-                              :active-route "/ozon")})
-        {:status 400
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
-                            [:div.text-center.py-12
-                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
-                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
-                            :active-route "/ozon")})))
+    (if-let [period (resolve-period-from-params params)]
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Ozon"
+                          (dashboard-page/marketplace-dashboard :ozon period)
+                          :active-route "/ozon")}
+      {:status 400
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Ошибка"
+                          [:div.text-center.py-12
+                           [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                           [:p.text-gray-600 "Недопустимое значение периода"]]
+                          :active-route "/ozon")}))
   (GET "/ym" {params :params}
-    (let [period-str (get params :period "last-week")
-          validated-period (validate-period period-str)]
-      (if (or validated-period (nil? period-str))
-        (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
-                       (catch Exception e
-                         :last-week))]
-          {:status 200 
-           :headers {"Content-Type" "text/html; charset=utf-8"}
-           :body (layout/page "Yandex.Market" 
-                              (dashboard-page/marketplace-dashboard :ym period)
-                              :active-route "/ym")})
-        {:status 400
-         :headers {"Content-Type" "text/html; charset=utf-8"}
-         :body (layout/page "Ошибка" 
-                            [:div.text-center.py-12
-                             [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
-                             [:p.text-gray-600 (str "Недопустимое значение периода: " period-str)]]
-                            :active-route "/ym")})))
+    (if-let [period (resolve-period-from-params params)]
+      {:status 200
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Yandex.Market"
+                          (dashboard-page/marketplace-dashboard :ym period)
+                          :active-route "/ym")}
+      {:status 400
+       :headers {"Content-Type" "text/html; charset=utf-8"}
+       :body (layout/page "Ошибка"
+                          [:div.text-center.py-12
+                           [:h2.text-2xl.font-bold.text-red-600.mb-4 "Неверный параметр"]
+                           [:p.text-gray-600 "Недопустимое значение периода"]]
+                          :active-route "/ym")}))
   (GET "/sync" [] 
     {:status 200 
      :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -570,7 +548,7 @@
   
   ;; API endpoints
   (GET "/api/metrics" {params :params headers :headers}
-    (let [period-str (get params :period "last-week")
+    (let [period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)
           marketplace-str (get params :marketplace)
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))
@@ -584,7 +562,7 @@
         
         :else
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if period
@@ -634,7 +612,7 @@
   (GET "/api/metrics/:marketplace" {params :params headers :headers}
     (let [marketplace-str (:marketplace params)
           validated-mp (validate-marketplace marketplace-str)
-          period-str (get params :period "last-week")
+          period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)
           is-htmx? (get headers "hx-request")]
       (cond
@@ -646,7 +624,7 @@
         
         :else
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if period
@@ -697,7 +675,7 @@
                 {:status 200 :body metrics}))
             {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
   (GET "/api/chart/sales" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)
           marketplace-str (get params :marketplace)
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))]
@@ -710,7 +688,7 @@
         
         :else
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if period
@@ -721,11 +699,11 @@
             {:status 400 :body {:error (str "Invalid period: " period-str)}})))))
   
   (GET "/api/chart/share" {params :params}
-    (let [period-str (get params :period "last-week")
+    (let [period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)]
       (if (or validated-period (nil? period-str))
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if period
@@ -761,7 +739,7 @@
   (GET "/api/chart/finance-breakdown" {params :params}
     (let [marketplace-str (get params :marketplace)
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          period-str (get params :period "last-week")
+          period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)]
       (cond
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
@@ -772,7 +750,7 @@
         
         :else
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if (and validated-mp period)
@@ -783,7 +761,7 @@
   (GET "/api/chart/abc-distribution" {params :params}
     (let [marketplace-str (get params :marketplace)
           validated-mp (when marketplace-str (validate-marketplace marketplace-str))
-          period-str (get params :period "last-week")
+          period-str (get params :period "last-30-days")
           validated-period (validate-period period-str)]
       (cond
         (and marketplace-str (not validated-mp) (not= marketplace-str "all"))
@@ -794,7 +772,7 @@
         
         :else
         (let [period (try
-                       (time/parse-period (or validated-period "last-week"))
+                       (time/parse-period (or validated-period "last-30-days"))
                        (catch Exception e
                          nil))]
           (if (and validated-mp period)
@@ -921,6 +899,12 @@
             {:status 409 :body result}
             {:status 200 :body result})))))
   
+  (POST "/api/sync/stop" []
+    (let [result (sync-api/stop-sync!)]
+      (if (:error result)
+        {:status 409 :body result}
+        {:status 200 :body result})))
+
   (GET "/api/sync/stream" request
     (sync-api/sse-stream request))
   

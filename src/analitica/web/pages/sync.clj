@@ -1,20 +1,21 @@
 (ns analitica.web.pages.sync
   (:require [hiccup.core :refer [html]]
             [analitica.web.components :as c]
-            [analitica.web.api.metrics :as metrics-api]
-            [jsonista.core :as json]))
+            [analitica.web.api.metrics :as metrics-api]))
 
 ;; ---------------------------------------------------------------------------
 ;; Sync Buttons
 ;; ---------------------------------------------------------------------------
 
 (defn- sync-controls
-  "Render marketplace selector, period selector and sync buttons."
+  "Render marketplace selector and sync buttons. Period comes from the
+   global header picker (URL ?from&to) — single source of truth across
+   the whole UI, no second dropdown to keep in sync."
   []
   [:div.bg-white.rounded-lg.shadow.p-6.mb-6
    [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Управление синхронизацией"]
 
-   ;; Selectors row
+   ;; Selectors row — only marketplace; period is taken from the global picker.
    [:div.flex.flex-wrap.items-center.gap-4.mb-4
     [:div.flex.items-center.gap-2
      [:label.text-sm.font-medium.text-gray-700 "Маркетплейс:"]
@@ -22,15 +23,11 @@
       [:option {:value "wb"}   "Wildberries"]
       [:option {:value "ozon"} "Ozon"]
       [:option {:value "ym"}   "Яндекс Маркет"]]]
-    [:div.flex.items-center.gap-2
-     [:label.text-sm.font-medium.text-gray-700 "Период:"]
-     [:select#sync-period.border.border-gray-300.rounded-md.px-3.py-1.5.text-sm.focus:outline-none.focus:ring-2.focus:ring-blue-500
-      [:option {:value "last-30-days"} "30 дней"]
-      [:option {:value "last-7-days"}  "7 дней"]
-      [:option {:value "this-month"}   "Этот месяц"]
-      [:option {:value "last-week"}    "Прошлая неделя"]]]]
+    [:div.flex.items-center.gap-2.text-xs.text-gray-500
+     "Период берётся из календаря в шапке"
+     [:span#sync-period-display.ml-2.font-mono.text-gray-700 "—"]]]
 
-   ;; Buttons
+   ;; Buttons — period comes from URL ?from&to, marketplace from the dropdown.
    [:div.flex.flex-wrap
     (for [[label what] [["Sync All"  "all"]
                         ["Sales"     "sales"]
@@ -44,48 +41,87 @@
                         ["1C"        "1c"]]]
       [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.mr-2.mb-2
        {:hx-post    "/api/sync/start"
-        :hx-include "#sync-marketplace, #sync-period"
-        :hx-vals    (json/write-value-as-string {:what what})
+        :hx-include "#sync-marketplace"
+        :hx-vals    (str "js:{what:'" what "',period:window.__resolveSyncPeriod()}")
         :hx-swap    "none"
         "hx-on:htmx:responseError"
         "if(event.detail.xhr.status===409){alert('Синхронизация уже запущена.');}"}
-       label])]])
+       label])
+    [:button.px-4.py-2.bg-red-600.text-white.rounded-md.hover:bg-red-700.transition-colors.text-sm.font-medium.mr-2.mb-2
+     {:hx-post "/api/sync/stop"
+      :hx-swap "none"
+      "hx-on:htmx:responseError"
+      "if(event.detail.xhr.status===409){alert('Сейчас нет активной синхронизации.');}"}
+     "⛔ Stop"]]
+
+   ;; Single source of truth for the sync period: URL → localStorage → default.
+   ;; Mirrors period-picker.js' loadInitial() so what users see in the chip
+   ;; matches what gets POSTed to /api/sync/start.
+   [:script "
+     window.__resolveSyncPeriod = function() {
+       var q = new URLSearchParams(location.search);
+       if (q.get('from') && q.get('to')) return q.get('from') + ',' + q.get('to');
+       try {
+         var s = JSON.parse(localStorage.getItem('analitica/period') || 'null');
+         if (s && s.from && s.to) return s.from + ',' + s.to;
+       } catch (_) {}
+       return 'last-30-days';
+     };
+     (function() {
+       var el = document.getElementById('sync-period-display');
+       if (!el) return;
+       var p = window.__resolveSyncPeriod();
+       el.textContent = p === 'last-30-days' ? 'последние 30 дней (по умолчанию)' : p.replace(',', ' — ');
+     })();
+   "]])
 
 ;; ---------------------------------------------------------------------------
 ;; Last Sync Status Table
 ;; ---------------------------------------------------------------------------
 
 (defn- last-sync-status
-  "Render table showing last sync status for each data type."
+  "Render table showing last sync status (MAX(synced_at)) per data type per MP.
+
+   Reads directly from analytical tables — no separate sync_history needed.
+   Each row shows the freshest synced_at across all rows for that MP/type."
   []
-  [:div.bg-white.rounded-lg.shadow.p-6.mb-6
-   [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Статус последней синхронизации"]
-   [:table.min-w-full.divide-y.divide-gray-200
-    [:thead.bg-gray-50
-     [:tr
-      [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Тип данных"]
-      [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Последняя синхронизация"]
-      [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Время выполнения"]
-      [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Статус"]]]
-    [:tbody.bg-white.divide-y.divide-gray-200
-     [:tr
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.font-medium.text-gray-900 "Sales"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap
-       [:span.px-2.inline-flex.text-xs.leading-5.font-semibold.rounded-full.bg-gray-100.text-gray-800 "Не запущено"]]]
-     [:tr
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.font-medium.text-gray-900 "Finance"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap
-       [:span.px-2.inline-flex.text-xs.leading-5.font-semibold.rounded-full.bg-gray-100.text-gray-800 "Не запущено"]]]
-     [:tr
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.font-medium.text-gray-900 "Stocks"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap.text-sm.text-gray-500 "—"]
-      [:td.px-6.py-4.whitespace-nowrap
-       [:span.px-2.inline-flex.text-xs.leading-5.font-semibold.rounded-full.bg-gray-100.text-gray-800 "Не запущено"]]]]]])
+  (let [mps    [[:wb "WB"] [:ozon "Ozon"] [:ym "YM"]]
+        ;; (table, type-label) — only tables that carry a `synced_at` column.
+        types  [["sales"   "Продажи"]
+                ["finance" "Финансы"]
+                ["orders"  "Заказы"]
+                ["stocks"  "Остатки"]
+                ["prices"  "Цены"]]
+        rows   (for [[mp mp-label] mps
+                     [tbl tbl-label] types
+                     :let [last (try
+                                  (-> ((requiring-resolve 'analitica.db/query)
+                                       [(str "SELECT MAX(synced_at) AS ts FROM " tbl
+                                             " WHERE marketplace = ?")
+                                        (name mp)])
+                                      first :ts)
+                                  (catch Exception _ nil))]]
+                 [mp-label tbl-label last])]
+    [:div.bg-white.rounded-lg.shadow.p-6.mb-6
+     [:h3.text-lg.font-semibold.text-gray-900.mb-4 "Статус последней синхронизации"]
+     [:p.text-xs.text-gray-500.mb-3 "По метке " [:code "synced_at"] " в analytical tables"]
+     [:table.min-w-full.divide-y.divide-gray-200
+      [:thead.bg-gray-50
+       [:tr
+        [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Маркетплейс"]
+        [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Тип"]
+        [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Последняя синхронизация"]
+        [:th.px-6.py-3.text-left.text-xs.font-medium.text-gray-500.uppercase.tracking-wider "Статус"]]]
+      [:tbody.bg-white.divide-y.divide-gray-200
+       (for [[mp-label tbl-label ts] rows]
+         [:tr
+          [:td.px-6.py-2.whitespace-nowrap.text-sm.font-medium.text-gray-900 mp-label]
+          [:td.px-6.py-2.whitespace-nowrap.text-sm.text-gray-700 tbl-label]
+          [:td.px-6.py-2.whitespace-nowrap.text-sm.text-gray-500.font-mono (or ts "—")]
+          [:td.px-6.py-2.whitespace-nowrap
+           (if ts
+             [:span.px-2.inline-flex.text-xs.leading-5.font-semibold.rounded-full.bg-green-100.text-green-800 "OK"]
+             [:span.px-2.inline-flex.text-xs.leading-5.font-semibold.rounded-full.bg-gray-100.text-gray-500 "Нет данных"])]])]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Data Coverage Heatmap

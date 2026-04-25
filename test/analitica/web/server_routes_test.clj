@@ -3,7 +3,8 @@
             [analitica.web.server :as server]
             [analitica.web.api.sync :as sync-api]
             [analitica.util.time :as time]
-            [jsonista.core :as json]))
+            [jsonista.core :as json]
+            [ring.core.protocols :as ring-protocols]))
 
 (use-fixtures :each
   (fn [f]
@@ -145,5 +146,5 @@
           "Should have correct Content-Type header")
       (is (= "no-cache" (get-in response [:headers "Cache-Control"]))
           "Should have no-cache header")
-      (is (fn? (:body response))
-          "Body should be a streaming function"))))
+      (is (satisfies? ring-protocols/StreamableResponseBody (:body response))
+          "Body should implement StreamableResponseBody"))))

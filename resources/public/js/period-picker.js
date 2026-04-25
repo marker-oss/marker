@@ -24,6 +24,28 @@
 (function() {
   'use strict';
 
+  // ---------- propagate-on-navigate ----------
+  // If the URL has no ?from&to but localStorage has a saved period,
+  // redirect *before* the rest of the page renders. Without this, every
+  // sidebar nav click resets to the server default and the user has to
+  // re-apply the picker on each page.
+  (function syncUrlFromStorage() {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('from') && q.get('to')) return; // URL already authoritative
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('analitica/period') || 'null'); }
+    catch (_) { return; }
+    if (!saved || !saved.from || !saved.to) return;
+    const url = new URL(window.location);
+    url.searchParams.set('from', saved.from);
+    url.searchParams.set('to', saved.to);
+    if (saved.compare && saved.compare !== 'none') {
+      url.searchParams.set('compare', saved.compare);
+    }
+    // location.replace cancels the current load — no content flash.
+    window.location.replace(url.toString());
+  })();
+
   // ---------- date helpers (UTC-safe) ----------
   function fmtISO(d) {
     const y = d.getUTCFullYear();

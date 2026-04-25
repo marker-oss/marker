@@ -37,16 +37,16 @@
   "Return per-MP per-type per-day coverage map.
    Shape: {:wb {:finance {:days [...]} :orders {...}} :ozon {...} ...}"
   []
-  {:wb   {:finance {:days (days-for-table :finance "date_from" :wb)}
+  {:wb   {:finance {:days (days-for-table :finance "event_date" :wb)}
           :orders  {:days (days-for-table :orders "date" :wb)}
           :sales   {:days (days-for-table :sales "date" :wb)}
           :storage {:days (days-for-table :paid_storage "date" :wb)}
           :stocks  {:days (days-for-table :stocks "synced_at" :wb)}}
-   :ozon {:finance {:days (days-for-table :finance "date_from" :ozon)}
+   :ozon {:finance {:days (days-for-table :finance "event_date" :ozon)}
           :orders  {:days (days-for-table :orders "date" :ozon)}
           :sales   {:days (days-for-table :sales "date" :ozon)}
           :stocks  {:days (days-for-table :stocks "synced_at" :ozon)}}
-   :ym   {:finance {:days (days-for-table :finance "date_from" :ym)}
+   :ym   {:finance {:days (days-for-table :finance "event_date" :ym)}
           :orders  {:days (days-for-table :orders "date" :ym)}
           :sales   {:days (days-for-table :sales "date" :ym)}
           :stocks  {:days (days-for-table :stocks "synced_at" :ym)}}})

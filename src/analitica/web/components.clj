@@ -585,19 +585,43 @@
            const rows = [];
            const mpNames = {wb: 'WB', ozon: 'Ozon', ym: 'YM'};
            const typeNames = {finance: 'Finance', orders: 'Orders', sales: 'Sales', storage: 'Storage', stocks: 'Stocks'};
+           // Month-boundary header: render a row that shows the month at each
+           // 1st-of-month column. Lets the eye locate March/April without
+           // counting cells.
+           const monthHeader = days.map(d => {
+             const dt = new Date(d + 'T00:00:00Z');
+             const isFirst = dt.getUTCDate() === 1;
+             const label = isFirst
+               ? String(dt.getUTCMonth() + 1).padStart(2, '0') + '.' + dt.getUTCFullYear()
+               : '';
+             return '<td style=\"width:8px;height:18px;font-size:9px;color:#666;padding:0;white-space:nowrap;overflow:visible\">' + label + '</td>';
+           }).join('');
+           rows.push('<tr><td></td><td></td>' + monthHeader + '</tr>');
            for (const mpKey of ['wb', 'ozon', 'ym']) {
              const mp = data[mpKey] || {};
              for (const typeKey of Object.keys(mp)) {
                const set = new Set(mp[typeKey].days || []);
                const label = mpNames[mpKey] + ' / ' + (typeNames[typeKey] || typeKey);
                const total = set.size;
+               // Highlight empty rows so missing-ingest pipelines are obvious
+               // at a glance instead of buried among the bands.
+               const empty = total === 0;
+               const labelCls = empty
+                 ? 'pr-3 py-1 text-xs font-semibold text-red-600 whitespace-nowrap'
+                 : 'pr-3 py-1 text-xs text-gray-600 whitespace-nowrap';
+               const totalCls = empty
+                 ? 'pr-3 text-xs font-semibold text-red-600'
+                 : 'pr-3 text-xs text-gray-400';
                const cells = days.map(d => {
                  const has = set.has(d);
+                 const dt  = new Date(d + 'T00:00:00Z');
+                 // Faint vertical band at the 1st of each month for orientation.
+                 const monthBoundary = dt.getUTCDate() === 1 ? 'border-left:1px solid #999;' : '';
                  return '<td title=\"' + label + ' · ' + d + (has ? ' ✓' : ' ✗') + '\" class=\"' +
-                   (has ? 'bg-green-500' : 'bg-gray-200') + '\" style=\"width:8px;height:18px;border:0\"></td>';
+                   (has ? 'bg-green-500' : 'bg-gray-200') + '\" style=\"width:8px;height:18px;border:0;' + monthBoundary + '\"></td>';
                }).join('');
-               rows.push('<tr><td class=\"pr-3 py-1 text-xs text-gray-600 whitespace-nowrap\">' + label +
-                         '</td><td class=\"pr-3 text-xs text-gray-400\">' + total + ' дн.</td>' +
+               rows.push('<tr><td class=\"' + labelCls + '\">' + label +
+                         '</td><td class=\"' + totalCls + '\">' + total + ' дн.</td>' +
                          cells + '</tr>');
              }
            }
@@ -606,6 +630,7 @@
                                   '<div class=\"text-xs text-gray-500 mt-2 flex gap-3\">' +
                                   '<span><span class=\"inline-block w-3 h-3 bg-green-500 align-middle\"></span> данные есть</span>' +
                                   '<span><span class=\"inline-block w-3 h-3 bg-gray-200 align-middle\"></span> нет</span>' +
+                                  '<span class=\"text-red-600\">красным — пробел в загрузке</span>' +
                                   '</div></div>';
          })
          .catch(err => { container.innerHTML = '<div class=\"text-sm text-red-600\">Ошибка: ' + err + '</div>'; });

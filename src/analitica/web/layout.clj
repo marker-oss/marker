@@ -1,7 +1,6 @@
 (ns analitica.web.layout
   (:require [hiccup.page :refer [html5 include-css include-js]]
             [hiccup.core :refer [html]]
-            [jsonista.core :as json]
             [analitica.web.components :as components]
             [analitica.util.period :as period]))
 
@@ -101,13 +100,9 @@
                                     :to                (:to initial)
                                     :compare           :none
                                     :supports-compare? supports-compare?}))]
+      ;; Sync controls live on /sync; header only shows the last-sync label
+      ;; so users see freshness on every page without a duplicated trigger.
       [:div.flex.flex-col.sm:flex-row.items-start.sm:items-center.gap-3.lg:gap-4.w-full.lg:w-auto
-       [:button.px-4.py-2.bg-blue-600.text-white.rounded-md.hover:bg-blue-700.transition-colors.text-sm.font-medium.w-full.sm:w-auto
-        {:hx-post "/api/sync/start"
-         :hx-vals (json/write-value-as-string {:what "all" :period "last-30-days"})
-         :hx-swap "none"
-         "hx-on:htmx:responseError" "if(event.detail.xhr.status === 409) { alert('Синхронизация уже запущена. Дождитесь завершения текущей синхронизации.'); }"}
-        "Sync All (WB)"]
        [:div.text-xs.lg:text-sm.text-gray-600
         [:span "Последняя синхронизация: "]
         [:span#last-sync-time.font-medium "—"]]]]]))
