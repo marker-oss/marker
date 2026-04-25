@@ -170,6 +170,7 @@
      [:script {:src "/js/table-columns.js"}]
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
+     [:script {:src "/js/sku-sheet.js"}]
 
      ;; Custom styles
      [:style "
@@ -195,5 +196,72 @@
        (header :hide-period? hide-period? :supports-compare? supports-compare?)
        [:main#main-content.bg-gray-50
         content]]
-     (components/drill-panel {})]]))
+     (components/drill-panel {})
+     ;; SKU drill-down dialog — populated by sku-sheet.js + /api/sku/:id
+     [:dialog#sku-sheet.sku-sheet
+      [:div.sku-sheet-content "Загрузка…"]
+      [:button.sku-sheet-close {:onclick "this.closest('dialog').close()"} "×"]]
+     [:style "
+       dialog.sku-sheet {
+         position: fixed;
+         right: 0; top: 0;
+         margin: 0;
+         width: 480px;
+         max-width: 100vw;
+         height: 100vh;
+         max-height: 100vh;
+         border: none;
+         border-left: 1px solid #e5e7eb;
+         box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+         padding: 0;
+         overflow: hidden;
+         display: flex;
+         flex-direction: column;
+       }
+       dialog.sku-sheet::backdrop {
+         background: rgba(0,0,0,0.25);
+       }
+       dialog.sku-sheet[open] {
+         display: flex;
+       }
+       .sku-sheet-content {
+         flex: 1;
+         overflow-y: auto;
+         padding: 1.5rem;
+         font-family: inherit;
+       }
+       .sku-sheet-close {
+         position: absolute;
+         top: 0.75rem;
+         right: 0.75rem;
+         background: none;
+         border: 1px solid #d1d5db;
+         border-radius: 50%;
+         width: 2rem;
+         height: 2rem;
+         font-size: 1rem;
+         line-height: 1;
+         cursor: pointer;
+         color: #6b7280;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         z-index: 10;
+       }
+       .sku-sheet-close:hover { background: #f3f4f6; color: #111; }
+       .sku-sheet-loading, .sku-sheet-error {
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         height: 100%;
+         color: #9ca3af;
+         font-size: 0.9rem;
+       }
+       .sku-link {
+         background: none;
+         border: none;
+         padding: 0;
+         cursor: pointer;
+       }
+     "]]]))
 

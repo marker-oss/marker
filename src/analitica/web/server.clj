@@ -31,6 +31,7 @@
             [analitica.web.api.report :as report]
             [analitica.web.api.detail :as detail]
             [analitica.web.api.coverage :as coverage]
+            [analitica.web.api.sku :as sku-api]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
             [jsonista.core :as json])
@@ -824,6 +825,11 @@
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body (json/write-value-as-string data)}))
+
+  ;; SKU drill-down panel fragment — returns text/html fragment, NOT JSON.
+  ;; Must be listed BEFORE /api/report/:type to avoid catch-all conflict.
+  (GET "/api/sku/:identifier" req
+    (sku-api/handler req))
 
   ;; Per-article drill-down — must be listed BEFORE the /api/report/:type catch-all.
   ;; Article names may contain '/' and Cyrillic; the client must encodeURIComponent

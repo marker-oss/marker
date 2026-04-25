@@ -100,20 +100,31 @@
         sum? (contains? #{:rub :int} fmt)
         avg? (= :pct fmt)
         canon (:canon-anchor c)
+        linkable? (:linkable? c)
         title (if canon
                 (str (:title c)
                      " <span title='Canon: " canon "' "
                      "style='font-size:9px;color:#9ca3af;cursor:help;'>ⓘ</span>")
-                (:title c))]
+                (:title c))
+        ;; SKU-link formatter: wraps the cell value in a <button data-sku data-nm-id>
+        ;; so sku-sheet.js click-delegation can open the drill-down panel.
+        sku-formatter "function(cell){
+          var row=cell.getRow().getData();
+          var v=cell.getValue();
+          var sku=row.article||row.nm_id||row.nmId||'';
+          var nmId=row.nm_id||row.nmId||'';
+          return '<button class=\"sku-link text-blue-600 hover:underline\" data-sku=\"'+sku+'\" data-nm-id=\"'+nmId+'\">'+v+'</button>';
+        }"]
     (cond-> (assoc c "headerFilter" true
                      "headerFilterPlaceholder" "Фильтр..."
                      "title" title)
-      sum? (assoc "bottomCalc" "sum"
-                  "bottomCalcFormatter" "money"
-                  "bottomCalcFormatterParams" {"thousand" " " "precision" 0})
-      avg? (assoc "bottomCalc" "avg"
-                  "bottomCalcFormatter" "money"
-                  "bottomCalcFormatterParams" {"precision" 1 "symbol" "%" "symbolAfter" "p"}))))
+      sum?      (assoc "bottomCalc" "sum"
+                       "bottomCalcFormatter" "money"
+                       "bottomCalcFormatterParams" {"thousand" " " "precision" 0})
+      avg?      (assoc "bottomCalc" "avg"
+                       "bottomCalcFormatter" "money"
+                       "bottomCalcFormatterParams" {"precision" 1 "symbol" "%" "symbolAfter" "p"})
+      linkable? (assoc "formatter" sku-formatter))))
 
 (defn tabulator-table
   "Render a container for Tabulator interactive table.

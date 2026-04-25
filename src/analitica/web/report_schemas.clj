@@ -30,7 +30,7 @@
     :per-unit {:title "UE.6 Per-unit" :anchor "UE.6"}}
 
    :columns
-   [{:key :article     :title "Артикул"  :group :identity :format :text :default-visible? true}
+   [{:key :article     :title "Артикул"  :group :identity :format :text :default-visible? true :linkable? true}
     {:key :brand       :title "Бренд"    :group :identity :format :text :default-visible? true}
     {:key :subject     :title "Категория" :group :identity :format :text :default-visible? false}
     {:key :sales-qty   :title "Продажи"  :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true :delta-supported? true}
@@ -120,7 +120,7 @@
    :kpi [{:key :total-revenue :title "Выручка" :format :rub}
          {:key :total-for-pay :title "К оплате" :format :rub}
          {:key :total-cost :title "Затраты" :format :rub}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true :delta-supported? true}
              {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
              {:key :wb-reward :title "Вознаграждение WB" :group :money :format :rub :default-visible? true}
@@ -143,7 +143,7 @@
          {:key :a-count :title "А-класс" :format :int}
          {:key :b-count :title "B-класс" :format :int}
          {:key :c-count :title "C-класс" :format :int}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :abc-category :title "Категория" :group :identity :format :text :default-visible? true}
              {:key :cum-pct :title "Накопленный %" :group :pct :format :pct :default-visible? true}
              {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
@@ -159,7 +159,7 @@
    :kpi [{:key :total-quantity :title "Всего на складах" :format :int}
          {:key :total-in-way-to :title "В пути к клиенту" :format :int}
          {:key :sku-count :title "SKU" :format :int}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :quantity :title "Количество" :group :qty :format :int :default-visible? true}
              {:key :quantity-full :title "Полное кол-во" :group :qty :format :int :default-visible? true}
              {:key :in-way-to :title "В пути к клиенту" :group :qty :format :int :default-visible? true}
@@ -175,7 +175,7 @@
    :kpi [{:key :total-sold :title "Продано" :format :int}
          {:key :total-returned :title "Возвращено" :format :int}
          {:key :avg-return-rate :title "% возврата" :format :pct}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :sold :title "Продано" :group :volume :format :int :default-visible? true}
              {:key :returned :title "Возвращено" :group :volume :format :int :default-visible? true}
              {:key :total :title "Всего" :group :volume :format :int :default-visible? true}
@@ -190,7 +190,7 @@
    :kpi [{:key :total-ordered :title "Заказано" :format :int}
          {:key :total-bought :title "Выкуплено" :format :int}
          {:key :avg-buyout-rate :title "% выкупа" :format :pct}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :ordered :title "Заказано" :group :volume :format :int :default-visible? true}
              {:key :bought :title "Выкуплено" :group :volume :format :int :default-visible? true}
              {:key :returned :title "Возвращено" :group :volume :format :int :default-visible? true}
@@ -244,7 +244,7 @@
          {:key :dead-stock-count :title "Мёртвый сток" :format :int}
          {:key :storage-eats-count :title "Склад ест маржу" :format :int}
          {:key :forecast-count :title "Прогноз: в убыток" :format :int}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true}
+   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :loss-type :title "Тип" :group :identity :format :text :default-visible? true}
              {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true}
              {:key :storage-cost :title "Хранение" :group :money :format :rub :default-visible? true :canon-anchor "Losses.1"}
