@@ -73,21 +73,46 @@
       (is (re-find #"Управление" page-html)))))
 
 (deftest sidebar-active-route-highlighting-test
-  (testing "active route /reports/pnl highlights the Финансы group as open"
-    (let [page-html (layout/page "Test" [:div "content"] :active-route "/reports/pnl")]
-      ;; The <details> for Финансы should have open attribute
-      (is (re-find #"(?s)Финансы.*?open|open.*?Финансы" page-html)
-          "Финансы group should be open when /reports/pnl is active")))
+  (testing "/reports/pnl makes Финансы group <details> open"
+    ;; rendered = [:details.mb-1 {:open true} [:summary ...] [:div.ml-4.mt-1 ...]]
+    (let [item     (first (filter #(= "Финансы" (:label %)) layout/nav-items))
+          rendered (#'layout/nav-item item "/reports/pnl")
+          tag      (first rendered)
+          attrs    (second rendered)]
+      (is (= :details.mb-1 tag)
+          "Финансы nav-item should render as :details.mb-1")
+      (is (true? (:open attrs))
+          "Финансы group should be :open true when /reports/pnl is active")))
 
-  (testing "active route /reports/pnl shows P&L item highlighted"
-    (let [page-html (layout/page "Test" [:div "content"] :active-route "/reports/pnl")]
-      (is (re-find #"bg-blue-500" page-html)
-          "Active child item should have highlight class")))
+  (testing "/reports/pnl makes the P&L child anchor carry bg-blue-500"
+    ;; child-div = [:div.ml-4.mt-1 (lazy-seq-of-anchors)]
+    ;; the lazy seq is the second element of child-div
+    (let [item      (first (filter #(= "Финансы" (:label %)) layout/nav-items))
+          rendered  (#'layout/nav-item item "/reports/pnl")
+          child-div (nth rendered 3)
+          anchors   (second child-div)            ; lazy seq produced by `for`
+          pnl-anchor (first (filter #(= "/reports/pnl" (get-in % [1 :href])) anchors))]
+      (is (some? pnl-anchor)
+          "P&L anchor must exist inside Финансы group")
+      (is (re-find #"bg-blue-500" (get-in pnl-anchor [1 :class]))
+          "Active child anchor should carry bg-blue-500")))
 
-  (testing "active route / highlights Главная"
-    (let [page-html (layout/page "Test" [:div "content"] :active-route "/")]
-      (is (re-find #"bg-blue-600" page-html)
-          "Active top-level item should have highlight class"))))
+  (testing "Главная leaf link carries bg-blue-600 when active-route is /"
+    ;; rendered = [:div.mb-1 [:a {:href "/" :class "..."} label]]
+    (let [item     (first (filter #(= "Главная" (:label %)) layout/nav-items))
+          rendered (#'layout/nav-item item "/")
+          anchor   (second rendered)
+          cls      (get-in anchor [1 :class])]
+      (is (re-find #"bg-blue-600" cls)
+          "Главная anchor should carry bg-blue-600 when route / is active")))
+
+  (testing "Главная leaf link does NOT carry bg-blue-600 when active-route is /wb"
+    (let [item     (first (filter #(= "Главная" (:label %)) layout/nav-items))
+          rendered (#'layout/nav-item item "/wb")
+          anchor   (second rendered)
+          cls      (get-in anchor [1 :class])]
+      (is (not (re-find #"bg-blue-600" cls))
+          "Главная anchor should not be highlighted when active-route does not match"))))
 
 (deftest homepage-title-test
   (testing "summary-page function exists in dashboard namespace"

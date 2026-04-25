@@ -29,7 +29,7 @@
       (is (re-find #"Последняя синхронизация" html))))
 
   (testing "page highlights active route"
-    (let [html (layout/page "Test" [:div "Content"] :active-route "/wb")]
+    (let [html (layout/page "Test" [:div "Content"] :active-route "/")]
       (is (re-find #"bg-blue-600" html))
       (is (string? html))))
 

@@ -1,5 +1,6 @@
 (ns analitica.web.layout
-  (:require [hiccup.page :refer [html5 include-css include-js]]
+  (:require [clojure.string :as str]
+            [hiccup.page :refer [html5 include-css include-js]]
             [hiccup.core :refer [html]]
             [analitica.web.components :as components]
             [analitica.util.period :as period]))
@@ -51,7 +52,7 @@
         (and (seq children)
              (some #(or (= (:route %) active-route)
                         (and (seq active-route)
-                             (clojure.string/starts-with? active-route (:route %))))
+                             (str/starts-with? active-route (:route %))))
                    children)))))
 
 ;; ---------------------------------------------------------------------------
@@ -69,7 +70,7 @@
         active? (group-active? item active-route)]
     (if children
       ;; Collapsible group via HTML5 <details>/<summary>
-      [:details.mb-1 (merge {} (when active? {:open true}))
+      [:details.mb-1 (when active? {:open true})
        [:summary.flex.items-center.px-4.py-2.text-sm.rounded-md.cursor-pointer.transition-colors.select-none.list-none
         {:class (if active?
                   "bg-gray-700 text-white font-semibold"
@@ -86,13 +87,12 @@
                  :class child-classes}
              (:label child)]))]]
       ;; Plain leaf link (Главная — no sub-items)
-      (let [is-active? active?
-            base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
+      (let [base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
             active-classes "bg-blue-600 text-white"
             inactive-classes "text-gray-300 hover:bg-gray-700 hover:text-white"]
         [:div.mb-1
          [:a {:href route
-              :class (str base-classes " " (if is-active? active-classes inactive-classes))}
+              :class (str base-classes " " (if active? active-classes inactive-classes))}
           display-label]]))))
 
 (defn- sidebar
