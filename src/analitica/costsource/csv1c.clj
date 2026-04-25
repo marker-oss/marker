@@ -122,6 +122,90 @@
       (throw (ex-info "1C CSV not found"
                       {:path (str f) :cause :file-not-found})))))
 
+(defn- header-or-meta?
+  "Lines that parse-line intentionally skips (headers, totals, meta, BOM).
+   Used by parse-file-with-diagnostics so they show up as :skipped, not
+   :error — failure to parse a header row is not a problem.
+
+   Strips a leading BOM (U+FEFF) before checking. Also strips leading
+   commas before label matching, since 1C indents metadata under empty
+   leading columns: ',,Вид цены: Себестоимость,,,…' and
+   ',,Склад: Основной склад,,,…' should be :skipped, not :missing-article."
+  [line]
+  (let [t (-> (or line "")
+              str/trim
+              (str/replace #"^﻿" ""))
+        ;; non-empty content with leading-comma indent stripped
+        body (str/triml (str/replace t #"^[, ]+" ""))]
+    (or (str/blank? (str/replace t "," ""))
+        (str/starts-with? t "Параметры")
+        (str/starts-with? t "Отбор")
+        (str/starts-with? t "Склад,,,Номенклатура")
+        (str/starts-with? t "Итого")
+        ;; Indented metadata labels (any leading-comma prefix tolerated):
+        (str/starts-with? body "Вид цены:")
+        (str/starts-with? body "Склад:")
+        (str/starts-with? body "Дата отчёта:")
+        (str/starts-with? body "Период:")
+        (str/starts-with? body "Параметры:"))))
+
+(defn parse-file-with-diagnostics
+  "Like parse-file but reports per-line outcome. Returns
+       {:rows [...]            ; successfully parsed records
+        :errors [{:line N :raw S :reason kw} ...]
+        :skipped N             ; headers / blanks / totals
+        :total-lines N}
+
+   Reasons:
+     :too-few-columns         row had < 9 comma-separated fields
+     :missing-article         article column was empty / unparseable
+     :missing-cost-price      cost-price column blank or non-numeric
+
+   File-level errors throw (caller is expected to catch and 4xx)."
+  [path]
+  (let [f (io/file path)]
+    (when-not (.exists f)
+      (throw (ex-info "1C CSV not found" {:path (str f) :cause :file-not-found})))
+    (let [lines (str/split-lines (slurp f :encoding "UTF-8"))]
+      (loop [idx 0 remaining lines rows [] errors [] skipped 0]
+        (if-let [line (first remaining)]
+          (cond
+            (header-or-meta? line)
+            (recur (inc idx) (rest remaining) rows errors (inc skipped))
+
+            :else
+            (let [parts (split-csv-respecting-quotes line)]
+              (cond
+                (< (count parts) 9)
+                (recur (inc idx) (rest remaining) rows
+                       (conj errors {:line (inc idx) :raw line :reason :too-few-columns})
+                       skipped)
+
+                :else
+                (let [nomenclature (nth parts 3 "")
+                      art-num      (extract-article-number nomenclature)
+                      price        (parse-russian-number (nth parts 7 ""))
+                      parsed       (parse-line line)]
+                  (cond
+                    (nil? art-num)
+                    (recur (inc idx) (rest remaining) rows
+                           (conj errors {:line (inc idx) :raw line :reason :missing-article})
+                           skipped)
+                    (nil? price)
+                    (recur (inc idx) (rest remaining) rows
+                           (conj errors {:line (inc idx) :raw line :reason :missing-cost-price})
+                           skipped)
+                    parsed
+                    (recur (inc idx) (rest remaining) (conj rows parsed) errors skipped)
+                    :else
+                    (recur (inc idx) (rest remaining) rows
+                           (conj errors {:line (inc idx) :raw line :reason :unparseable})
+                           skipped))))))
+          {:rows         rows
+           :errors       errors
+           :skipped      skipped
+           :total-lines  (count lines)})))))
+
 ;; ---------------------------------------------------------------------------
 ;; CostSource implementation
 ;; ---------------------------------------------------------------------------

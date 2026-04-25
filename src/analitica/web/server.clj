@@ -942,6 +942,9 @@
   ;; 1C API / Мойсклад / … endpoints will live under the same prefix.
   (POST "/api/cost-prices/upload" request
     (cost-prices-api/upload-csv request))
+
+  (POST "/api/cost-prices/preview" request
+    (cost-prices-api/preview-csv request))
   (GET "/api/cost-prices/imports" request
     (cost-prices-api/list-imports request))
   (GET "/upload/cost-prices" []

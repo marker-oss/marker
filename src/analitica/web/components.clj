@@ -642,8 +642,14 @@
 ;; ---------------------------------------------------------------------------
 
 (defn cost-prices-upload
-  "Drag-drop zone + hidden file input + progress/result area for 1C CSV upload.
-   POSTs multipart to /api/cost-prices/upload, shows JSON response inline."
+  "Drag-drop zone for 1C CSV with two-step preview → commit flow:
+
+     1. drop / pick file → POSTs to /api/cost-prices/preview (no DB write)
+     2. browser renders parsed rows + per-line errors in a table
+     3. user clicks 'Применить' → POSTs the same file to /upload to commit
+
+   Old single-step behaviour was opaque — users only saw a JSON dump
+   after the fact, with no chance to inspect errors before committing."
   []
   [:div.bg-white.rounded-lg.shadow.p-6
    [:h3.text-lg.font-semibold.text-gray-900.mb-2 "Себестоимость из 1С (CSV)"]
@@ -651,38 +657,164 @@
    [:label#cost-prices-dropzone.block.border-2.border-dashed.border-gray-300.rounded-lg.p-6.text-center.cursor-pointer.hover:border-blue-500.hover:bg-blue-50
     [:input#cost-prices-file {:type "file" :accept ".csv" :class "hidden"}]
     [:div.text-gray-500 "📁 Перетащите CSV или кликните для выбора"]]
+   [:div#cost-prices-summary.mt-3.text-sm]
+   [:div#cost-prices-preview.mt-3]
+   [:div#cost-prices-actions.mt-3.flex.gap-2]
    [:div#cost-prices-result.mt-3.text-sm]
    [:div.mt-4.text-xs.text-gray-500
     [:a {:href "/api/cost-prices/imports" :target "_blank"} "📜 История импортов (JSON)"]]
    [:script "
      (function() {
-       const input = document.getElementById('cost-prices-file');
+       const input    = document.getElementById('cost-prices-file');
        const dropzone = document.getElementById('cost-prices-dropzone');
-       const result = document.getElementById('cost-prices-result');
+       const summary  = document.getElementById('cost-prices-summary');
+       const preview  = document.getElementById('cost-prices-preview');
+       const actions  = document.getElementById('cost-prices-actions');
+       const result   = document.getElementById('cost-prices-result');
+       let stagedFile = null;
 
-       async function upload(file) {
-         result.innerHTML = '<div class=\"text-gray-500\">⏳ Загрузка ' + file.name + '…</div>';
+       const REASON_RU = {
+         'too-few-columns':    'мало колонок',
+         'missing-article':    'нет артикула',
+         'missing-cost-price': 'нет цены',
+         'unparseable':        'не разобрана'
+       };
+
+       function escapeHtml(s) {
+         return String(s ?? '').replace(/[&<>\"']/g, c =>
+           ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\\'':'&#39;'}[c]));
+       }
+
+       async function preview_(file) {
+         stagedFile = null;
+         summary.innerHTML = '<div class=\"text-gray-500\">⏳ Парсинг ' + escapeHtml(file.name) + '…</div>';
+         preview.innerHTML = '';
+         actions.innerHTML = '';
+         result.innerHTML = '';
          const fd = new FormData();
          fd.append('file', file);
+         try {
+           const r = await fetch('/api/cost-prices/preview', { method: 'POST', body: fd });
+           const d = await r.json();
+           if (!r.ok) {
+             summary.innerHTML = '<div class=\"text-red-700\">✗ Ошибка ' + r.status + ': ' + escapeHtml(d.error || '') + '</div>';
+             return;
+           }
+
+           const valid = d.valid || 0;
+           const errs  = d['errors-count'] || 0;
+           const skip  = d.skipped || 0;
+           summary.innerHTML =
+             '<div class=\"flex flex-wrap gap-3\">' +
+               '<span><b>Файл:</b> ' + escapeHtml(d.filename) + '</span>' +
+               '<span class=\"text-gray-500\">всего строк: ' + d['total-lines'] + '</span>' +
+               '<span class=\"text-green-700\">✓ корректных: <b>' + valid + '</b></span>' +
+               '<span class=\"' + (errs ? 'text-red-700' : 'text-gray-500') + '\">✗ ошибок: <b>' + errs + '</b></span>' +
+               '<span class=\"text-gray-500\">служебных: ' + skip + '</span>' +
+             '</div>';
+
+           // Rows table (first 50 of cap-200 returned)
+           const rows = (d.rows || []).slice(0, 50);
+           const rowsHtml = rows.length === 0
+             ? '<div class=\"text-gray-500 text-sm\">Нет валидных строк для предпросмотра.</div>'
+             : '<div class=\"overflow-x-auto border border-gray-200 rounded\"><table class=\"min-w-full text-xs\">' +
+               '<thead class=\"bg-gray-50\"><tr>' +
+                 '<th class=\"px-2 py-1 text-left\">Артикул</th>' +
+                 '<th class=\"px-2 py-1 text-left\">Номер</th>' +
+                 '<th class=\"px-2 py-1 text-left\">Цвет</th>' +
+                 '<th class=\"px-2 py-1 text-right\">Себестоимость</th>' +
+                 '<th class=\"px-2 py-1 text-right\">Кол-во</th>' +
+                 '<th class=\"px-2 py-1 text-left\">Номенклатура</th>' +
+               '</tr></thead><tbody>' +
+                 rows.map(r =>
+                   '<tr class=\"border-t border-gray-100\">' +
+                     '<td class=\"px-2 py-1 font-mono\">' + escapeHtml(r.article) + '</td>' +
+                     '<td class=\"px-2 py-1\">' + escapeHtml(r['article-num']) + '</td>' +
+                     '<td class=\"px-2 py-1\">' + escapeHtml(r.color || '—') + '</td>' +
+                     '<td class=\"px-2 py-1 text-right\">' + Number(r['cost-price']).toLocaleString('ru-RU') + '</td>' +
+                     '<td class=\"px-2 py-1 text-right text-gray-500\">' + (r.quantity ?? '—') + '</td>' +
+                     '<td class=\"px-2 py-1 text-gray-600\">' + escapeHtml(r.nomenclature || '') + '</td>' +
+                   '</tr>'
+                 ).join('') +
+               '</tbody></table></div>' +
+               (valid > 50 ? '<div class=\"text-xs text-gray-500 mt-1\">…ещё ' + (valid - 50) + ' строк не показано в превью</div>' : '');
+
+           // Errors list
+           const errsList = d.errors || [];
+           const errsHtml = errsList.length === 0 ? '' :
+             '<div class=\"mt-3\"><div class=\"text-sm font-semibold text-red-700 mb-1\">Ошибки (' + errsList.length + '):</div>' +
+             '<div class=\"max-h-48 overflow-auto border border-red-200 rounded\"><table class=\"min-w-full text-xs\">' +
+               '<thead class=\"bg-red-50 sticky top-0\"><tr>' +
+                 '<th class=\"px-2 py-1 text-left\">Стр.</th>' +
+                 '<th class=\"px-2 py-1 text-left\">Причина</th>' +
+                 '<th class=\"px-2 py-1 text-left\">Содержимое</th>' +
+               '</tr></thead><tbody>' +
+                 errsList.map(e =>
+                   '<tr class=\"border-t border-red-100\">' +
+                     '<td class=\"px-2 py-1 font-mono text-gray-700\">' + e.line + '</td>' +
+                     '<td class=\"px-2 py-1 text-red-700\">' + escapeHtml(REASON_RU[e.reason] || e.reason) + '</td>' +
+                     '<td class=\"px-2 py-1 text-gray-500 truncate max-w-md\" title=\"' + escapeHtml(e.raw) + '\">' + escapeHtml((e.raw || '').slice(0, 120)) + '</td>' +
+                   '</tr>'
+                 ).join('') +
+               '</tbody></table></div></div>';
+
+           preview.innerHTML = rowsHtml + errsHtml;
+
+           // Commit button (only when there's something to commit)
+           if (valid > 0) {
+             stagedFile = file;
+             const errsNote = errs ? ' <span class=\"text-red-600 text-xs\">(' + errs + ' ошибок будет пропущено)</span>' : '';
+             actions.innerHTML =
+               '<button id=\"cost-prices-commit\" class=\"px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium\">Применить ' + valid + ' строк</button>' +
+               '<button id=\"cost-prices-cancel\" class=\"px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm\">Отмена</button>' +
+               '<span class=\"text-xs text-gray-500 self-center\">' + errsNote + '</span>';
+             document.getElementById('cost-prices-commit').addEventListener('click', commit);
+             document.getElementById('cost-prices-cancel').addEventListener('click', reset);
+           } else {
+             actions.innerHTML = '<button id=\"cost-prices-cancel\" class=\"px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm\">Закрыть</button>';
+             document.getElementById('cost-prices-cancel').addEventListener('click', reset);
+           }
+         } catch (e) {
+           summary.innerHTML = '<div class=\"text-red-700\">✗ ' + escapeHtml(e.message) + '</div>';
+         }
+       }
+
+       async function commit() {
+         if (!stagedFile) return;
+         const btn = document.getElementById('cost-prices-commit');
+         if (btn) { btn.disabled = true; btn.textContent = 'Загрузка…'; }
+         result.innerHTML = '<div class=\"text-gray-500\">⏳ Отправка ' + escapeHtml(stagedFile.name) + ' на сервер…</div>';
+         const fd = new FormData();
+         fd.append('file', stagedFile);
          try {
            const r = await fetch('/api/cost-prices/upload', { method: 'POST', body: fd });
            const d = await r.json();
            if (r.ok) {
-             const rows = d.rows || d.inserted || d.loaded || 0;
-             const warns = (d.warnings && d.warnings.length) || 0;
-             result.innerHTML = '<div class=\"text-green-700\">✓ Загружено строк: <b>' + rows + '</b>' +
-                                (warns ? ', предупреждений: ' + warns : '') + '</div>' +
-                                '<pre class=\"mt-2 text-xs bg-gray-50 border border-gray-200 rounded p-2 overflow-auto\">' +
-                                JSON.stringify(d, null, 2) + '</pre>';
+             const rows = d.loaded || d.rows || d.inserted || 0;
+             const rej  = d.rejected || 0;
+             result.innerHTML = '<div class=\"text-green-700\">✓ Загружено: <b>' + rows + '</b>' + (rej ? ', отклонено: ' + rej : '') + '</div>';
+             actions.innerHTML = '';
+             stagedFile = null;
            } else {
-             result.innerHTML = '<div class=\"text-red-700\">✗ Ошибка ' + r.status + ': ' + (d.error || JSON.stringify(d)) + '</div>';
+             result.innerHTML = '<div class=\"text-red-700\">✗ Ошибка ' + r.status + ': ' + escapeHtml(d.error || JSON.stringify(d)) + '</div>';
+             if (btn) { btn.disabled = false; btn.textContent = 'Повторить'; }
            }
          } catch (e) {
-           result.innerHTML = '<div class=\"text-red-700\">✗ ' + e.message + '</div>';
+           result.innerHTML = '<div class=\"text-red-700\">✗ ' + escapeHtml(e.message) + '</div>';
+           if (btn) { btn.disabled = false; btn.textContent = 'Повторить'; }
          }
        }
 
-       input.addEventListener('change', e => { if (e.target.files[0]) upload(e.target.files[0]); });
+       function reset() {
+         stagedFile = null;
+         input.value = '';
+         summary.innerHTML = '';
+         preview.innerHTML = '';
+         actions.innerHTML = '';
+         result.innerHTML = '';
+       }
+
+       input.addEventListener('change', e => { if (e.target.files[0]) preview_(e.target.files[0]); });
        ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => {
          e.preventDefault(); e.stopPropagation();
          dropzone.classList.add('border-blue-500', 'bg-blue-50');
@@ -692,7 +824,7 @@
          dropzone.classList.remove('border-blue-500', 'bg-blue-50');
        }));
        dropzone.addEventListener('drop', e => {
-         if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+         if (e.dataTransfer.files[0]) preview_(e.dataTransfer.files[0]);
        });
      })();
    "]])

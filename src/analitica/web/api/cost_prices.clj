@@ -72,3 +72,45 @@
                       :filename (:filename file-part)}})
           (finally
             (.delete temp)))))))
+
+(defn preview-csv
+  "Compojure handler for POST /api/cost-prices/preview.
+
+   Parses the uploaded CSV without touching the DB. Returns the parsed
+   rows + per-line errors so the UI can confirm before commit. Caps the
+   row preview at 200 to keep payloads small for big imports.
+
+   200 body shape:
+     {:filename     ...
+      :total-lines  N      ; lines in the CSV
+      :valid        N      ; successfully parsed
+      :errors-count N      ; rejected rows
+      :skipped      N      ; meta/header/blank lines
+      :rows         [{...} …]   ; first 200 valid rows
+      :errors       [{:line :raw :reason} …]   ; first 200 errors}"
+  [request]
+  (let [file-part (get-in request [:multipart-params "file"])]
+    (cond
+      (or (nil? file-part) (zero? (:size file-part 0)))
+      {:status 400
+       :body   {:error "No file uploaded (expect multipart field `file`)"}}
+
+      :else
+      (let [^File temp (save-upload-to-temp file-part)]
+        (try
+          (let [{:keys [rows errors skipped total-lines]}
+                (csv1c/parse-file-with-diagnostics (.getAbsolutePath temp))]
+            {:status 200
+             :body   {:filename     (:filename file-part)
+                      :total-lines  total-lines
+                      :valid        (count rows)
+                      :errors-count (count errors)
+                      :skipped      skipped
+                      :rows         (vec (take 200 rows))
+                      :errors       (vec (take 200 errors))}})
+          (catch Throwable t
+            {:status 500
+             :body   {:error    (.getMessage t)
+                      :filename (:filename file-part)}})
+          (finally
+            (.delete temp)))))))
