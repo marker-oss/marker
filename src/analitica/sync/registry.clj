@@ -130,3 +130,9 @@
      WHERE id = ?"
     task-id])
   (first (db/query ["SELECT * FROM sync_tasks WHERE id = ?" task-id])))
+
+(defn set-retrying!
+  "Mark a task as awaiting retry. Status='retrying'; preserve attempts so
+   the UI can show 'attempt N/M' from the row."
+  [task-id]
+  (db/execute! ["UPDATE sync_tasks SET status='retrying' WHERE id = ?" task-id]))

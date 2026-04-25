@@ -85,6 +85,7 @@
                            :marketplace  mp
                            :entity-type  entity-type
                            :phase        :ingest
+                           :max-attempts 3
                            :period-from  chunk-from
                            :period-to    chunk-to
                            :depends-on   []
@@ -100,6 +101,7 @@
                      :marketplace  mp
                      :entity-type  entity-type
                      :phase        :materialize
+                     :max-attempts 1
                      :period-from  period-from
                      :period-to    period-to
                      :depends-on   ingest-ids
@@ -175,6 +177,7 @@
        :marketplace  (when (:marketplace task) (name (:marketplace task)))
        :entity-type  (when (:entity-type task) (name (:entity-type task)))
        :phase        (when (:phase task) (name (:phase task)))
+       :max-attempts (:max-attempts task)
        :period-from  (:period-from task)
        :period-to    (:period-to task)
        :depends-on   (seq (:depends-on task))}))

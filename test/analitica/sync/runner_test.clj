@@ -1,5 +1,6 @@
 (ns analitica.sync.runner-test
   "Unit tests for analitica.sync.runner — Phase 2 task lifecycle envelope.
+   Phase 6: retry/backoff tests added.
    Each test that touches the DB uses an isolated temp SQLite DB via with-temp-db."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.db :as db]
@@ -55,6 +56,17 @@
                      :marketplace "wb"
                      :entity-type "sales"
                      :phase       "ingest"})
+  id)
+
+(defn- make-task-with-attempts!
+  "Create a task row with explicit max_attempts, return its id."
+  [id max-attempts]
+  (reg/create-task! {:id           id
+                     :run-id       "run-test"
+                     :marketplace  "wb"
+                     :entity-type  "sales"
+                     :phase        "ingest"
+                     :max-attempts max-attempts})
   id)
 
 ;; ---------------------------------------------------------------------------
@@ -220,3 +232,137 @@
         (is (= expected (runner/classify-error throwable))
             (str "classify-error for: " (.getMessage throwable)
                  " expected " expected))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 6 — retry / backoff tests
+;; ---------------------------------------------------------------------------
+
+;; 11. run-task-retries-on-http-5xx-then-succeeds
+(deftest run-task-retries-on-http-5xx-then-succeeds
+  (testing "thunk throws 503 on first call, succeeds on second; max_attempts=3 → status=ok, attempts=2"
+    (make-task-with-attempts! "wb/retry/5xx-succeed" 3)
+    (let [call-count (atom 0)]
+      (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)]
+        (let [row (runner/run-task!
+                    "wb/retry/5xx-succeed"
+                    (fn []
+                      (swap! call-count inc)
+                      (when (= 1 @call-count)
+                        (throw (ex-info "service unavailable" {:status 503})))
+                      42))]
+          (is (= "ok" (:status row)))
+          (is (= 42 (:items row)))
+          (is (= 2 (:attempts row)))
+          (is (= 2 @call-count)))))))
+
+;; 12. run-task-retries-exhausted-on-persistent-5xx
+(deftest run-task-retries-exhausted-on-persistent-5xx
+  (testing "thunk always throws 500; max_attempts=2 → status=failed, attempts=2"
+    (make-task-with-attempts! "wb/retry/5xx-exhaust" 2)
+    (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)]
+      (let [row (runner/run-task!
+                  "wb/retry/5xx-exhaust"
+                  (fn [] (throw (ex-info "internal server error" {:status 500}))))]
+        (is (= "failed" (:status row)))
+        (is (= "http-5xx" (:error-kind row)))
+        (is (= 2 (:attempts row)))))))
+
+;; 13. run-task-no-retry-on-http-4xx
+(deftest run-task-no-retry-on-http-4xx
+  (testing "thunk throws 400; even with max_attempts=3, fails after 1 attempt (non-retryable)"
+    (make-task-with-attempts! "wb/retry/4xx-noretry" 3)
+    (let [call-count (atom 0)]
+      (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)]
+        (let [row (runner/run-task!
+                    "wb/retry/4xx-noretry"
+                    (fn []
+                      (swap! call-count inc)
+                      (throw (ex-info "bad request" {:status 400}))))]
+          (is (= "failed" (:status row)))
+          (is (= "http-4xx" (:error-kind row)))
+          (is (= 1 (:attempts row)))
+          (is (= 1 @call-count) "thunk should only be called once for non-retryable error"))))))
+
+;; 14. run-task-retries-on-timeout
+(deftest run-task-retries-on-timeout
+  (testing "SocketTimeoutException on first call, returns 7 on second → status=ok, attempts=2"
+    (make-task-with-attempts! "wb/retry/timeout-succeed" 3)
+    (let [call-count (atom 0)]
+      (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)]
+        (let [row (runner/run-task!
+                    "wb/retry/timeout-succeed"
+                    (fn []
+                      (swap! call-count inc)
+                      (when (= 1 @call-count)
+                        (throw (java.net.SocketTimeoutException. "Read timed out")))
+                      7))]
+          (is (= "ok" (:status row)))
+          (is (= 7 (:items row)))
+          (is (= 2 (:attempts row)))
+          (is (= 2 @call-count)))))))
+
+;; 15. run-task-retries-on-429
+(deftest run-task-retries-on-429
+  (testing "429 on first call, succeeds on second; max_attempts=3 → status=ok, attempts=2"
+    (make-task-with-attempts! "wb/retry/429-succeed" 3)
+    (let [call-count (atom 0)]
+      (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)]
+        (let [row (runner/run-task!
+                    "wb/retry/429-succeed"
+                    (fn []
+                      (swap! call-count inc)
+                      (when (= 1 @call-count)
+                        (throw (ex-info "rate limited" {:status 429})))
+                      99))]
+          (is (= "ok" (:status row)))
+          (is (= 99 (:items row)))
+          (is (= 2 (:attempts row)))
+          (is (= 2 @call-count)))))))
+
+;; 16. compute-backoff-ms-table (pure unit test — no DB)
+(deftest compute-backoff-ms-table
+  (testing "compute-backoff-ms returns value in expected range, capped at 60000"
+    ;; attempt 1: base=1000, jitter 0-999 → range [1000, 1999]
+    (let [ms1 (#'runner/compute-backoff-ms 1)]
+      (is (>= ms1 1000))
+      (is (< ms1 2000)))
+    ;; attempt 2: base=2000, jitter 0-999 → range [2000, 2999]
+    (let [ms2 (#'runner/compute-backoff-ms 2)]
+      (is (>= ms2 2000))
+      (is (< ms2 3000)))
+    ;; attempt 3: base=4000, jitter 0-999 → range [4000, 4999]
+    (let [ms3 (#'runner/compute-backoff-ms 3)]
+      (is (>= ms3 4000))
+      (is (< ms3 5000)))
+    ;; attempt 4: base=8000, jitter 0-999 → range [8000, 8999]
+    (let [ms4 (#'runner/compute-backoff-ms 4)]
+      (is (>= ms4 8000))
+      (is (< ms4 9000)))
+    ;; attempt 10: base=512000 → capped at 60000
+    (let [ms10 (#'runner/compute-backoff-ms 10)]
+      (is (= 60000 ms10)
+          "attempt 10 must be capped at 60000ms"))))
+
+;; 17. run-task-retrying-status-visible-during-loop
+;;     Tests that set-retrying! is called on retry. We use with-redefs to
+;;     count invocations rather than a timing-based approach (which would be
+;;     flaky on loaded CI machines).
+(deftest run-task-retrying-status-visible-during-loop
+  (testing "set-retrying! is called once when a single retry occurs"
+    (make-task-with-attempts! "wb/retry/retrying-status" 3)
+    (let [set-retrying-calls (atom 0)
+          call-count         (atom 0)
+          original-set-retrying! reg/set-retrying!]
+      (with-redefs [analitica.sync.runner/compute-backoff-ms (constantly 1)
+                    reg/set-retrying! (fn [task-id]
+                                        (swap! set-retrying-calls inc)
+                                        (original-set-retrying! task-id))]
+        (runner/run-task!
+          "wb/retry/retrying-status"
+          (fn []
+            (swap! call-count inc)
+            (when (= 1 @call-count)
+              (throw (ex-info "service unavailable" {:status 503})))
+            0)))
+      (is (= 1 @set-retrying-calls)
+          "set-retrying! should have been called exactly once (one retry transition)"))))

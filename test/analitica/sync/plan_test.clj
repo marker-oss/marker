@@ -225,3 +225,41 @@
       ;; period-from and period-to are populated
       (is (every? (comp some? :period-from) rows))
       (is (every? (comp some? :period-to) rows)))))
+
+;; ---------------------------------------------------------------------------
+;; 7. expand-plan-max-attempts
+;;    Phase 6: ingest tasks get :max-attempts 3, materialize tasks get :max-attempts 1
+;; ---------------------------------------------------------------------------
+
+(deftest expand-plan-max-attempts
+  (testing "ingest tasks carry :max-attempts 3; materialize tasks carry :max-attempts 1"
+    (let [run-id (unique-run-id)
+          tasks  (plan/expand-plan :run-id run-id
+                                   :what :sales
+                                   :marketplace :all
+                                   :period :last-30-days)
+          ingest-tasks     (filter #(= :ingest (:phase %)) tasks)
+          materialize-tasks (filter #(= :materialize (:phase %)) tasks)]
+      ;; All ingest tasks should have :max-attempts 3
+      (is (pos? (count ingest-tasks)) "should have at least 1 ingest task")
+      (is (every? #(= 3 (:max-attempts %)) ingest-tasks)
+          "all ingest tasks must have :max-attempts 3")
+      ;; All materialize tasks should have :max-attempts 1
+      (is (pos? (count materialize-tasks)) "should have at least 1 materialize task")
+      (is (every? #(= 1 (:max-attempts %)) materialize-tasks)
+          "all materialize tasks must have :max-attempts 1")))
+
+  (testing "persist-plan! writes max_attempts correctly to DB"
+    (let [run-id (unique-run-id)
+          tasks  (plan/expand-plan :run-id run-id
+                                   :what :orders
+                                   :marketplace :wb
+                                   :period :last-30-days)
+          _      (plan/persist-plan! tasks)
+          rows   (reg/find-tasks-for-run run-id)]
+      (let [ingest-rows     (filter #(= "ingest" (:phase %)) rows)
+            materialize-rows (filter #(= "materialize" (:phase %)) rows)]
+        (is (every? #(= 3 (:max-attempts %)) ingest-rows)
+            "ingest rows in DB must have max_attempts=3")
+        (is (every? #(= 1 (:max-attempts %)) materialize-rows)
+            "materialize rows in DB must have max_attempts=1")))))

@@ -197,3 +197,42 @@
       (is (nil? (:finished-at reset-row)))
       (is (nil? (:duration-ms reset-row)))
       (is (nil? (:started-at reset-row))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 6 — set-retrying! tests
+;; ---------------------------------------------------------------------------
+
+(deftest set-retrying-transitions-status
+  (testing "set-retrying! sets status='retrying' and preserves attempts"
+    (reg/create-task! (minimal-spec "wb/retrying/test1"))
+    (reg/set-running! "wb/retrying/test1")   ;; attempts -> 1
+    (reg/set-retrying! "wb/retrying/test1")
+    (let [row (reg/find-task "wb/retrying/test1")]
+      (is (= "retrying" (:status row)) "status should be 'retrying'")
+      (is (= 1 (:attempts row)) "attempts must not change after set-retrying!"))))
+
+(deftest set-retrying-then-running-increments-attempts
+  (testing "set-running! after set-retrying! increments attempts to 2"
+    (reg/create-task! (minimal-spec "wb/retrying/test2"))
+    (reg/set-running! "wb/retrying/test2")   ;; attempts -> 1
+    (reg/set-retrying! "wb/retrying/test2")  ;; status = retrying
+    (reg/set-running! "wb/retrying/test2")   ;; attempts -> 2
+    (let [row (reg/find-task "wb/retrying/test2")]
+      (is (= "running" (:status row)))
+      (is (= 2 (:attempts row)) "second set-running! should bring attempts to 2"))))
+
+(deftest set-retrying-preserves-error-fields
+  (testing "set-retrying! does not clear error_kind or error_msg from previous attempt"
+    ;; This ensures that if we inspect a 'retrying' row, we can see what the last error was.
+    (reg/create-task! (minimal-spec "wb/retrying/test3"))
+    (reg/set-running! "wb/retrying/test3")
+    ;; Manually set error fields as runner would after a failure
+    (db/execute! ["UPDATE sync_tasks SET error_kind='http-5xx', error_msg='server error'
+                   WHERE id='wb/retrying/test3'"])
+    (reg/set-retrying! "wb/retrying/test3")
+    (let [row (reg/find-task "wb/retrying/test3")]
+      (is (= "retrying" (:status row)))
+      ;; error fields are NOT cleared by set-retrying! (runner sets them via record-error! only on final failure)
+      ;; set-retrying! only touches status — prior error fields from any partial UPDATE remain
+      (is (= "http-5xx" (:error-kind row)))
+      (is (= "server error" (:error-msg row))))))
