@@ -1,15 +1,9 @@
 (ns analitica.alerts
-  "Alert detection engine — pure + impure layers.
+  "Alert detection engine — pure layer.
 
   Pure:  (detect-alerts data-map)  — all 5 rules, cap 5, sort by severity.
-  Impure: (detect-alerts! opts)    — fetches data from DB, calls pure layer."
-  (:require [analitica.db :as db]
-            [analitica.domain.sales    :as sales]
-            [analitica.domain.finance  :as finance]
-            [analitica.domain.pnl      :as pnl]
-            [analitica.domain.stock    :as stock]
-            [analitica.domain.buyout   :as buyout]
-            [analitica.util.period     :as period]))
+  Impure fetch/freshness: (freshness-data) — last sync timestamps by MP."
+  (:require [analitica.db :as db]))
 
 ;; ---------------------------------------------------------------------------
 ;; Thresholds (hardcoded V1 — easy to override in tests or future config)
@@ -237,67 +231,3 @@
   (merge {:wb nil :ozon nil :ym nil}
          (last-synced-at)))
 
-(defn detect-alerts!
-  "Impure: fetches data from DB for the given period, then calls pure detect-alerts.
-
-  Options:
-    :from        ISO date string (default: 30 days ago)
-    :to          ISO date string (default: today)
-    :marketplace keyword :wb|:ozon|:ym|nil (nil = all)"
-  [& {:keys [from to marketplace]}]
-  (let [state      (if (and from to)
-                     {:from from :to to}
-                     (period/default-state))
-        curr-from  (:from state)
-        curr-to    (:to state)
-        curr-period {:from curr-from :to curr-to}
-        ;; Compare period: same length immediately preceding
-        [prev-from prev-to] (period/compare-period curr-period)
-        prev-period {:from prev-from :to prev-to}
-        ;; Days in period for turnover calculation
-        days       (period/days-between curr-from curr-to)
-        ;; Fetch data — all with explicit :marketplace kwarg per memory note
-        curr-sales  (try (sales/fetch-sales curr-period :marketplace marketplace)
-                         (catch Exception _ []))
-        prev-sales  (try (sales/fetch-sales prev-period :marketplace marketplace)
-                         (catch Exception _ []))
-        curr-stocks (try (stock/fetch-stocks :marketplace (or marketplace :wb))
-                         (catch Exception _ []))
-        stocks-by-art (stock/by-article curr-stocks)
-        stocks-turn   (try (stock/with-turnover stocks-by-art curr-sales days)
-                           (catch Exception _ []))
-        curr-finance  (try (finance/fetch-finance curr-period :marketplace marketplace)
-                           (catch Exception _ []))
-        prev-finance  (try (finance/fetch-finance prev-period :marketplace marketplace)
-                           (catch Exception _ []))
-        curr-pnl    (try (pnl/calculate curr-finance :marketplace marketplace)
-                         (catch Exception _ {:revenue 0 :net-profit 0}))
-        prev-pnl    (try (pnl/calculate prev-finance :marketplace marketplace)
-                         (catch Exception _ {:revenue 0 :net-profit 0}))
-        buyout-data (try (buyout/analyze curr-period)
-                         (catch Exception _ []))
-        ;; Sales by article for movers
-        curr-by-art (sales/by-article curr-sales)
-        prev-by-art (sales/by-article prev-sales)
-        ;; Top 10 by revenue from current sales
-        top-10 (->> curr-by-art
-                    (sort-by :revenue >)
-                    (take 10)
-                    (map-indexed (fn [i r] (assoc r :rank (inc i)))))
-        ;; Sales last 3 days (filter from curr-sales by date)
-        three-days-ago (-> (java.time.LocalDate/parse curr-to)
-                           (.minusDays 2)
-                           str)
-        last-3-sales (->> curr-sales
-                          (filter (fn [s]
-                                    (let [d (or (:date s) (:event-date s) "")]
-                                      (and (seq d) (>= (compare (subs d 0 10) three-days-ago) 0))))))]
-    (detect-alerts
-     {:stocks-with-turnover       stocks-turn
-      :current-sales-by-article   curr-by-art
-      :prev-sales-by-article      prev-by-art
-      :current-pnl                curr-pnl
-      :prev-pnl                   prev-pnl
-      :current-buyout             buyout-data
-      :sales-last-3-days          last-3-sales
-      :top-10-by-revenue          top-10})))

@@ -83,10 +83,10 @@
     :label          — display label (string)
     :value          — numeric value
     :delta          — WoW delta (number, percent-points)
-    :format         — :rub | :pct | :int (default :rub)
+    :fmt            — :rub | :pct | :int (default :rub)
     :sparkline-data — vector of numbers for sparkline (optional)"
-  [{:keys [label value delta format sparkline-data]
-    :or   {format :rub}}]
+  [{:keys [label value delta fmt sparkline-data]
+    :or   {fmt :rub}}]
   (let [is-positive?  (and delta (pos? delta))
         is-negative?  (and delta (neg? delta))
         arrow         (cond is-positive? "↑" is-negative? "↓" :else "")
@@ -100,7 +100,7 @@
     [:div.bg-white.rounded-lg.shadow.p-4.border.border-gray-100
      [:div.text-xs.font-medium.text-gray-500.uppercase.tracking-wide.mb-1 label]
      [:div.flex.items-end.justify-between
-      [:div.text-2xl.font-bold.text-gray-900 (format-kpi-value value format)]
+      [:div.text-2xl.font-bold.text-gray-900 (format-kpi-value value fmt)]
       (when (seq sparkline-data)
         [:div {:class (str "text-gray-400 " color-class)}
          (sparkline sparkline-data)])]
@@ -162,7 +162,8 @@
       (str sign (format "%.1f" (double delta)) "%")]]))
 
 (defn top-movers-table
-  "Render top-movers table: articles sorted by delta_pct DESC, |delta| > 5%."
+  "Renders top-N positive movers (caller passes pre-filtered positive deltas;
+  this fn applies the >5% threshold and limits to 10 rows)."
   [movers]
   (let [rows (->> movers
                   (filter #(> (or (:delta-pct %) 0) 5))
@@ -227,6 +228,9 @@
   (let [age (freshness-age-days iso)]
     (cond
       (nil? iso)
+      [:span.text-red-500 "нет данных"]
+
+      (nil? age)
       [:span.text-red-500 "нет данных"]
 
       (> age max-lag-days)
@@ -301,25 +305,25 @@
        {:label          "Выручка"
         :value          (:revenue kpi)
         :delta          (some-> (:revenue-delta kpi) (* 100))
-        :format         :rub
+        :fmt            :rub
         :sparkline-data (:revenue-sparkline kpi)})
       (metric-card-with-sparkline
        {:label          "Прибыль"
         :value          (:net-profit kpi)
         :delta          (some-> (:net-profit-delta kpi) (* 100))
-        :format         :rub
+        :fmt            :rub
         :sparkline-data (:profit-sparkline kpi)})
       (metric-card-with-sparkline
        {:label          "Маржа"
         :value          (:margin kpi)
         :delta          (some-> (:margin-delta kpi) (* 100))
-        :format         :pct
+        :fmt            :pct
         :sparkline-data (:margin-sparkline kpi)})
       (metric-card-with-sparkline
        {:label          "ДРР"
         :value          (:drr kpi)
         :delta          (some-> (:drr-delta kpi) (* 100))
-        :format         :pct
+        :fmt            :pct
         :sparkline-data (:drr-sparkline kpi)})]
 
      ;; Row 2: Alert cards
@@ -474,7 +478,10 @@
                :margin-delta     (safe-delta margin-curr margin-prev)
                :drr-delta        (safe-delta drr-curr drr-prev)
                :revenue-sparkline  sparkline-series
-               :profit-sparkline   sparkline-series  ; same shape; P&L series TODO
+               ;; V1: profit/margin/DRR sparklines reuse the revenue series as a placeholder.
+               ;; A proper per-KPI daily series would require additional aggregation queries
+               ;; that aren't worth the latency for V1. Tracked as known limitation.
+               :profit-sparkline   sparkline-series
                :margin-sparkline   []
                :drr-sparkline      []}
      :alerts          detected

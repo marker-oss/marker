@@ -92,7 +92,7 @@
                         {:label "Выручка"
                          :value 4900000
                          :delta 15.0
-                         :format :rub
+                         :fmt :rub
                          :sparkline-data [100 200 150 300 250]}))]
       (is (str/includes? result "Выручка")
           "Card should contain label")
@@ -177,6 +177,22 @@
       (is (or (str/includes? result "отстаёт")
               (str/includes? result "дней"))
           "Should show lag warning for old WB data"))))
+
+;; ---------------------------------------------------------------------------
+;; NPE guard: freshness-status-cell with unparseable date string
+;; ---------------------------------------------------------------------------
+
+(deftest freshness-status-cell-handles-unparseable-date-test
+  (testing "freshness-panel does not throw on unparseable date and renders нет данных"
+    ;; "2026-04-26" is date-only (no T time), which LocalDateTime/parse cannot parse.
+    ;; The catch block in freshness-age-days returns nil, and the nil? age guard
+    ;; must prevent the (> nil max-lag-days) NPE.
+    (let [freshness {:wb "2026-04-26" :ozon nil :ym nil}
+          result (html (digest/freshness-panel freshness))]
+      (is (string? result)
+          "freshness-panel should return a string without throwing")
+      (is (str/includes? result "нет данных")
+          "freshness-panel should render нет данных for unparseable date"))))
 
 ;; ---------------------------------------------------------------------------
 ;; 2.7/2.8 Tests: page renders correct structure

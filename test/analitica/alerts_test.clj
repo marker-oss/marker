@@ -329,6 +329,97 @@
       (is (empty? alerts)
           "detect-alerts should return empty when no rules fire"))))
 
+;; ---------------------------------------------------------------------------
+;; Threshold-boundary tests: strict > means exact threshold value must NOT fire
+;; ---------------------------------------------------------------------------
+
+(deftest top-mover-not-fires-on-exactly-30%-test
+  (testing "TOP_MOVER does NOT fire when revenue growth is exactly 30%"
+    ;; 1000 → 1300 = exactly 30.0% growth; threshold is > 30, so must NOT fire
+    (let [curr [{:article "art-1" :group "art-1" :revenue 1300.0}]
+          prev [{:article "art-1" :group "art-1" :revenue 1000.0}]
+          data {:current-sales-by-article curr
+                :prev-sales-by-article    prev
+                :stocks-with-turnover     []
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           []
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (not (some #(= :TOP_MOVER (:rule %)) alerts))
+          "TOP_MOVER should NOT fire at exactly 30% growth (threshold is strict >)"))))
+
+(deftest margin-drop-not-fires-on-exactly-15-ppt-test
+  (testing "MARGIN_DROP does NOT fire when margin drops exactly 15 ppt"
+    ;; prev: 30% margin (30000/100000), curr: 15% margin (15000/100000) — drop = exactly 15 ppt
+    (let [data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     []
+                :current-pnl              (pnl-map 100000 15000)
+                :prev-pnl                 (pnl-map 100000 30000)
+                :current-buyout           []
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (not (some #(= :MARGIN_DROP (:rule %)) alerts))
+          "MARGIN_DROP should NOT fire at exactly 15 ppt drop (threshold is strict >)"))))
+
+(deftest returns-spike-not-fires-on-exactly-0.7-test
+  (testing "RETURNS_SPIKE does NOT fire when buyout-rate is exactly 70.0 (= threshold)"
+    ;; Threshold is :returns-spike-buyout-max 70.0; rule uses < (strict), so 70.0 must NOT fire
+    (let [buyout-data [{:article "art-1" :buyout-rate 70.0 :ordered 100}]
+          data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     []
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           buyout-data
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (not (some #(= :RETURNS_SPIKE (:rule %)) alerts))
+          "RETURNS_SPIKE should NOT fire at buyout-rate exactly 70.0 (threshold is strict <)"))))
+
+(deftest out-of-stock-not-fires-on-exactly-7-days-test
+  (testing "OUT_OF_STOCK does NOT fire when days-of-cover is exactly 7"
+    ;; Threshold is :out-of-stock-days 7; rule uses < (strict), so 7.0 must NOT fire
+    (let [stocks [{:article "art-1" :name "Product A" :size "M"
+                   :days-of-cover 7.0 :avg-daily-sales 3.0}]
+          data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     stocks
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           []
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (not (some #(= :OUT_OF_STOCK (:rule %)) alerts))
+          "OUT_OF_STOCK should NOT fire when days-of-cover is exactly 7 (threshold is strict <)"))))
+
+(deftest zero-sales-not-fires-on-exactly-3-day-window-test
+  (testing "ZERO_SALES_TOP_SKU does NOT fire when article has a sale on day -3 (within window)"
+    ;; A sale on three-days-ago (= curr-to - 2 days) is still within the last-3-days window
+    ;; The filter is >= three-days-ago, so a sale exactly on that boundary date should count
+    (let [top-10 [{:article "art-top" :rank 1 :name "Top Product" :revenue 100000}]
+          ;; Sale date is exactly on the 3-day boundary (curr-to minus 2 days = three-days-ago)
+          boundary-date (-> (java.time.LocalDate/now) (.minusDays 2) str)
+          last3  [{:article "art-top" :revenue 500 :date boundary-date}]
+          data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     []
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           []
+                :sales-last-3-days        last3
+                :top-10-by-revenue        top-10}
+          alerts (alerts/detect-alerts data)]
+      (is (not (some #(= :ZERO_SALES_TOP_SKU (:rule %)) alerts))
+          "ZERO_SALES_TOP_SKU should NOT fire when article sold exactly on the 3-day boundary"))))
+
+;; ---------------------------------------------------------------------------
+
 (deftest test-alert-shape
   (testing "Each alert has required keys: :rule :severity :title :body :action-route :action-label"
     (let [stocks [{:article "art-1" :name "Product A" :size "M"
