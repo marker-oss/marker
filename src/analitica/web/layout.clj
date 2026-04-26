@@ -171,7 +171,6 @@
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
      [:script {:src "/js/sku-sheet.js"}]
-     [:script {:src "/js/cmdk.js"}]
 
      ;; Custom styles
      [:style "
@@ -300,5 +299,7 @@
        .cmdk-results { list-style: none; margin: 0; padding: 0.25rem 0; }
        .cmdk-results li { list-style: none; }
        .cmdk-footer { background: #f9fafb; border-top: 1px solid #e5e7eb; }
-     "]]]))
+     "]]
+     ;; cmdk.js must load after <dialog id="cmdk-palette"> exists in DOM
+     [:script {:src "/js/cmdk.js"}]]))
 

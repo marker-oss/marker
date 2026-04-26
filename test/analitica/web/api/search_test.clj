@@ -52,7 +52,9 @@
         (is (string? route))
         ;; The raw article "Платье 3452/Беж" must be URL-encoded — no bare Cyrillic/slash
         (is (not (re-find #"[А-яЁё]" route))
-            "Route should not contain raw Cyrillic")))))
+            "Route should not contain raw Cyrillic")
+        (is (not (re-find #"article=[^&]*/" route))
+            "/ in article should be URL-encoded as %2F")))))
 
 (deftest no-sku-match-empty-db
   (testing "empty DB returns no SKU results but may still return static matches"
@@ -133,3 +135,27 @@
       (with-redefs [db/query (fn [_] big-rows)]
         (let [res (:results (search/search "art"))]
           (is (<= (count res) 20)))))))
+
+;; ---------------------------------------------------------------------------
+;; SQL injection safety
+;; ---------------------------------------------------------------------------
+
+(deftest sql-injection-safe-test
+  (testing "SQL injection payload is passed as bind param, not interpolated into SQL"
+    (let [captured-sql (atom nil)]
+      (with-redefs [db/query (fn [sql-vec]
+                               (reset! captured-sql sql-vec)
+                               [])]
+        (let [payload "'; DROP TABLE sales; --"
+              res     (search/search payload)]
+          ;; Returns a normal result map
+          (is (map? res))
+          (is (contains? res :results))
+          ;; The SQL string itself does NOT contain the injected text
+          (is (string? (first @captured-sql))
+              "db/query should receive a parameterized vector")
+          (is (not (clojure.string/includes? (first @captured-sql) "DROP TABLE"))
+              "Injected SQL must not appear in the query string itself — use bind params")
+          ;; Results do not contain the literal injection payload as a title
+          (is (every? #(not (clojure.string/includes? (str (:title %)) "DROP TABLE"))
+                      (:results res))))))))

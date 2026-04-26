@@ -5,7 +5,8 @@
             [analitica.web.server :as server]
             [analitica.web.api.sync :as sync-api]
             [analitica.db :as db]
-            [jsonista.core :as json])
+            [jsonista.core :as json]
+            [next.jdbc :as next.jdbc])
   (:import [java.io File]
            [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
