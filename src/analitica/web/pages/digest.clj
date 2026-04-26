@@ -149,12 +149,16 @@
 ;; Top-movers and top-fallers tables
 ;; ---------------------------------------------------------------------------
 
-(defn- mover-row [{:keys [article name revenue prev-revenue delta-pct]}]
+(defn- mover-row [{:keys [article name revenue prev-revenue delta-pct nm-id nm_id]}]
   (let [art-name (or name article)
         delta    (or delta-pct 0.0)
-        sign     (if (neg? delta) "" "+")]
+        sign     (if (neg? delta) "" "+")
+        nm       (str (or nm-id nm_id ""))]
     [:tr.border-b.border-gray-100.hover:bg-gray-50
-     [:td.px-3.py-2.text-sm.font-medium.text-gray-800 art-name]
+     [:td.px-3.py-2.text-sm.font-medium.text-gray-800
+      [:button.sku-link.text-blue-600.hover:underline
+       {:data-sku article :data-nm-id nm}
+       art-name]]
      [:td.px-3.py-2.text-sm.text-right.text-gray-600
       (when revenue (str/replace (format "%,.0f" (double revenue)) "," " "))]
      [:td.px-3.py-2.text-sm.text-right.font-semibold

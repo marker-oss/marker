@@ -148,6 +148,30 @@
       (is (str/includes? result "+")
           "Should show positive delta"))))
 
+;; ---------------------------------------------------------------------------
+;; Bug-fix test: mover rows emit data-sku for click delegation
+;; ---------------------------------------------------------------------------
+
+(deftest mover-row-emits-data-sku-test
+  (testing "top-movers-table rows contain data-sku attribute for click delegation"
+    (let [result (html (digest/top-movers-table sample-movers))]
+      (is (str/includes? result "data-sku")
+          "mover rows must have data-sku attribute so sku-sheet.js click delegation fires")))
+
+  (testing "top-fallers-table rows contain data-sku attribute"
+    (let [result (html (digest/top-fallers-table sample-fallers))]
+      (is (str/includes? result "data-sku")
+          "faller rows must have data-sku attribute so sku-sheet.js click delegation fires")))
+
+  (testing "mover row article value is used as data-sku"
+    (let [result (html (digest/top-movers-table
+                        [{:article "art-42" :name "Test Product"
+                          :revenue 500000 :prev-revenue 200000 :delta-pct 150.0}]))]
+      (is (str/includes? result "art-42")
+          "data-sku value must match the :article field")
+      (is (str/includes? result "sku-link")
+          "button must carry the sku-link class for delegation"))))
+
 (deftest test-top-fallers-table-renders
   (testing "top-fallers-table renders a table with negative delta"
     (let [result (html (digest/top-fallers-table sample-fallers))]

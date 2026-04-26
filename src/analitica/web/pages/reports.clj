@@ -20,7 +20,8 @@
            :width (case (:format c)
                     :rub 130 :int 100 :pct 100
                     :text 150 :date 120 120)}
-    (not (:default-visible? c)) (assoc :visible false)))
+    (not (:default-visible? c)) (assoc :visible false)
+    (:linkable? c)               (assoc :linkable? true)))
 
 (defn- delta-triplet
   "Return the 3 extra Tabulator column definitions for a delta-supported column.

@@ -3,6 +3,9 @@
             [analitica.web.pages.reports :as pages]
             [hiccup.core :as h]))
 
+;; Access private fn via var
+(def ^:private schema-col->tabulator #'pages/schema-col->tabulator)
+
 (deftest report-page-reads-from-schema-test
   (testing "report-page uses schema title (Юнит-экономика)"
     (let [html (h/html (pages/report-page :ue "last-30-days" nil))]
@@ -51,3 +54,27 @@
       ;; Revenue delta: (1100-1000)/1000 = 10% → up arrow + text-green
       (is (re-find #"↑" html))
       (is (re-find #"text-green" html)))))
+
+;; ---------------------------------------------------------------------------
+;; Bug-fix test: :linkable? propagated through schema-col->tabulator
+;; ---------------------------------------------------------------------------
+
+(deftest schema-col->tabulator-propagates-linkable-test
+  (testing "schema-col->tabulator preserves :linkable? true"
+    (let [col {:key :article :title "Артикул" :format :text
+               :default-visible? true :linkable? true}
+          result (schema-col->tabulator col)]
+      (is (true? (:linkable? result))
+          ":linkable? must be present in the tabulator column map")))
+
+  (testing "schema-col->tabulator does not set :linkable? when absent"
+    (let [col {:key :revenue :title "Выручка" :format :rub :default-visible? true}
+          result (schema-col->tabulator col)]
+      (is (nil? (:linkable? result))
+          ":linkable? must be absent when not set in the schema column")))
+
+  (testing "report-page for :ue renders sku-link formatter in HTML (end-to-end)"
+    ;; enrich-column emits a JS formatter containing 'sku-link' when :linkable? true
+    (let [html (h/html (pages/report-page :ue "last-30-days" nil))]
+      (is (re-find #"sku-link" html)
+          "Tabulator column config must contain sku-link formatter for :linkable? article column"))))
