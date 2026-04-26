@@ -11,11 +11,16 @@
   (if (keyword? period) (t/period period) [(:from period) (:to period)]))
 
 (defn fetch-regions
-  "Fetch region sales from DB or API."
+  "Fetch region sales from DB or API.
+
+   The DB query intersects (overlap-style) — `date_from ≤ to AND date_to ≥ from`
+   — because each `region_sales` row spans the full reporting batch window
+   it came from (often weeks). Strict `date_from >= ?` would miss every
+   real row whenever the requested period starts mid-batch."
   [period & {:keys [source] :or {source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
-      :db  (db/query ["SELECT * FROM region_sales WHERE date_from >= ? AND date_to <= ?" from to])
+      :db  (db/query ["SELECT * FROM region_sales WHERE date_from <= ? AND date_to >= ?" to from])
       :api (let [mp (registry/get-marketplace :wb)]
              (wb-api/region-sales mp from to)))))
 

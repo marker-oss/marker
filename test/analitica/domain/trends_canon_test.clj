@@ -177,7 +177,7 @@
 (deftest daily-groups-by-day
   ;; weekly-sales is private, so we resolve the var at test time.
   (let [ws-var (resolve 'analitica.domain.trends/weekly-sales)]
-    (with-redefs-fn {ws-var (fn [_from _to] fx-daily-rows)}
+    (with-redefs-fn {ws-var (fn [_from _to & _opts] fx-daily-rows)}
       (fn []
         (let [result (trends/daily {:from "2026-03-22" :to "2026-03-23"})
               day22  (first (filter #(= "2026-03-22" (:day %)) result))
@@ -209,7 +209,7 @@
 
 (deftest daily-sorts-ascending-by-day
   (let [ws-var (resolve 'analitica.domain.trends/weekly-sales)]
-    (with-redefs-fn {ws-var (fn [_from _to] fx-daily-reversed)}
+    (with-redefs-fn {ws-var (fn [_from _to & _opts] fx-daily-reversed)}
       (fn []
         (let [result (trends/daily {:from "2026-03-22" :to "2026-03-23"})
               days   (map :day result)]

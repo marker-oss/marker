@@ -677,21 +677,43 @@
 ;; ---------------------------------------------------------------------------
 
 (defn materialize-regions!
+  "Flatten WB region-sales raw_data into the `region_sales` table.
+
+   Each raw_data batch wraps the rows in a `:report` array
+   (`{:report [{:nmID ... :regionName ... :sa ...}, ...]}`). Earlier
+   versions of this materializer iterated the outer batch object as if
+   it were a row — every (nm_id, region, city) field read as nil and
+   the `region_sales` table accumulated 4 empty placeholder rows. We
+   now mapcat into `:report` to yield real per-sale rows."
   [period & {:keys [marketplace] :or {marketplace :wb}}]
   (when (not= marketplace :wb)
     (throw (ex-info "materialize-regions! supports only :wb marketplace"
                     {:marketplace marketplace})))
   (let [[from to]  (resolve-period period)
-        raw-items  (load-raw "wb" :regions from to)
+        ;; Each WB regions raw_data batch wraps the rows in a top-level
+        ;; `:report` array. The shared `load-raw` helper does
+        ;; `(mapcat :data batches)`, which on this map shape produces
+        ;; MapEntries (one per batch) instead of report rows — the field
+        ;; reads then all returned nil and `region_sales` accumulated
+        ;; placeholder rows. Bypass the helper and unwrap `:report`
+        ;; directly. Fallback to plain seq when a batch was pre-flattened.
+        batches    (db/get-raw-range "wb" :regions from to)
+        flat       (mapcat (fn [b]
+                             (let [d (:data b)]
+                               (cond
+                                 (sequential? d) d
+                                 (map? d)        (or (:report d) [d])
+                                 :else           [])))
+                           batches)
         ts         (sync/now-str)]
-    (when (seq raw-items)
+    (when (seq flat)
       (let [rows (mapv (fn [r]
                          [(or (:nmID r) (:nm-id r))
                           (or (:sa r) (:article r))
                           (:regionName r) (:cityName r) (:countryName r) (:foName r)
                           (:saleItemInvoiceQty r) (:saleInvoiceCostPrice r) (:saleInvoiceCostPricePerc r)
                           from to ts])
-                       raw-items)
+                       flat)
             cnt  (db/insert-batch! :region_sales
                                    [:nm_id :article :region :city :country :fo
                                     :qty :sum_price :sum_price_prc :date_from :date_to :synced_at]

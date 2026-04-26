@@ -1419,6 +1419,35 @@ passed from `finance/by-article` to `article-row`. Built by
 without `storage-by-article`, asserts row-level SUM; with a synthetic
 `storage-by-article` map, asserts the overridden value is used.
 
+**Cross-report divergence (PnL vs UE) — accepted by design (M3):**
+
+For WB the same metric `:storage` resolves to different totals across
+reports because the report layer chooses different inputs:
+
+- **PnL** calls `pnl/calculate` with no `storage-by-article` — falls
+  through to `Σ(storage_fee)` over WB finance rows. WB finance reports
+  lag ~6 days (per `:event-date` coverage), so this number is what WB
+  has *posted to the seller's ledger* at the moment of the query.
+  Empirically ~85k ₽ for last-30-days on the analitica fixture.
+- **UE** passes `db/storage-by-article` (sourced from `paid_storage`,
+  daily granularity). This is the *accrual* number — daily storage
+  burn through "yesterday" regardless of whether WB has posted it to
+  finance yet. Empirically ~322k ₽ for the same window.
+
+The two are not interchangeable:
+
+- Use the PnL flavour when reconciling against WB's bank statement /
+  cash-basis accounting.
+- Use the UE flavour when comparing per-article unit economics — the
+  paid-storage map gives precise per-article attribution that
+  finance.storage_fee can't, and ignoring storage on the most recent
+  ~6 days would systematically understate per-article losses.
+
+The divergence is intentional and stable; both numbers are correct
+for their respective use cases. If a future report needs both views,
+expose them as separate metrics (e.g. `:storage-cash` vs
+`:storage-accrual`) rather than reconciling at the source.
+
 ---
 
 ### Finance.4 — `:for-pay` net (sales − returns)

@@ -7,13 +7,21 @@
   (:import [java.time LocalDate]))
 
 (defn- weekly-sales
-  "Get sales aggregated by ISO week from DB."
-  [from to]
-  (db/query [(str "SELECT substr(date,1,10) as day, type, "
-                  "count(*) as cnt, sum(for_pay) as total "
-                  "FROM sales WHERE date >= ? AND date <= ? "
-                  "GROUP BY day, type ORDER BY day")
-             from (str to "T23:59:59")]))
+  "Get sales aggregated by day+type from DB.
+
+   The marketplace clause MUST be inserted before GROUP BY — appending it
+   after would silently turn it into part of the grouping expression and
+   the filter would be ignored entirely (same SQL pitfall as
+   `domain.sales/db-sales`)."
+  [from to & {:keys [marketplace]}]
+  (let [mp-clause (when marketplace " AND marketplace = ?")
+        params    (cond-> [from (str to "T23:59:59")]
+                    marketplace (conj (name marketplace)))]
+    (db/query (into [(str "SELECT substr(date,1,10) as day, type, "
+                          "count(*) as cnt, sum(for_pay) as total "
+                          "FROM sales WHERE date >= ? AND date <= ?" mp-clause
+                          " GROUP BY day, type ORDER BY day")]
+                    params))))
 
 (defn- compare-periods
   "Compare two periods and calculate change.
@@ -46,15 +54,15 @@
       :change-pct nil}]))
 
 (defn wow
-  "Week-over-week comparison."
-  []
+  "Week-over-week comparison. Optional `:marketplace` scopes the SQL filter."
+  [& {:keys [marketplace]}]
   (let [today    (t/today)
         cur-end  (t/format-date today)
         cur-start (t/format-date (t/days-ago 7))
         prev-end (t/format-date (t/days-ago 7))
         prev-start (t/format-date (t/days-ago 14))
-        current  (weekly-sales cur-start cur-end)
-        previous (weekly-sales prev-start prev-end)
+        current  (weekly-sales cur-start cur-end :marketplace marketplace)
+        previous (weekly-sales prev-start prev-end :marketplace marketplace)
         comp     (compare-periods current previous "Текущая неделя" "Прошлая неделя")]
     (table/print-summary "ТРЕНД: НЕДЕЛЯ К НЕДЕЛЕ (WoW)" [])
     (table/print-table
@@ -64,15 +72,15 @@
     comp))
 
 (defn mom
-  "Month-over-month comparison."
-  []
+  "Month-over-month comparison. Optional `:marketplace` scopes the SQL filter."
+  [& {:keys [marketplace]}]
   (let [today    (t/today)
         cur-end  (t/format-date today)
         cur-start (t/format-date (t/days-ago 30))
         prev-end (t/format-date (t/days-ago 30))
         prev-start (t/format-date (t/days-ago 60))
-        current  (weekly-sales cur-start cur-end)
-        previous (weekly-sales prev-start prev-end)
+        current  (weekly-sales cur-start cur-end :marketplace marketplace)
+        previous (weekly-sales prev-start prev-end :marketplace marketplace)
         comp     (compare-periods current previous "Текущий месяц" "Прошлый месяц")]
     (table/print-summary "ТРЕНД: МЕСЯЦ К МЕСЯЦУ (MoM)" [])
     (table/print-table
@@ -88,10 +96,11 @@
 
   Calls `weekly-sales` (SQL pre-aggregated rows, §Trends.2) then re-groups
   by :day in memory, summing :sales, :returns, :revenue per day.
-  Output sorted ascending by :day. :revenue rounded via math/round2."
-  [period]
+  Output sorted ascending by :day. :revenue rounded via math/round2.
+  Optional `:marketplace` scopes the SQL filter."
+  [period & {:keys [marketplace]}]
   (let [[from to] (if (keyword? period) (t/period period) [(:from period) (:to period)])
-        data (weekly-sales from to)
+        data (weekly-sales from to :marketplace marketplace)
         by-day (->> data
                     (group-by :day)
                     (map (fn [[day items]]
