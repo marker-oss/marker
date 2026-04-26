@@ -149,9 +149,9 @@
     {:name "marketplace"
      :hx-get (str "/reports/" (name report-type))
      :hx-trigger "change"
-     :hx-target "#report-content"
+     :hx-target "#report-body"
      :hx-swap "outerHTML"
-     :hx-select "#report-content"
+     :hx-select "#report-body"
      :hx-include "#article-filter"}
     [:option {:value "all" :selected (or (nil? current-marketplace) (= current-marketplace "all"))}
      "Все"]
@@ -174,9 +174,9 @@
      :placeholder "Все артикулы"
      :hx-get (str "/reports/" (name report-type))
      :hx-trigger "input changed delay:400ms"
-     :hx-target "#report-content"
+     :hx-target "#report-body"
      :hx-swap "outerHTML"
-     :hx-select "#report-content"
+     :hx-select "#report-body"
      :hx-include "#marketplace-filter"}]])
 
 (defn- period->url-frag
@@ -304,84 +304,89 @@
           (article-filter report-type article))]
        (export-buttons report-type period marketplace)]]
 
-     ;; KPI row (above tabs) — pass compare-totals for period-over-period deltas
-     (when (and kpi-schema (seq totals))
-       (c/kpi-row kpi-schema totals compare-totals))
+     ;; #report-body wraps everything that depends on the marketplace/article
+     ;; filter so HTMX can swap the whole thing in one go. KPI row, MP table,
+     ;; tab switcher and tab bodies all need to refresh together — targeting
+     ;; just the inner #report-content left them out of sync.
+     [:div#report-body
+      ;; KPI row (above tabs) — pass compare-totals for period-over-period deltas
+      (when (and kpi-schema (seq totals))
+        (c/kpi-row kpi-schema totals compare-totals))
 
-     ;; Per-marketplace breakdown — shown on P&L when no single MP is selected.
-     ;; The whole point of P&L is comparing all 3 in the all-MP view.
-     (when (and (= report-type :pnl)
-                (or (nil? marketplace) (= marketplace "all") (= marketplace :all)))
-       (try
-         (digest/marketplace-comparison-table (compute-by-marketplace period))
-         (catch Exception e
-           (μ/log ::pnl-mp-breakdown-failed :error (.getMessage e))
-           nil)))
+      ;; Per-marketplace breakdown — shown on P&L when no single MP is selected.
+      ;; The whole point of P&L is comparing all 3 in the all-MP view.
+      (when (and (= report-type :pnl)
+                 (or (nil? marketplace) (= marketplace "all") (= marketplace :all)))
+        (try
+          (digest/marketplace-comparison-table (compute-by-marketplace period))
+          (catch Exception e
+            (μ/log ::pnl-mp-breakdown-failed :error (.getMessage e))
+            nil)))
 
-     ;; Tab switcher
-     (c/tab-switcher {:tabs tabs
-                      :active active-tab
-                      :labels {:table "Таблица"
-                               :chart "График"
-                               :drawer (str "Все метрики" (when (seq totals)
-                                                             (str " (" (count totals) ")")))}})
+      ;; Tab switcher
+      (c/tab-switcher {:tabs tabs
+                       :active active-tab
+                       :labels {:table "Таблица"
+                                :chart "График"
+                                :drawer (str "Все метрики" (when (seq totals)
+                                                              (str " (" (count totals) ")")))}})
 
-     ;; Tab content containers
-     [:div#report-content.bg-white.rounded-b-lg.shadow.p-6
-      (when (contains? tab-set :table)
-        [:div {:data-tab-content "table"
-               :style (when (not= active-tab :table) "display:none;")}
-         (if (not= :none (:rows-mode schema))
-           (let [table-id (str (name report-type) "-table")
-                 presets (:column-presets schema)
-                 preset-labels {:basic "Базовый" :full "Полный"
-                                :per-unit "Per-unit" :percentages "Проценты"}
-                 default-visible (->> (:columns schema)
-                                      (filter :default-visible?)
-                                      (mapv #(name (:key %))))]
-             [:div
-              [:div.flex.items-center.gap-2.mb-2
-               (when (seq presets)
-                 (c/preset-chips {:presets presets
-                                  :active :basic
-                                  :table-id table-id
-                                  :labels preset-labels}))
-               (c/column-chooser {:columns (:columns schema) :table-id table-id})]
-              (c/tabulator-table {:id table-id
-                                  :api-url api-url
-                                  :grouped-columns grouped-cols
-                                  :frozen-cols 1
-                                  :page-size 50
-                                  :column-presets presets
-                                  :default-visible-fields default-visible
-                                  :on-row-click-js
-                                  (when (#{:ue :finance} report-type)
-                                    ;; If click was on a SKU link button, sku-sheet.js handles it
-                                    ;; via document-level capture and we must NOT also open the
-                                    ;; legacy right-side drill-panel.
-                                    (str "function(e, row) {\n"
-                                         "  if (e && e.target && e.target.closest && e.target.closest('.sku-link')) return;\n"
-                                         "  const d = row.getData();\n"
-                                         "  if (d.article) { window.openDrillPanel('"
-                                         (name report-type) "', d.article, '"
-                                         period-frag "', '" (or (when marketplace
-                                                                  (if (keyword? marketplace) (name marketplace) (str marketplace)))
-                                                                "all") "'); }\n"
-                                         "}"))})])
-           [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
+      ;; Tab content containers
+      [:div#report-content.bg-white.rounded-b-lg.shadow.p-6
+       (when (contains? tab-set :table)
+         [:div {:data-tab-content "table"
+                :style (when (not= active-tab :table) "display:none;")}
+          (if (not= :none (:rows-mode schema))
+            (let [table-id (str (name report-type) "-table")
+                  presets (:column-presets schema)
+                  preset-labels {:basic "Базовый" :full "Полный"
+                                 :per-unit "Per-unit" :percentages "Проценты"}
+                  default-visible (->> (:columns schema)
+                                       (filter :default-visible?)
+                                       (mapv #(name (:key %))))]
+              [:div
+               [:div.flex.items-center.gap-2.mb-2
+                (when (seq presets)
+                  (c/preset-chips {:presets presets
+                                   :active :basic
+                                   :table-id table-id
+                                   :labels preset-labels}))
+                (c/column-chooser {:columns (:columns schema) :table-id table-id})]
+               (c/tabulator-table {:id table-id
+                                   :api-url api-url
+                                   :grouped-columns grouped-cols
+                                   :frozen-cols 1
+                                   :page-size 50
+                                   :column-presets presets
+                                   :default-visible-fields default-visible
+                                   :on-row-click-js
+                                   (when (#{:ue :finance} report-type)
+                                     ;; If click was on a SKU link button, sku-sheet.js handles it
+                                     ;; via document-level capture and we must NOT also open the
+                                     ;; legacy right-side drill-panel.
+                                     (str "function(e, row) {\n"
+                                          "  if (e && e.target && e.target.closest && e.target.closest('.sku-link')) return;\n"
+                                          "  const d = row.getData();\n"
+                                          "  if (d.article) { window.openDrillPanel('"
+                                          (name report-type) "', d.article, '"
+                                          period-frag "', '" (or (when marketplace
+                                                                   (if (keyword? marketplace) (name marketplace) (str marketplace)))
+                                                                 "all") "'); }\n"
+                                          "}"))})])
+            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
 
-      (when (contains? tab-set :chart)
-        [:div {:data-tab-content "chart"
-               :style (when (not= active-tab :chart) "display:none;")}
-         (c/chart-container {:id (str (name report-type) "-chart")
-                             :type chart-type
-                             :title (str "Визуализация: " report-title)
-                             :api-url chart-api-url
-                             :height 400})])
+       (when (contains? tab-set :chart)
+         [:div {:data-tab-content "chart"
+                :style (when (not= active-tab :chart) "display:none;")}
+          (c/chart-container {:id (str (name report-type) "-chart")
+                              :type chart-type
+                              :title (str "Визуализация: " report-title)
+                              :api-url chart-api-url
+                              :height 400})])
 
-      (when (contains? tab-set :drawer)
-        [:div {:data-tab-content "drawer"
-               :style (when (not= active-tab :drawer) "display:none;")}
-         (if (seq totals)
-           (c/summary-drawer {:totals totals :title "Все метрики периода"})
-           [:div.text-gray-500.text-sm "Нет данных"])])]]))
+       (when (contains? tab-set :drawer)
+         [:div {:data-tab-content "drawer"
+                :style (when (not= active-tab :drawer) "display:none;")}
+          (if (seq totals)
+            (c/summary-drawer {:totals totals :title "Все метрики периода"})
+            [:div.text-gray-500.text-sm "Нет данных"])])]]]))
