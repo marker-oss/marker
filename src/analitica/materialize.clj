@@ -703,19 +703,21 @@
 ;; WB ad_stats
 ;;
 ;; Source: raw_data rows with source='wb' and entity_type='ad_stats', each
-;; containing a vector of campaign-stats maps from /adv/v2/fullstats:
+;; containing a vector of campaign-stats maps from /adv/v3/fullstats. The v3
+;; shape adds an extra nesting level (`:apps[].nms[]`) and switches some keys
+;; to camelCase:
 ;;
-;;   [{:id cid
-;;     :days [{:date "YYYY-MM-DD"
+;;   [{:advertId cid
+;;     :days [{:date "YYYY-MM-DD..."
 ;;             :views ... :clicks ... :sum ...
-;;             :apps  [{:nm_id N :views ... :clicks ... :sum ... ...}]}]}
+;;             :apps  [{:appType N :views ... :sum ...
+;;                      :nms [{:nmId N :name "..." :views ... :sum ...}]}]}]}
 ;;    ...]
 ;;
-;; Flattening rule: one `ad_stats` row per (campaign_id × day × app).
-;; When `:apps` is empty or absent we still emit one row per (campaign × day)
-;; with `nm_id = 0` (DB sentinel — the ad_stats PK includes nm_id and SQLite
-;; treats NULLs as distinct, so using 0 keeps INSERT-OR-REPLACE idempotent;
-;; `ad-spend-by-article` naturally ignores 0 via the finance JOIN filter).
+;; Flattening rule: one `ad_stats` row per (campaign_id × day × nm). When
+;; `:apps[].nms[]` is empty/absent we fall back to the day-level row with
+;; `nm_id = 0` (DB sentinel — the ad_stats PK includes nm_id and SQLite
+;; treats NULLs as distinct, so using 0 keeps INSERT-OR-REPLACE idempotent).
 ;;
 ;; Idempotency: DELETE all rows whose (campaign_id, date) falls in the
 ;; covered window BEFORE the INSERT batch. Re-materialising the same raw
@@ -746,16 +748,44 @@
 
 (defn- flatten-ad-campaign
   "Turn one campaign stats map into a seq of ad_stats row vectors — one per
-   (day, app) pair. When :apps is empty, emit a single (day, nm_id=0) row
-   (sentinel: the ad_stats PK includes nm_id so 0 keeps the PK deterministic)."
+   (day, nm) pair. v3 nests per-article rows under :apps[].nms[] and uses
+   :nmId (camelCase). Legacy v2 used :apps[].nm_id directly. We unwrap both
+   shapes so re-materializing historical raw data still works.
+
+   When neither path yields any per-article rows we emit a single
+   (day, nm_id=0) sentinel row to keep day-level totals visible."
   [campaign ts]
-  (let [cid  (or (:id campaign) (:advertId campaign))]
+  (let [cid (or (:id campaign) (:advertId campaign))]
     (mapcat
       (fn [day]
-        (let [date (:date day)
-              apps (:apps day)]
-          (if (seq apps)
-            (mapv (fn [app] (ad-stats-row cid date (or (:nm_id app) 0) app ts)) apps)
+        (let [;; v3 emits :date as ISO datetime "2026-04-10T00:00:00Z"; v2
+              ;; used "YYYY-MM-DD". The ad-cost allocator joins ad_stats.date
+              ;; against substr(finance.date_from, 1, 10), so we have to
+              ;; persist only the date prefix or the join misses every row.
+              raw-date (:date day)
+              date     (cond-> raw-date
+                         (and (string? raw-date) (>= (count raw-date) 10))
+                         (subs 0 10))
+              apps (:apps day)
+              ;; v3: each app has :nms — drill in. v2 fallback: app itself
+              ;; carries :nm_id and the spend keys.
+              nm-rows
+              (mapcat (fn [app]
+                        (cond
+                          (seq (:nms app))
+                          (mapv (fn [nm]
+                                  (ad-stats-row cid date
+                                                (or (:nmId nm) (:nm_id nm) 0)
+                                                nm ts))
+                                (:nms app))
+
+                          (:nm_id app)
+                          [(ad-stats-row cid date (:nm_id app) app ts)]
+
+                          :else nil))
+                      apps)]
+          (if (seq nm-rows)
+            nm-rows
             [(ad-stats-row cid date 0 day ts)])))
       (:days campaign))))
 
