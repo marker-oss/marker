@@ -5,6 +5,13 @@
   Impure fetch/freshness: (freshness-data) — last sync timestamps by MP."
   (:require [analitica.db :as db]))
 
+(defn- url-encode
+  "URL-encode a string component for safe use in query params.
+   Articles often contain '/', spaces, and Cyrillic — these MUST be encoded
+   before going into href, otherwise the route parser sees a different path."
+  [s]
+  (java.net.URLEncoder/encode (or s "") "UTF-8"))
+
 ;; ---------------------------------------------------------------------------
 ;; Thresholds (hardcoded V1 — easy to override in tests or future config)
 ;; ---------------------------------------------------------------------------
@@ -53,7 +60,7 @@
                    :title        (str "Заканчивается: " name (when (seq size) (str " / " size)))
                    :body         (format "%s — остатков на %.0f дней (%.0f шт/день)"
                                          name (double doc) (double ads))
-                   :action-route (str "/reports/stock?article=" art)
+                   :action-route (str "/reports/stock?article=" (url-encode art))
                    :action-label "Смотреть остатки"}))))))
 
 ;; ---------------------------------------------------------------------------
@@ -75,7 +82,7 @@
                  :title        (str "0 продаж: " (or (:name t) (:article t)))
                  :body         (format "%s — 0 продаж за 3 дня (топ-%d по выручке)"
                                        (or (:name t) (:article t)) (int (:rank t)))
-                 :action-route (str "/reports/sales?article=" (:article t))
+                 :action-route (str "/reports/sales?article=" (url-encode (:article t)))
                  :action-label "Смотреть продажи"})))))
 
 ;; ---------------------------------------------------------------------------
@@ -167,7 +174,7 @@
                    :delta        growth
                    :title        (format "Рост продаж: %s (+%.0f%%)" name growth)
                    :body         (format "%s — выручка +%.0f%% за период" name growth)
-                   :action-route (str "/reports/sales?article=" art)
+                   :action-route (str "/reports/sales?article=" (url-encode art))
                    :action-label "Смотреть продажи"}))))))
 
 ;; ---------------------------------------------------------------------------

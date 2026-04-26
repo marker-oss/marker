@@ -21,9 +21,12 @@
     :else             [(:from period) (:to period)]))
 
 (defn- db-sales [from to marketplace]
+  ;; The marketplace clause MUST be inserted before ORDER BY — appending it
+  ;; after the ORDER BY would silently turn it into part of the ordering
+  ;; expression and the filter would be ignored entirely.
   (let [mp-clause (when marketplace " AND marketplace = ?")
         params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
-    (->> (db/query (into [(str "SELECT * FROM sales WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+    (->> (db/query (into [(str "SELECT * FROM sales WHERE date >= ? AND date <= ?" mp-clause " ORDER BY date")] params))
          (mapv #(-> % (update :type keyword) (update :marketplace keyword))))))
 
 (defn fetch-sales
@@ -40,7 +43,7 @@
     (case source
       :db  (let [mp-clause (when marketplace " AND marketplace = ?")
                  params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
-             (->> (db/query (into [(str "SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+             (->> (db/query (into [(str "SELECT * FROM orders WHERE date >= ? AND date <= ?" mp-clause " ORDER BY date")] params))
                   (mapv #(-> % (update :status keyword) (update :marketplace keyword)))))
       :api (proto/fetch-orders (get-mp marketplace) from to))))
 

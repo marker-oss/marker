@@ -37,14 +37,21 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- search-skus
-  "Query up to 10 distinct articles matching query string in article/subject/brand."
+  "Return up to 10 distinct articles where article/subject/brand contains q
+   (case-insensitive). SQLite's LIKE is case-INSENSITIVE only for ASCII, so
+   Cyrillic queries (e.g. \"плать\" → \"Платье\") need an in-memory filter.
+   The catalog is small (~600-1000 rows), the cost is negligible."
   [q]
-  (let [like (str "%" q "%")]
-    (db/query [(str "SELECT DISTINCT article, subject, brand "
-                    "FROM sales "
-                    "WHERE article LIKE ? OR subject LIKE ? OR brand LIKE ? "
-                    "LIMIT 10")
-               like like like])))
+  (let [q-lower (str/lower-case q)
+        rows    (db/query
+                 ["SELECT DISTINCT article, subject, brand FROM sales"])
+        match?  (fn [{:keys [article subject brand]}]
+                  (or (and article (str/includes? (str/lower-case article) q-lower))
+                      (and subject (str/includes? (str/lower-case subject) q-lower))
+                      (and brand   (str/includes? (str/lower-case brand)   q-lower))))]
+    (->> rows
+         (filter match?)
+         (take 10))))
 
 (defn- sku->result
   [{:keys [article subject brand]}]
