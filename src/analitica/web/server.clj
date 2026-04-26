@@ -32,6 +32,7 @@
             [analitica.web.api.detail :as detail]
             [analitica.web.api.coverage :as coverage]
             [analitica.web.api.sku :as sku-api]
+            [analitica.web.api.search :as search-api]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
             [jsonista.core :as json])
@@ -825,6 +826,14 @@
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body (json/write-value-as-string data)}))
+
+  ;; Command-palette search — returns JSON {:results [...]}.
+  (GET "/api/search" {params :params}
+    (let [q   (get params :q "")
+          res (search-api/search q)]
+      {:status  200
+       :headers {"Content-Type" "application/json; charset=utf-8"}
+       :body    (json/write-value-as-string res)}))
 
   ;; SKU drill-down panel fragment — returns text/html fragment, NOT JSON.
   ;; Must be listed BEFORE /api/report/:type to avoid catch-all conflict.

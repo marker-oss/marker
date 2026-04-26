@@ -171,6 +171,7 @@
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
      [:script {:src "/js/sku-sheet.js"}]
+     [:script {:src "/js/cmdk.js"}]
 
      ;; Custom styles
      [:style "
@@ -197,6 +198,16 @@
        [:main#main-content.bg-gray-50
         content]]
      (components/drill-panel {})
+     ;; Command-palette dialog — opened by Cmd+K / Ctrl+K via cmdk.js
+     [:dialog#cmdk-palette.cmdk-palette
+      [:div.cmdk-content
+       [:div.cmdk-search
+        [:input.w-full.text-lg.px-4.py-3.border-b.outline-none
+         {:type "text" :placeholder "Поиск SKU, отчётов, страниц..."}]]
+       [:ul.cmdk-results.max-h-96.overflow-y-auto]
+       [:div.cmdk-footer.text-xs.text-gray-500.px-3.py-2.border-t
+        "↑↓ навигация · ⏎ открыть · ESC закрыть"]]]
+
      ;; SKU drill-down dialog — populated by sku-sheet.js + /api/sku/:id
      [:dialog#sku-sheet.sku-sheet
       [:div.sku-sheet-content "Загрузка…"]
@@ -263,5 +274,31 @@
          padding: 0;
          cursor: pointer;
        }
+       /* Command palette */
+       dialog.cmdk-palette {
+         position: fixed;
+         top: 20vh;
+         left: 50%;
+         transform: translateX(-50%);
+         margin: 0;
+         width: 90vw;
+         max-width: 600px;
+         border: none;
+         border-radius: 0.75rem;
+         box-shadow: 0 8px 40px rgba(0,0,0,0.20);
+         padding: 0;
+         overflow: hidden;
+         background: #fff;
+         z-index: 9000;
+       }
+       dialog.cmdk-palette::backdrop {
+         background: rgba(0,0,0,0.30);
+       }
+       dialog.cmdk-palette[open] { display: flex; flex-direction: column; }
+       .cmdk-content { display: flex; flex-direction: column; }
+       .cmdk-search input { font-family: inherit; }
+       .cmdk-results { list-style: none; margin: 0; padding: 0.25rem 0; }
+       .cmdk-results li { list-style: none; }
+       .cmdk-footer { background: #f9fafb; border-top: 1px solid #e5e7eb; }
      "]]]))
 
