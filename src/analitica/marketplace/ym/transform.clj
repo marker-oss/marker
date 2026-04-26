@@ -124,23 +124,95 @@
 ;; Sales
 ;; ---------------------------------------------------------------------------
 
-(defn- ->sale [raw]
-  (let [items  (get raw :items [])
-        item   (first items)
-        qty    (reduce + 0 (map #(get % :count 0) items))
-        status (get raw :status)]
-    {:marketplace :ym
-     :sale-id     (or (get raw :id) (get raw :orderId))
-     :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
-     ;; Same shopSku/offerId fallback as ->order — see comment there.
-     :article     (or (get item :offerId) (get item :shopSku))
-     :quantity    (when (seq items) qty)
-     :total-price (or (get raw :buyerTotal) (get raw :total))
-     :for-pay     (get raw :forPay)
-     :type        (ym-sale-type status)}))
+(defn- price-entry-of-type
+  "Pick the full price-entry map whose :type matches `t` from a YM item.
+   Distinct from the older `price-by-type` (which extracts :total only) —
+   sales rows need both :total and :costPerItem from the same entry."
+  [item t]
+  (some #(when (= t (:type %)) %) (get item :prices [])))
+
+(defn- ->sale-row
+  "Build one sales-table row from a single YM order item, given the parent
+   order's metadata. Caller is expected to filter out classifications other
+   than `\"sale\"` and `\"return\"` — cancelled items are not settled events
+   and must not appear in the sales table."
+  [order item op idx]
+  (let [order-id (or (get order :id) (get order :orderId))
+        date     (->iso-datetime (or (get order :creationDate) (get order :date)))
+        region   (get-in order [:deliveryRegion :name])
+        buyer    (price-entry-of-type item "BUYER")
+        marketp  (price-entry-of-type item "MARKETPLACE")
+        bid-fee  (or (get item :bidFee) 0)
+        ;; Per-unit values: dividing total by count would lose precision when
+        ;; YM emits costPerItem directly. Prefer costPerItem; fall back to
+        ;; total/count when the field is absent.
+        unit-buyer  (or (some-> buyer :costPerItem)
+                        (when-let [t (some-> buyer :total)]
+                          (/ (double t) (max 1 (or (:count item) 1)))))
+        unit-mp     (or (some-> marketp :costPerItem)
+                        (when-let [t (some-> marketp :total)]
+                          (/ (double t) (max 1 (or (:count item) 1)))))
+        ;; Net seller payout = MARKETPLACE total minus the ad bid that was
+        ;; actually charged. bidFee is per-item; per-item net payout uses
+        ;; the unit MP price minus the per-unit slice of the bid. For
+        ;; aggregate parity we keep it simple: bidFee is order-item-level.
+        net-pay     (when marketp (- (double (:total marketp)) (double bid-fee)))]
+    {:marketplace     :ym
+     :sale-id         (str order-id "-" idx)
+     :date            date
+     :article         (or (get item :offerId) (get item :shopSku))
+     :nm-id           nil
+     :barcode         (extract-barcode (get item :cisList))
+     :tech-size       nil
+     :subject         (get item :offerName)
+     :category        nil
+     :brand           nil
+     :warehouse       (get-in item [:warehouse :name])
+     :region          region
+     :type            (keyword op)
+     :quantity        (or (get item :count) 1)
+     :total-price     (some-> buyer :total)
+     :for-pay         net-pay
+     :finished-price  unit-buyer
+     :price-with-disc unit-buyer}))
+
+(defn- ->sale-items
+  "Expand one YM order into N sales rows — one per `\"sale\"` or `\"return\"`
+   classified item. Cancelled items and in-flight orders produce zero rows
+   because they are not settled events. Multi-item orders therefore can
+   produce a mix of sale + return rows, or zero rows when fully cancelled."
+  [order]
+  (let [items (get order :items [])]
+    (->> items
+         (map-indexed
+          (fn [idx item]
+            (let [op (classify-item-operation order item)]
+              (when (#{"sale" "return"} op)
+                (->sale-row order item op idx)))))
+         (remove nil?))))
+
+(defn- ->sale
+  "Backward-compatible single-row constructor. Returns the first
+   sale/return row produced by `->sale-items`, or a degenerate shell row
+   when an order has no settled items (legacy callers expect a row per
+   order). New code should call `->sales` and let it expand item-level."
+  [raw]
+  (or (first (->sale-items raw))
+      ;; Degenerate shell — keeps :sale-id / :date stable for callers that
+      ;; only consult those fields. Type defaults to legacy order-level
+      ;; classification so cancelled-only orders surface as :sale (legacy
+      ;; behaviour preserved deliberately for tests; the materializer
+      ;; uses ->sales which drops cancelled rows entirely).
+      (let [items (get raw :items [])
+            item  (first items)]
+        {:marketplace :ym
+         :sale-id     (or (get raw :id) (get raw :orderId))
+         :date        (->iso-datetime (or (get raw :creationDate) (get raw :date)))
+         :article     (or (get item :offerId) (get item :shopSku))
+         :type        (ym-sale-type (get raw :status))})))
 
 (defn ->sales [raw-list]
-  (mapv ->sale raw-list))
+  (vec (mapcat ->sale-items raw-list)))
 
 ;; ---------------------------------------------------------------------------
 ;; Stocks

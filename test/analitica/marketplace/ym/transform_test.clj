@@ -198,3 +198,109 @@
              [{:id 1 :status "DELIVERED" :creationDate "31-03-2026 12:00:00"
                :buyerTotal 500 :forPay 470 :items [{:offerId "A" :count 1}]}])]
     (is (= "2026-03-31T12:00:00" (:date (first out))))))
+
+;; ---------------------------------------------------------------------------
+;; Real-shape sales materialization (M5)
+;;
+;; Live YM payload puts prices inside :items[].prices[] with type=BUYER /
+;; type=MARKETPLACE. The legacy transformer read :forPay / :buyerTotal at
+;; top-level — both nil in real data — so every YM sales row landed in
+;; the DB with all price columns NULL. These tests pin the real shape.
+;; ---------------------------------------------------------------------------
+
+(def ^:private ym-delivered-order
+  {:id           42
+   :status       "DELIVERED"
+   :creationDate "2026-04-15T10:00:00"
+   :deliveryRegion {:name "Москва" :id 213}
+   :items        [{:warehouse {:name "SHEGIDA 2" :id 1521756}
+                   :bidFee    343
+                   :prices    [{:type "MARKETPLACE" :costPerItem 2874.0 :total 2874.0}
+                               {:type "BUYER"       :costPerItem 3766.0 :total 3766.0}]
+                   :marketSku 100
+                   :count     1
+                   :shopSku   "A1"
+                   :offerName "Платье повседневное"
+                   :cisList   ["(01)04660322670280(21)5fhS1"]}]})
+
+(deftest sale-row-extracts-nested-prices
+  (let [[row] (transform/->sales [ym-delivered-order])]
+    (is (= "A1"                  (:article row)))
+    (is (= "Платье повседневное" (:subject row))    "offerName populates :subject")
+    (is (= "SHEGIDA 2"           (:warehouse row))  "warehouse extracted from item")
+    (is (= "Москва"              (:region row))     "region from order.deliveryRegion.name")
+    (is (= 3766.0                (:total-price row)) "BUYER.total = gross buyer price")
+    (is (= 3766.0                (:finished-price row)) "BUYER.costPerItem per unit")
+    (is (= 2531.0 (:for-pay row))
+        "MARKETPLACE.total (2874) minus bidFee (343) = net seller payout")
+    (is (= :sale (:type row)))
+    (is (= 1     (:quantity row)))))
+
+(deftest sale-row-barcode-from-cislist
+  (let [[row] (transform/->sales [ym-delivered-order])]
+    (is (= "4660322670280" (:barcode row))
+        "extract-barcode strips leading 0 from GS1 (01) GTIN")))
+
+(deftest cancelled-order-produces-no-sales-rows
+  (testing "fully-cancelled order: zero rows in sales — they were never settled"
+    (let [out (transform/->sales
+               [{:id 1 :status "CANCELLED_IN_DELIVERY" :creationDate "2026-04-15"
+                 :items [{:shopSku "A" :count 1
+                          :details [{:itemStatus "REJECTED"}]
+                          :prices [{:type "BUYER" :total 100}
+                                   {:type "MARKETPLACE" :total 80}]}]}])]
+      (is (empty? out)))))
+
+(deftest returned-order-produces-return-row
+  (testing "RETURNED status with item-level RETURNED → :return type, prices extracted"
+    (let [out (transform/->sales
+               [{:id 7 :status "RETURNED" :creationDate "2026-04-15"
+                 :deliveryRegion {:name "СПб"}
+                 :items [{:shopSku "B" :count 1
+                          :details [{:itemStatus "RETURNED"}]
+                          :warehouse {:name "WH"}
+                          :prices [{:type "BUYER" :costPerItem 500.0 :total 500.0}
+                                   {:type "MARKETPLACE" :costPerItem 400.0 :total 400.0}]
+                          :bidFee 50}]}])]
+      (is (= 1 (count out)))
+      (is (= :return (:type (first out))))
+      (is (= 500.0 (:total-price (first out))))
+      (is (= 350.0 (:for-pay (first out))) "MARKETPLACE 400 − bidFee 50 = 350"))))
+
+(deftest multi-item-order-produces-row-per-item
+  (testing "Multi-item order with mixed item-level statuses splits cleanly"
+    (let [out (transform/->sales
+               [{:id 9 :status "DELIVERED" :creationDate "2026-04-15"
+                 :items [{:shopSku "X" :count 1
+                          :prices [{:type "BUYER" :costPerItem 100 :total 100}
+                                   {:type "MARKETPLACE" :costPerItem 80 :total 80}]}
+                         {:shopSku "Y" :count 1
+                          :details [{:itemStatus "REJECTED"}]
+                          :prices [{:type "BUYER" :costPerItem 200 :total 200}
+                                   {:type "MARKETPLACE" :costPerItem 160 :total 160}]}
+                         {:shopSku "Z" :count 1
+                          :details [{:itemStatus "RETURNED"}]
+                          :prices [{:type "BUYER" :costPerItem 300 :total 300}
+                                   {:type "MARKETPLACE" :costPerItem 240 :total 240}]}]}])]
+      (is (= 2 (count out)) "REJECTED item dropped; X and Z surface")
+      (is (= #{"X" "Z"} (set (map :article out))))
+      (is (= #{:sale :return} (set (map :type out)))))))
+
+(deftest sale-id-is-stable-and-unique-per-item
+  (testing "Multi-item orders need distinct sale-ids — ::sales has UNIQUE on sale_id"
+    (let [out (transform/->sales
+               [{:id 99 :status "DELIVERED" :creationDate "2026-04-15"
+                 :items [{:shopSku "A" :count 1 :prices []}
+                         {:shopSku "B" :count 1 :prices []}]}])]
+      (is (= ["99-0" "99-1"] (mapv :sale-id out))
+          "sale-id derived as orderId-itemIndex"))))
+
+(deftest missing-prices-degrades-gracefully
+  (testing "Item with no :prices array: row still emitted with nil price fields"
+    (let [out (transform/->sales
+               [{:id 1 :status "DELIVERED" :creationDate "2026-04-15"
+                 :items [{:shopSku "A" :count 1}]}])]
+      (is (= 1 (count out)))
+      (is (nil? (:total-price (first out))))
+      (is (nil? (:for-pay (first out)))
+          "No MARKETPLACE price → nil for-pay; never silently 0"))))
