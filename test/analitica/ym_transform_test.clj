@@ -85,23 +85,29 @@
 (def return-status-gen
   (gen/elements ["RETURNED" "PARTIALLY_RETURNED"]))
 
-(def non-return-status-gen
-  (gen/such-that #(not (#{"RETURNED" "PARTIALLY_RETURNED"} %))
-                 gen/string-alphanumeric))
+;; Per M5: ->sales now emits item-level rows and drops cancelled events
+;; entirely. Non-return statuses that still produce a `:sale` row are the
+;; positive delivery confirmations. CANCELLED_* and PROCESSING/DELIVERY
+;; produce zero rows now and are tested separately in
+;; analitica.marketplace.ym.transform-test/cancelled-order-produces-no-sales-rows.
+(def settled-sale-status-gen
+  (gen/elements ["DELIVERED" "PARTIALLY_DELIVERED" "PICKUP"]))
 
 (defspec ym-sale-type-return-mapping 50
-  ;; **Validates: Requirements 6.2, 8.5** — RETURNED/PARTIALLY_RETURNED → :return
+  ;; **Validates: Requirements 6.2, 8.5** — RETURNED/PARTIALLY_RETURNED → :return.
+  ;; Force at least one item with no :details so the order-level fallback in
+  ;; classify-item-operation fires and a row is emitted.
   (prop/for-all [status return-status-gen
                  base-map raw-map-gen]
-    (let [raw (assoc base-map :status status)
+    (let [raw (assoc base-map :status status :items [{:shopSku "X" :count 1}])
           result (first (transform/->sales [raw]))]
       (= :return (:type result)))))
 
 (defspec ym-sale-type-sale-mapping 50
-  ;; **Validates: Requirements 6.2, 8.5** — other statuses → :sale
-  (prop/for-all [status non-return-status-gen
+  ;; **Validates: Requirements 6.2, 8.5** — settled delivery statuses → :sale.
+  (prop/for-all [status settled-sale-status-gen
                  base-map raw-map-gen]
-    (let [raw (assoc base-map :status status)
+    (let [raw (assoc base-map :status status :items [{:shopSku "X" :count 1}])
           result (first (transform/->sales [raw]))]
       (= :sale (:type result)))))
 
