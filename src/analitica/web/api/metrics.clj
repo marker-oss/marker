@@ -104,6 +104,19 @@
                                   WHERE synced_at IS NOT NULL"]))]
     (date-range-result result)))
 
+(defn- query-cashflow-storage-date-range
+  "Storage coverage for Ozon comes from cash_flow_periods (weekly), not
+   paid_storage (which is WB-only). :days is the count of distinct periods."
+  [marketplace]
+  (let [result (first (db/query
+                        [(str "SELECT MIN(period_begin) as min_date,
+                                      MAX(period_end)   as max_date,
+                                      COUNT(DISTINCT period_begin) as days
+                               FROM cash_flow_periods
+                               WHERE source = ? AND storage IS NOT NULL")
+                         (name marketplace)]))]
+    (date-range-result result)))
+
 (defn sync-coverage
   "Query database for date range coverage of each data type and marketplace.
    
@@ -123,14 +136,25 @@
    Requirements: 6.4"
   []
   (let [marketplaces [:wb :ozon :ym]
-        
+
+        ;; Storage source differs per MP. WB exposes per-day per-article storage
+        ;; via /api/v1/paid_storage. Ozon publishes weekly storage as part of
+        ;; cash-flow-statement, materialized into cash_flow_periods. YM runs FBS-
+        ;; only — no marketplace storage cost concept — so we surface a sentinel
+        ;; rather than a misleading nil.
+        storage-for (fn [mp]
+                      (case mp
+                        :wb   (query-date-range :paid_storage "date" mp)
+                        :ozon (query-cashflow-storage-date-range mp)
+                        :ym   {:na true :reason "FBS-only — no marketplace storage costs"}))
+
         ;; Query marketplace-specific data types
         coverage-by-mp (into {}
                              (for [mp marketplaces]
                                [mp {:sales (query-date-range :sales "date" mp)
                                     :orders (query-date-range :orders "date" mp)
                                     :finance (query-date-range :finance "date_from" mp)
-                                    :storage (query-date-range :paid_storage "date" mp)
+                                    :storage (storage-for mp)
                                     :stocks (query-date-range :stocks "synced_at" mp)}]))
         
         ;; Query non-marketplace data types

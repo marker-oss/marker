@@ -33,9 +33,42 @@
                   (catch Exception _ []))]
     (vec (distinct (keep (comp iso-date-fragment :d) rows)))))
 
+(defn- expand-period
+  "Inclusive ISO-day expansion of a [period_begin, period_end] pair."
+  [period-begin period-end]
+  (let [start (java.time.LocalDate/parse period-begin)
+        end   (java.time.LocalDate/parse period-end)]
+    (->> (iterate #(.plusDays % 1) start)
+         (take-while #(not (.isAfter % end)))
+         (map str))))
+
+(defn- cashflow-storage-days
+  "Storage days for an MP whose storage cost is reported in cash_flow_periods
+   (Ozon only). Each weekly period is expanded into its constituent ISO days."
+  [marketplace]
+  (let [rows (try
+               (db/query [(str "SELECT period_begin, period_end FROM cash_flow_periods "
+                               "WHERE source = ? AND storage IS NOT NULL "
+                               "ORDER BY period_begin")
+                          (name marketplace)])
+               (catch Exception _ []))]
+    (->> rows
+         (mapcat (fn [r] (expand-period (:period-begin r) (:period-end r))))
+         distinct
+         sort
+         vec)))
+
 (defn coverage-by-mp-and-type
   "Return per-MP per-type per-day coverage map.
-   Shape: {:wb {:finance {:days [...]} :orders {...}} :ozon {...} ...}"
+   Shape: {:wb {:finance {:days [...]} :orders {...}} :ozon {...} ...}
+
+   Storage row notes:
+   - WB: per-day per-article from /api/v1/paid_storage.
+   - Ozon: weekly periods from cash_flow_statement, expanded into days from
+     cash_flow_periods. Per-article granularity is a separate (broken) endpoint.
+   - YM: omitted entirely. Business is FBS-only — there is no marketplace
+     storage cost, so showing an empty row would be a false-broken signal.
+     The /sync date-range API surfaces a {:na true} sentinel for this same fact."
   []
   {:wb   {:finance {:days (days-for-table :finance "event_date" :wb)}
           :orders  {:days (days-for-table :orders "date" :wb)}
@@ -45,6 +78,7 @@
    :ozon {:finance {:days (days-for-table :finance "event_date" :ozon)}
           :orders  {:days (days-for-table :orders "date" :ozon)}
           :sales   {:days (days-for-table :sales "date" :ozon)}
+          :storage {:days (cashflow-storage-days :ozon)}
           :stocks  {:days (days-for-table :stocks "synced_at" :ozon)}}
    :ym   {:finance {:days (days-for-table :finance "event_date" :ym)}
           :orders  {:days (days-for-table :orders "date" :ym)}

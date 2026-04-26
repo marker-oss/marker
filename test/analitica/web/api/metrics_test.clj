@@ -66,27 +66,53 @@
     (db/clear-table! :orders)
     (db/clear-table! :finance)
     (db/clear-table! :paid_storage)
+    (db/clear-table! :cash_flow_periods)
     (db/clear-table! :stocks)
     (db/clear-table! :product_stats)
     (db/clear-table! :region_sales)
     (db/clear-table! :cost_prices)
     (db/clear-table! :prices)
-    
+
     (let [coverage (metrics/sync-coverage)]
       ;; Should still return a map with all keys
       (is (map? coverage))
       (is (contains? coverage :wb))
       (is (contains? coverage :ozon))
       (is (contains? coverage :ym))
-      
-      ;; All coverage values should be nil for empty database
+
+      ;; All coverage values should be nil for empty database (except YM
+      ;; storage which always returns the FBS-only sentinel — see
+      ;; sync-coverage-ym-storage-na-test).
       (is (nil? (get-in coverage [:wb :sales])))
       (is (nil? (get-in coverage [:wb :orders])))
       (is (nil? (get-in coverage [:ozon :finance])))
+      (is (nil? (get-in coverage [:ozon :storage])))
+      (is (true? (get-in coverage [:ym :storage :na])))
       (is (nil? (:stats coverage)))
       (is (nil? (:regions coverage)))
       (is (nil? (:1c coverage)))
       (is (nil? (:prices coverage))))))
+
+(deftest ^:integration sync-coverage-ozon-storage-from-cashflow-test
+  (testing "Ozon :storage reads from cash_flow_periods, not paid_storage"
+    (db/clear-table! :cash_flow_periods)
+    (db/clear-table! :paid_storage)
+    (db/insert-batch! :cash_flow_periods
+                      [:source :period_begin :period_end :synced_at :storage]
+                      [["ozon" "2026-03-01" "2026-03-07" "2026-04-01T00:00:00" -123.45]
+                       ["ozon" "2026-03-08" "2026-03-14" "2026-04-01T00:00:00"  -98.76]])
+    (let [ozon-storage (get-in (metrics/sync-coverage) [:ozon :storage])]
+      (is (some? ozon-storage))
+      (is (= "2026-03-01" (:from ozon-storage)))
+      (is (= "2026-03-14" (:to   ozon-storage)))
+      (is (= 2 (:days ozon-storage))))))
+
+(deftest ^:integration sync-coverage-ym-storage-na-test
+  (testing "YM :storage returns N/A sentinel — FBS-only"
+    (let [ym-storage (get-in (metrics/sync-coverage) [:ym :storage])]
+      (is (map? ym-storage))
+      (is (true? (:na ym-storage)))
+      (is (string? (:reason ym-storage))))))
 
 (deftest summary-metrics-test
   (testing "summary-metrics returns expected structure"
