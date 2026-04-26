@@ -1,6 +1,7 @@
 (ns analitica.marketplace.wb.api
   "Raw WB API endpoint wrappers. Each function returns parsed JSON data."
-  (:require [analitica.marketplace.wb.client :as c]))
+  (:require [analitica.marketplace.wb.client :as c]
+            [clojure.string :as cstr]))
 
 ;; ---------------------------------------------------------------------------
 ;; Statistics API
@@ -114,36 +115,64 @@
 ;; ---------------------------------------------------------------------------
 
 (defn ad-campaigns
-  "Fetch ad campaigns info."
-  [client & {:keys [status] :or {status [9 11]}}]
-  (c/post-request client :advert "/adv/v1/promotion/adverts"
-                  :query-params {"status" status}))
+  "Fetch all WB ad campaigns. Returns a flat vector of
+   `{:advertId N :changeTime T :type T :status S}` maps.
+
+   The legacy `/adv/v1/promotion/adverts` (POST + query status filter) was
+   removed by WB in 2025. The replacement is `GET /adv/v1/promotion/count`
+   which returns campaigns grouped by (type, status):
+
+     {\"adverts\": [{\"type\": 9, \"status\": 11, \"count\": 116,
+                     \"advert_list\": [{\"advertId\": ..., \"changeTime\": ...}, ...]},
+                    ...]}
+
+   We flatten this into one entry per campaign and re-attach the parent
+   group's `:type` and `:status` so downstream callers (fullstats) can
+   still filter. The `status`/`type` keyword args are kept for
+   compatibility but now act as post-flatten filters; default behaviour
+   matches the legacy default of statuses [9 11] (active campaigns)."
+  [client & {:keys [status type]
+             :or   {status #{9 11}}}]
+  (let [resp     (c/get-request client :advert "/adv/v1/promotion/count")
+        groups   (or (get resp :adverts) [])
+        wanted-s (if (set? status) status (set status))
+        wanted-t (when type (if (set? type) type (set type)))]
+    (->> groups
+         (filter (fn [g]
+                   (and (or (nil? wanted-s) (contains? wanted-s (:status g)))
+                        (or (nil? wanted-t) (contains? wanted-t (:type g))))))
+         (mapcat (fn [g]
+                   (mapv (fn [a]
+                           (assoc a :type (:type g) :status (:status g)))
+                         (or (:advert_list g) []))))
+         vec)))
 
 (defn fullstats
   "Fetch per-day per-article ad stats for given campaigns over a date range.
 
-   POST /adv/v2/fullstats with body
-     [{:id cid :dates [from to]}, ...]
+   The legacy `POST /adv/v2/fullstats` (body = `[{:id :dates}]`) was
+   removed in 2025; replacement is `GET /adv/v3/fullstats` with query
+   params `ids=...&begin=YYYY-MM-DD&end=YYYY-MM-DD`. The response shape
+   is preserved by WB:
 
-   Returns a flat vector of campaign-stats maps:
-     [{:id ..., :days [{:date ..., :apps [{:nm_id ..., :sum ...}]}]} ...]
+     [{:advertId ..., :days [{:date ..., :apps [{:nm_id ..., :sum ...}]}]} ...]
 
-   Chunks campaign ids into batches of ≤100 per request (WB API limit).
-   Empty campaign list → no HTTP call, returns [].
+   Returns the concatenated vector across batches. Chunks campaign ids
+   into ≤100 per request (WB API limit); empty list short-circuits.
 
    NOTE: WB requires ≤31-day ranges per request — callers must chunk
-   longer periods externally (we don't split by month here to keep the
-   wrapper thin)."
+   longer periods externally."
   [client campaign-ids date-from date-to]
   (if (empty? campaign-ids)
     []
     (->> (partition-all 100 campaign-ids)
          (mapcat
            (fn [chunk]
-             (let [body (mapv (fn [cid] {:id cid :dates [date-from date-to]})
-                              chunk)
-                   resp (c/post-request client :advert "/adv/v2/fullstats"
-                                        :body body)]
+             (let [ids-csv (cstr/join "," (map str chunk))
+                   resp    (c/get-request client :advert "/adv/v3/fullstats"
+                                          :query-params {"ids"   ids-csv
+                                                         "begin" date-from
+                                                         "end"   date-to})]
                (or resp []))))
          vec)))
 

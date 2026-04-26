@@ -20,7 +20,7 @@
 ;;   Ozon: sales, orders, finance, stocks, prices, stats, cashflow
 ;;   YM:   sales, orders, finance, stocks, prices, stats
 (def ^:private mp-entity-matrix
-  {:wb   #{:sales :orders :finance :stocks :prices :stats :storage :regions}
+  {:wb   #{:sales :orders :finance :stocks :prices :stats :storage :regions :ad_stats}
    :ozon #{:sales :orders :finance :stocks :prices :stats :cashflow}
    :ym   #{:sales :orders :finance :stocks :prices :stats}})
 
@@ -65,6 +65,7 @@
   {[:wb :storage]   7
    [:wb :finance]   30
    [:wb :regions]   30
+   [:wb :ad_stats]  30   ;; WB /adv/v2/fullstats caps a single body at 31 days
    [:ym :finance]   30})
 
 (defn chunk-spec

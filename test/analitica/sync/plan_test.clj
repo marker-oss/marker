@@ -62,9 +62,9 @@
                                    :marketplace :all
                                    :period :last-30-days)
           by-phase (group-by :phase tasks)]
-      ;; 21 (mp, type) groups × 1 materialize = 21 materialize tasks total
-      (is (= 21 (count (:materialize by-phase))))
-      ;; Ingest count = 20 non-storage + N storage-chunks (~5 for 30 days).
+      ;; 22 (mp, type) groups × 1 materialize = 22 materialize tasks total
+      ;; (8 WB + 7 Ozon + 6 YM, after :ad_stats was added to WB).
+      (is (= 22 (count (:materialize by-phase))))
       ;; All tasks share the same run-id
       (is (every? #(= run-id (:run-id %)) tasks))
       (is (every? (comp some? :period-from) tasks))
@@ -83,7 +83,7 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest expand-plan-one-mp
-  (testing ":what :all :marketplace :wb covers 8 types; storage ingest is chunked"
+  (testing ":what :all :marketplace :wb covers 9 types; storage ingest is chunked"
     (let [run-id (unique-run-id)
           tasks  (plan/expand-plan :run-id run-id
                                    :what :all
@@ -92,13 +92,13 @@
           by-phase (group-by :phase tasks)]
       ;; All tasks are for :wb
       (is (every? #(= :wb (:marketplace %)) tasks))
-      ;; 8 entity types present
+      ;; 9 entity types present (added :ad_stats — see M16)
       (let [types (->> tasks (map :entity-type) set)]
-        (is (= #{:sales :orders :finance :stocks :prices :stats :storage :regions} types)))
-      ;; 8 materialize tasks (one per type)
-      (is (= 8 (count (:materialize by-phase))))
-      ;; >=12 ingest tasks (7 single + ≥5 storage chunks)
-      (is (>= (count (:ingest by-phase)) 12)))))
+        (is (= #{:sales :orders :finance :stocks :prices :stats :storage :regions :ad_stats} types)))
+      ;; 9 materialize tasks (one per type)
+      (is (= 9 (count (:materialize by-phase))))
+      ;; ≥13 ingest tasks (7 single + ≥5 storage chunks + ≥1 ad_stats chunk)
+      (is (>= (count (:ingest by-phase)) 13)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 3. expand-plan-one-type
@@ -196,7 +196,8 @@
             (filter (fn [m]
                       (let [k [(:marketplace m) (:entity-type m)]]
                         (not (contains? #{[:wb :storage] [:wb :finance]
-                                          [:wb :regions] [:ym :finance]} k))))
+                                          [:wb :regions] [:wb :ad_stats]
+                                          [:ym :finance]} k))))
                     mats)]
         (is (every? #(= 1 (count (:depends-on %))) never-chunked)))
       ;; All ingest tasks have no deps

@@ -710,6 +710,28 @@
     (println (str "Ingesting regions for " (name marketplace) " " from " .. " to))
     (ingest-wb-regions! client from to)))
 
+(defn ingest-ads!
+  "Public ingest entry-point for WB ad_stats. The function chain (campaigns →
+   fullstats → raw_data → flatten → ad_stats table → allocate to finance.ad_cost)
+   has existed for a long time but was never wired into `ingest!` / `:all` / the
+   sync planner — so DRR was silently 0% across all WB reports. This wrapper
+   matches the (period :marketplace mp) contract used by every other ingest
+   step and chunks the period to ≤31 days because WB /adv/v2/fullstats rejects
+   wider windows."
+  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  (when (not= marketplace :wb)
+    (throw (ex-info "ingest-ads! supports only :wb marketplace"
+                    {:marketplace marketplace})))
+  (let [[from to] (resolve-period period)
+        client    (get-mp marketplace)
+        chunks    (t/date-chunks from to 31)]
+    (println (str "Ingesting WB ad_stats " from " .. " to
+                  " (" (count chunks) " chunk(s) of ≤31 days)"))
+    (reduce (fn [acc [cf ct]]
+              (+ acc (or (ingest-wb-ad-stats! client cf ct) 0)))
+            0
+            chunks)))
+
 (defn ingest!
   "Ingest raw data from marketplace API to raw_data table.
    Usage:
@@ -726,6 +748,8 @@
     :stats    (ingest-product-stats! period :marketplace marketplace)
     :prices   (ingest-prices! :marketplace marketplace)
     :regions  (ingest-regions! period :marketplace marketplace)
+    :ad-stats (ingest-ads!     period :marketplace marketplace)
+    :ad_stats (ingest-ads!     period :marketplace marketplace)
     :cashflow (ingest-cashflow! period :marketplace marketplace)
     :all      (let [p       (or period :last-30-days)
                     safe-do (fn [label f]
@@ -740,7 +764,8 @@
                 (safe-do "stats"   #(ingest-product-stats! p :marketplace marketplace))
                 (safe-do "prices"  #(ingest-prices! :marketplace marketplace))
                 (when (= marketplace :wb)
-                  (safe-do "regions" #(ingest-regions! p :marketplace marketplace)))
+                  (safe-do "regions"  #(ingest-regions! p :marketplace marketplace))
+                  (safe-do "ad_stats" #(ingest-ads!     p :marketplace marketplace)))
                 (when (= marketplace :ozon)
                   (safe-do "cashflow" #(ingest-cashflow! p :marketplace marketplace)))
                 (println "=== Ingest complete ==="))))

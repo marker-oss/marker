@@ -78,46 +78,49 @@
           (is (zero? @post-calls)
               "no campaign ids → no network call"))))))
 
-(deftest fullstats-body-shape
-  (testing "body is [{:id cid :dates [from to]}, ...] per WB /adv/v2/fullstats"
+(deftest fullstats-query-shape
+  (testing "GET /adv/v3/fullstats with ids=CSV&begin=YYYY-MM-DD&end=YYYY-MM-DD"
     (let [captured (atom nil)]
-      (with-redefs [wb-client/post-request
-                    (fn [_client _section _path & {:keys [body]}]
-                      (reset! captured body)
+      (with-redefs [wb-client/get-request
+                    (fn [_client _section _path & {:keys [query-params]}]
+                      (reset! captured query-params)
                       [])]
         (wb-api/fullstats (fake-client) [1 2 3] "2026-03-01" "2026-03-07")
-        (let [body @captured]
-          (is (vector? body) "body is a vector of campaign requests")
-          (is (= 3 (count body)))
-          (is (= {:id 1 :dates ["2026-03-01" "2026-03-07"]}
-                 (first body))))))))
+        (let [qp @captured]
+          (is (= "1,2,3"      (get qp "ids"))    "ids is comma-separated csv")
+          (is (= "2026-03-01" (get qp "begin")))
+          (is (= "2026-03-07" (get qp "end"))))))))
 
 (deftest fullstats-chunks-large-campaign-list
-  (testing ">100 campaign ids → split into multiple POSTs of ≤100 each"
-    (let [posts (atom [])]
-      (with-redefs [wb-client/post-request
-                    (fn [_client _section _path & {:keys [body]}]
-                      (swap! posts conj body)
-                      ;; Return empty stats for each campaign
-                      (mapv (fn [req] {:id (:id req) :days []}) body))]
+  (testing ">100 campaign ids → split into multiple GETs of ≤100 ids each"
+    (let [calls (atom [])]
+      (with-redefs [wb-client/get-request
+                    (fn [_client _section _path & {:keys [query-params]}]
+                      (let [ids-csv (get query-params "ids")
+                            ids     (mapv #(Long/parseLong %)
+                                          (clojure.string/split ids-csv #","))]
+                        (swap! calls conj ids)
+                        (mapv (fn [id] {:advertId id :days []}) ids)))]
         ;; (range 1 251) yields 250 campaign ids → 100 + 100 + 50
         (wb-api/fullstats (fake-client) (vec (range 1 251)) "2026-03-01" "2026-03-07")
-        (is (= 3 (count @posts))
+        (is (= 3 (count @calls))
             "250 campaigns → 3 batches (100+100+50)")
-        (is (= 100 (count (first @posts))))
-        (is (= 100 (count (second @posts))))
-        (is (= 50  (count (nth @posts 2))))))))
+        (is (= 100 (count (first @calls))))
+        (is (= 100 (count (second @calls))))
+        (is (= 50  (count (nth @calls 2))))))))
 
 (deftest fullstats-concats-results
   (testing "results from multiple batches are concatenated"
-    (with-redefs [wb-client/post-request
-                  (fn [_client _section _path & {:keys [body]}]
-                    (mapv (fn [req] {:id (:id req) :days []}) body))]
+    (with-redefs [wb-client/get-request
+                  (fn [_client _section _path & {:keys [query-params]}]
+                    (let [ids (mapv #(Long/parseLong %)
+                                    (clojure.string/split (get query-params "ids") #","))]
+                      (mapv (fn [id] {:advertId id :days []}) ids)))]
       (let [result (wb-api/fullstats (fake-client)
                                      (vec (range 1 151))
                                      "2026-03-01" "2026-03-07")]
         (is (= 150 (count result)))
-        (is (= (set (range 1 151)) (set (map :id result))))))))
+        (is (= (set (range 1 151)) (set (map :advertId result))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; ingest-wb-ad-stats! tests
