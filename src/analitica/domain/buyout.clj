@@ -38,7 +38,14 @@
                                    total     (+ sold rets)
                                    row       {:article     art
                                               :subject     (:subject (first items))
+                                              ;; :ordered is the legacy name; per §Buyout.6.1 the
+                                              ;; field is misnamed (it is sold+returned operations,
+                                              ;; not orders placed). :total-ops is the canonical
+                                              ;; alias — emitted alongside :ordered so existing
+                                              ;; callers, schemas, and exports keep working while
+                                              ;; new code can prefer the unambiguous name.
                                               :ordered     total
+                                              :total-ops   total
                                               :bought      sold
                                               :returned    rets
                                               :buyout-rate (math/percentage sold total)}

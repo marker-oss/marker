@@ -1265,6 +1265,33 @@ All UE.11 gaps apply (they ride the same ingest pipeline). P&L adds:
    per-article rows and aren't in any endpoint we ingest. Inherited
    UE.11 #1 / B-002.
 
+5. **Source coverage gaps (P11/P12/P13) — accepted-by-design:**
+
+   - `product_stats` table is populated only for Ozon (analytics/data
+     endpoint). WB has an analytics nm-report endpoint but it is
+     rate-limited to 3 req/min and not currently wired into the planner;
+     YM has no equivalent. Reports that would consume `product_stats`
+     (e.g. funnel views, per-article impression / add-to-cart) therefore
+     produce Ozon-only output. Document that constraint at the report
+     layer rather than fabricate cross-MP averages from missing data.
+
+   - `cash_flow_periods` is populated only for Ozon (cash-flow-statement
+     endpoint). WB and YM do not expose an equivalent endpoint (verified
+     against their public API surface 2026-04). The P&L.6 `cf-*`
+     pass-throughs only apply to Ozon by design — see P&L.7 coverage
+     matrix.
+
+   - `ad_stats` table is the legacy ad-spend storage path; the canonical
+     spend now lives in `finance.ad_cost` (spec 003 US5 + M16). The
+     `ad_stats` table is still populated as an intermediate step in
+     `materialize-wb-ad-stats!` because the v3 fullstats response shape
+     is heavily nested and easier to flatten via the table than to
+     re-derive on each ad-cost allocation. Marking the table itself as
+     "deprecated for direct querying" — callers should read
+     `finance.ad_cost` via `db/ad-spend-by-article`, which already
+     prefers the canonical path and falls back to `ad_stats` only when
+     canonical is empty (transitional periods after cold starts).
+
 ### P&L.9 — Verification summary
 
 - Every P&L.N group has a deftest in
