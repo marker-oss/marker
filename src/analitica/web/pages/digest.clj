@@ -14,6 +14,7 @@
     page                  — ring handler entry point"
   (:require [clojure.string :as str]
             [hiccup.core :refer [html]]
+            [jsonista.core :as json]
             [analitica.web.components :as c]
             [analitica.alerts :as alerts]
             [analitica.domain.sales    :as sales]
@@ -273,6 +274,37 @@
 ;; Pure page renderer
 ;; ---------------------------------------------------------------------------
 
+(defn- revenue-chart
+  "Inline Chart.js line chart for daily revenue. Data is baked into the JS
+   init via JSON literal — no separate API round-trip. Falls back to an
+   empty-state message when there is no data."
+  [daily-revenue]
+  (let [rows   (->> (or daily-revenue [])
+                    (sort-by :group)
+                    (filter #(seq (:group %))))
+        labels (mapv :group rows)
+        values (mapv #(or (:revenue %) 0.0) rows)]
+    [:section.bg-white.rounded-lg.shadow.p-4.mb-6
+     [:h3.text-base.font-semibold.text-gray-800.mb-3
+      "📊 Динамика выручки за период"]
+     (if (empty? rows)
+       [:div.text-sm.text-gray-500 "Нет данных для графика"]
+       [:div {:style "height: 240px;"}
+        [:canvas#digest-revenue-chart]
+        [:script {:type "text/javascript"}
+         (str "(function(){"
+              " var ctx=document.getElementById('digest-revenue-chart').getContext('2d');"
+              " new Chart(ctx,{type:'line',"
+              " data:{labels:" (json/write-value-as-string labels) ","
+              " datasets:[{label:'Выручка',"
+              " data:" (json/write-value-as-string values) ","
+              " borderColor:'rgb(59,130,246)',"
+              " backgroundColor:'rgba(59,130,246,0.1)',"
+              " tension:0.25,fill:true,pointRadius:2}]},"
+              " options:{responsive:true,maintainAspectRatio:false,"
+              " plugins:{legend:{display:false}}}});"
+              "})();")]])]))
+
 (defn- fmt-date-header
   "\"2026-04-25\" → \"25.04.2026\"."
   [iso]
@@ -341,7 +373,10 @@
         [:div.flex.flex-col.gap-3
          (map alert-card alerts)])]
 
-     ;; Row 3: Top-movers / Top-fallers (2-col grid)
+     ;; Row 3: Revenue chart (period-over-period dynamics)
+     (revenue-chart daily-revenue)
+
+     ;; Row 4: Top-movers / Top-fallers (2-col grid)
      [:div#digest-movers.grid.grid-cols-1.md:grid-cols-2.gap-6.mb-6
       [:div.bg-white.rounded-lg.shadow.p-4
        [:h3.text-base.font-semibold.text-gray-800.mb-3 "🏆 Топ продаж"]
