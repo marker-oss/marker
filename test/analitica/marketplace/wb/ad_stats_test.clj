@@ -4,7 +4,7 @@
    Covers:
      - wb-api/fullstats:
          * empty campaign list → no HTTP call, returns []
-         * batches campaigns in chunks of ≤100
+         * batches campaigns in chunks of ≤50
          * body shape per WB /adv/v2/fullstats spec
      - ingest/ingest-wb-ad-stats!:
          * calls wb-api/ad-campaigns → wb-api/fullstats
@@ -88,11 +88,11 @@
         (wb-api/fullstats (fake-client) [1 2 3] "2026-03-01" "2026-03-07")
         (let [qp @captured]
           (is (= "1,2,3"      (get qp "ids"))    "ids is comma-separated csv")
-          (is (= "2026-03-01" (get qp "begin")))
-          (is (= "2026-03-07" (get qp "end"))))))))
+          (is (= "2026-03-01" (get qp "beginDate")))
+          (is (= "2026-03-07" (get qp "endDate"))))))))
 
 (deftest fullstats-chunks-large-campaign-list
-  (testing ">100 campaign ids → split into multiple GETs of ≤100 ids each"
+  (testing ">50 campaign ids → split into multiple GETs of ≤50 ids each"
     (let [calls (atom [])]
       (with-redefs [wb-client/get-request
                     (fn [_client _section _path & {:keys [query-params]}]
@@ -101,13 +101,13 @@
                                           (clojure.string/split ids-csv #","))]
                         (swap! calls conj ids)
                         (mapv (fn [id] {:advertId id :days []}) ids)))]
-        ;; (range 1 251) yields 250 campaign ids → 100 + 100 + 50
-        (wb-api/fullstats (fake-client) (vec (range 1 251)) "2026-03-01" "2026-03-07")
+        ;; (range 1 121) yields 120 campaign ids → 50 + 50 + 20
+        (wb-api/fullstats (fake-client) (vec (range 1 121)) "2026-03-01" "2026-03-07")
         (is (= 3 (count @calls))
-            "250 campaigns → 3 batches (100+100+50)")
-        (is (= 100 (count (first @calls))))
-        (is (= 100 (count (second @calls))))
-        (is (= 50  (count (nth @calls 2))))))))
+            "120 campaigns → 3 batches (50+50+20)")
+        (is (= 50 (count (first @calls))))
+        (is (= 50 (count (second @calls))))
+        (is (= 20 (count (nth @calls 2))))))))
 
 (deftest fullstats-concats-results
   (testing "results from multiple batches are concatenated"

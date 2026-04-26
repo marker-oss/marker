@@ -158,21 +158,24 @@
      [{:advertId ..., :days [{:date ..., :apps [{:nm_id ..., :sum ...}]}]} ...]
 
    Returns the concatenated vector across batches. Chunks campaign ids
-   into ≤100 per request (WB API limit); empty list short-circuits.
+   into ≤50 per request — the v3 endpoint enforces a stricter limit than
+   the legacy v2 (which accepted 100); WB returns 400 'number of advert
+   cannot be more than 50' when the cap is exceeded. Empty list
+   short-circuits.
 
    NOTE: WB requires ≤31-day ranges per request — callers must chunk
    longer periods externally."
   [client campaign-ids date-from date-to]
   (if (empty? campaign-ids)
     []
-    (->> (partition-all 100 campaign-ids)
+    (->> (partition-all 50 campaign-ids)
          (mapcat
            (fn [chunk]
              (let [ids-csv (cstr/join "," (map str chunk))
                    resp    (c/get-request client :advert "/adv/v3/fullstats"
-                                          :query-params {"ids"   ids-csv
-                                                         "begin" date-from
-                                                         "end"   date-to})]
+                                          :query-params {"ids"       ids-csv
+                                                         "beginDate" date-from
+                                                         "endDate"   date-to})]
                (or resp []))))
          vec)))
 
