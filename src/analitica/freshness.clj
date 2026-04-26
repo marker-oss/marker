@@ -11,7 +11,8 @@
     {:status :stale :reason \"…\" :last-sync iso :age-days N
      :worst-pair [:mp :source] :max-lag-days N}"
   (:require [analitica.db :as db]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [com.brunobonacci.mulog :as μ]))
 
 ;; ---------------------------------------------------------------------------
 ;; Hardcoded V1 max-lag thresholds (days)
@@ -33,12 +34,14 @@
    [:ozon :orders]   2
    [:ozon :stocks]   2
    [:ozon :prices]   7
+   [:ozon :stats]    2
 
    [:ym   :finance]  2
    [:ym   :sales]    2
    [:ym   :orders]   2
    [:ym   :stocks]   2
-   [:ym   :prices]   7})
+   [:ym   :prices]   7
+   [:ym   :stats]    2})
 
 ;; ---------------------------------------------------------------------------
 ;; Reports → data sources mapping
@@ -170,7 +173,9 @@
                             (keyword (:entity-type r)))
                     (:last-sync r)])
                  rows)))
-    (catch Exception _ {})))
+    (catch Exception e
+      (μ/log ::last-sync-query-failed :error (.getMessage e))
+      {})))
 
 (defn stale-info
   "One-shot: fetch last-syncs from DB and compute stale status.

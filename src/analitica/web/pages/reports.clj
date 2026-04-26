@@ -3,7 +3,8 @@
             [analitica.web.components :as c]
             [analitica.web.components.stale-banner :as sb]
             [analitica.web.report-schemas :as rs]
-            [analitica.freshness :as freshness]))
+            [analitica.freshness :as freshness]
+            [com.brunobonacci.mulog :as μ]))
 
 ;; ---------------------------------------------------------------------------
 ;; Schema Column Helpers
@@ -229,7 +230,9 @@
                      :else             (str period))
         stale  (try
                  (freshness/stale-info {:report report-type :marketplace mp-kw})
-                 (catch Exception _ nil))]
+                 (catch Exception e
+                   (μ/log ::freshness-check-failed :error (.getMessage e) :report report-type)
+                   nil))]
 
     [:div
      [:div.mb-6

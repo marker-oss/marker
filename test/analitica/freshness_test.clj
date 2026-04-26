@@ -234,3 +234,51 @@
                                   :today today}
                                  last-syncs)]
       (is (= :ok (:status result))))))
+
+;; ---------------------------------------------------------------------------
+;; 9. max-lag-days thresholds: ozon/ym :stats resolve to 2, not 7-day default
+;; ---------------------------------------------------------------------------
+
+(deftest stats-thresholds-ozon-ym
+  (testing "[:ozon :stats] threshold is 2 days — not the 7-day fallback"
+    ;; age = 3, threshold 2 → stale; if threshold were 7 it would be :ok.
+    ;; Provide all UE sources fresh except :stats so :stats wins as worst pair.
+    (let [last-syncs {[:ozon :stats]   (iso-days-ago 3)
+                      [:ozon :sales]   (iso-days-ago 1)
+                      [:ozon :finance] (iso-days-ago 1)}
+          result (f/stale-info* {:report :ue :marketplace :ozon
+                                  :today today}
+                                 last-syncs)]
+      (is (= :stale (:status result)))
+      (is (= [:ozon :stats] (:worst-pair result)))
+      (is (= 2 (:max-lag-days result)))))
+
+  (testing "[:ozon :stats] age = 2 (exactly at threshold) → :ok"
+    (let [last-syncs {[:ozon :stats]   (iso-days-ago 2)
+                      [:ozon :sales]   (iso-days-ago 1)
+                      [:ozon :finance] (iso-days-ago 1)}
+          result (f/stale-info* {:report :ue :marketplace :ozon
+                                  :today today}
+                                 last-syncs)]
+      (is (= :ok (:status result)))))
+
+  (testing "[:ym :stats] threshold is 2 days — not the 7-day fallback"
+    ;; Provide all UE sources fresh except :stats so :stats wins as worst pair.
+    (let [last-syncs {[:ym :stats]   (iso-days-ago 3)
+                      [:ym :sales]   (iso-days-ago 1)
+                      [:ym :finance] (iso-days-ago 1)}
+          result (f/stale-info* {:report :ue :marketplace :ym
+                                  :today today}
+                                 last-syncs)]
+      (is (= :stale (:status result)))
+      (is (= [:ym :stats] (:worst-pair result)))
+      (is (= 2 (:max-lag-days result)))))
+
+  (testing "[:ym :stats] age = 2 (exactly at threshold) → :ok"
+    (let [last-syncs {[:ym :stats]   (iso-days-ago 2)
+                      [:ym :sales]   (iso-days-ago 1)
+                      [:ym :finance] (iso-days-ago 1)}
+          result (f/stale-info* {:report :ue :marketplace :ym
+                                  :today today}
+                                 last-syncs)]
+      (is (= :ok (:status result))))))

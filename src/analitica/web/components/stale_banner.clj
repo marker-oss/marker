@@ -38,6 +38,9 @@
       :worst-pair [:mp :src] :max-lag-days N}
    context: {:report keyword :period string}
 
+   NOTE: period MUST be a server-generated, validated string (not raw query-param
+   input) — it is embedded into a JS literal in the onclick handler.
+
    Returns Hiccup vector or nil."
   [{:keys [status reason last-sync] :as _info}
    {:keys [report period]}]
