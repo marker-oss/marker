@@ -190,13 +190,20 @@
    :kpi [{:key :total-ordered :title "Заказано" :format :int}
          {:key :total-bought :title "Выкуплено" :format :int}
          {:key :avg-buyout-rate :title "% выкупа" :format :pct}]
-   :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
-             {:key :ordered :title "Заказано" :group :volume :format :int :default-visible? true}
-             {:key :bought :title "Выкуплено" :group :volume :format :int :default-visible? true}
-             {:key :returned :title "Возвращено" :group :volume :format :int :default-visible? true}
-             {:key :buyout-rate :title "% выкупа" :group :pct :format :pct :default-visible? true}]
+   ;; :buyout-rate (legacy, sales-only) is kept default-visible alongside the
+   ;; new :true-buyout-rate (sold/placed). The cancel-rate column surfaces
+   ;; the gap between the two — see canonical-formulas.md §Buyout.7.
+   :columns [{:key :article          :title "Артикул"      :group :identity :format :text :default-visible? true :linkable? true}
+             {:key :placed           :title "Заказано"     :group :volume   :format :int  :default-visible? true}
+             {:key :bought           :title "Выкуплено"    :group :volume   :format :int  :default-visible? true}
+             {:key :cancelled        :title "Отменено"     :group :volume   :format :int  :default-visible? true}
+             {:key :returned         :title "Возвращено"   :group :volume   :format :int  :default-visible? true}
+             {:key :ordered          :title "Операций"     :group :volume   :format :int  :default-visible? false}
+             {:key :true-buyout-rate :title "% выкупа (от заказов)" :group :pct :format :pct :default-visible? true}
+             {:key :buyout-rate      :title "% выкупа (от операций)" :group :pct :format :pct :default-visible? true}
+             {:key :cancel-rate      :title "% отмен"      :group :pct      :format :pct  :default-visible? true}]
    :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :pct {:title "%"}}
-   :chart {:type :bar :title "Выкуп по артикулам" :x :article :y :buyout-rate :limit 20}})
+   :chart {:type :bar :title "Выкуп по артикулам" :x :article :y :true-buyout-rate :limit 20}})
 
 (def ^:private geo-schema
   {:report-type :geo :title "География"
