@@ -1,5 +1,6 @@
 (ns analitica.web.layout
-  (:require [hiccup.page :refer [html5 include-css include-js]]
+  (:require [clojure.string :as str]
+            [hiccup.page :refer [html5 include-css include-js]]
             [hiccup.core :refer [html]]
             [analitica.web.components :as components]
             [analitica.util.period :as period]))
@@ -21,42 +22,60 @@
 ;; ---------------------------------------------------------------------------
 
 (def nav-items
-  [{:label "Дашборд" :route "/" :children
-    [{:label "Все" :route "/"}
-     {:label "WB" :route "/wb"}
-     {:label "Ozon" :route "/ozon"}
-     {:label "YM" :route "/ym"}]}
-   {:label "Отчёты" :route "/reports" :children
-    [{:label "Продажи" :route "/reports/sales"}
-     {:label "Финансы" :route "/reports/finance"}
-     {:label "Юнит-экономика" :route "/reports/ue"}
-     {:label "P&L" :route "/reports/pnl"}
-     {:label "ABC-анализ" :route "/reports/abc"}
-     {:label "Остатки" :route "/reports/stock"}
-     {:label "Возвраты" :route "/reports/returns"}
-     {:label "Выкуп" :route "/reports/buyout"}
-     {:label "География" :route "/reports/geo"}
-     {:label "Тренды" :route "/reports/trends"}]}
-   {:label "Синхронизация" :route "/sync"}])
+  [{:label "Главная" :icon "🏠" :route "/"}
+   {:label "Финансы" :icon "💰" :route "/reports/pnl"
+    :children [{:label "P&L"              :route "/reports/pnl"}
+               {:label "Юнит-экономика"  :route "/reports/ue"}
+               {:label "Финансы (детали)" :route "/reports/finance"}
+               {:label "Возвраты"         :route "/reports/returns"}]}
+   {:label "Товары" :icon "📦" :route "/reports/sales"
+    :children [{:label "Продажи"   :route "/reports/sales"}
+               {:label "ABC-анализ" :route "/reports/abc"}
+               {:label "Тренды"    :route "/reports/trends"}
+               {:label "Выкуп"     :route "/reports/buyout"}
+               {:label "География" :route "/reports/geo"}]}
+   {:label "Склады" :icon "🏬" :route "/reports/stock"
+    :children [{:label "Остатки" :route "/reports/stock"}]}
+   {:label "Управление" :icon "⚙" :route "/sync"
+    :children [{:label "Синхронизация" :route "/sync"}]}])
+
+;; ---------------------------------------------------------------------------
+;; Helpers
+;; ---------------------------------------------------------------------------
+
+(defn- group-active?
+  "True when active-route is within a group: either the group's own route
+   or any of its children's routes."
+  [item active-route]
+  (let [{:keys [route children]} item]
+    (or (= route active-route)
+        (and (seq children)
+             (some #(or (= (:route %) active-route)
+                        (and (seq active-route)
+                             (str/starts-with? active-route (:route %))))
+                   children)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Components
 ;; ---------------------------------------------------------------------------
 
 (defn- nav-item
-  "Render a single navigation item with optional children."
+  "Render a navigation item.
+   - Items with :children render as a collapsible <details> group.
+     The group is open by default when any child matches active-route.
+   - Items without :children render as a plain link (e.g. Главная)."
   [item active-route]
-  (let [{:keys [label route children]} item
-        is-active? (or (= route active-route)
-                       (some #(= (:route %) active-route) children))
-        base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
-        active-classes "bg-blue-600 text-white"
-        inactive-classes "text-gray-300 hover:bg-gray-700 hover:text-white"]
-    [:div.mb-1
-     [:a {:href route
-          :class (str base-classes " " (if is-active? active-classes inactive-classes))}
-      label]
-     (when children
+  (let [{:keys [label icon route children]} item
+        display-label (if icon (str icon " " label) label)
+        active? (group-active? item active-route)]
+    (if children
+      ;; Collapsible group via HTML5 <details>/<summary>
+      [:details.mb-1 (when active? {:open true})
+       [:summary.flex.items-center.px-4.py-2.text-sm.rounded-md.cursor-pointer.transition-colors.select-none.list-none
+        {:class (if active?
+                  "bg-gray-700 text-white font-semibold"
+                  "text-gray-300 hover:bg-gray-700 hover:text-white")}
+        display-label]
        [:div.ml-4.mt-1
         (for [child children]
           (let [child-active? (= (:route child) active-route)
@@ -66,7 +85,15 @@
                                      "text-gray-400 hover:bg-gray-700 hover:text-white"))]
             [:a {:href (:route child)
                  :class child-classes}
-             (:label child)]))])]))
+             (:label child)]))]]
+      ;; Plain leaf link (Главная — no sub-items)
+      (let [base-classes "block px-4 py-2 text-sm rounded-md transition-colors"
+            active-classes "bg-blue-600 text-white"
+            inactive-classes "text-gray-300 hover:bg-gray-700 hover:text-white"]
+        [:div.mb-1
+         [:a {:href route
+              :class (str base-classes " " (if active? active-classes inactive-classes))}
+          display-label]]))))
 
 (defn- sidebar
   "Render the sidebar with navigation."
@@ -143,6 +170,8 @@
      [:script {:src "/js/table-columns.js"}]
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
+     ;; sku-sheet.js is loaded at end of <body> after its <dialog> element
+     ;; exists; loading here would make the IIFE bail silently.
 
      ;; Custom styles
      [:style "
@@ -168,5 +197,110 @@
        (header :hide-period? hide-period? :supports-compare? supports-compare?)
        [:main#main-content.bg-gray-50
         content]]
-     (components/drill-panel {})]]))
+     (components/drill-panel {})
+     ;; Command-palette dialog — opened by Cmd+K / Ctrl+K via cmdk.js
+     [:dialog#cmdk-palette.cmdk-palette
+      [:div.cmdk-content
+       [:div.cmdk-search
+        [:input.w-full.text-lg.px-4.py-3.border-b.outline-none
+         {:type "text" :placeholder "Поиск SKU, отчётов, страниц..."}]]
+       [:ul.cmdk-results.max-h-96.overflow-y-auto]
+       [:div.cmdk-footer.text-xs.text-gray-500.px-3.py-2.border-t
+        "↑↓ навигация · ⏎ открыть · ESC закрыть"]]]
+
+     ;; SKU drill-down dialog — populated by sku-sheet.js + /api/sku/:id
+     [:dialog#sku-sheet.sku-sheet
+      [:div.sku-sheet-content "Загрузка…"]
+      [:button.sku-sheet-close {:onclick "this.closest('dialog').close()"} "×"]]
+     [:style "
+       dialog.sku-sheet {
+         position: fixed;
+         right: 0; top: 0;
+         margin: 0;
+         width: 480px;
+         max-width: 100vw;
+         height: 100vh;
+         max-height: 100vh;
+         border: none;
+         border-left: 1px solid #e5e7eb;
+         box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+         padding: 0;
+         overflow: hidden;
+         flex-direction: column;
+       }
+       dialog.sku-sheet[open] {
+         display: flex;
+       }
+       dialog.sku-sheet::backdrop {
+         background: rgba(0,0,0,0.25);
+       }
+       .sku-sheet-content {
+         flex: 1;
+         overflow-y: auto;
+         padding: 1.5rem;
+         font-family: inherit;
+       }
+       .sku-sheet-close {
+         position: absolute;
+         top: 0.75rem;
+         right: 0.75rem;
+         background: none;
+         border: 1px solid #d1d5db;
+         border-radius: 50%;
+         width: 2rem;
+         height: 2rem;
+         font-size: 1rem;
+         line-height: 1;
+         cursor: pointer;
+         color: #6b7280;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         z-index: 10;
+       }
+       .sku-sheet-close:hover { background: #f3f4f6; color: #111; }
+       .sku-sheet-loading, .sku-sheet-error {
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         height: 100%;
+         color: #9ca3af;
+         font-size: 0.9rem;
+       }
+       .sku-link {
+         background: none;
+         border: none;
+         padding: 0;
+         cursor: pointer;
+       }
+       /* Command palette */
+       dialog.cmdk-palette {
+         position: fixed;
+         top: 20vh;
+         left: 50%;
+         transform: translateX(-50%);
+         margin: 0;
+         width: 90vw;
+         max-width: 600px;
+         border: none;
+         border-radius: 0.75rem;
+         box-shadow: 0 8px 40px rgba(0,0,0,0.20);
+         padding: 0;
+         overflow: hidden;
+         background: #fff;
+         z-index: 9000;
+       }
+       dialog.cmdk-palette::backdrop {
+         background: rgba(0,0,0,0.30);
+       }
+       dialog.cmdk-palette[open] { display: flex; flex-direction: column; }
+       .cmdk-content { display: flex; flex-direction: column; }
+       .cmdk-search input { font-family: inherit; }
+       .cmdk-results { list-style: none; margin: 0; padding: 0.25rem 0; }
+       .cmdk-results li { list-style: none; }
+       .cmdk-footer { background: #f9fafb; border-top: 1px solid #e5e7eb; }
+     "]]
+     ;; sku-sheet.js + cmdk.js must load after their <dialog> elements exist
+     [:script {:src "/js/sku-sheet.js"}]
+     [:script {:src "/js/cmdk.js"}]]))
 

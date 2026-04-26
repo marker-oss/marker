@@ -19,8 +19,8 @@
   
   (testing "page includes sidebar navigation"
     (let [html (layout/page "Test" [:div "Content"])]
-      (is (re-find #"Дашборд" html))
-      (is (re-find #"Отчёты" html))
+      (is (re-find #"Главная" html))
+      (is (re-find #"Финансы" html))
       (is (re-find #"Синхронизация" html))))
   
   (testing "page includes header elements"
@@ -29,7 +29,7 @@
       (is (re-find #"Последняя синхронизация" html))))
 
   (testing "page highlights active route"
-    (let [html (layout/page "Test" [:div "Content"] :active-route "/wb")]
+    (let [html (layout/page "Test" [:div "Content"] :active-route "/")]
       (is (re-find #"bg-blue-600" html))
       (is (string? html))))
 

@@ -100,20 +100,33 @@
         sum? (contains? #{:rub :int} fmt)
         avg? (= :pct fmt)
         canon (:canon-anchor c)
+        linkable? (:linkable? c)
         title (if canon
                 (str (:title c)
                      " <span title='Canon: " canon "' "
                      "style='font-size:9px;color:#9ca3af;cursor:help;'>ⓘ</span>")
-                (:title c))]
+                (:title c))
+        ;; SKU-link formatter: wraps the cell value in a <button data-sku data-nm-id>
+        ;; so sku-sheet.js click-delegation can open the drill-down panel.
+        ;; esc() escapes all user-supplied values to prevent XSS via article/nm-id strings.
+        sku-formatter "function(cell){
+          function esc(s){return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+          var row=cell.getRow().getData();
+          var v=cell.getValue();
+          var sku=row.article||row.nm_id||row.nmId||'';
+          var nmId=row.nm_id||row.nmId||'';
+          return '<button class=\"sku-link text-blue-600 hover:underline\" data-sku=\"'+esc(sku)+'\" data-nm-id=\"'+esc(nmId)+'\">'+esc(v)+'</button>';
+        }"]
     (cond-> (assoc c "headerFilter" true
                      "headerFilterPlaceholder" "Фильтр..."
                      "title" title)
-      sum? (assoc "bottomCalc" "sum"
-                  "bottomCalcFormatter" "money"
-                  "bottomCalcFormatterParams" {"thousand" " " "precision" 0})
-      avg? (assoc "bottomCalc" "avg"
-                  "bottomCalcFormatter" "money"
-                  "bottomCalcFormatterParams" {"precision" 1 "symbol" "%" "symbolAfter" "p"}))))
+      sum?      (assoc "bottomCalc" "sum"
+                       "bottomCalcFormatter" "money"
+                       "bottomCalcFormatterParams" {"thousand" " " "precision" 0})
+      avg?      (assoc "bottomCalc" "avg"
+                       "bottomCalcFormatter" "money"
+                       "bottomCalcFormatterParams" {"precision" 1 "symbol" "%" "symbolAfter" "p"})
+      linkable? (assoc "formatter" sku-formatter))))
 
 (defn tabulator-table
   "Render a container for Tabulator interactive table.
@@ -149,6 +162,20 @@
           const columns = " (json/write-value-as-string final-columns) ";
           window['" id "_presets'] = " (json/write-value-as-string (or column-presets {})) ";
           window['" id "_defaultVisible'] = " (json/write-value-as-string (or default-visible-fields [])) ";
+
+          // Hydrate string formatters (emitted as JS source) into real
+          // functions. Tabulator otherwise sees a string and treats it as a
+          // built-in name, which fails silently for the SKU-link formatter.
+          function hydrate(cols) {
+            cols.forEach(function(c) {
+              if (typeof c.formatter === 'string' && c.formatter.indexOf('function') === 0) {
+                try { c.formatter = new Function('return (' + c.formatter + ')')(); }
+                catch (e) { console.error('Formatter hydration failed:', e); }
+              }
+              if (Array.isArray(c.columns)) hydrate(c.columns);
+            });
+          }
+          hydrate(columns);
 
           " (when freezing-enabled?
               (str "for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {

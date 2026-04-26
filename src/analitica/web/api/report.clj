@@ -11,7 +11,8 @@
             [analitica.domain.geography :as geography]
             [analitica.domain.trends :as trends]
             [analitica.util.time :as t]
-            [analitica.util.period :as period]))
+            [analitica.util.period :as period]
+            [analitica.web.report-schemas :as rs]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helper functions
@@ -127,6 +128,69 @@
     (catch Exception _
       {:rows [] :totals {}})))
 
+;; ---------------------------------------------------------------------------
+;; Compare enrichment
+;; ---------------------------------------------------------------------------
+
+(defn enrich-with-compare
+  "Join current rows with prev rows and add _prev/_delta/_delta_pct columns for
+   each key in delta-cols.
+
+   Parameters:
+   - current    — seq of row maps (current period)
+   - prev       — seq of row maps (previous period); may be shorter or empty
+   - key-fn     — fn or keyword used to join rows (e.g. :article)
+   - delta-cols — seq of keywords whose prev/delta/delta_pct triplet to add
+
+   For each current row:
+   - If a matching prev row exists (same key-fn value):
+       :<col>_prev       = prev value, or nil if the column is missing from the prev row
+       :<col>_delta      = current - prev  (rounded to 2 decimals); nil if either value is non-numeric
+       :<col>_delta_pct  = 100 × delta / |prev|  (nil when prev = 0 or prev is nil)
+   - If no matching prev row: _prev = nil, _delta = nil, _delta_pct = nil
+
+   Returns a vector of enriched rows."
+  [current prev key-fn delta-cols]
+  (let [prev-index (into {} (map (juxt key-fn identity) prev))]
+    (mapv (fn [row]
+            (let [prev-row (get prev-index (key-fn row))]
+              (reduce (fn [r col]
+                        (let [cur-val  (get r col)
+                              prev-val (when prev-row (get prev-row col))
+                              delta    (when (and (number? cur-val) (number? prev-val))
+                                         (let [d (- cur-val prev-val)]
+                                           (/ (Math/round (* d 100.0)) 100.0)))
+                              delta-pct (when (and delta prev-val (not (zero? prev-val)))
+                                          (/ (Math/round (* 100.0 (/ delta prev-val) 100.0)) 100.0))
+                              pk (keyword (str (name col) "_prev"))
+                              dk (keyword (str (name col) "_delta"))
+                              dpk (keyword (str (name col) "_delta_pct"))]
+                          (assoc r pk prev-val dk delta dpk delta-pct)))
+                      row
+                      delta-cols)))
+          current)))
+
+;; ---------------------------------------------------------------------------
+;; Row join key by report type
+;; ---------------------------------------------------------------------------
+
+(def ^:private row-join-key
+  "Map of report-type → keyword used to join current and prev rows."
+  {:ue      :article
+   :finance :article
+   :sales   :group
+   :abc     :article
+   :returns :article
+   :buyout  :article
+   :geo     :region})
+
+(defn- delta-cols-for-schema
+  "Return the delta-supported column keys from a report schema."
+  [schema]
+  (->> (:columns schema)
+       (filter :delta-supported?)
+       (mapv :key)))
+
 (defn report-data
   "Returns map {:rows :totals [:compare {:rows :totals}]}.
 
@@ -159,12 +223,23 @@
                                 :trend-type  trend-type
                                 :article     article)]
     (if (= compare :prev)
-      (let [[from to]  (t/resolve-period period-arg)
-            [pf pt]    (period/compare-period {:from from :to to})
-            prev-period {:from pf :to pt}
-            prev        (compute-report report-type prev-period
-                                        :marketplace marketplace
-                                        :trend-type  trend-type
-                                        :article     article)]
-        (assoc current :compare prev))
+      (let [[from to]    (t/resolve-period period-arg)
+            [pf pt]      (period/compare-period {:from from :to to})
+            prev-period  {:from pf :to pt}
+            prev         (compute-report report-type prev-period
+                                         :marketplace marketplace
+                                         :trend-type  trend-type
+                                         :article     article)
+            ;; Enrich current rows with _prev/_delta/_delta_pct columns when
+            ;; the schema defines delta-supported columns and a join key exists.
+            join-key     (get row-join-key report-type)
+            schema       (rs/get-schema report-type)
+            dcols        (when (and join-key schema) (delta-cols-for-schema schema))
+            enriched-rows (if (and join-key (seq dcols))
+                            (enrich-with-compare (:rows current) (:rows prev)
+                                                 join-key dcols)
+                            (:rows current))]
+        (-> current
+            (assoc :rows enriched-rows)
+            (assoc :compare prev)))
       current)))

@@ -2,37 +2,37 @@
   (:require [clojure.test :refer [deftest is testing]]
             [analitica.web.pages.dashboard :as dashboard]))
 
-(deftest summary-dashboard-test
-  (testing "summary-dashboard renders without errors"
-    (let [result (dashboard/summary-dashboard :last-week)]
+(deftest summary-page-test
+  (testing "summary-page renders without errors"
+    (let [result (dashboard/summary-page :last-week)]
       (is (vector? result))
       (is (= :div (first result)))))
   
-  (testing "summary-dashboard accepts keyword period"
-    (let [result (dashboard/summary-dashboard :last-7-days)]
+  (testing "summary-page accepts keyword period"
+    (let [result (dashboard/summary-page :last-7-days)]
       (is (vector? result))))
   
-  (testing "summary-dashboard accepts map period"
-    (let [result (dashboard/summary-dashboard {:from "2026-04-01" :to "2026-04-30"})]
+  (testing "summary-page accepts map period"
+    (let [result (dashboard/summary-page {:from "2026-04-01" :to "2026-04-30"})]
       (is (vector? result))))
   
-  (testing "summary-dashboard shows no-data banner when metrics are zero"
+  (testing "summary-page shows no-data banner when metrics are zero"
     (let [zero-metrics {:revenue 0.0
                         :orders 0
                         :profit 0.0
                         :return-rate 0.0}
-          result (dashboard/summary-dashboard :last-week :metrics zero-metrics)
+          result (dashboard/summary-page :last-week :metrics zero-metrics)
           html-str (pr-str result)]
       (is (vector? result))
       ;; Check that no-data banner is present
       (is (re-find #"Нет данных за выбранный период" html-str))))
   
-  (testing "summary-dashboard does not show no-data banner when metrics have data"
+  (testing "summary-page does not show no-data banner when metrics have data"
     (let [metrics {:revenue 100000.0
                    :orders 50
                    :profit 20000.0
                    :return-rate 5.0}
-          result (dashboard/summary-dashboard :last-week :metrics metrics)
+          result (dashboard/summary-page :last-week :metrics metrics)
           html-str (pr-str result)]
       (is (vector? result))
       ;; Check that no-data banner is NOT present

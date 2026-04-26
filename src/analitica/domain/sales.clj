@@ -21,9 +21,12 @@
     :else             [(:from period) (:to period)]))
 
 (defn- db-sales [from to marketplace]
+  ;; The marketplace clause MUST be inserted before ORDER BY — appending it
+  ;; after the ORDER BY would silently turn it into part of the ordering
+  ;; expression and the filter would be ignored entirely.
   (let [mp-clause (when marketplace " AND marketplace = ?")
         params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
-    (->> (db/query (into [(str "SELECT * FROM sales WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+    (->> (db/query (into [(str "SELECT * FROM sales WHERE date >= ? AND date <= ?" mp-clause " ORDER BY date")] params))
          (mapv #(-> % (update :type keyword) (update :marketplace keyword))))))
 
 (defn fetch-sales
@@ -40,7 +43,7 @@
     (case source
       :db  (let [mp-clause (when marketplace " AND marketplace = ?")
                  params    (cond-> [from (str to "T23:59:59")] marketplace (conj (name marketplace)))]
-             (->> (db/query (into [(str "SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY date" mp-clause)] params))
+             (->> (db/query (into [(str "SELECT * FROM orders WHERE date >= ? AND date <= ?" mp-clause " ORDER BY date")] params))
                   (mapv #(-> % (update :status keyword) (update :marketplace keyword)))))
       :api (proto/fetch-orders (get-mp marketplace) from to))))
 
@@ -60,10 +63,22 @@
                 {:group         k
                  :sales-count   (count sales)
                  :returns-count (count returns)
-                 :revenue       (reduce + 0.0 (map #(or (:for-pay %) 0) sales))
+                 ;; Coalesce revenue: WB fills :for-pay, Ozon fills only
+                 ;; :total-price (postings API doesn't return per-item payout),
+                 ;; YM may also be partial. Falling back keeps the column
+                 ;; meaningful across all 3 marketplaces.
+                 :revenue       (reduce +
+                                        0.0
+                                        (map (fn [s]
+                                               (or (:for-pay s)
+                                                   (:price-with-disc s)
+                                                   (:finished-price s)
+                                                   (:total-price s)
+                                                   0))
+                                             sales))
                  :avg-price     (math/round2
                                  (math/safe-div
-                                  (reduce + 0.0 (map #(or (:finished-price %) 0) sales))
+                                  (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
                                   (count sales)))})))
        (sort-by :revenue >)))
 
@@ -90,15 +105,27 @@
   (group-and-sum sales-data :region))
 
 (defn totals
-  "Period rollup. See docs/canonical-formulas.md §Sales.4 for the canonical formulas."
+  "Period rollup. See docs/canonical-formulas.md §Sales.4 for the canonical formulas.
+
+   Revenue uses the same coalesce chain as `by-day` so Ozon (which fills only
+   :total-price in sales rows, not :for-pay) reports a non-zero gross figure."
   [sales-data]
   (let [sales   (filter #(= :sale (:type %)) sales-data)
-        returns (filter #(= :return (:type %)) sales-data)]
+        returns (filter #(= :return (:type %)) sales-data)
+        revenue-of (fn [s]
+                     (or (:for-pay s)
+                         (:price-with-disc s)
+                         (:finished-price s)
+                         (:total-price s)
+                         0))]
     {:total-sales    (count sales)
      :total-returns  (count returns)
-     :total-revenue  (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) sales)))
+     :sales-count    (count sales)
+     :returns-count  (count returns)
+     :total-revenue  (math/round2 (reduce + 0.0 (map revenue-of sales)))
+     :revenue        (math/round2 (reduce + 0.0 (map revenue-of sales)))
      :avg-price      (math/round2 (math/safe-div
-                                   (reduce + 0.0 (map #(or (:finished-price %) 0) sales))
+                                   (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
                                    (count sales)))
      :return-rate    (math/percentage (count returns) (+ (count sales) (count returns)))
      :unique-skus    (count (distinct (map :article sales-data)))}))

@@ -14,7 +14,10 @@
 (defn fetch-stocks
   [& {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (case source
-    :db  (db/query ["SELECT * FROM stocks ORDER BY article"])
+    :db  (if marketplace
+           (db/query ["SELECT * FROM stocks WHERE marketplace = ? ORDER BY article"
+                      (name marketplace)])
+           (db/query ["SELECT * FROM stocks ORDER BY article"]))
     :api (proto/fetch-stocks (get-mp marketplace))))
 
 ;; ---------------------------------------------------------------------------
