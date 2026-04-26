@@ -1,7 +1,9 @@
 (ns analitica.web.pages.reports
   (:require [hiccup.core :refer [html]]
             [analitica.web.components :as c]
-            [analitica.web.report-schemas :as rs]))
+            [analitica.web.components.stale-banner :as sb]
+            [analitica.web.report-schemas :as rs]
+            [analitica.freshness :as freshness]))
 
 ;; ---------------------------------------------------------------------------
 ;; Schema Column Helpers
@@ -217,11 +219,23 @@
                      (when compare "&compare=prev"))
         chart-api-url (str "/api/chart/report?type=" (name report-type)
                            "&" period-frag marketplace-param
-                           (when compare "&compare=prev"))]
+                           (when compare "&compare=prev"))
+        ;; Stale-data banner — query DB for freshness; nil on any error (non-blocking)
+        mp-kw  (when (and marketplace (not= marketplace "all"))
+                 (keyword marketplace))
+        period-str (cond
+                     (map? period)     (str (:from period) "_" (:to period))
+                     (keyword? period) (name period)
+                     :else             (str period))
+        stale  (try
+                 (freshness/stale-info {:report report-type :marketplace mp-kw})
+                 (catch Exception _ nil))]
 
     [:div
      [:div.mb-6
       [:h2.text-2xl.font-bold.text-gray-900 report-title]]
+
+     (sb/stale-banner stale {:report report-type :period period-str})
 
      (when show-no-data (no-data-banner))
 
