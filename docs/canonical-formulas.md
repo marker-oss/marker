@@ -3011,7 +3011,57 @@ All three marketplaces are covered. Each populates `:sale` and `:return` rows vi
 
 ---
 
-### Buyout.7 — Verification summary
+### Buyout.7 — True buyout (orders-aware)
+
+**Members:** `:placed`, `:cancelled`, `:cancel-rate`, `:true-buyout-rate`.
+
+**Formula**
+
+```
+placed         := COUNT(orders for article in period)
+cancelled      := COUNT(orders where order-status/canonicalize = :cancelled)
+cancel-rate    := math/percentage(cancelled, placed)
+true-buyout-rate := math/percentage(sold, placed)
+```
+
+**Economic justification.** §Buyout.1's `buyout-rate` only sees events that
+landed in the `sales` table — sales (delivered, paid out) and returns (post-
+delivery refusals). Orders cancelled before delivery never reach `sales`.
+For WB this is dramatic: ~50% of placed orders are cancelled before the
+seller sees them, so the legacy buyout rate (90% on average) hides the
+true conversion rate (~35-45%). The orders-aware true-buyout-rate uses
+`orders.placed` as denominator and surfaces this gap.
+
+**Inputs.** `orders-by-article` keyword arg to `buyout/analyze`, populated
+by `db/orders-by-article` in the report layer. The DB query canonicalises
+each MP's status taxonomy via `analitica.domain.order-status/canonicalize`
+(see that file for the per-MP mapping).
+
+**Edge cases.**
+
+- An article missing from `orders-by-article` (e.g. legacy data without
+  orders ingest, or test fixtures that don't supply the map) gets row keys
+  `:placed` / `:cancelled` / `:cancel-rate` / `:true-buyout-rate` **omitted
+  entirely** — never silently defaulted to 0 or 100. Backward-compatible
+  with §Buyout.1 callers.
+- WB has no separate `delivered` status — completed WB orders stay
+  `active`. So `true-buyout-rate` for WB is computed as `sold / placed`
+  where `sold` comes from the `sales` table (settled events). Cancellations
+  always show up explicitly with `cancelled` status.
+- YM `cancelled-in-delivery` orders are bucketed as `:cancelled` by
+  `order-status/canonicalize`, but the YM sales materializer also emits a
+  `:return` row for some of them — see Buyout.6.2. This means YM's
+  `bought + returned + cancelled > placed` for some articles. The metrics
+  are still individually meaningful but do not sum cleanly. Cross-check
+  with `report/calculate :buyout :marketplace :ym` and individual rows
+  rather than aggregate sums on YM.
+
+**Verification.** `buyout_test.clj` › `orders-by-article-adds-true-buyout-rate`,
+`no-orders-map-keeps-legacy-shape`, `article-without-orders-data-omits-true-rate`.
+
+---
+
+### Buyout.8 — Verification summary
 
 - Every Buyout.N group has a corresponding `deftest` in
   `test/analitica/domain/buyout_canon_test.clj`.

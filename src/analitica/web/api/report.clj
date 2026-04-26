@@ -104,9 +104,17 @@
             rows (returns/by-article sales-data)]
         {:rows (vec rows) :totals {}})
 
-      ;; Buyout analysis
+      ;; Buyout analysis. Per §Buyout.7, when `orders-by-article` is wired in,
+      ;; rows expose `:placed`, `:cancelled`, `:cancel-rate`, `:true-buyout-rate`
+      ;; in addition to the legacy sales-only `:buyout-rate`.
       :buyout
-      {:rows (vec (buyout/analyze period)) :totals {}}
+      (let [[from to]    (resolve-dates period)
+            orders-rows  (db/orders-by-article from to :marketplace marketplace)
+            orders-map   (into {} (map (juxt :article identity) orders-rows))]
+        {:rows (vec (buyout/analyze period
+                                    :marketplace marketplace
+                                    :orders-by-article orders-map))
+         :totals {}})
 
       ;; Geography report
       :geo

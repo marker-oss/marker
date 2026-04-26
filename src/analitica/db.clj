@@ -617,6 +617,37 @@
   (jdbc/execute! (ds) sql-params
                  {:builder-fn rs/as-unqualified-kebab-maps}))
 
+(defn orders-by-article
+  "Group rows of `orders` for a date range by `article`. Returns a vector of
+   maps `{:article :placed :cancelled}` where `:placed` is the total order
+   count and `:cancelled` is the count of orders whose status canonicalizes
+   to `:cancelled` (per `domain.order-status/canonicalize`). Marketplace
+   filter is applied in SQL.
+
+   Powering metric: `:true-buyout-rate = sales.sold / orders.placed` —
+   counts cancellations that never reach the `sales` table."
+  [from to & {:keys [marketplace]}]
+  (let [mp-clause (when marketplace " AND marketplace = ?")
+        params    (cond-> [from (str to "T23:59:59")]
+                    marketplace (conj (name marketplace)))
+        rows      (query (into [(str "SELECT article, status, COUNT(*) AS n
+                                      FROM orders
+                                      WHERE article IS NOT NULL AND article != ''
+                                        AND date >= ? AND date <= ?" mp-clause "
+                                      GROUP BY article, status")]
+                               params))
+        canonicalize (requiring-resolve 'analitica.domain.order-status/canonicalize)]
+    (->> rows
+         (group-by :article)
+         (mapv (fn [[art rs]]
+                 (reduce (fn [acc r]
+                           (let [n (or (:n r) 0)]
+                             (cond-> (update acc :placed + n)
+                               (= :cancelled (canonicalize (:status r)))
+                               (update :cancelled + n))))
+                         {:article art :placed 0 :cancelled 0}
+                         rs))))))
+
 (defn storage-by-article
   "Sum paid storage costs by article for period.
    Maps barcode→article via finance table, falls back to paid_storage.article."
