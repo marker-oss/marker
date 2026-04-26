@@ -170,7 +170,8 @@
      [:script {:src "/js/table-columns.js"}]
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
-     [:script {:src "/js/sku-sheet.js"}]
+     ;; sku-sheet.js is loaded at end of <body> after its <dialog> element
+     ;; exists; loading here would make the IIFE bail silently.
 
      ;; Custom styles
      [:style "
@@ -225,14 +226,13 @@
          box-shadow: -4px 0 24px rgba(0,0,0,0.12);
          padding: 0;
          overflow: hidden;
-         display: flex;
          flex-direction: column;
-       }
-       dialog.sku-sheet::backdrop {
-         background: rgba(0,0,0,0.25);
        }
        dialog.sku-sheet[open] {
          display: flex;
+       }
+       dialog.sku-sheet::backdrop {
+         background: rgba(0,0,0,0.25);
        }
        .sku-sheet-content {
          flex: 1;
@@ -300,6 +300,7 @@
        .cmdk-results li { list-style: none; }
        .cmdk-footer { background: #f9fafb; border-top: 1px solid #e5e7eb; }
      "]]
-     ;; cmdk.js must load after <dialog id="cmdk-palette"> exists in DOM
+     ;; sku-sheet.js + cmdk.js must load after their <dialog> elements exist
+     [:script {:src "/js/sku-sheet.js"}]
      [:script {:src "/js/cmdk.js"}]]))
 

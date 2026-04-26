@@ -163,6 +163,20 @@
           window['" id "_presets'] = " (json/write-value-as-string (or column-presets {})) ";
           window['" id "_defaultVisible'] = " (json/write-value-as-string (or default-visible-fields [])) ";
 
+          // Hydrate string formatters (emitted as JS source) into real
+          // functions. Tabulator otherwise sees a string and treats it as a
+          // built-in name, which fails silently for the SKU-link formatter.
+          function hydrate(cols) {
+            cols.forEach(function(c) {
+              if (typeof c.formatter === 'string' && c.formatter.indexOf('function') === 0) {
+                try { c.formatter = new Function('return (' + c.formatter + ')')(); }
+                catch (e) { console.error('Formatter hydration failed:', e); }
+              }
+              if (Array.isArray(c.columns)) hydrate(c.columns);
+            });
+          }
+          hydrate(columns);
+
           " (when freezing-enabled?
               (str "for (let i = 0; i < " frozen-cols " && i < columns.length; i++) {
                       columns[i].frozen = true;

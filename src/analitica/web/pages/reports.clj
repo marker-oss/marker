@@ -152,8 +152,10 @@
   [report-type period marketplace]
   (let [period-frag (period->url-frag period)
         base-url (str "/api/export/" (name report-type) "?" period-frag)
-        marketplace-param (if (and marketplace (not= marketplace "all"))
-                            (str "&marketplace=" marketplace)
+        marketplace-str (when marketplace
+                          (if (keyword? marketplace) (name marketplace) (str marketplace)))
+        marketplace-param (if (and marketplace-str (not= marketplace-str "all"))
+                            (str "&marketplace=" marketplace-str)
                             "")]
     [:div.flex.items-center.gap-2
      [:a.px-4.py-2.bg-green-600.text-white.rounded-md.hover:bg-green-700.transition-colors.text-sm.font-medium
@@ -211,8 +213,14 @@
         tabs (or (:tabs schema) [:chart])
         active-tab (first tabs)
         tab-set (set tabs)
-        marketplace-param (if (and marketplace (not= marketplace "all"))
-                            (str "&marketplace=" marketplace) "")
+        ;; marketplace can arrive as a keyword (`:wb`) or string (`"wb"`); when
+        ;; it is a keyword, plain `str` would emit `:wb` and the API rejects it.
+        marketplace-str (when marketplace
+                          (cond
+                            (keyword? marketplace) (name marketplace)
+                            :else                  (str marketplace)))
+        marketplace-param (if (and marketplace-str (not= marketplace-str "all"))
+                            (str "&marketplace=" marketplace-str) "")
         article-param (when (seq article)
                         (str "&article=" (java.net.URLEncoder/encode article "UTF-8")))
         period-frag (period->url-frag period)
@@ -293,11 +301,17 @@
                                   :default-visible-fields default-visible
                                   :on-row-click-js
                                   (when (#{:ue :finance} report-type)
+                                    ;; If click was on a SKU link button, sku-sheet.js handles it
+                                    ;; via document-level capture and we must NOT also open the
+                                    ;; legacy right-side drill-panel.
                                     (str "function(e, row) {\n"
+                                         "  if (e && e.target && e.target.closest && e.target.closest('.sku-link')) return;\n"
                                          "  const d = row.getData();\n"
                                          "  if (d.article) { window.openDrillPanel('"
                                          (name report-type) "', d.article, '"
-                                         period-frag "', '" (or marketplace "all") "'); }\n"
+                                         period-frag "', '" (or (when marketplace
+                                                                  (if (keyword? marketplace) (name marketplace) (str marketplace)))
+                                                                "all") "'); }\n"
                                          "}"))})])
            [:div.text-gray-500.text-sm "Нет табличных данных для этого отчёта"])])
 

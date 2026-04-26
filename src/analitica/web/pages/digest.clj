@@ -439,10 +439,15 @@
         buyout-data (try (buyout/analyze curr-period)
                          (catch Exception _ []))
         ;; Top 10 by revenue + last-3-days sales for ZERO_SALES_TOP_SKU alert
+        ;; sales/by-article emits {:group <article> ...} (not :article); the
+        ;; alerts rule expects :article, so we copy it across.
         top-10 (->> curr-by-art
                     (sort-by :revenue >)
                     (take 10)
-                    (map-indexed (fn [i r] (assoc r :rank (inc i)))))
+                    (map-indexed (fn [i r]
+                                   (assoc r
+                                          :rank    (inc i)
+                                          :article (or (:article r) (:group r))))))
         three-days-ago (-> (java.time.LocalDate/parse curr-to)
                            (.minusDays 2)
                            str)

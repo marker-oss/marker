@@ -67,6 +67,8 @@
   // Click delegation — handles Tabulator sku-link buttons
   // -------------------------------------------------------------------------
 
+  // Capture phase so we run BEFORE Tabulator's row-click handler
+  // (drill-panel.js) — otherwise both panels open on the same click.
   document.addEventListener('click', async function (e) {
     const btn = e.target.closest('[data-sku],[data-nm-id]');
     if (!btn) return;
@@ -80,6 +82,7 @@
 
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
 
     // Show dialog with loading state
     if (contentEl) contentEl.innerHTML = '<div class="sku-sheet-loading">Загрузка…</div>';
@@ -104,6 +107,6 @@
         contentEl.innerHTML = '<div class="sku-sheet-error">Ошибка сети</div>';
       }
     }
-  });
+  }, true);  // capture=true to beat row-click handlers
 
 })();
