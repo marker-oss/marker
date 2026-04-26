@@ -8,11 +8,23 @@
 ;; Helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- sale-type [status]
+(defn- sale-type
+  "Classify an Ozon posting status. Returns one of `:sale`, `:return`,
+   `:cancelled` or `:in-flight`. Cancelled and in-flight orders are not
+   settled events — caller is expected to drop them so they never reach
+   the `sales` table. (Matches the §M5 contract for YM materialization.)
+
+   Legacy code mapped `cancelled` → `:return`, which polluted the sales
+   table with rejected-in-delivery rows masquerading as post-delivery
+   returns. The `orders` table now tracks cancellations explicitly via
+   `analitica.domain.order-status/canonicalize`; this transformer no
+   longer needs to fold them into `:return`."
+  [status]
   (cond
     (#{"delivered" "awaiting_deliver"} status) :sale
-    (#{"cancelled" "returned"}         status) :return
-    :else                                       :sale))
+    (#{"returned"}                     status) :return
+    (#{"cancelled"}                    status) :cancelled
+    :else                                       :in-flight))
 
 ;; ---------------------------------------------------------------------------
 ;; Orders
@@ -46,32 +58,62 @@
 ;; Sales
 ;; ---------------------------------------------------------------------------
 
-(defn- ->sale [raw]
-  (let [products  (get raw :products [])
-        product   (first products)
-        status    (get raw :status)
-        analytics (get raw :analytics_data {})]
+(defn- match-fin-product
+  "Pair `products[i]` with the `financial_data.products` entry that shares
+   its `:sku` (Ozon emits `:sku` in `products` and `:product_id` in
+   `financial_data.products`, both pointing at the same numeric SKU).
+   Falls back to positional match by `idx` when the SKU lookup misses —
+   in practice the two arrays are index-aligned anyway."
+  [fin-products idx product]
+  (or (some #(when (= (:sku product) (:product_id %)) %) fin-products)
+      (nth fin-products idx nil)))
+
+(defn- ->sale-row
+  "Build one sales row from a single posting product. The financial_data
+   entry carries the seller payout (`:payout`) and the buyer's actual
+   final paid price (`:customer_price`) — fields the legacy transformer
+   left as nil."
+  [order product fin-product idx type]
+  (let [analytics (get order :analytics_data {})]
     {:marketplace     :ozon
-     :sale-id         (get raw :posting_number)
-     :date            (get raw :in_process_at)
+     :sale-id         (str (get order :posting_number) "-" idx)
+     :date            (get order :in_process_at)
      :article         (get product :offer_id)
      :nm-id           nil
      :barcode         nil
      :tech-size       nil
-     :subject         nil
+     :subject         (get product :name)
      :category        nil
      :brand           nil
      :quantity        (get product :quantity)
      :total-price     (get product :price)
-     :for-pay         nil
-     :finished-price  nil
-     :price-with-disc nil
-     :warehouse       (get analytics :warehouse_name)
+     :for-pay         (some-> fin-product :payout double)
+     :finished-price  (some-> fin-product :customer_price double)
+     :price-with-disc (some-> fin-product :customer_price double)
+     ;; Live Ozon postings emit warehouse under :warehouse, not
+     ;; :warehouse_name (legacy bug — every Ozon sales row had warehouse=NULL).
+     :warehouse       (get analytics :warehouse)
      :region          (get analytics :region)
-     :type            (sale-type status)}))
+     :type            type}))
+
+(defn- ->sale-items
+  "Expand one Ozon posting into N sales rows — one per product. Cancelled
+   and in-flight orders produce zero rows because they are not settled
+   events; the `orders` table tracks them via the canonical status path."
+  [order]
+  (let [products      (get order :products [])
+        fin-products  (get-in order [:financial_data :products])
+        type          (sale-type (get order :status))]
+    (when (#{:sale :return} type)
+      (->> products
+           (map-indexed
+            (fn [idx product]
+              (let [fin (match-fin-product fin-products idx product)]
+                (->sale-row order product fin idx type))))
+           vec))))
 
 (defn ->sales [raw-list]
-  (mapv ->sale raw-list))
+  (vec (mapcat ->sale-items raw-list)))
 
 ;; ---------------------------------------------------------------------------
 ;; Stocks
