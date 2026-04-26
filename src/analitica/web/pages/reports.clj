@@ -2,9 +2,54 @@
   (:require [hiccup.core :refer [html]]
             [analitica.web.components :as c]
             [analitica.web.components.stale-banner :as sb]
+            [analitica.web.pages.digest :as digest]
             [analitica.web.report-schemas :as rs]
+            [analitica.domain.finance :as finance]
+            [analitica.domain.pnl :as pnl]
+            [analitica.domain.sales :as sales]
+            [analitica.util.time :as time]
             [analitica.freshness :as freshness]
             [com.brunobonacci.mulog :as μ]))
+
+(defn- compute-by-marketplace
+  "Compute per-MP {:revenue :profit :margin :sales-qty :returns-qty} for the
+   given period via the canonical pnl/calculate path. Only invoked when no
+   single marketplace is selected, since the per-MP breakdown is exactly
+   what's interesting in the all-MP view."
+  [period-arg]
+  (let [[from to] (time/resolve-period period-arg)
+        period    {:from from :to to}]
+    (vec
+     (for [mp [:wb :ozon :ym]]
+       (let [fin     (try (finance/fetch-finance period :marketplace mp)
+                          (catch Exception _ []))
+             p       (try (pnl/calculate fin :marketplace mp)
+                          (catch Exception _ {}))
+             mp-sales (try (sales/fetch-sales period :marketplace mp)
+                           (catch Exception _ []))
+             s-totals (try (sales/totals mp-sales) (catch Exception _ {}))
+             fin-rev  (or (:revenue p) 0.0)
+             sale-rev (or (:total-revenue s-totals) (:revenue s-totals) 0.0)
+             prelim?  (and (zero? fin-rev) (pos? sale-rev))
+             revenue  (if prelim? sale-rev fin-rev)
+             profit   (or (:net-profit p) 0.0)
+             margin   (when (and (number? revenue) (pos? revenue))
+                        (* 100.0 (/ profit revenue)))]
+         (let [pnl-sq  (:sales-qty p)
+               pnl-rq  (:returns-qty p)
+               sq      (if (and (number? pnl-sq) (pos? pnl-sq))
+                         pnl-sq
+                         (or (:sales-count s-totals) 0))
+               rq      (if (and (number? pnl-rq) (pos? pnl-rq))
+                         pnl-rq
+                         (or (:returns-count s-totals) 0))]
+           {:marketplace mp
+            :revenue     revenue
+            :profit      profit
+            :margin      margin
+            :sales-qty   sq
+            :returns-qty rq
+            :preliminary? prelim?}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Schema Column Helpers
@@ -262,6 +307,16 @@
      ;; KPI row (above tabs) — pass compare-totals for period-over-period deltas
      (when (and kpi-schema (seq totals))
        (c/kpi-row kpi-schema totals compare-totals))
+
+     ;; Per-marketplace breakdown — shown on P&L when no single MP is selected.
+     ;; The whole point of P&L is comparing all 3 in the all-MP view.
+     (when (and (= report-type :pnl)
+                (or (nil? marketplace) (= marketplace "all") (= marketplace :all)))
+       (try
+         (digest/marketplace-comparison-table (compute-by-marketplace period))
+         (catch Exception e
+           (μ/log ::pnl-mp-breakdown-failed :error (.getMessage e))
+           nil)))
 
      ;; Tab switcher
      (c/tab-switcher {:tabs tabs

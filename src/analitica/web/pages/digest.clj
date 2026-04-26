@@ -204,6 +204,61 @@
         [:tbody (map mover-row rows)]])]))
 
 ;; ---------------------------------------------------------------------------
+;; Per-marketplace comparison table
+;; ---------------------------------------------------------------------------
+
+(defn- mp-display [mp]
+  (case mp :wb "Wildberries" :ozon "Ozon" :ym "Yandex.Market" (name mp)))
+
+(defn- fmt-rub
+  [v]
+  (if (number? v)
+    (str (format "%,.0f" (double v)) " ₽")
+    "—"))
+
+(defn- fmt-pct-cell
+  [v]
+  (if (number? v)
+    (str (format "%.1f" (double v)) "%")
+    "—"))
+
+(defn marketplace-comparison-table
+  "Per-marketplace breakdown row — WB / Ozon / Я.Маркет side-by-side.
+  by-marketplace is a vector of {:marketplace :revenue :profit :margin
+  :sales-qty :returns-qty} (one row per MP)."
+  [by-marketplace]
+  [:section.bg-white.rounded-lg.shadow.p-4.mb-6
+   [:h3.text-base.font-semibold.text-gray-800.mb-3
+    "🏪 По маркетплейсам"]
+   (if (empty? by-marketplace)
+     [:div.text-sm.text-gray-500 "Нет данных"]
+     [:div.overflow-x-auto
+      [:table.min-w-full.text-sm
+       [:thead
+        [:tr.bg-gray-50.text-left.text-xs.uppercase.text-gray-500
+         [:th.px-3.py-2 "Маркетплейс"]
+         [:th.px-3.py-2.text-right "Выручка"]
+         [:th.px-3.py-2.text-right "Прибыль"]
+         [:th.px-3.py-2.text-right "Маржа"]
+         [:th.px-3.py-2.text-right "Продажи (шт)"]
+         [:th.px-3.py-2.text-right "Возвраты (шт)"]]]
+       [:tbody.divide-y.divide-gray-100
+        (for [m by-marketplace]
+          [:tr
+           [:td.px-3.py-2.font-medium (mp-display (:marketplace m))]
+           [:td.px-3.py-2.text-right
+            (fmt-rub (:revenue m))
+            (when (:preliminary? m)
+              [:span.ml-1.text-xs.text-amber-600 {:title "Финансовый отчёт ещё не опубликован — показана gross-выручка по продажам"} "(предв.)"])]
+           [:td.px-3.py-2.text-right
+            {:class (cond (and (number? (:profit m)) (neg? (:profit m))) "text-red-600"
+                          (and (number? (:profit m)) (pos? (:profit m))) "text-green-600")}
+            (fmt-rub (:profit m))]
+           [:td.px-3.py-2.text-right (fmt-pct-cell (:margin m))]
+           [:td.px-3.py-2.text-right (or (:sales-qty m) "—")]
+           [:td.px-3.py-2.text-right (or (:returns-qty m) "—")]])]]])])
+
+;; ---------------------------------------------------------------------------
 ;; Data-freshness panel
 ;; ---------------------------------------------------------------------------
 
@@ -324,7 +379,7 @@
     :freshness     — {:wb :ozon :ym} with iso-datetime or nil
     :from / :to    — ISO date strings
     :daily-revenue — vector of {:day :revenue} for 30-day bar chart (unused in SVG path)"
-  [{:keys [kpi alerts movers fallers freshness from to daily-revenue]}]
+  [{:keys [kpi alerts movers fallers freshness from to daily-revenue by-marketplace]}]
   (let [today-str (fmt-date-header (or to (str (java.time.LocalDate/now))))
         n-alerts  (count alerts)]
     [:div.digest-page.max-w-7xl.mx-auto.px-4.py-6
@@ -372,6 +427,9 @@
          "✅ Всё в порядке — нет срочных предупреждений"]
         [:div.flex.flex-col.gap-3
          (map alert-card alerts)])]
+
+     ;; Row 2.5: Per-marketplace comparison
+     (marketplace-comparison-table (or by-marketplace []))
 
      ;; Row 3: Revenue chart (period-over-period dynamics)
      (revenue-chart daily-revenue)
@@ -512,7 +570,54 @@
         all-movers   (compute-movers-fallers curr-by-art prev-by-art)
         movers       (filter #(pos? (:delta-pct %)) all-movers)
         fallers      (filter #(neg? (:delta-pct %)) all-movers)
-        freshness    (try (alerts/freshness-data) (catch Exception _ {}))]
+        freshness    (try (alerts/freshness-data) (catch Exception _ {}))
+        ;; Per-marketplace breakdown — fetch finance per MP and roll up via PnL.
+        ;; Reuses the canonical pnl/calculate path so numbers align with the
+        ;; full P&L report for each MP. When the finance/realization report
+        ;; for the period hasn't been published yet (Ozon realization is
+        ;; monthly, current month always lags), revenue from PnL is 0 — fall
+        ;; back to gross sales-side total to avoid showing «0 ₽» when there
+        ;; is real data, marking the row as preliminary.
+        by-marketplace
+        (vec
+         (for [mp [:wb :ozon :ym]]
+           (let [mp-fin    (try (finance/fetch-finance curr-period :marketplace mp)
+                                (catch Exception _ []))
+                 mp-pnl    (try (pnl/calculate mp-fin :marketplace mp)
+                                (catch Exception _ {}))
+                 mp-sales  (try (sales/fetch-sales curr-period :marketplace mp)
+                                (catch Exception _ []))
+                 sales-totals (try (sales/totals mp-sales) (catch Exception _ {}))
+                 fin-rev   (or (:revenue mp-pnl) 0.0)
+                 sales-rev (or (:total-revenue sales-totals)
+                               (:revenue sales-totals)
+                               0.0)
+                 ;; If finance hasn't published yet but sales has data, show
+                 ;; sales-based gross as preliminary.
+                 prelim?   (and (zero? fin-rev) (pos? sales-rev))
+                 revenue   (if prelim? sales-rev fin-rev)
+                 profit    (or (:net-profit mp-pnl) 0.0)
+                 margin    (when (and (number? revenue) (pos? revenue))
+                             (* 100.0 (/ profit revenue)))
+                 ;; PnL :sales-qty / :returns-qty come from finance — when the
+                 ;; report isn't published (Ozon current month) they're 0 not
+                 ;; nil, so an `or` chain wouldn't fall through. Use explicit
+                 ;; positive-check to fall back to sales-table counts.
+                 pnl-sq    (:sales-qty mp-pnl)
+                 pnl-rq    (:returns-qty mp-pnl)
+                 sales-qty (if (and (number? pnl-sq) (pos? pnl-sq))
+                             pnl-sq
+                             (or (:sales-count sales-totals) 0))
+                 ret-qty   (if (and (number? pnl-rq) (pos? pnl-rq))
+                             pnl-rq
+                             (or (:returns-count sales-totals) 0))]
+             {:marketplace mp
+              :revenue     revenue
+              :profit      profit
+              :margin      margin
+              :sales-qty   sales-qty
+              :returns-qty ret-qty
+              :preliminary? prelim?})))]
     {:kpi     {:revenue          rev-curr
                :net-profit       np-curr
                :margin           margin-curr
@@ -534,7 +639,8 @@
      :freshness       freshness
      :from            curr-from
      :to              curr-to
-     :daily-revenue   curr-by-day}))
+     :daily-revenue   curr-by-day
+     :by-marketplace  by-marketplace}))
 
 ;; ---------------------------------------------------------------------------
 ;; Ring page handler
