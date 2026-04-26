@@ -125,10 +125,10 @@
       ;; Trends report
       :trends
       (case (or trend-type :wow)
-        :wow   {:rows (vec (trends/wow))         :totals {}}
-        :mom   {:rows (vec (trends/mom))         :totals {}}
-        :daily {:rows (vec (trends/daily period)) :totals {}}
-        {:rows (vec (trends/wow)) :totals {}})
+        :wow   {:rows (vec (trends/wow              :marketplace marketplace)) :totals {}}
+        :mom   {:rows (vec (trends/mom              :marketplace marketplace)) :totals {}}
+        :daily {:rows (vec (trends/daily period     :marketplace marketplace)) :totals {}}
+        {:rows (vec (trends/wow :marketplace marketplace)) :totals {}})
 
       ;; Unknown report type
       {:rows [] :totals {}})
