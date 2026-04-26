@@ -89,9 +89,9 @@
     (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-orders)]
       (let [rows (buyout/analyze [:last-7-days])
             a    (first (filter #(= "A" (:article %)) rows))]
-        (is (= #{:article :subject :ordered :bought :returned :buyout-rate}
+        (is (= #{:article :subject :ordered :total-ops :bought :returned :buyout-rate}
                (set (keys a)))
-            "Backward-compatible: callers that don't pass orders see the same shape as before.")))))
+            "Backward-compat: legacy :ordered + canonical :total-ops alias both present (§Buyout.6.1)")))))
 
 (deftest article-without-orders-data-omits-true-rate
   (testing "Article missing from orders-map: legacy fields populated, §Buyout.7 fields absent."

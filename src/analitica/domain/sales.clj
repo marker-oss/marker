@@ -128,7 +128,12 @@
                                    (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
                                    (count sales)))
      :return-rate    (math/percentage (count returns) (+ (count sales) (count returns)))
-     :unique-skus    (count (distinct (map :article sales-data)))}))
+     ;; Disambiguate cross-MP article-code collisions per Sales.7.3.
+     ;; Two marketplaces can use the same `:article` string for different
+     ;; physical SKUs (e.g. legacy migrated catalogs). Keying on
+     ;; (marketplace, article) keeps each cross-MP variant distinct;
+     ;; for single-MP datasets this collapses to the legacy count.
+     :unique-skus    (count (distinct (map (juxt :marketplace :article) sales-data)))}))
 
 ;; ---------------------------------------------------------------------------
 ;; Dashboard
