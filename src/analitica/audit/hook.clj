@@ -28,8 +28,20 @@
   [entity-type]
   (contains? #{:finance :all} entity-type))
 
+(defn- normalize-period
+  "Accept {:from :to} map or [from to] 2-vector; return canonical map or nil
+   for anything else (keywords like :last-30-days, missing values, etc.).
+   Web sync layer commonly passes 2-vectors; CLI passes maps."
+  [period]
+  (cond
+    (and (map? period) (:from period) (:to period))
+    {:from (str (:from period)) :to (str (:to period))}
+
+    (and (vector? period) (= 2 (count period)) (every? some? period))
+    {:from (str (first period)) :to (str (second period))}))
+
 (defn- valid-period? [period]
-  (and (map? period) (:from period) (:to period)))
+  (some? (normalize-period period)))
 
 (defn- print-digest [marketplace period report]
   (let [counts  (-> report :report/summary :counts)
@@ -75,11 +87,12 @@
 
     :else
     (try
-      (let [{:keys [report]} (audit/run-reconcile!
+      (let [period* (normalize-period period)
+            {:keys [report]} (audit/run-reconcile!
                                {:marketplace (or marketplace :all)
-                                :period      period
+                                :period      period*
                                 :tolerance   tolerance})]
-        (print-digest (or marketplace :all) period report)
+        (print-digest (or marketplace :all) period* report)
         nil)
       (catch Throwable t
         (binding [*out* *err*]

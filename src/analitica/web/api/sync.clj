@@ -4,6 +4,7 @@
             [analitica.materialize :as materialize]
             [analitica.sync.plan :as plan]
             [analitica.sync.executor :as executor]
+            [analitica.audit.hook :as audit-hook]
             [ring.core.protocols :as ring-protocols]
             [com.brunobonacci.mulog :as μ])
   (:import [java.util.concurrent LinkedBlockingQueue]
@@ -139,7 +140,18 @@
                        ;; The task matrix is the canonical progress view.
                        (capture-output-to-queue queue
                          (fn []
-                           (executor/run-parallel! pln :workers 8)))
+                           (executor/run-parallel! pln :workers 8)
+                           ;; E-6: post-materialize audit hook. Runs on the
+                           ;; main thread so its prints are picked up by
+                           ;; the capture writer and streamed to the client
+                           ;; alongside the rest of the sync log. Hook
+                           ;; silently skips when entity-type isn't
+                           ;; finance-touching or period isn't a concrete
+                           ;; range.
+                           (audit-hook/audit-after-materialize!
+                             {:entity-type what
+                              :period      period
+                              :marketplace mp})))
                        (.offer queue {:type :done})
                        (println "[SYNC] Completed")
                        (catch InterruptedException _
@@ -177,7 +189,13 @@
                     (capture-output-to-queue queue
                       (fn []
                         (let [mp (or marketplace :wb)]
-                          (materialize/materialize! what :period period :marketplace mp))))
+                          (materialize/materialize! what :period period :marketplace mp)
+                          ;; E-6: same hook as start-sync!. Silent skip
+                          ;; for non-finance targets or keyword periods.
+                          (audit-hook/audit-after-materialize!
+                            {:entity-type what
+                             :period      period
+                             :marketplace mp}))))
                     (.offer queue {:type :done})
                     (println "[REMATERIALIZE] Completed")
                     (catch InterruptedException _

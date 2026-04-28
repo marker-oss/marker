@@ -43,7 +43,7 @@
         (is (false? @run?) "run-reconcile! must not be called")))))
 
 (deftest skips-when-period-missing-or-keyword
-  (testing "Hook is no-op when period isn't a {:from :to} map"
+  (testing "Hook is no-op when period isn't a concrete range"
     (let [run? (atom false)]
       (with-redefs [audit/run-reconcile! (fn [_] (reset! run? true) {})]
         (is (nil? (hook/audit-after-materialize!
@@ -52,7 +52,23 @@
                     {:entity-type :finance :period :last-30-days :marketplace :wb})))
         (is (nil? (hook/audit-after-materialize!
                     {:entity-type :finance :period {:from "2026-04-01"} :marketplace :wb})))
+        (is (nil? (hook/audit-after-materialize!
+                    {:entity-type :finance :period ["2026-04-01"] :marketplace :wb})))
         (is (false? @run?))))))
+
+(deftest accepts-vector-period-from-web-sync
+  (testing "[from to] vector is normalized to {:from :to} map for the audit run"
+    (with-stub-reconcile clean-report
+      (fn [calls]
+        (with-out-str
+          (hook/audit-after-materialize!
+            {:entity-type :finance
+             :period      ["2026-04-01" "2026-04-30"]
+             :marketplace :wb}))
+        (is (= 1 (count @calls)))
+        (is (= {:from "2026-04-01" :to "2026-04-30"}
+               (-> @calls first :period))
+            "vector period normalized to map before reconcile")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Happy path
