@@ -158,27 +158,37 @@
    data-model.md §Discrepancy). This wrapper adds error handling: if the
    rule fn throws, we capture the exception into a single synthetic
    discrepancy marked :unclassified so the overall reconciliation run
-   doesn't abort mid-stream on a bug in one rule."
+   doesn't abort mid-stream on a bug in one rule.
+
+   E-3 (2026-04-28): if the rule defines `:rule/tolerance`, that value
+   replaces `ctx/tolerance` for the duration of this rule's run. Rules
+   with documented design-gap behaviour (`:aggregate-vs-raw`,
+   `:wb-finance-vs-sales-events`) use this to set looser per-rule
+   bounds so the global tolerance can stay strict for transform-bug
+   rules without polluting the report with predictable noise."
   [rule ctx]
-  (try
-    (vec ((:rule/fn rule) ctx))
-    (catch Throwable t
-      [{:disc/rule-id              (:rule/id rule)
-        :disc/marketplace          (:ctx/marketplace ctx)
-        :disc/period               (:ctx/period ctx)
-        :disc/location             {:source-a nil :source-b nil
-                                    :field    nil
-                                    :article  nil
-                                    :operation nil
-                                    :row-id   nil}
-        :disc/delta                {:a nil :b nil :abs 0 :rel 0 :unit :count}
-        :disc/classification       :unclassified
-        :disc/classification-reason (str "rule threw: "
-                                         (.getName (class t))
-                                         " "
-                                         (or (.getMessage t) ""))
-        :disc/evidence             {:exception-class (.getName (class t))
-                                    :exception-msg   (.getMessage t)}}])))
+  (let [eff-ctx (if-let [t (:rule/tolerance rule)]
+                  (assoc ctx :ctx/tolerance t)
+                  ctx)]
+    (try
+      (vec ((:rule/fn rule) eff-ctx))
+      (catch Throwable t
+        [{:disc/rule-id              (:rule/id rule)
+          :disc/marketplace          (:ctx/marketplace ctx)
+          :disc/period               (:ctx/period ctx)
+          :disc/location             {:source-a nil :source-b nil
+                                      :field    nil
+                                      :article  nil
+                                      :operation nil
+                                      :row-id   nil}
+          :disc/delta                {:a nil :b nil :abs 0 :rel 0 :unit :count}
+          :disc/classification       :unclassified
+          :disc/classification-reason (str "rule threw: "
+                                           (.getName (class t))
+                                           " "
+                                           (or (.getMessage t) ""))
+          :disc/evidence             {:exception-class (.getName (class t))
+                                      :exception-msg   (.getMessage t)}}]))))
 
 (defn format-rule-summary
   "One-liner description of a rule, for CLI help output."

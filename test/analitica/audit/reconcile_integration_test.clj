@@ -27,8 +27,11 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest run-reconcile-clean-returns-exit-0
+  ;; Phase C rule :wb-finance-vs-sales-events also reconciles
+  ;; SUM(finance.for_pay sale) ⟷ SUM(sales.for_pay sale-events). Match the
+  ;; values so the clean fixture stays clean across all rules.
   (th/insert-finance!
-    [(th/finance-row :operation "sale" :article "A" :for-pay 1000.0)])
+    [(th/finance-row :operation "sale" :article "A" :for-pay 850.0)])
   (th/insert-sales!
     [(th/sales-row :article "A")])
   (th/insert-orders!
@@ -49,14 +52,17 @@
 
 (deftest run-reconcile-with-suspicious-returns-exit-1
   (th/insert-finance!
-    [(th/finance-row :operation "sale"      :article "A" :for-pay 1000.0)
-     (th/finance-row :operation "logistics" :article nil :for-pay -500.0)])
+    ;; E-3 (2026-04-28): :aggregate-vs-raw now uses per-rule tolerance
+    ;; {:abs 1000 :rel 0.5}; need a much larger logistics drag to trip
+    ;; (rel 50% on a 10000₽ base = 5000₽ logistics).
+    [(th/finance-row :operation "sale"      :article "A" :for-pay 10000.0)
+     (th/finance-row :operation "logistics" :article nil :for-pay -8000.0)])
   (let [{:keys [exit-code]} (core/run-reconcile!
                               {:marketplace :wb
                                :period period
                                :tolerance default-t})]
     (is (= 1 exit-code)
-        "500₽ gap between raw and agg > 10₽ tolerance → suspicious → exit 1")))
+        "8k₽ gap on 10k base = 80% > rule's 50% rel tolerance → suspicious → exit 1")))
 
 ;; ---------------------------------------------------------------------------
 ;; Unclassified → exit 2 (takes precedence over suspicious)

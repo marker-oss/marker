@@ -82,32 +82,49 @@
 ;; Row factories (kebab-case keys, sensible defaults)
 ;; ---------------------------------------------------------------------------
 
+(defn- derive-kind
+  "Map a fixture's :operation string to a canonical :operation-kind keyword
+   so tests don't have to set both explicitly. Mirrors the production
+   classifier in `analitica.backfill/classify` for the values fixtures use."
+  [op]
+  (case op
+    ("sale" "Продажа")    :sale
+    ("return" "Возврат")  :return
+    ("logistics" "storage" "service" "Логистика" "Хранение") :service
+    ("adjustment" "Штраф" "Удержание" "Компенсация ущерба") :adjustment
+    nil))
+
 (defn finance-row
   "Factory for synthetic finance row. Returns kebab-case map.
 
-   Defaults mimic a real WB sale.
+   Defaults mimic a real WB sale. `:operation-kind` is auto-derived from
+   `:operation` so test bodies stay terse — pass either or both as
+   overrides.
    Usage:
      (finance-row)
-     (finance-row :article \"ART-002\" :quantity 5)"
+     (finance-row :article \"ART-002\" :quantity 5)
+     (finance-row :operation \"return\" :for-pay 200.0)"
   [& {:as overrides}]
-  (merge
-    {:rrd-id          (swap! rrd-counter inc)
-     :report-id       1
-     :date-from       "2026-03-01"
-     :date-to         "2026-03-07"
-     :article         "ART-001"
-     :nm-id           100001
-     :barcode         "1000000000001"
-     :subject         "Электроника"
-     :brand           "TestBrand"
-     :operation       "sale"
+  (let [op (or (:operation overrides) "sale")]
+    (merge
+      {:rrd-id            (swap! rrd-counter inc)
+       :report-id         1
+       :date-from         "2026-03-01"
+       :date-to           "2026-03-07"
+       :article           "ART-001"
+       :nm-id             100001
+       :barcode           "1000000000001"
+       :subject           "Электроника"
+       :brand             "TestBrand"
+       :operation         "sale"
+       :operation-kind    (derive-kind op)
      :doc-type        nil
      :quantity        1
      :retail-price    1000.0
      :retail-amount   1000.0
      :sale-percent    0.0
      :commission-pct  12.0
-     :wb-commission   120.0
+     :mp-commission   120.0
      :wb-reward       0.0
      :wb-kvw-prc      0.0
      :spp-prc         0.0
@@ -122,9 +139,9 @@
      :additional-payment 0.0
      :deduction       0.0
      :acquiring-fee   0.0
-     :marketplace     "wb"
-     :synced-at       nil}
-    overrides))
+       :marketplace       "wb"
+       :synced-at         nil}
+      overrides)))
 
 (defn sales-row
   "Factory for synthetic sales row. Returns kebab-case map.
@@ -196,13 +213,20 @@
   [kw]
   (keyword (str/replace (name kw) "_" "-")))
 
+(defn- ->db-value
+  "Convert a Clojure value into something SQLite can store. Keywords
+   become their `name` (so `:sale` lands as the string `\"sale\"` in
+   `operation_kind` etc.); everything else passes through."
+  [v]
+  (if (keyword? v) (name v) v))
+
 (defn- insert-rows!
   "Convert kebab-case row maps to snake_case columns and batch-insert into `table`."
   [table rows]
   (when (seq rows)
     (let [cols     (mapv kebab->snake (keys (first rows)))
           row-vecs (mapv (fn [row]
-                           (mapv #(get row (snake->kebab %)) cols))
+                           (mapv #(->db-value (get row (snake->kebab %))) cols))
                          rows)]
       (db/insert-batch! table cols row-vecs))))
 
