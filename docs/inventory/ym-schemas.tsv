@@ -1,0 +1,157 @@
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	status	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[]	array<object>	Список заказов.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].id	integer	Идентификатор заказа.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].creationDate	string	Дата создания заказа.  Формат даты: `ГГГГ-ММ-ДД`. 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].statusUpdateDate	string	Дата и время, когда статус заказа был изменен в последний раз.  Формат даты и вр
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].status	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].partnerOrderId	string	Идентификатор заказа в информационной системе магазина.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].paymentType	object	Тип оплаты заказа.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].fake	boolean	Тип заказа:  * `false` — настоящий заказ покупателя.  * `true` — [тестовый заказ
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].deliveryRegion	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].deliveryRegion.id	integer	Идентификатор региона доставки.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].deliveryRegion.name	string	Название региона доставки.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[]	array<object>	Список товаров в заказе после возможных изменений.  Информация о доставке заказа
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].offerName	string	Название товара.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].marketSku	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].shopSku	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].count	integer	Количество единиц товара с учетом удаленных единиц.  Если из заказа удалены все 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].prices[]	array<object>	Цена или скидки на товар.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].warehouse	object	Информация о складе, на котором хранится товар.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].details[]	array<object>	Информация об удалении товара из заказа.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].cisList[]	array<string>	Список кодов идентификации товара в системе [«Честный ЗНАК»](https://честныйзнак
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].initialCount	integer	Первоначальное количество единиц товара.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].bidFee	integer	Списанная ставка ближайшего конкурента.  Указывается в процентах от стоимости то
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].cofinanceThreshold	number	Порог для скидок с Маркетом на момент оформления заказа. [Что это такое?](https:
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].items[].cofinanceValue	number	Скидка с Маркетом. [Что это такое?](https://yandex.ru/support/marketplace/market
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[]	array<object>	Список товаров в заказе.  Возвращается, только если было изменение количества то
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].offerName	string	Название товара.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].marketSku	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].shopSku	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].count	integer	Количество единиц товара с учетом удаленных единиц.  Если из заказа удалены все 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].prices[]	array<object>	Цена или скидки на товар.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].warehouse	object	Информация о складе, на котором хранится товар.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].details[]	array<object>	Информация об удалении товара из заказа.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].cisList[]	array<string>	Список кодов идентификации товара в системе [«Честный ЗНАК»](https://честныйзнак
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].initialCount	integer	Первоначальное количество единиц товара.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].bidFee	integer	Списанная ставка ближайшего конкурента.  Указывается в процентах от стоимости то
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].cofinanceThreshold	number	Порог для скидок с Маркетом на момент оформления заказа. [Что это такое?](https:
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].initialItems[].cofinanceValue	number	Скидка с Маркетом. [Что это такое?](https://yandex.ru/support/marketplace/market
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[]	array<object>	Информация о расчетах по заказу.  Возвращается пустым, если заказ:   * только на
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].id	string	Идентификатор денежного перевода.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].date	string	Дата денежного перевода.  Формат даты: `ГГГГ-ММ-ДД`. 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].type	object	Тип денежного перевода.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].source	object	Способ денежного перевода.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].total	number	Сумма денежного перевода.  Точность — два знака после запятой. 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].payments[].paymentOrder	object	Информация о платежном поручении.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].commissions[]	array<object>	Информация о стоимости услуг.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].commissions[].type	object	Услуга.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].commissions[].actual	number	Сумма, которая была выставлена в момент создания заказа и которую нужно оплатить
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].subsidies[]	array<object>	Начисление баллов, которые используются для уменьшения стоимости размещения, и и
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].subsidies[].operationType	object	Тип операции c баллами, которые используются для уменьшения стоимости размещения
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].subsidies[].type	object	Источник баллов, которые используются для уменьшения стоимости размещения.
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].subsidies[].amount	number	Количество баллов, которые используются для уменьшения стоимости размещения, с т
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.orders[].currency	object	Валюта, в которой указаны цены в заказе. 
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.paging	object	
+v2_campaigns_campaignId_stats_orders.yaml	RESPONSE	result.paging.nextPageToken	string	Идентификатор следующей страницы результатов.
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	dateFrom	string	Начальная дата, когда заказ был сформирован.  Формат даты: `ГГГГ‑ММ‑ДД`.  Нельзя
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	dateTo	string	Конечная дата, когда заказ был сформирован.  Формат даты: `ГГГГ‑ММ‑ДД`.  Нельзя 
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	updateFrom	string	Начальная дата периода, за который были изменения в заказе (например, статуса ил
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	updateTo	string	Конечная дата периода, за который были изменения в заказе (например, статуса или
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	orders[]	array<integer>	Список идентификаторов заказов.
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	statuses[]	array<object>	Список статусов заказов.
+v2_campaigns_campaignId_stats_orders.yaml	REQUEST	hasCis	boolean	Фильтр для получения заказов, в которых есть хотя бы один товар с кодом идентифи
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	status	object	
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result	object	
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[]	array<object>	Список товаров.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].shopSku	object	
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].marketSku	object	SKU на Маркете — идентификатор карточки товара на Маркете.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].name	string	Название товара.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].price	number	Цена товара в валюте, которая установлена [в кабинете продавца на Маркете](https
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].categoryId	integer	Идентификатор категории товара на Маркете.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].categoryName	string	Название категории товара на Маркете.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].weightDimensions	object	Информация о весе и габаритах товара. Если товар уже привязан к карточке (`marke
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].weightDimensions.length	number	Длина товара в сантиметрах.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].weightDimensions.width	number	Ширина товара в сантиметрах.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].weightDimensions.height	number	Высота товара в сантиметрах.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].weightDimensions.weight	number	Вес товара в килограммах.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].warehouses[]	array<object>	Информация о складах, на которых хранится товар.  Параметр не приходит, если тов
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].warehouses[].id	integer	Идентификатор склада.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].warehouses[].name	string	Название склада.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].warehouses[].stocks[]	array<object>	Информация об остатках товаров на складе.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[]	array<object>	Информация о тарифах, по которым нужно заплатить за услуги Маркета.  По некоторы
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[].type	object	Услуга Маркета, за которую начисляется тариф.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[].percent	number	Значение тарифа в процентах.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[].amount	number	Значение тарифа.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[].currency	object	Валюта, в которой указано значение тарифа.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].tariffs[].parameters[]	array<object>	Параметры расчета тарифа.
+v2_campaigns_campaignId_stats_skus.yaml	RESPONSE	result.shopSkus[].pictures[]	array<object>	Ссылки (URL) изображений товара в хорошем качестве.
+v2_campaigns_campaignId_stats_skus.yaml	REQUEST	shopSkus[]	array<object>	Список ваших идентификаторов SKU. 
+v2_reports_united-marketplace-services_generate.yaml	RESPONSE	status	object	
+v2_reports_united-marketplace-services_generate.yaml	RESPONSE	result	object	
+v2_reports_united-marketplace-services_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_united-marketplace-services_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	businessId	object	
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	dateTimeFrom	string	Начало периода, включительно.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	dateTimeTo	string	Конец периода, включительно. Максимальный период — 3 месяца.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	dateFrom	object	
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	dateTo	string	Конец периода, включительно. Максимальный период — 3 месяца.  Формат даты: `ГГГГ
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	yearFrom	object	Начальный год формирования акта.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	monthFrom	object	Начальный номер месяца формирования акта.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	yearTo	object	Конечный год формирования акта.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	monthTo	object	Конечный номер месяца формирования акта.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	placementPrograms[]	array<object>	Список моделей, которые нужны в отчете. 
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	inns[]	array<string>	Список ИНН, которые нужны в отчете.
+v2_reports_united-marketplace-services_generate.yaml	REQUEST	campaignIds[]	array<object>	Список идентификаторов кампании тех магазинов, которые нужны в отчете. 
+v2_reports_goods-realization_generate.yaml	RESPONSE	status	object	
+v2_reports_goods-realization_generate.yaml	RESPONSE	result	object	
+v2_reports_goods-realization_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_goods-realization_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_goods-realization_generate.yaml	REQUEST	campaignId	object	
+v2_reports_goods-realization_generate.yaml	REQUEST	year	object	
+v2_reports_goods-realization_generate.yaml	REQUEST	month	object	
+v2_reports_united-netting_generate.yaml	RESPONSE	status	object	
+v2_reports_united-netting_generate.yaml	RESPONSE	result	object	
+v2_reports_united-netting_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_united-netting_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_united-netting_generate.yaml	REQUEST	businessId	object	
+v2_reports_united-netting_generate.yaml	REQUEST	dateTimeFrom	string	Начало периода, включительно.
+v2_reports_united-netting_generate.yaml	REQUEST	dateTimeTo	string	Конец периода, включительно. Максимальный период — 3 месяца.
+v2_reports_united-netting_generate.yaml	REQUEST	dateFrom	object	
+v2_reports_united-netting_generate.yaml	REQUEST	dateTo	string	Конец периода, включительно. Максимальный период — 3 месяца.  Формат даты: `ГГГГ
+v2_reports_united-netting_generate.yaml	REQUEST	bankOrderId	integer	Номер платежного поручения.
+v2_reports_united-netting_generate.yaml	REQUEST	bankOrderDateTime	string	Дата платежного поручения.
+v2_reports_united-netting_generate.yaml	REQUEST	monthOfYear	object	
+v2_reports_united-netting_generate.yaml	REQUEST	monthOfYear.year	object	
+v2_reports_united-netting_generate.yaml	REQUEST	monthOfYear.month	object	
+v2_reports_united-netting_generate.yaml	REQUEST	placementPrograms[]	array<object>	Список моделей, которые нужны в отчете. 
+v2_reports_united-netting_generate.yaml	REQUEST	inns[]	array<string>	Список ИНН, которые нужны в отчете.
+v2_reports_united-netting_generate.yaml	REQUEST	campaignIds[]	array<object>	Список идентификаторов кампании тех магазинов, которые нужны в отчете. 
+v2_reports_united-orders_generate.yaml	RESPONSE	status	object	
+v2_reports_united-orders_generate.yaml	RESPONSE	result	object	
+v2_reports_united-orders_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_united-orders_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_united-orders_generate.yaml	REQUEST	businessId	object	
+v2_reports_united-orders_generate.yaml	REQUEST	dateFrom	object	
+v2_reports_united-orders_generate.yaml	REQUEST	dateTo	string	Конец периода, включительно. Максимальный период — 1 год.  Формат даты: `ГГГГ-ММ
+v2_reports_united-orders_generate.yaml	REQUEST	campaignIds[]	array<object>	Список идентификаторов кампании тех магазинов, которые нужны в отчете. 
+v2_reports_united-orders_generate.yaml	REQUEST	promoId	string	Идентификатор акции, товары из которой нужны в отчете.
+v2_reports_united-returns_generate.yaml	RESPONSE	status	object	
+v2_reports_united-returns_generate.yaml	RESPONSE	result	object	
+v2_reports_united-returns_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_united-returns_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_united-returns_generate.yaml	REQUEST	businessId	object	
+v2_reports_united-returns_generate.yaml	REQUEST	dateFrom	object	
+v2_reports_united-returns_generate.yaml	REQUEST	dateTo	object	
+v2_reports_united-returns_generate.yaml	REQUEST	campaignIds[]	array<object>	Список идентификаторов кампании тех магазинов, которые нужны в отчете. 
+v2_reports_united-returns_generate.yaml	REQUEST	returnType	object	
+v2_reports_united-returns_generate.yaml	REQUEST	returnStatusTypes[]	array<object>	Статусы передачи возвратов, которые нужны в отчете.  Если их не указать, вернетс
+v2_reports_sales-geography_generate.yaml	RESPONSE	status	object	
+v2_reports_sales-geography_generate.yaml	RESPONSE	result	object	
+v2_reports_sales-geography_generate.yaml	RESPONSE	result.reportId	string	Идентификатор, который понадобится для отслеживания статуса генерации и получени
+v2_reports_sales-geography_generate.yaml	RESPONSE	result.estimatedGenerationTime	integer	Ожидаемая продолжительность генерации в миллисекундах.
+v2_reports_sales-geography_generate.yaml	REQUEST	businessId	object	
+v2_reports_sales-geography_generate.yaml	REQUEST	dateFrom	object	
+v2_reports_sales-geography_generate.yaml	REQUEST	dateTo	object	
+v2_reports_sales-geography_generate.yaml	REQUEST	categoryIds[]	array<integer>	Идентификаторы категорий.
+v2_reports_sales-geography_generate.yaml	REQUEST	offerIds[]	array<object>	Идентификаторы товаров.

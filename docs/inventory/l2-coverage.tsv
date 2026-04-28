@@ -1,0 +1,94 @@
+report	section	metric	primary_file	hits_in_primary	hit_files	hit_count
+Unit Economics	UE.1	sales-qty	domain/unit_economics.clj	True	audit/fixture.clj, audit/rule_impl.clj, cli.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj	62
+Unit Economics	UE.1	returns-qty	domain/unit_economics.clj	True	audit/fixture.clj, domain/abc.clj, domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/pages/digest.clj	29
+Unit Economics	UE.1	ops	domain/unit_economics.clj	False		0
+Unit Economics	UE.1	net-qty	domain/unit_economics.clj	False		0
+Unit Economics	UE.1	total-ops	domain/unit_economics.clj	False	domain/buyout.clj	2
+Unit Economics	UE.2	revenue	domain/unit_economics.clj	True	alerts.clj, audit/fixture.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj, domain/pnl.clj	150
+Unit Economics	UE.2	mp-commission	domain/unit_economics.clj	False	audit/rule_impl.clj, domain/finance.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj, schema/normalized/finance.clj	16
+Unit Economics	UE.2	wb-reward	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+Unit Economics	UE.2	logistics	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/detail.clj, web/api/export.clj	35
+Unit Economics	UE.2	storage	domain/unit_economics.clj	True	cli.clj, domain/finance.clj, domain/losses.clj, domain/pnl.clj, domain/unit_economics.clj, freshness.clj	92
+Unit Economics	UE.2	acceptance	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	25
+Unit Economics	UE.2	penalties	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/detail.clj, web/report_schemas.clj	15
+Unit Economics	UE.2	acquiring	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj, materialize.clj	28
+Unit Economics	UE.2	deduction	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	20
+Unit Economics	UE.2	additional	domain/unit_economics.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+Unit Economics	UE.2	for-pay	domain/unit_economics.clj	True	audit/fixture.clj, audit/rule_impl.clj, domain/abc.clj, domain/finance.clj, domain/pnl.clj, domain/sales.clj	88
+Unit Economics	UE.2	total-cost	domain/unit_economics.clj	True	audit/fixture.clj, domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/detail.clj, web/api/export.clj	22
+Unit Economics	UE.2	spp-amount	domain/unit_economics.clj	False	domain/finance.clj	5
+Unit Economics	UE.6	revenue-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/api/export.clj, web/report_schemas.clj	8
+Unit Economics	UE.6	reward-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	4
+Unit Economics	UE.6	cost-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/api/export.clj, web/report_schemas.clj	8
+Unit Economics	UE.6	acquiring-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	2
+Unit Economics	UE.6	sales-qty	domain/unit_economics.clj	True	audit/fixture.clj, audit/rule_impl.clj, cli.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj	62
+Unit Economics	UE.6	logistics-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	7
+Unit Economics	UE.6	storage-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	5
+Unit Economics	UE.6	accept-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	2
+Unit Economics	UE.6	payout-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	7
+Unit Economics	UE.6	profit-per-unit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/api/export.clj, web/report_schemas.clj	9
+Unit Economics	UE.6	net-qty	domain/unit_economics.clj	False		0
+Unit Economics	UE.6	logistics-per-op	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	5
+Unit Economics	UE.6	total-ops	domain/unit_economics.clj	False	domain/buyout.clj	2
+Unit Economics	UE.7	buyout-rate	domain/unit_economics.clj	True	alerts.clj, domain/ads.clj, domain/buyout.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj	34
+Unit Economics	UE.7	margin-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/sku.clj, domain/unit_economics.clj, web/api/detail.clj, web/api/export.clj, web/report_schemas.clj	19
+Unit Economics	UE.7	wb-cost-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/unit_economics.clj, web/report_schemas.clj	12
+Unit Economics	UE.7	cogs-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/unit_economics.clj, web/report_schemas.clj	8
+Unit Economics	UE.7	logistics-pct	domain/unit_economics.clj	True	domain/unit_economics.clj, web/report_schemas.clj	5
+Unit Economics	UE.7	drr-pct	domain/unit_economics.clj	True	domain/unit_economics.clj, web/api/detail.clj, web/report_schemas.clj	9
+Unit Economics	UE.8	total-revenue	domain/unit_economics.clj	True	domain/ads.clj, domain/finance.clj, domain/sales.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/metrics.clj	22
+Unit Economics	UE.8	total-wb-reward	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/metrics.clj	8
+Unit Economics	UE.8	total-logistics	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/metrics.clj, web/components.clj	9
+Unit Economics	UE.8	total-storage	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/metrics.clj, web/components.clj	9
+Unit Economics	UE.8	total-acceptance	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	6
+Unit Economics	UE.8	total-penalties	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	6
+Unit Economics	UE.8	total-acquiring	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	4
+Unit Economics	UE.8	total-deduction	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	4
+Unit Economics	UE.8	total-additional	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	6
+Unit Economics	UE.8	total-ad-spend	domain/unit_economics.clj	True	domain/unit_economics.clj, web/components.clj	4
+Unit Economics	UE.8	total-wb-costs	domain/unit_economics.clj	True	domain/unit_economics.clj, web/components.clj	9
+Unit Economics	UE.8	total-spp	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj	6
+Unit Economics	UE.8	total-for-pay	domain/unit_economics.clj	True	domain/finance.clj, domain/unit_economics.clj, web/components.clj, web/report_schemas.clj	8
+Unit Economics	UE.8	total-cost	domain/unit_economics.clj	True	audit/fixture.clj, domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/detail.clj, web/api/export.clj	22
+Unit Economics	UE.8	total-profit	domain/unit_economics.clj	True	domain/unit_economics.clj, web/components.clj, web/report_schemas.clj	6
+Unit Economics	UE.9	margin-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/sku.clj, domain/unit_economics.clj, web/api/detail.clj, web/api/export.clj, web/report_schemas.clj	19
+Unit Economics	UE.9	wb-cost-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/unit_economics.clj, web/report_schemas.clj	12
+Unit Economics	UE.9	cogs-pct	domain/unit_economics.clj	True	audit/fixture.clj, domain/unit_economics.clj, web/report_schemas.clj	8
+Unit Economics	UE.9	drr-pct	domain/unit_economics.clj	True	domain/unit_economics.clj, web/api/detail.clj, web/report_schemas.clj	9
+Unit Economics	UE.9	profit-per-sale	domain/unit_economics.clj	True	domain/pnl.clj, domain/unit_economics.clj, web/components.clj	7
+Unit Economics	UE.9	avg-check	domain/unit_economics.clj	True	domain/pnl.clj, domain/unit_economics.clj, web/components.clj	7
+Unit Economics	UE.9	buyout-rate	domain/unit_economics.clj	True	alerts.clj, domain/ads.clj, domain/buyout.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj	34
+P&L	P&L.1	revenue	domain/pnl.clj	True	alerts.clj, audit/fixture.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj, domain/pnl.clj	150
+P&L	P&L.1	wb-reward	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+P&L	P&L.1	logistics	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/detail.clj, web/api/export.clj	35
+P&L	P&L.1	storage	domain/pnl.clj	True	cli.clj, domain/finance.clj, domain/losses.clj, domain/pnl.clj, domain/unit_economics.clj, freshness.clj	92
+P&L	P&L.1	acceptance	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	25
+P&L	P&L.1	penalties	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/detail.clj, web/report_schemas.clj	15
+P&L	P&L.1	deduction	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	20
+P&L	P&L.1	additional	domain/pnl.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+P&L	P&L.1	for-pay	domain/pnl.clj	True	audit/fixture.clj, audit/rule_impl.clj, domain/abc.clj, domain/finance.clj, domain/pnl.clj, domain/sales.clj	88
+P&L	P&L.1	cogs	domain/pnl.clj	True	audit/fixture.clj, domain/pnl.clj, domain/sku.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/export.clj	15
+P&L	P&L.4	net-profit	domain/pnl.clj	True	alerts.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/export.clj, web/api/metrics.clj	29
+P&L	P&L.4	margin-gross	domain/pnl.clj	True	domain/pnl.clj, web/report_schemas.clj	4
+P&L	P&L.4	margin-net	domain/pnl.clj	True	domain/pnl.clj, web/api/export.clj, web/api/metrics.clj, web/report_schemas.clj	7
+P&L	P&L.5	sales-qty	domain/pnl.clj	True	audit/fixture.clj, audit/rule_impl.clj, cli.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj	62
+P&L	P&L.5	returns-qty	domain/pnl.clj	True	audit/fixture.clj, domain/abc.clj, domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/pages/digest.clj	29
+P&L	P&L.5	buyout-rate	domain/pnl.clj	True	alerts.clj, domain/ads.clj, domain/buyout.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj	34
+P&L	P&L.5	avg-check	domain/pnl.clj	True	domain/pnl.clj, domain/unit_economics.clj, web/components.clj	7
+P&L	P&L.5	profit-per-sale	domain/pnl.clj	True	domain/pnl.clj, domain/unit_economics.clj, web/components.clj	7
+P&L	P&L.5	articles	domain/pnl.clj	True	domain/cost_price.clj, domain/finance.clj, domain/pnl.clj, domain/stock.clj, domain/unit_economics.clj	12
+Finance	Finance.1	revenue	domain/finance.clj	True	alerts.clj, audit/fixture.clj, domain/abc.clj, domain/finance.clj, domain/losses.clj, domain/pnl.clj	150
+Finance	Finance.1	wb-reward	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+Finance	Finance.1	mp-commission	domain/finance.clj	True	audit/rule_impl.clj, domain/finance.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj, schema/normalized/finance.clj	16
+Finance	Finance.1	acquiring	domain/finance.clj	True	domain/finance.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj, materialize.clj	28
+Finance	Finance.1	sales-pay	domain/finance.clj	True	audit/rule_impl.clj, domain/finance.clj	5
+Finance	Finance.1	returns-pay	domain/finance.clj	True	audit/rule_impl.clj, domain/finance.clj	5
+Finance	Finance.1	logistics	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/charts.clj, web/api/detail.clj, web/api/export.clj	35
+Finance	Finance.1	penalties	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, web/api/detail.clj, web/report_schemas.clj	15
+Finance	Finance.1	additional	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	28
+Finance	Finance.1	acceptance	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	25
+Finance	Finance.1	deduction	domain/finance.clj	True	domain/finance.clj, domain/pnl.clj, domain/unit_economics.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, marketplace/ym/transform.clj	20
+Buyout	Buyout.7	placed	domain/buyout.clj	True	db.clj, domain/buyout.clj, web/api/report.clj, web/report_schemas.clj	9
+Buyout	Buyout.7	cancelled	domain/buyout.clj	True	db.clj, domain/buyout.clj, domain/order_status.clj, marketplace/ozon/transform.clj, marketplace/wb/transform.clj, web/api/report.clj	18
+Buyout	Buyout.7	cancel-rate	domain/buyout.clj	True	domain/buyout.clj, web/api/report.clj, web/report_schemas.clj	4
+Buyout	Buyout.7	true-buyout-rate	domain/buyout.clj	True	db.clj, domain/buyout.clj, web/api/report.clj, web/report_schemas.clj	7

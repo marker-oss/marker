@@ -1,0 +1,455 @@
+12-reports	/api/v1/supplier/stocks	[].lastChangeDate	string	Дата и время обновления информации в сервисе. Это поле соответствует параметру `
+12-reports	/api/v1/supplier/stocks	[].warehouseName	string	Название склада
+12-reports	/api/v1/supplier/stocks	[].supplierArticle	string	Артикул продавца
+12-reports	/api/v1/supplier/stocks	[].nmId	integer	Артикул WB
+12-reports	/api/v1/supplier/stocks	[].barcode	string	Баркод
+12-reports	/api/v1/supplier/stocks	[].quantity	integer	Количество, доступное для продажи (сколько можно добавить в корзину)
+12-reports	/api/v1/supplier/stocks	[].inWayToClient	integer	В пути к клиенту
+12-reports	/api/v1/supplier/stocks	[].inWayFromClient	integer	В пути от клиента
+12-reports	/api/v1/supplier/stocks	[].quantityFull	integer	Полное (непроданное) количество, которое числится за складом (= `quantity` + в п
+12-reports	/api/v1/supplier/stocks	[].category	string	Категория
+12-reports	/api/v1/supplier/stocks	[].subject	string	Предмет
+12-reports	/api/v1/supplier/stocks	[].brand	string	Бренд
+12-reports	/api/v1/supplier/stocks	[].techSize	string	Размер
+12-reports	/api/v1/supplier/stocks	[].Price	number	Цена
+12-reports	/api/v1/supplier/stocks	[].Discount	number	Скидка
+12-reports	/api/v1/supplier/stocks	[].isSupply	boolean	Договор поставки (внутренние технологические данные)
+12-reports	/api/v1/supplier/stocks	[].isRealization	boolean	Договор реализации (внутренние технологические данные)
+12-reports	/api/v1/supplier/stocks	[].SCCode	string	Код контракта (внутренние технологические данные)
+12-reports	/api/v1/supplier/orders	[].date	string	Дата и время заказа. Это поле соответствует параметру `dateFrom` в запросе, если
+12-reports	/api/v1/supplier/orders	[].lastChangeDate	string	Дата и время обновления информации в сервисе. Это поле соответствует параметру `
+12-reports	/api/v1/supplier/orders	[].warehouseName	string	Склад отгрузки
+12-reports	/api/v1/supplier/orders	[].warehouseType	string	Тип склада хранения товаров
+12-reports	/api/v1/supplier/orders	[].countryName	string	Страна
+12-reports	/api/v1/supplier/orders	[].oblastOkrugName	string	Округ
+12-reports	/api/v1/supplier/orders	[].regionName	string	Регион
+12-reports	/api/v1/supplier/orders	[].supplierArticle	string	Артикул продавца
+12-reports	/api/v1/supplier/orders	[].nmId	integer	Артикул WB
+12-reports	/api/v1/supplier/orders	[].barcode	string	Баркод
+12-reports	/api/v1/supplier/orders	[].category	string	Категория
+12-reports	/api/v1/supplier/orders	[].subject	string	Предмет
+12-reports	/api/v1/supplier/orders	[].brand	string	Бренд
+12-reports	/api/v1/supplier/orders	[].techSize	string	Размер товара
+12-reports	/api/v1/supplier/orders	[].incomeID	integer	Номер поставки
+12-reports	/api/v1/supplier/orders	[].isSupply	boolean	Договор поставки
+12-reports	/api/v1/supplier/orders	[].isRealization	boolean	Договор реализации
+12-reports	/api/v1/supplier/orders	[].totalPrice	number	Цена без скидок
+12-reports	/api/v1/supplier/orders	[].discountPercent	integer	Скидка продавца, %
+12-reports	/api/v1/supplier/orders	[].spp	number	Скидка WB, %
+12-reports	/api/v1/supplier/orders	[].finishedPrice	number	Цена с учетом всех скидок, кроме суммы по WB Кошельку
+12-reports	/api/v1/supplier/orders	[].priceWithDisc	number	Цена со скидкой продавца, в том числе со скидкой WB Клуба
+12-reports	/api/v1/supplier/orders	[].isCancel	boolean	Отмена заказа:   - `true` — заказ отменен 
+12-reports	/api/v1/supplier/orders	[].cancelDate	string	Дата и время отмены заказа. Если заказ не был отменен, то "0001-01-01T00:00:00".
+12-reports	/api/v1/supplier/orders	[].sticker	string	ID стикера
+12-reports	/api/v1/supplier/orders	[].gNumber	string	ID корзины покупателя. Заказы одной транзакции будут иметь одинаковый `gNumber`
+12-reports	/api/v1/supplier/orders	[].srid	string	Уникальный ID заказа.<br> Примечание для использующих API Маркетплейс: `srid` ра
+12-reports	/api/v1/supplier/sales	[].date	string	Дата и время продажи. Это поле соответствует параметру `dateFrom` в запросе, есл
+12-reports	/api/v1/supplier/sales	[].lastChangeDate	string	Дата и время обновления информации в сервисе. Это поле соответствует параметру `
+12-reports	/api/v1/supplier/sales	[].warehouseName	string	Склад отгрузки
+12-reports	/api/v1/supplier/sales	[].warehouseType	string	Тип склада хранения товаров
+12-reports	/api/v1/supplier/sales	[].countryName	string	Страна
+12-reports	/api/v1/supplier/sales	[].oblastOkrugName	string	Округ
+12-reports	/api/v1/supplier/sales	[].regionName	string	Регион
+12-reports	/api/v1/supplier/sales	[].supplierArticle	string	Артикул продавца
+12-reports	/api/v1/supplier/sales	[].nmId	integer	Артикул WB
+12-reports	/api/v1/supplier/sales	[].barcode	string	Баркод
+12-reports	/api/v1/supplier/sales	[].category	string	Категория
+12-reports	/api/v1/supplier/sales	[].subject	string	Предмет
+12-reports	/api/v1/supplier/sales	[].brand	string	Бренд
+12-reports	/api/v1/supplier/sales	[].techSize	string	Размер товара
+12-reports	/api/v1/supplier/sales	[].incomeID	integer	Номер поставки
+12-reports	/api/v1/supplier/sales	[].isSupply	boolean	Договор поставки
+12-reports	/api/v1/supplier/sales	[].isRealization	boolean	Договор реализации
+12-reports	/api/v1/supplier/sales	[].totalPrice	number	Цена без скидок
+12-reports	/api/v1/supplier/sales	[].discountPercent	integer	Скидка продавца, %
+12-reports	/api/v1/supplier/sales	[].spp	number	Скидка WB, %
+12-reports	/api/v1/supplier/sales	[].paymentSaleAmount	integer	Скидка за оплату WB Кошельком, ₽
+12-reports	/api/v1/supplier/sales	[].forPay	number	К перечислению продавцу.<br>Синхронизация данных занимает до 24 часов, в течение
+12-reports	/api/v1/supplier/sales	[].finishedPrice	number	Фактическая цена с учётом всех скидок (к взиманию с покупателя).<br>Синхронизаци
+12-reports	/api/v1/supplier/sales	[].priceWithDisc	number	Цена со скидкой продавца, в том числе со скидкой WB Клуба, от которой рассчитыва
+12-reports	/api/v1/supplier/sales	[].saleID	string	Уникальный ID продажи/возврата - `S**********` — продажа - `R**********` — возвр
+12-reports	/api/v1/supplier/sales	[].sticker	string	ID стикера
+12-reports	/api/v1/supplier/sales	[].gNumber	string	ID корзины покупателя. Заказы одной транзакции будут иметь одинаковый `gNumber`
+12-reports	/api/v1/supplier/sales	[].srid	string	Уникальный ID заказа.<br> Примечание для использующих API Маркетплейс: `srid` ра
+12-reports	/api/analytics/v1/measurement-penalties	data	object	Данные ответа
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[]	array<object>	Удержания
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].nmId	integer	Артикул WB
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].subjectName	string	Предмет
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].dimId	integer	ID замера
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].prcOver	number	Разница в габаритах, %
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].volume	number	Объём, л (фактические габариты по замеру на складе)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].width	integer	Ширина, см (фактические габариты по замеру на складе)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].length	integer	Длина, см (фактические габариты по замеру на складе)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].height	integer	Высота, см (фактические габариты по замеру на складе)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].volumeSup	number	Объём, л (габариты карточки товара)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].widthSup	integer	Ширина, см (габариты карточки товара)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].lengthSup	integer	Длина, см (габариты карточки товара)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].heightSup	integer	Высота, см (габариты карточки товара)
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].photoUrls[]	array<string>	Фото замеров
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].dtBonus	string	Дата штрафа
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].isValid	boolean	Статус обмера:   - `false` — отменён   - `true` — подтверждён 
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].isValidDt	string	Дата и время подтверждения или отмены обмера
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].reversalAmount	number	Сумма сторно
+12-reports	/api/analytics/v1/measurement-penalties	data.reports[].penaltyAmount	number	Сумма штрафа
+12-reports	/api/analytics/v1/measurement-penalties	data.total	integer	Количество удержаний в отчёте. Без учёта `limit` и `offset`
+12-reports	/api/v1/acceptance_report	data	?	
+12-reports	/api/v1/acceptance_report	data.taskId	string	ID задания на генерацию
+12-reports	/api/v1/paid_storage	data	?	
+12-reports	/api/v1/paid_storage	data.taskId	string	ID задания на генерацию
+12-reports	/api/v1/analytics/goods-return	report[]	array<object>	Отчёт
+12-reports	/api/v1/analytics/goods-return	report[].barcode	string	Баркод
+12-reports	/api/v1/analytics/goods-return	report[].brand	string	Бренд
+12-reports	/api/v1/analytics/goods-return	report[].completedDt	string	Дата и время выдачи возврата продавцу
+12-reports	/api/v1/analytics/goods-return	report[].dstOfficeAddress	string	Адрес ПВЗ выдачи возврата
+12-reports	/api/v1/analytics/goods-return	report[].dstOfficeId	integer	ID ПВЗ выдачи возврата
+12-reports	/api/v1/analytics/goods-return	report[].expiredDt	string	Дата и время истечения срока хранения возврата
+12-reports	/api/v1/analytics/goods-return	report[].isStatusActive	integer	Тип статуса возврата:    * `0` — архивный   * `1` — активный 
+12-reports	/api/v1/analytics/goods-return	report[].nmId	integer	Артикул WB
+12-reports	/api/v1/analytics/goods-return	report[].orderDt	string	Дата заказа на возврат
+12-reports	/api/v1/analytics/goods-return	report[].orderId	integer	Номер сборочного задания
+12-reports	/api/v1/analytics/goods-return	report[].readyToReturnDt	string	Дата и время готовности возврата к выдаче
+12-reports	/api/v1/analytics/goods-return	report[].reason	string	Причина возврата
+12-reports	/api/v1/analytics/goods-return	report[].returnType	string	Тип возврата
+12-reports	/api/v1/analytics/goods-return	report[].shkId	integer	Штрихкод
+12-reports	/api/v1/analytics/goods-return	report[].srid	string	Уникальный ID заказа на возврат
+12-reports	/api/v1/analytics/goods-return	report[].status	string	Статус возврата
+12-reports	/api/v1/analytics/goods-return	report[].stickerId	string	Стикер заказа на возврат
+12-reports	/api/v1/analytics/goods-return	report[].subjectName	string	Предмет
+12-reports	/api/v1/analytics/goods-return	report[].techSize	string	Размер
+13-finances	/api/v1/account/balance	currency	string	Валюта
+13-finances	/api/v1/account/balance	current	number	Текущий баланс продавца
+13-finances	/api/v1/account/balance	for_withdraw	number	Сумма, доступная к выводу
+13-finances	/api/finance/v1/sales-reports/list	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/sales-reports/list	[].sellerFinanceName	string	Наименование продавца
+13-finances	/api/finance/v1/sales-reports/list	[].dateFrom	string	Дата начала отчётного периода
+13-finances	/api/finance/v1/sales-reports/list	[].dateTo	string	Дата конца отчётного периода
+13-finances	/api/finance/v1/sales-reports/list	[].createDate	string	Дата формирования отчёта
+13-finances	/api/finance/v1/sales-reports/list	[].currency	string	Валюта отчёта
+13-finances	/api/finance/v1/sales-reports/list	[].reportType	integer	Тип отчёта:   - `1` — основной   - `2` — по выкупам   - `3` — по выкупам для Гру
+13-finances	/api/finance/v1/sales-reports/list	[].retailAmountSum	string	Продажа
+13-finances	/api/finance/v1/sales-reports/list	[].forPaySum	string	К перечислению за товар
+13-finances	/api/finance/v1/sales-reports/list	[].avgSalePercent	number	Согласованная скидка, %
+13-finances	/api/finance/v1/sales-reports/list	[].deliveryServiceSum	string	Стоимость логистики
+13-finances	/api/finance/v1/sales-reports/list	[].paidStorageSum	string	Стоимость хранения
+13-finances	/api/finance/v1/sales-reports/list	[].paidAcceptanceSum	string	Стоимость операций при приёмке
+13-finances	/api/finance/v1/sales-reports/list	[].deductionSum	string	Прочие удержания и выплаты
+13-finances	/api/finance/v1/sales-reports/list	[].penaltySum	string	Общая сумма штрафов
+13-finances	/api/finance/v1/sales-reports/list	[].additionalPaymentSum	string	Корректировка Вознаграждения Вайлдберриз (ВВ)
+13-finances	/api/finance/v1/sales-reports/list	[].cashbackAmountSum	string	Сумма, удержанная за начисленные баллы программы лояльности
+13-finances	/api/finance/v1/sales-reports/list	[].cashbackDiscountSum	string	Компенсация скидки по программе лояльности
+13-finances	/api/finance/v1/sales-reports/list	[].cashbackCommissionChangeSum	string	Стоимость участия в программе лояльности
+13-finances	/api/finance/v1/sales-reports/list	[].paymentSchedule	string	Разовое изменение срока перечисления денежных средств
+13-finances	/api/finance/v1/sales-reports/list	[].bankPaymentSum	string	Итого к оплате
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].dateFrom	string	Дата начала отчётного периода
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].dateTo	string	Дата конца отчётного периода
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].createDate	string	Дата формирования отчёта
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].currency	string	Валюта отчёта
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].reportType	integer	Тип отчёта:   - `1` — основной   - `2` — по выкупам   - `3` — по выкупам для Гру
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].rrdId	integer	ID строки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].giId	integer	ID поставки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].dlvPrc	number	Фиксированный коэффициент склада по поставке
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].fixTariffDateFrom	string	Дата начала действия фиксации
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].fixTariffDateTo	string	Дата конца действия фиксации
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].subjectName	string	Предмет
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].nmId	integer	Артикул WB
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].brandName	string	Бренд
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].vendorCode	string	Артикул продавца
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].title	string	Название товара
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].techSize	string	Размер
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].sku	string	Баркод
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].docTypeName	string	Тип документа
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].quantity	integer	Количество
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].retailPrice	string	Цена розничная
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].retailAmount	string	Вайлдберриз реализовал Товар (Пр)
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].salePercent	integer	Согласованный продуктовый дисконт, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].commissionPercent	number	Размер кВВ, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].officeName	string	Склад
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].sellerOperName	string	Обоснование для оплаты
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].orderDt	string	Дата и время заказа
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].saleDt	string	Дата и время продажи
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].rrDate	string	Дата операции
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].shkId	integer	Штрихкод
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].retailPriceWithDisc	string	Цена розничная с учётом согласованной скидки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].deliveryAmount	integer	Количество доставок
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].returnAmount	integer	Количество возврата
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].deliveryService	string	Услуги по доставке товара покупателю
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].giBoxTypeName	string	Тип коробов
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].productDiscountForReport	number	Итоговая согласованная скидка, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].sellerPromo	string	Промокод, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].spp	number	Платформенные скидки, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].kvwBase	number	Размер кВВ без НДС, % базовый
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].kvw	number	Итоговый кВВ без НДС, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].supRatingUp	number	Размер снижения кВВ из-за рейтинга, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].isKgvpV2	number	Размер снижения кВВ из-за акции, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzSalesCommission	string	Вознаграждение с продаж до вычета услуг поверенного, без НДС
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].forPay	string	К перечислению продавцу за реализованный товар
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzReward	string	Возмещение за выдачу и возврат товаров на ПВЗ
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].acquiringFee	string	Компенсация платёжных услуг/Комиссия за интеграцию платёжных сервисов
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].acquiringPercent	number	Размер компенсации платёжных услуг/Комиссии за интеграцию платёжных сервисов, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].paymentProcessing	string	Тип платежа: компенсация платёжных услуг/Комиссия за интеграцию платёжных сервис
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].acquiringBank	string	Наименование банка-эквайера
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].vw	string	Вознаграждение Вайлдберриз (ВВ), без НДС
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].vwNds	string	НДС с вознаграждения Вайлдберриз
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzOfficeName	string	Наименование офиса доставки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzOfficeId	integer	ID офиса доставки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzSupplierName	string	Партнёр
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].ppvzSupplierInn	string	ИНН партнёра
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].declarationNumber	string	Номер таможенной декларации
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].bonusTypeName	string	Виды логистики, штрафов и корректировок ВВ
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].stickerId	string	Стикер МП
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].country	string	Страна продажи
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].srvDbs	boolean	Признак услуги платной доставки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].penalty	string	Общая сумма штрафов
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].additionalPayment	string	Корректировка Вознаграждения Вайлдберриз (ВВ)
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].rebillLogisticCost	string	Возмещение издержек по перевозке/по складским операциям с товаром
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].rebillLogisticOrg	string	Организатор перевозки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].paidStorage	string	Хранение
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].deduction	string	Удержания
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].paidAcceptance	string	Операции на приёмке
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].orderId	integer	ID сборочного задания
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].kiz	string	Код маркировки
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].isB2b	boolean	Признак B2B-продажи
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].trbxId	string	ID короба для обработки товара
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].installmentCofinancingAmount	string	Скидка по программе софинансирования
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].wibesDiscountPercent	number	Скидка Wibes, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].cashbackAmount	string	Сумма, удержанная за начисленные баллы программы лояльности
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].cashbackDiscount	string	Компенсация скидки по программе лояльности
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].cashbackCommissionChange	string	Стоимость участия в программе лояльности
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].paymentSchedule	string	Разовое изменение срока перечисления денежных средств
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].deliveryMethod	string	Способ продажи и тип товара
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].sellerPromoId	integer	ID собственной акции продавца с дополнительной скидкой
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].sellerPromoDiscount	number	Размер дополнительной скидки по собственной акции продавца, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].loyaltyId	integer	ID скидки лояльности от продавца
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].loyaltyDiscount	number	Размер скидки лояльности от продавца, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].uuidPromocode	string	ID промокода
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].salePricePromocodeDiscountPrc	number	Скидка за промокод, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].articleSubstitution	string	ID подменного артикула
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].salePriceAffiliatedDiscountPrc	number	Скидка по подменному артикулу, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].agencyVat	number	Удержание Агентского НДС, %.<br>Только для продавцов из Кыргызстана 
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].salePriceWholesaleDiscountPrc	number	Оптовая скидка для бизнеса, %
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].orderUid	string	ID корзины заказа — транзакции.<br>Заказы в одной корзине покупателя будут иметь
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	[].srid	string	ID заказа.<br>В ответах методов сборочных заданий [FBS](./orders-fbs#tag/Sboroch
+13-finances	/api/finance/v1/sales-reports/detailed	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/sales-reports/detailed	[].dateFrom	string	Дата начала отчётного периода
+13-finances	/api/finance/v1/sales-reports/detailed	[].dateTo	string	Дата конца отчётного периода
+13-finances	/api/finance/v1/sales-reports/detailed	[].createDate	string	Дата формирования отчёта
+13-finances	/api/finance/v1/sales-reports/detailed	[].currency	string	Валюта отчёта
+13-finances	/api/finance/v1/sales-reports/detailed	[].reportType	integer	Тип отчёта:   - `1` — основной   - `2` — по выкупам   - `3` — по выкупам для Гру
+13-finances	/api/finance/v1/sales-reports/detailed	[].rrdId	integer	ID строки
+13-finances	/api/finance/v1/sales-reports/detailed	[].giId	integer	ID поставки
+13-finances	/api/finance/v1/sales-reports/detailed	[].dlvPrc	number	Фиксированный коэффициент склада по поставке
+13-finances	/api/finance/v1/sales-reports/detailed	[].fixTariffDateFrom	string	Дата начала действия фиксации
+13-finances	/api/finance/v1/sales-reports/detailed	[].fixTariffDateTo	string	Дата конца действия фиксации
+13-finances	/api/finance/v1/sales-reports/detailed	[].subjectName	string	Предмет
+13-finances	/api/finance/v1/sales-reports/detailed	[].nmId	integer	Артикул WB
+13-finances	/api/finance/v1/sales-reports/detailed	[].brandName	string	Бренд
+13-finances	/api/finance/v1/sales-reports/detailed	[].vendorCode	string	Артикул продавца
+13-finances	/api/finance/v1/sales-reports/detailed	[].title	string	Название товара
+13-finances	/api/finance/v1/sales-reports/detailed	[].techSize	string	Размер
+13-finances	/api/finance/v1/sales-reports/detailed	[].sku	string	Баркод
+13-finances	/api/finance/v1/sales-reports/detailed	[].docTypeName	string	Тип документа
+13-finances	/api/finance/v1/sales-reports/detailed	[].quantity	integer	Количество
+13-finances	/api/finance/v1/sales-reports/detailed	[].retailPrice	string	Цена розничная
+13-finances	/api/finance/v1/sales-reports/detailed	[].retailAmount	string	Вайлдберриз реализовал Товар (Пр)
+13-finances	/api/finance/v1/sales-reports/detailed	[].salePercent	integer	Согласованный продуктовый дисконт, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].commissionPercent	number	Размер кВВ, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].officeName	string	Склад
+13-finances	/api/finance/v1/sales-reports/detailed	[].sellerOperName	string	Обоснование для оплаты
+13-finances	/api/finance/v1/sales-reports/detailed	[].orderDt	string	Дата и время заказа
+13-finances	/api/finance/v1/sales-reports/detailed	[].saleDt	string	Дата и время продажи
+13-finances	/api/finance/v1/sales-reports/detailed	[].rrDate	string	Дата операции
+13-finances	/api/finance/v1/sales-reports/detailed	[].shkId	integer	Штрихкод
+13-finances	/api/finance/v1/sales-reports/detailed	[].retailPriceWithDisc	string	Цена розничная с учётом согласованной скидки
+13-finances	/api/finance/v1/sales-reports/detailed	[].deliveryAmount	integer	Количество доставок
+13-finances	/api/finance/v1/sales-reports/detailed	[].returnAmount	integer	Количество возврата
+13-finances	/api/finance/v1/sales-reports/detailed	[].deliveryService	string	Услуги по доставке товара покупателю
+13-finances	/api/finance/v1/sales-reports/detailed	[].giBoxTypeName	string	Тип коробов
+13-finances	/api/finance/v1/sales-reports/detailed	[].productDiscountForReport	number	Итоговая согласованная скидка, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].sellerPromo	string	Промокод, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].spp	number	Платформенные скидки, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].kvwBase	number	Размер кВВ без НДС, % базовый
+13-finances	/api/finance/v1/sales-reports/detailed	[].kvw	number	Итоговый кВВ без НДС, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].supRatingUp	number	Размер снижения кВВ из-за рейтинга, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].isKgvpV2	number	Размер снижения кВВ из-за акции, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzSalesCommission	string	Вознаграждение с продаж до вычета услуг поверенного, без НДС
+13-finances	/api/finance/v1/sales-reports/detailed	[].forPay	string	К перечислению продавцу за реализованный товар
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzReward	string	Возмещение за выдачу и возврат товаров на ПВЗ
+13-finances	/api/finance/v1/sales-reports/detailed	[].acquiringFee	string	Компенсация платёжных услуг/Комиссия за интеграцию платёжных сервисов
+13-finances	/api/finance/v1/sales-reports/detailed	[].acquiringPercent	number	Размер компенсации платёжных услуг/Комиссии за интеграцию платёжных сервисов, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].paymentProcessing	string	Тип платежа: компенсация платёжных услуг/Комиссия за интеграцию платёжных сервис
+13-finances	/api/finance/v1/sales-reports/detailed	[].acquiringBank	string	Наименование банка-эквайера
+13-finances	/api/finance/v1/sales-reports/detailed	[].vw	string	Вознаграждение Вайлдберриз (ВВ), без НДС
+13-finances	/api/finance/v1/sales-reports/detailed	[].vwNds	string	НДС с вознаграждения Вайлдберриз
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzOfficeName	string	Наименование офиса доставки
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzOfficeId	integer	ID офиса доставки
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzSupplierName	string	Партнёр
+13-finances	/api/finance/v1/sales-reports/detailed	[].ppvzSupplierInn	string	ИНН партнёра
+13-finances	/api/finance/v1/sales-reports/detailed	[].declarationNumber	string	Номер таможенной декларации
+13-finances	/api/finance/v1/sales-reports/detailed	[].bonusTypeName	string	Виды логистики, штрафов и корректировок ВВ
+13-finances	/api/finance/v1/sales-reports/detailed	[].stickerId	string	Стикер МП
+13-finances	/api/finance/v1/sales-reports/detailed	[].country	string	Страна продажи
+13-finances	/api/finance/v1/sales-reports/detailed	[].srvDbs	boolean	Признак услуги платной доставки
+13-finances	/api/finance/v1/sales-reports/detailed	[].penalty	string	Общая сумма штрафов
+13-finances	/api/finance/v1/sales-reports/detailed	[].additionalPayment	string	Корректировка Вознаграждения Вайлдберриз (ВВ)
+13-finances	/api/finance/v1/sales-reports/detailed	[].rebillLogisticCost	string	Возмещение издержек по перевозке/по складским операциям с товаром
+13-finances	/api/finance/v1/sales-reports/detailed	[].rebillLogisticOrg	string	Организатор перевозки
+13-finances	/api/finance/v1/sales-reports/detailed	[].paidStorage	string	Хранение
+13-finances	/api/finance/v1/sales-reports/detailed	[].deduction	string	Удержания
+13-finances	/api/finance/v1/sales-reports/detailed	[].paidAcceptance	string	Операции на приёмке
+13-finances	/api/finance/v1/sales-reports/detailed	[].orderId	integer	ID сборочного задания
+13-finances	/api/finance/v1/sales-reports/detailed	[].kiz	string	Код маркировки
+13-finances	/api/finance/v1/sales-reports/detailed	[].isB2b	boolean	Признак B2B-продажи
+13-finances	/api/finance/v1/sales-reports/detailed	[].trbxId	string	ID короба для обработки товара
+13-finances	/api/finance/v1/sales-reports/detailed	[].installmentCofinancingAmount	string	Скидка по программе софинансирования
+13-finances	/api/finance/v1/sales-reports/detailed	[].wibesDiscountPercent	number	Скидка Wibes, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].cashbackAmount	string	Сумма, удержанная за начисленные баллы программы лояльности
+13-finances	/api/finance/v1/sales-reports/detailed	[].cashbackDiscount	string	Компенсация скидки по программе лояльности
+13-finances	/api/finance/v1/sales-reports/detailed	[].cashbackCommissionChange	string	Стоимость участия в программе лояльности
+13-finances	/api/finance/v1/sales-reports/detailed	[].paymentSchedule	string	Разовое изменение срока перечисления денежных средств
+13-finances	/api/finance/v1/sales-reports/detailed	[].deliveryMethod	string	Способ продажи и тип товара
+13-finances	/api/finance/v1/sales-reports/detailed	[].sellerPromoId	integer	ID собственной акции продавца с дополнительной скидкой
+13-finances	/api/finance/v1/sales-reports/detailed	[].sellerPromoDiscount	number	Размер дополнительной скидки по собственной акции продавца, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].loyaltyId	integer	ID скидки лояльности от продавца
+13-finances	/api/finance/v1/sales-reports/detailed	[].loyaltyDiscount	number	Размер скидки лояльности от продавца, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].uuidPromocode	string	ID промокода
+13-finances	/api/finance/v1/sales-reports/detailed	[].salePricePromocodeDiscountPrc	number	Скидка за промокод, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].articleSubstitution	string	ID подменного артикула
+13-finances	/api/finance/v1/sales-reports/detailed	[].salePriceAffiliatedDiscountPrc	number	Скидка по подменному артикулу, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].agencyVat	number	Удержание Агентского НДС, %.<br>Только для продавцов из Кыргызстана 
+13-finances	/api/finance/v1/sales-reports/detailed	[].salePriceWholesaleDiscountPrc	number	Оптовая скидка для бизнеса, %
+13-finances	/api/finance/v1/sales-reports/detailed	[].orderUid	string	ID корзины заказа — транзакции.<br>Заказы в одной корзине покупателя будут иметь
+13-finances	/api/finance/v1/sales-reports/detailed	[].srid	string	ID заказа.<br>В ответах методов сборочных заданий [FBS](./orders-fbs#tag/Sboroch
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].realizationreport_id	integer	Номер отчёта
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].date_from	string	Дата начала отчётного периода
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].date_to	string	Дата конца отчётного периода
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].create_dt	string	Дата формирования отчёта
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].currency_name	string	Валюта отчёта
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].suppliercontract_code	object	Договор
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].rrd_id	integer	Номер строки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].gi_id	integer	Номер поставки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].dlv_prc	number	Фиксированный коэффициент склада по поставке
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].fix_tariff_date_from	string	Дата начала действия фиксации
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].fix_tariff_date_to	string	Дата конца действия фиксации
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].subject_name	string	Предмет
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].nm_id	integer	Артикул WB
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].brand_name	string	Бренд
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sa_name	string	Артикул продавца
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ts_name	string	Размер
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].barcode	string	Баркод
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].doc_type_name	string	Тип документа
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].quantity	integer	Количество
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].retail_price	number	Цена розничная
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].retail_amount	number	Вайлдберриз реализовал Товар (Пр)
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sale_percent	integer	Согласованный продуктовый дисконт, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].commission_percent	number	Размер кВВ, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].office_name	string	Склад
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].supplier_oper_name	string	Обоснование для оплаты
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].order_dt	string	Дата заказа. <br>Присылается с явным указанием часового пояса
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sale_dt	string	Дата продажи. <br>Присылается с явным указанием часового пояса
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].rr_dt	string	Дата операции
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].shk_id	integer	Штрихкод
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].retail_price_withdisc_rub	number	Цена розничная с учётом согласованной скидки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].delivery_amount	integer	Количество доставок
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].return_amount	integer	Количество возврата
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].delivery_rub	number	Услуги по доставке товара покупателю
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].gi_box_type_name	string	Тип коробов
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].product_discount_for_report	number	Итоговая согласованная скидка, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].supplier_promo	number	Промокод, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_spp_prc	number	Скидка постоянного Покупателя (СПП), %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_kvw_prc_base	number	Размер кВВ без НДС, % базовый
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_kvw_prc	number	Итоговый кВВ без НДС, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sup_rating_prc_up	number	Размер снижения кВВ из-за рейтинга, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].is_kgvp_v2	number	Размер снижения кВВ из-за акции, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_sales_commission	number	Вознаграждение с продаж до вычета услуг поверенного, без НДС
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_for_pay	number	К перечислению продавцу за реализованный товар
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_reward	number	Возмещение за выдачу и возврат товаров на ПВЗ
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].acquiring_fee	number	Компенсация платёжных услуг/Комиссия за интеграцию платёжных сервисов
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].acquiring_percent	number	Размер компенсации платёжных услуг/Комиссии за интеграцию платёжных сервисов, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].payment_processing	string	Тип платежа: компенсация платёжных услуг/Комиссия за интеграцию платёжных сервис
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].acquiring_bank	string	Наименование банка-эквайера
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_vw	number	Вознаграждение Вайлдберриз (ВВ), без НДС
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_vw_nds	number	НДС с вознаграждения Вайлдберриз
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_office_name	string	Наименование офиса доставки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_office_id	integer	Номер офиса доставки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_supplier_id	integer	Номер партнёра
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_supplier_name	string	Партнёр
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].ppvz_inn	string	ИНН партнёра
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].declaration_number	string	Номер таможенной декларации
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].bonus_type_name	string	Виды логистики, штрафов и корректировок ВВ.<br> Поле будет в ответе при наличии 
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sticker_id	string	Цифровое значение стикера, который клеится на товар в процессе сборки заказа по 
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].site_country	string	Страна продажи
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].srv_dbs	boolean	Признак услуги платной доставки
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].penalty	number	Общая сумма штрафов
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].additional_payment	number	Корректировка Вознаграждения Вайлдберриз (ВВ)
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].rebill_logistic_cost	number	Возмещение издержек по перевозке/по складским операциям с товаром
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].rebill_logistic_org	string	Организатор перевозки.<br> Поле будет в ответе при наличии значения 
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].storage_fee	number	Хранение
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].deduction	number	Удержания
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].acceptance	number	Операции на приёмке
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].assembly_id	integer	Номер сборочного задания
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].kiz	string	Код маркировки.<br> Поле будет в ответе при наличии значения 
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].srid	string	Уникальный ID заказа.  Примечание для использующих API Marketplace: `srid` равен
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].report_type	integer	Тип отчёта:   - `1` — основной   - `2` — по выкупам   - `3` — по выкупам для Гру
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].is_legal_entity	boolean	Признак B2B-продажи
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].trbx_id	string	Номер короба для обработки товара
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].installment_cofinancing_amount	number	Скидка по программе софинансирования
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].wibes_wb_discount_percent	number	Скидка Wibes, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].cashback_amount	number	Сумма, удержанная за начисленные баллы программы лояльности
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].cashback_discount	number	Компенсация скидки по программе лояльности
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].cashback_commission_change	number	Стоимость участия в программе лояльности
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].order_uid	string	ID транзакции. Заказы в одной корзине покупателя будут иметь одинаковый `order_u
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].payment_schedule	number	Разовое изменение срока перечисления денежных средств
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].delivery_method	string	Способ продажи и тип товара
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].seller_promo_id	integer	ID собственной акции продавца с дополнительной скидкой
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].seller_promo_discount	number	Размер дополнительной скидки по собственной акции продавца, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].loyalty_id	integer	ID скидки лояльности от продавца
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].loyalty_discount	number	Размер скидки лояльности от продавца, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].uuid_promocode	string	ID промокода
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sale_price_promocode_discount_prc	number	Скидка за промокод, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].article_substitution	string	ID подменного артикула
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sale_price_affiliated_discount_prc	number	Скидка по подменному артикулу, %
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].agency_vat	number	Удержание Агентского НДС, %. Только для продавцов из Кыргызстана.<br> Поле будет
+13-finances	/api/v5/supplier/reportDetailByPeriod	[].sale_price_wholesale_discount_prc	number	Оптовая скидка для бизнеса, %
+13-finances	/api/finance/v1/acquiring/list	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/acquiring/list	[].sellerFinanceName	string	Наименование продавца
+13-finances	/api/finance/v1/acquiring/list	[].dateFrom	string	Дата начала отчётного периода
+13-finances	/api/finance/v1/acquiring/list	[].dateTo	string	Дата конца отчётного периода
+13-finances	/api/finance/v1/acquiring/list	[].createDate	string	Дата формирования отчёта
+13-finances	/api/finance/v1/acquiring/list	[].currency	string	Валюта отчёта
+13-finances	/api/finance/v1/acquiring/list	[].acquiringFeeSum	string	Сумма издержек по эквайрингу
+13-finances	/api/finance/v1/acquiring/list	[].acquiringFeeVatSum	string	В том числе НДС
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].rrdId	integer	ID строки
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].acqDate	string	Дата операции
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].acquiringBank	string	Наименование банка-эквайера
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].tin	string	ИНН
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].taxRegistrationReasonCode	string	КПП
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].saleDate	string	Дата продажи
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].srid	string	ID заказа.<br>В ответах методов сборочных заданий [FBS](./orders-fbs#tag/Sboroch
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].docTypeName	string	Тип документа
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].nmId	integer	Артикул WB
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].retailAmount	string	Вайлдберриз реализовал Товар (Пр)
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].acquiringFee	string	Размер комиссии за эквайринг, в том числе НДС
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].acquiringFeeVat	string	Сумма НДС
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].invoiceNumber	string	Номер счёта-фактуры
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].invoiceDate	string	Дата счёта-фактуры
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].shkId	integer	Штрихкод
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	[].currency	string	Валюта отчёта
+13-finances	/api/finance/v1/acquiring/detailed	[].rrdId	integer	ID строки
+13-finances	/api/finance/v1/acquiring/detailed	[].reportId	integer	ID отчёта
+13-finances	/api/finance/v1/acquiring/detailed	[].acqDate	string	Дата операции
+13-finances	/api/finance/v1/acquiring/detailed	[].acquiringBank	string	Наименование банка-эквайера
+13-finances	/api/finance/v1/acquiring/detailed	[].tin	string	ИНН
+13-finances	/api/finance/v1/acquiring/detailed	[].taxRegistrationReasonCode	string	КПП
+13-finances	/api/finance/v1/acquiring/detailed	[].saleDate	string	Дата продажи
+13-finances	/api/finance/v1/acquiring/detailed	[].srid	string	ID заказа.<br>В ответах методов сборочных заданий [FBS](./orders-fbs#tag/Sboroch
+13-finances	/api/finance/v1/acquiring/detailed	[].docTypeName	string	Тип документа
+13-finances	/api/finance/v1/acquiring/detailed	[].nmId	integer	Артикул WB
+13-finances	/api/finance/v1/acquiring/detailed	[].retailAmount	string	Вайлдберриз реализовал Товар (Пр)
+13-finances	/api/finance/v1/acquiring/detailed	[].acquiringFee	string	Размер комиссии за эквайринг, в том числе НДС
+13-finances	/api/finance/v1/acquiring/detailed	[].acquiringFeeVat	string	Сумма НДС
+13-finances	/api/finance/v1/acquiring/detailed	[].invoiceNumber	string	Номер счёта-фактуры
+13-finances	/api/finance/v1/acquiring/detailed	[].invoiceDate	string	Дата счёта-фактуры
+13-finances	/api/finance/v1/acquiring/detailed	[].shkId	integer	Штрихкод
+13-finances	/api/finance/v1/acquiring/detailed	[].currency	string	Валюта отчёта

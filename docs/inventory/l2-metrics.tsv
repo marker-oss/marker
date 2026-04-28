@@ -1,0 +1,97 @@
+report	section	title	members	formula_excerpt	l1_fields
+Unit Economics	UE.1	Article-level operations and units	sales-qty,returns-qty,ops,net-qty,total-ops	sales-qty[a]   := SUM(quantity)      WHERE operation ∈ {sale-kind}      AND article=a	finance
+Unit Economics	UE.2	Per-article monetary pass-throughs	revenue,mp-commission,wb-reward,logistics,storage,acceptance,penalties,acquiring,deduction,additional,for-pay,total-cost,spp-amount		cost_prices,finance,paid_storage
+Unit Economics	UE.3	Derived total: `total-wb-costs`		total-wb-costs[a] := (wb-reward + logistics + storage +	finance
+Unit Economics	UE.4	Article profit (absolute)		profit[a] := for-pay	ad_stats,cost_prices,finance
+Unit Economics	UE.5	Ad spend allocation		ad-spend[a] := ad-spend-by-article[a] OR 0	ad_stats,finance
+Unit Economics	UE.6	Per-unit amortization (families)	revenue-per-unit,reward-per-unit,cost-per-unit,acquiring-per-unit,sales-qty,logistics-per-unit,storage-per-unit,accept-per-unit,payout-per-unit,profit-per-unit,net-qty,logistics-per-op,total-ops	per-unit metric := metric-total / denominator        [round to 2 dp]	
+Unit Economics	UE.7	Percentage metrics	buyout-rate,margin-pct,wb-cost-pct,cogs-pct,logistics-pct,drr-pct	buyout-rate[a]  := sales-qty / ops × 100               (via math/percentage)	
+Unit Economics	UE.8	Summary monetary totals (aggregation)	total-revenue,total-wb-reward,total-logistics,total-storage,total-acceptance,total-penalties,total-acquiring,total-deduction,total-additional,total-ad-spend,total-wb-costs,total-spp,total-for-pay,total-cost,total-profit	total-X := SUM(row-level-X) across all article rows      [round to 2 dp]	
+Unit Economics	UE.9	Summary derived metrics	margin-pct,wb-cost-pct,cogs-pct,drr-pct,profit-per-sale,avg-check,buyout-rate	margin-pct     := total-profit / total-revenue × 100	
+Unit Economics	UE.10	Marketplace coverage matrix			
+Unit Economics	UE.11	Known gaps (Phase 2 exit state)			
+Unit Economics	UE.12	Verification summary			
+P&L	P&L.1	Period monetary aggregates (pass-throughs)	revenue,wb-reward,logistics,storage,acceptance,penalties,deduction,additional,for-pay,cogs	revenue    := SUM(article.revenue)       across by-article rows	finance,paid_storage
+P&L	P&L.2	Ad spend total		ad-spend := canonical-path OR legacy-fallback	ad_stats
+P&L	P&L.3	Gross profit		gross-profit := for-pay	
+P&L	P&L.4	Net profit and margins	net-profit,margin-gross,margin-net	net-profit    := gross-profit − ad-spend	
+P&L	P&L.5	Quantity and per-event derivatives	sales-qty,returns-qty,buyout-rate,avg-check,profit-per-sale,articles	sales-qty   := SUM(article.sales-qty)	
+P&L	P&L.6	Ozon cash-flow adjustments (optional)		cf-costs       := cf-subscription + cf-warehouse + cf-returns-cargo	cash_flow_periods
+P&L	P&L.7	Marketplace coverage matrix			
+P&L	P&L.8	Known gaps (inherited + P&L-specific)			
+P&L	P&L.9	Verification summary			
+Finance	Finance.1	`article-row` per-article aggregates	revenue,wb-reward,mp-commission,acquiring,sales-pay,returns-pay,logistics,penalties,additional,acceptance,deduction	;; partition by operation type first	finance
+Finance	Finance.2	`:spp-amount` derivative		spp-amount := round2 (sales-pay − revenue)	
+Finance	Finance.3	`:storage` coalescence		if storage-by-article is provided:	
+Finance	Finance.4	`:for-pay` net (sales − returns)		for-pay := round2 (	
+Finance	Finance.5	`:cost-price` and `:total-cost`		cost-price := round2 line-cost(first(sales-lines))	cost_prices
+Finance	Finance.6	`empty-article-row` fallback		when `articles` kwarg is supplied AND article has no finance lines:	
+Finance	Finance.7	`totals` period rollup		totals(finance-data) := let articles = by-article(finance-data)	
+Finance	Finance.8	`by-report-id` weekly split (WB only)		by-report-id(finance-data) :=	
+Finance	Finance.9	Marketplace coverage matrix			
+Finance	Finance.10	Known gaps			
+Finance	Finance.11	Verification summary			
+Sales	Sales.1	Dimension rollups (`by-day` / `by-article` / `by-category` / `by-brand` / `by-warehouse` / `by-region`)		group-and-sum(sales-data, group-fn) :=	
+Sales	Sales.2	`:avg-price` (per-group)		avg-price(group-items) :=	
+Sales	Sales.3	`:revenue` (per-group, forward-only)		revenue(group-items) :=	
+Sales	Sales.4	`totals` period rollup	total-sales,total-returns,total-revenue,avg-price,return-rate,unique-skus	totals(sales-data) :=	
+Sales	Sales.5	Orders vs Sales distinction			
+Sales	Sales.6	Marketplace coverage matrix			
+Sales	Sales.7	Known gaps and quirks			
+Sales	Sales.8	Verification summary			
+ABC	ABC.1	`classify` (80/95 Pareto bucketing)		total = Σ value-fn(item)   for item in sorted-items (desc)	
+ABC	ABC.2	`analyze-by` criterion dispatch			
+ABC	ABC.3	Sort stability			
+ABC	ABC.4	`summary` category rollup	category,count,revenue,for-pay,sales-qty,returns-qty	grouped = group-by :abc-category abc-data	
+ABC	ABC.5	Inputs and data flow			
+ABC	ABC.6	Marketplace coverage			
+ABC	ABC.7	Known gaps and quirks			
+ABC	ABC.8	Verification summary			
+Stock	Stock.1	`by-article` per-article rollup across warehouses		grouped = group-by :article stocks	stocks
+Stock	Stock.2	`by-warehouse` per-warehouse rollup		grouped = group-by :warehouse stocks	
+Stock	Stock.3	`with-turnover` velocity and days-left		sales-by-art = {article → count(items where :type = :sale)}	
+Stock	Stock.4	`totals` snapshot rollup	total-quantity,total-full,total-to-client,total-from-client,unique-articles,warehouses	{:total-quantity    Σ :quantity           stocks	
+Stock	Stock.5	`risk` threshold filter		enriched = with-turnover(by-article(stocks), sales-data, 30)  ; hardcoded 30d	
+Stock	Stock.6	Inputs			
+Stock	Stock.7	Marketplace coverage			
+Stock	Stock.8	Known gaps and quirks			
+Stock	Stock.9	Verification summary			
+Returns	Returns.1	`by-article` per-article return-rate		grouped = group-by :article sales-data	
+Returns	Returns.2	`by-day` temporal distribution (returns only)		returns = filter sales-data where :type = :return	
+Returns	Returns.3	`totals` period rollup	sold,returned,return-rate	totals(sales-data) :=	
+Returns	Returns.4	Report layer filter (top-20, min 2 operations)			
+Returns	Returns.5	Inputs			
+Returns	Returns.6	Marketplace coverage			
+Returns	Returns.7	Known gaps and quirks			
+Returns	Returns.8	Verification summary			
+Buyout	Buyout.1	`analyze` per-article buyout rate			
+Buyout	Buyout.2	Relationship to Returns			
+Buyout	Buyout.3	Report-layer aggregates			
+Buyout	Buyout.4	Inputs and data flow			
+Buyout	Buyout.5	Marketplace coverage			
+Buyout	Buyout.6	Known gaps and quirks			
+Buyout	Buyout.7	True buyout (orders-aware)	placed,cancelled,cancel-rate,true-buyout-rate	placed         := COUNT(orders for article in period)	
+Buyout	Buyout.8	Verification summary			
+Geography	Geography.1	`by-region` aggregation + dual-key-read	region,qty,sum		
+Geography	Geography.2	`by-city` aggregation			
+Geography	Geography.3	Data flow and DB vs API source			
+Geography	Geography.4	Marketplace coverage			
+Geography	Geography.5	Inputs			
+Geography	Geography.6	Known gaps and quirks			
+Geography	Geography.7	Verification summary			
+Trends	Trends.1	`compare-periods` 4-metric comparison table	metric,current,previous,delta,delta-pct		
+Trends	Trends.2	SQL pre-aggregation contrast with §Sales			
+Trends	Trends.3	`wow` window (today−7 / today−14)			
+Trends	Trends.4	`mom` window (today−30 / today−60)			
+Trends	Trends.5	`daily` per-period day-by-day			
+Trends	Trends.6	Inputs & coverage			
+Trends	Trends.7	Known gaps and quirks			
+Trends	Trends.8	Verification summary			
+Losses	Losses.1	Dead-stock classifier			
+Losses	Losses.2	Storage-eats-margin classifier			
+Losses	Losses.3	Forecast-negative classifier			
+Losses	Losses.4	`calculate` orchestrator	rows,totals,totals,total-loss,dead-stock-loss,storage-eats-loss,forecast-count,dead-stock-count,storage-eats-count,total-sku-affected		
+Losses	Losses.5	Inputs			
+Losses	Losses.6	Marketplace coverage			
+Losses	Losses.7	Known gaps			
+Losses	Losses.8	Verification summary			

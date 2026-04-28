@@ -1,0 +1,306 @@
+01-general	/ping	GET	Проверка подключения к WB API	Проверка подключения
+01-general	/api/communications/v2/news	GET	API новостей	Получение новостей портала продавцов
+01-general	/api/v1/seller-info	GET	Информация о продавце	Получить информацию о продавце
+01-general	/api/common/v1/rating	GET	Информация о продавце	Получить рейтинг продавца
+01-general	/api/common/v1/subscriptions	GET	Информация о продавце	Получить информацию о подписке Джем
+01-general	/api/v1/invite	POST	Управление пользователями продавца	Создать приглашение для нового пользователя
+01-general	/api/v1/users	GET	Управление пользователями продавца	Получить список активных или приглашённых пользователей продавца
+01-general	/api/v1/users/access	PUT	Управление пользователями продавца	Изменить права доступа пользователей
+01-general	/api/v1/user	DELETE	Управление пользователями продавца	Удалить пользователя
+02-products	/content/v2/object/parent/all	GET	Категории, предметы и характеристики	Родительские категории товаров
+02-products	/content/v2/object/all	GET	Категории, предметы и характеристики	Список предметов
+02-products	/content/v2/object/charcs/{subjectId}	GET	Категории, предметы и характеристики	Характеристики предмета
+02-products	/content/v2/directory/colors	GET	Категории, предметы и характеристики	Цвет
+02-products	/content/v2/directory/kinds	GET	Категории, предметы и характеристики	Пол
+02-products	/content/v2/directory/countries	GET	Категории, предметы и характеристики	Страна производства
+02-products	/content/v2/directory/seasons	GET	Категории, предметы и характеристики	Сезон
+02-products	/content/v2/directory/vat	GET	Категории, предметы и характеристики	Ставка НДС
+02-products	/content/v2/directory/tnved	GET	Категории, предметы и характеристики	ТНВЭД-код
+02-products	/api/content/v1/brands	GET	Категории, предметы и характеристики	Бренды
+02-products	/content/v2/tags	GET	Ярлыки	Список ярлыков
+02-products	/content/v2/tag	POST	Ярлыки	Создание ярлыка
+02-products	/content/v2/tag/{id}	PATCH	Ярлыки	Изменение ярлыка
+02-products	/content/v2/tag/{id}	DELETE	Ярлыки	Удаление ярлыка
+02-products	/content/v2/tag/nomenclature/link	POST	Ярлыки	Управление ярлыками в карточке товара
+02-products	/content/v2/get/cards/list	POST	Карточки товаров	Список карточек товаров
+02-products	/content/v2/cards/error/list	POST	Карточки товаров	Список несозданных карточек товаров с ошибками
+02-products	/content/v2/cards/update	POST	Карточки товаров	Редактирование карточек товаров
+02-products	/content/v2/cards/moveNm	POST	Карточки товаров	Объединение и разъединение карточек товаров
+02-products	/content/v2/cards/delete/trash	POST	Карточки товаров	Перенос карточек товаров в корзину
+02-products	/content/v2/cards/recover	POST	Карточки товаров	Восстановление карточек товаров из корзины
+02-products	/content/v2/get/cards/trash	POST	Карточки товаров	Список карточек товаров в корзине
+02-products	/content/v2/cards/limits	GET	Создание карточек товаров	Лимиты карточек товаров
+02-products	/content/v2/barcodes	POST	Создание карточек товаров	Генерация баркодов
+02-products	/content/v2/cards/upload	POST	Создание карточек товаров	Создание карточек товаров
+02-products	/content/v2/cards/upload/add	POST	Создание карточек товаров	Создание карточек товаров с присоединением
+02-products	/content/v3/media/file	POST	Медиафайлы	Загрузить медиафайл
+02-products	/content/v3/media/save	POST	Медиафайлы	Загрузить медиафайлы по ссылкам
+02-products	/api/v2/upload/task	POST	Цены и скидки	Установить цены и скидки
+02-products	/api/v2/upload/task/size	POST	Цены и скидки	Установить цены для размеров
+02-products	/api/v2/upload/task/club-discount	POST	Цены и скидки	Установить скидки WB Клуба
+02-products	/api/v2/history/tasks	GET	Цены и скидки	Состояние обработанной загрузки
+02-products	/api/v2/history/goods/task	GET	Цены и скидки	Детализация обработанной загрузки
+02-products	/api/v2/buffer/tasks	GET	Цены и скидки	Состояние необработанной загрузки
+02-products	/api/v2/buffer/goods/task	GET	Цены и скидки	Детализация необработанной загрузки
+02-products	/api/v2/list/goods/filter	GET	Цены и скидки	Получить товары с ценами
+02-products	/api/v2/list/goods/filter	POST	Цены и скидки	Получить товары с ценами по артикулам
+02-products	/api/v2/list/goods/size/nm	GET	Цены и скидки	Получить размеры товара с ценами
+02-products	/api/v2/quarantine/goods	GET	Цены и скидки	Получить товары в карантине
+02-products	/api/v3/stocks/{warehouseId}	PUT	Остатки на складах продавца	Обновить остатки товаров
+02-products	/api/v3/stocks/{warehouseId}	DELETE	Остатки на складах продавца	Удалить остатки товаров
+02-products	/api/v3/stocks/{warehouseId}	POST	Остатки на складах продавца	Получить остатки товаров
+02-products	/api/v3/offices	GET	Склады продавца	Получить список складов WB
+02-products	/api/v3/warehouses	GET	Склады продавца	Получить список складов продавца
+02-products	/api/v3/warehouses	POST	Склады продавца	Создать склад продавца
+02-products	/api/v3/warehouses/{warehouseId}	PUT	Склады продавца	Обновить склад продавца
+02-products	/api/v3/warehouses/{warehouseId}	DELETE	Склады продавца	Удалить склад продавца
+02-products	/api/v3/dbw/warehouses/{warehouseId}/contacts	GET	Склады продавца	Список контактов
+02-products	/api/v3/dbw/warehouses/{warehouseId}/contacts	PUT	Склады продавца	Обновить список контактов
+03-orders-fbs	/api/v3/passes/offices	GET	Пропуска FBS	Получить список складов, для которых требуется пропуск
+03-orders-fbs	/api/v3/passes	GET	Пропуска FBS	Получить список пропусков
+03-orders-fbs	/api/v3/passes	POST	Пропуска FBS	Создать пропуск
+03-orders-fbs	/api/v3/passes/{passId}	PUT	Пропуска FBS	Обновить пропуск
+03-orders-fbs	/api/v3/passes/{passId}	DELETE	Пропуска FBS	Удалить пропуск
+03-orders-fbs	/api/v3/orders/new	GET	Сборочные задания FBS	Получить список новых сборочных заданий
+03-orders-fbs	/api/v3/orders	GET	Сборочные задания FBS	Получить информацию о сборочных заданиях
+03-orders-fbs	/api/v3/orders/status	POST	Сборочные задания FBS	Получить статусы сборочных заданий
+03-orders-fbs	/api/v3/supplies/orders/reshipment	GET	Сборочные задания FBS	Получить все сборочные задания для повторной отгрузки
+03-orders-fbs	/api/v3/orders/{orderId}/cancel	PATCH	Сборочные задания FBS	Отменить сборочное задание
+03-orders-fbs	/api/v3/orders/stickers	POST	Сборочные задания FBS	Получить стикеры сборочных заданий
+03-orders-fbs	/api/marketplace/v3/orders/meta	POST	Метаданные FBS	Получить метаданные сборочных заданий
+03-orders-fbs	/api/v3/orders/{orderId}/meta	DELETE	Метаданные FBS	Удалить метаданные сборочного задания
+03-orders-fbs	/api/v3/orders/{orderId}/meta/sgtin	PUT	Метаданные FBS	Закрепить за сборочным заданием код маркировки товара
+03-orders-fbs	/api/v3/orders/{orderId}/meta/uin	PUT	Метаданные FBS	Закрепить за сборочным заданием УИН
+03-orders-fbs	/api/v3/orders/{orderId}/meta/imei	PUT	Метаданные FBS	Закрепить за сборочным заданием IMEI
+03-orders-fbs	/api/v3/orders/{orderId}/meta/gtin	PUT	Метаданные FBS	Закрепить за сборочным заданием GTIN
+03-orders-fbs	/api/v3/orders/{orderId}/meta/expiration	PUT	Метаданные FBS	Закрепить за сборочным заданием срок годности товара
+03-orders-fbs	/api/marketplace/v3/orders/{orderId}/meta/customs-declaration	PUT	Метаданные FBS	Закрепить за сборочным заданием номер ГТД
+03-orders-fbs	/api/v3/orders/stickers/cross-border	POST	Сборочные задания FBS	Получить стикеры сборочных заданий трансграничных поставок
+03-orders-fbs	/api/v3/orders/status/history	POST	Сборочные задания FBS	История статусов для сборочных заданий трансграничных поставок
+03-orders-fbs	/api/v3/orders/client	POST	Сборочные задания FBS	Заказы с информацией по клиенту
+03-orders-fbs	/api/v3/supplies	POST	Поставки FBS	Создать новую поставку
+03-orders-fbs	/api/v3/supplies	GET	Поставки FBS	Получить список поставок
+03-orders-fbs	/api/marketplace/v3/supplies/{supplyId}/orders	PATCH	Поставки FBS	Добавить сборочные задания к поставке
+03-orders-fbs	/api/v3/supplies/{supplyId}	GET	Поставки FBS	Получить информацию о поставке
+03-orders-fbs	/api/v3/supplies/{supplyId}	DELETE	Поставки FBS	Удалить поставку
+03-orders-fbs	/api/marketplace/v3/supplies/{supplyId}/order-ids	GET	Поставки FBS	Получить ID сборочных заданий поставки
+03-orders-fbs	/api/v3/supplies/{supplyId}/deliver	PATCH	Поставки FBS	Передать поставку в доставку
+03-orders-fbs	/api/v3/supplies/{supplyId}/barcode	GET	Поставки FBS	Получить QR-код поставки
+03-orders-fbs	/api/v3/supplies/{supplyId}/trbx	GET	Поставки FBS	Получить список коробов поставки
+03-orders-fbs	/api/v3/supplies/{supplyId}/trbx	POST	Поставки FBS	Добавить короба к поставке
+03-orders-fbs	/api/v3/supplies/{supplyId}/trbx	DELETE	Поставки FBS	Удалить короба из поставки
+03-orders-fbs	/api/v3/supplies/{supplyId}/trbx/stickers	POST	Поставки FBS	Получить стикеры коробов поставки
+04-orders-dbw	/api/v3/dbw/orders/new	GET	Сборочные задания DBW	Получить список новых сборочных заданий
+04-orders-dbw	/api/v3/dbw/orders	GET	Сборочные задания DBW	Получить информацию о завершенных сборочных заданиях
+04-orders-dbw	/api/v3/dbw/orders/delivery-date	POST	Сборочные задания DBW	Дата и время доставки
+04-orders-dbw	/api/marketplace/v3/dbw/orders/client	POST	Сборочные задания DBW	Информация о покупателе
+04-orders-dbw	/api/v3/dbw/orders/status	POST	Сборочные задания DBW	Получить статусы сборочных заданий
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/confirm	PATCH	Сборочные задания DBW	Перевести на сборку
+04-orders-dbw	/api/v3/dbw/orders/stickers	POST	Сборочные задания DBW	Получить стикеры сборочных заданий
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/assemble	PATCH	Сборочные задания DBW	Перевести в доставку
+04-orders-dbw	/api/v3/dbw/orders/courier	POST	Сборочные задания DBW	Информация о курьере
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/cancel	PATCH	Сборочные задания DBW	Отменить сборочное задание
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta	GET	Метаданные DBW	Получить метаданные сборочного задания
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta	DELETE	Метаданные DBW	Удалить метаданные сборочного задания
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta/sgtin	PUT	Метаданные DBW	Закрепить за сборочным заданием код маркировки товара
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta/uin	PUT	Метаданные DBW	Закрепить за сборочным заданием УИН (уникальный идентификационный номер)
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta/imei	PUT	Метаданные DBW	Закрепить за сборочным заданием IMEI
+04-orders-dbw	/api/v3/dbw/orders/{orderId}/meta/gtin	PUT	Метаданные DBW	Закрепить за сборочным заданием GTIN
+05-orders-dbs	/api/v3/dbs/orders/new	GET	Сборочные задания DBS	Получить список новых сборочных заданий
+05-orders-dbs	/api/v3/dbs/orders	GET	Сборочные задания DBS	Получить информацию о завершенных сборочных заданиях
+05-orders-dbs	/api/v3/dbs/groups/info	POST	Сборочные задания DBS	Получить информацию о платной доставке
+05-orders-dbs	/api/v3/dbs/orders/client	POST	Сборочные задания DBS	Информация о покупателе
+05-orders-dbs	/api/marketplace/v3/dbs/orders/b2b/info	POST	Сборочные задания DBS	Информация о покупателе B2B
+05-orders-dbs	/api/v3/dbs/orders/delivery-date	POST	Сборочные задания DBS	Дата и время доставки
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/info	POST	Сборочные задания DBS	Получить статусы сборочных заданий
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/cancel	POST	Сборочные задания DBS	Отменить сборочные задания
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/confirm	POST	Сборочные задания DBS	Перевести сборочные задания на сборку
+05-orders-dbs	/api/marketplace/v3/dbs/orders/stickers	POST	Сборочные задания DBS	Получить стикеры для сборочных заданий с доставкой в ПВЗ
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/deliver	POST	Сборочные задания DBS	Перевести сборочные задания в доставку
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/receive	POST	Сборочные задания DBS	Сообщить о получении заказов
+05-orders-dbs	/api/marketplace/v3/dbs/orders/status/reject	POST	Сборочные задания DBS	Сообщить об отказе от заказов
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/info	POST	Метаданные DBS	Получить метаданные сборочных заданий
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/delete	POST	Метаданные DBS	Удалить метаданные сборочных заданий
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/sgtin	POST	Метаданные DBS	Закрепить коды маркировки за сборочными заданиями
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/uin	POST	Метаданные DBS	Закрепить УИН за сборочными заданиями
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/imei	POST	Метаданные DBS	Закрепить IMEI за сборочными заданиями
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/gtin	POST	Метаданные DBS	Закрепить GTIN за сборочными заданиями
+05-orders-dbs	/api/marketplace/v3/dbs/orders/meta/customs-declaration	POST	Метаданные DBS	Закрепить за сборочными заданиями номер ГТД
+06-in-store-pickup	/api/v3/click-collect/orders/new	GET	Сборочные задания Самовывоз	Получить список новых сборочных заданий
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/confirm	POST	Сборочные задания Самовывоз	Перевести сборочные задания на сборку
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/prepare	POST	Сборочные задания Самовывоз	Сообщить, что сборочные задания готовы к выдаче
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/confirm	PATCH	Сборочные задания Самовывоз	Перевести на сборку
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/prepare	PATCH	Сборочные задания Самовывоз	Сообщить, что сборочное задание готово к выдаче
+06-in-store-pickup	/api/v3/click-collect/orders/client	POST	Сборочные задания Самовывоз	Информация о покупателе
+06-in-store-pickup	/api/v3/click-collect/orders/client/identity	POST	Сборочные задания Самовывоз	Проверить, что заказ принадлежит покупателю
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/receive	POST	Сборочные задания Самовывоз	Сообщить, что заказы приняты покупателями
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/reject	POST	Сборочные задания Самовывоз	Сообщить об отказе от заказов
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/receive	PATCH	Сборочные задания Самовывоз	Сообщить, что заказ принят покупателем
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/reject	PATCH	Сборочные задания Самовывоз	Сообщить, что покупатель отказался от заказа
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/info	POST	Сборочные задания Самовывоз	Получить статусы сборочных заданий
+06-in-store-pickup	/api/v3/click-collect/orders/status	POST	Сборочные задания Самовывоз	Получить статусы сборочных заданий
+06-in-store-pickup	/api/v3/click-collect/orders	GET	Сборочные задания Самовывоз	Получить информацию о завершённых сборочных заданиях
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/status/cancel	POST	Сборочные задания Самовывоз	Отменить сборочные задания
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/cancel	PATCH	Сборочные задания Самовывоз	Отменить сборочное задание
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/info	POST	Метаданные Самовывоз	Получить метаданные сборочных заданий
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/delete	POST	Метаданные Самовывоз	Удалить метаданные сборочных заданий
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/sgtin	POST	Метаданные Самовывоз	Закрепить коды маркировки товара за сборочными заданиями
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/uin	POST	Метаданные Самовывоз	Закрепить УИН за сборочными заданиями
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/imei	POST	Метаданные Самовывоз	Закрепить IMEI за сборочными заданиями
+06-in-store-pickup	/api/marketplace/v3/click-collect/orders/meta/gtin	POST	Метаданные Самовывоз	Закрепить GTIN за сборочными заданиями
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta	GET	Метаданные Самовывоз	Получить метаданные сборочного задания
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta	DELETE	Метаданные Самовывоз	Удалить метаданные сборочного задания
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta/sgtin	PUT	Метаданные Самовывоз	Закрепить за сборочным заданием код маркировки товара
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta/uin	PUT	Метаданные Самовывоз	Закрепить за сборочным заданием УИН (уникальный идентификационный номер)
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta/imei	PUT	Метаданные Самовывоз	Закрепить за сборочным заданием IMEI
+06-in-store-pickup	/api/v3/click-collect/orders/{orderId}/meta/gtin	PUT	Метаданные Самовывоз	Закрепить за сборочным заданием GTIN
+07-orders-fbw	/api/v1/acceptance/options	POST	Информация для формирования поставок	Опции приёмки
+07-orders-fbw	/api/v1/warehouses	GET	Информация для формирования поставок	Список складов
+07-orders-fbw	/api/v1/transit-tariffs	GET	Информация для формирования поставок	Транзитные направления
+07-orders-fbw	/api/v1/supplies	POST	Информация о поставках	Список поставок
+07-orders-fbw	/api/v1/supplies/{ID}	GET	Информация о поставках	Детали поставки
+07-orders-fbw	/api/v1/supplies/{ID}/goods	GET	Информация о поставках	Товары поставки
+07-orders-fbw	/api/v1/supplies/{ID}/package	GET	Информация о поставках	Упаковка поставки
+08-promotion	/adv/v1/promotion/count	GET	Кампании	Списки кампаний
+08-promotion	/api/advert/v2/adverts	GET	Кампании	Информация о кампаниях
+08-promotion	/api/advert/v1/bids/min	POST	Создание кампаний	Минимальные ставки для карточек товаров
+08-promotion	/adv/v2/seacat/save-ad	POST	Создание кампаний	Создать кампанию
+08-promotion	/adv/v1/supplier/subjects	GET	Создание кампаний	Предметы для кампаний
+08-promotion	/adv/v2/supplier/nms	POST	Создание кампаний	Карточки товаров для кампаний
+08-promotion	/adv/v0/delete	GET	Управление кампаниями	Удаление кампании
+08-promotion	/adv/v0/rename	POST	Управление кампаниями	Переименование кампании
+08-promotion	/adv/v0/start	GET	Управление кампаниями	Запуск кампании
+08-promotion	/adv/v0/pause	GET	Управление кампаниями	Пауза кампании
+08-promotion	/adv/v0/stop	GET	Управление кампаниями	Завершение кампании
+08-promotion	/adv/v0/auction/placements	PUT	Управление кампаниями	Изменение мест размещения в кампаниях с ручной ставкой
+08-promotion	/api/advert/v1/bids	PATCH	Управление кампаниями	Изменение ставок в кампаниях
+08-promotion	/adv/v1/balance	GET	Финансы	Баланс
+08-promotion	/adv/v1/budget	GET	Финансы	Бюджет кампании
+08-promotion	/adv/v1/budget/deposit	POST	Финансы	Пополнение бюджета кампании
+08-promotion	/adv/v1/upd	GET	Финансы	Получение истории затрат
+08-promotion	/adv/v1/payments	GET	Финансы	Получение истории пополнений счёта
+08-promotion	/adv/v0/auction/nms	PATCH	Управление кампаниями	Изменение списка карточек товаров в кампаниях
+08-promotion	/api/advert/v0/bids/recommendations	GET	Управление кампаниями	Рекомендуемые ставки для карточек товаров и поисковых кластеров
+08-promotion	/adv/v0/normquery/stats	POST	Статистика	Статистика поисковых кластеров
+08-promotion	/adv/v0/normquery/get-bids	POST	Поисковые кластеры	Список ставок поисковых кластеров
+08-promotion	/adv/v0/normquery/bids	POST	Поисковые кластеры	Установить ставки для поисковых кластеров
+08-promotion	/adv/v0/normquery/bids	DELETE	Поисковые кластеры	Удалить ставки поисковых кластеров
+08-promotion	/adv/v0/normquery/get-minus	POST	Поисковые кластеры	Список минус-фраз кампаний
+08-promotion	/adv/v0/normquery/set-minus	POST	Поисковые кластеры	Установка и удаление минус-фраз
+08-promotion	/adv/v1/count	GET	Медиа	Количество медиакампаний
+08-promotion	/adv/v1/adverts	GET	Медиа	Список медиакампаний
+08-promotion	/adv/v1/advert	GET	Медиа	Информация о медиакампании
+08-promotion	/adv/v3/fullstats	GET	Статистика	Статистика кампаний
+08-promotion	/adv/v1/stats	POST	Статистика	Статистика медиакампаний
+08-promotion	/api/v1/calendar/promotions	GET	Календарь акций	Список акций
+08-promotion	/api/v1/calendar/promotions/details	GET	Календарь акций	Детальная информация об акциях
+08-promotion	/api/v1/calendar/promotions/nomenclatures	GET	Календарь акций	Список товаров для участия в акции
+08-promotion	/api/v1/calendar/promotions/upload	POST	Календарь акций	Добавить товар в акцию
+08-promotion	/adv/v0/normquery/list	POST	Поисковые кластеры	Списки активных и неактивных поисковых кластеров
+08-promotion	/adv/v1/normquery/stats	POST	Статистика	Статистика по поисковым кластерам с детализацией по дням
+09-communications	/api/v1/new-feedbacks-questions	GET	Вопросы	Непросмотренные отзывы и вопросы
+09-communications	/api/v1/questions/count-unanswered	GET	Вопросы	Неотвеченные вопросы
+09-communications	/api/v1/questions/count	GET	Вопросы	Количество вопросов
+09-communications	/api/v1/questions	GET	Вопросы	Список вопросов
+09-communications	/api/v1/questions	PATCH	Вопросы	Работа с вопросами
+09-communications	/api/v1/question	GET	Вопросы	Получить вопрос по ID
+09-communications	/api/v1/feedbacks/count-unanswered	GET	Отзывы	Необработанные отзывы
+09-communications	/api/v1/feedbacks/count	GET	Отзывы	Количество отзывов
+09-communications	/api/v1/feedbacks	GET	Отзывы	Список отзывов
+09-communications	/api/v1/feedbacks/answer	POST	Отзывы	Ответить на отзыв
+09-communications	/api/v1/feedbacks/answer	PATCH	Отзывы	Отредактировать ответ на отзыв
+09-communications	/api/v1/feedbacks/order/return	POST	Отзывы	Возврат товара по ID отзыва
+09-communications	/api/v1/feedback	GET	Отзывы	Получить отзыв по ID
+09-communications	/api/v1/feedbacks/archive	GET	Отзывы	Список архивных отзывов
+09-communications	/api/feedbacks/v1/pins	GET	Закреплённые отзывы	Список закреплённых и откреплённых отзывов
+09-communications	/api/feedbacks/v1/pins	POST	Закреплённые отзывы	Закрепить отзывы
+09-communications	/api/feedbacks/v1/pins	DELETE	Закреплённые отзывы	Открепить отзывы
+09-communications	/api/feedbacks/v1/pins/count	GET	Закреплённые отзывы	Количество закреплённых и откреплённых отзывов
+09-communications	/api/feedbacks/v1/pins/limits	GET	Закреплённые отзывы	Лимиты закреплённых отзывов
+09-communications	/api/v1/seller/chats	GET	Чат с покупателями	Список чатов
+09-communications	/api/v1/seller/events	GET	Чат с покупателями	События чатов
+09-communications	/api/v1/seller/message	POST	Чат с покупателями	Отправить сообщение
+09-communications	/api/v1/seller/download/{id}	GET	Чат с покупателями	Получить файл из сообщения
+09-communications	/api/v1/claims	GET	Возвраты покупателями	Заявки покупателей на возврат
+09-communications	/api/v1/claim	PATCH	Возвраты покупателями	Ответ на заявку покупателя
+10-tariffs	/api/v1/tariffs/commission	GET	Комиссии	Комиссия по категориям товаров
+10-tariffs	/api/v1/tariffs/box	GET	Тарифы на остаток	Тарифы для коробов
+10-tariffs	/api/v1/tariffs/pallet	GET	Тарифы на остаток	Тарифы для монопаллет
+10-tariffs	/api/tariffs/v1/acceptance/coefficients	GET	Тарифы на поставку	Тарифы на поставку
+10-tariffs	/api/v1/tariffs/return	GET	Стоимость возврата продавцу	Тарифы на возврат
+11-analytics	/api/analytics/v3/sales-funnel/products	POST	Воронка продаж	Статистика карточек товаров за период
+11-analytics	/api/analytics/v3/sales-funnel/products/history	POST	Воронка продаж	Статистика карточек товаров по дням
+11-analytics	/api/analytics/v3/sales-funnel/grouped/history	POST	Воронка продаж	Статистика групп карточек товаров по дням
+11-analytics	/api/v2/nm-report/downloads	POST	Аналитика продавца CSV	Создать отчёт
+11-analytics	/api/v2/nm-report/downloads	GET	Аналитика продавца CSV	Получить список отчётов
+11-analytics	/api/v2/nm-report/downloads/retry	POST	Аналитика продавца CSV	Сгенерировать отчёт повторно
+11-analytics	/api/v2/nm-report/downloads/file/{downloadId}	GET	Аналитика продавца CSV	Получить отчёт
+11-analytics	/api/v2/search-report/report	POST	Поисковые запросы по вашим товарам	Основная страница
+11-analytics	/api/v2/search-report/table/groups	POST	Поисковые запросы по вашим товарам	Пагинация по группам
+11-analytics	/api/v2/search-report/table/details	POST	Поисковые запросы по вашим товарам	Пагинация по товарам в группе
+11-analytics	/api/v2/search-report/product/search-texts	POST	Поисковые запросы по вашим товарам	Поисковые запросы по товару
+11-analytics	/api/v2/search-report/product/orders	POST	Поисковые запросы по вашим товарам	Заказы и позиции по поисковым запросам товара
+11-analytics	/api/analytics/v1/stocks-report/wb-warehouses	POST	История остатков	Остатки на складах WB
+11-analytics	/api/v2/stocks-report/products/groups	POST	История остатков	Данные по группам
+11-analytics	/api/v2/stocks-report/products/products	POST	История остатков	Данные по товарам
+11-analytics	/api/v2/stocks-report/products/sizes	POST	История остатков	Данные по размерам
+11-analytics	/api/v2/stocks-report/offices	POST	История остатков	Данные по складам
+12-reports	/api/v1/supplier/stocks	GET	Основные отчёты	Склады
+12-reports	/api/v1/supplier/orders	GET	Основные отчёты	Заказы
+12-reports	/api/v1/supplier/sales	GET	Основные отчёты	Продажи
+12-reports	/api/v1/analytics/excise-report	POST	Отчёт о товарах c обязательной маркировкой	Получить отчёт
+12-reports	/api/v1/warehouse_remains	GET	Отчёт об остатках на складах	Создать отчёт
+12-reports	/api/v1/warehouse_remains/tasks/{task_id}/status	GET	Отчёт об остатках на складах	Проверить статус
+12-reports	/api/v1/warehouse_remains/tasks/{task_id}/download	GET	Отчёт об остатках на складах	Получить отчёт
+12-reports	/api/analytics/v1/measurement-penalties	GET	Отчёты об удержаниях	Удержания за занижение габаритов упаковки
+12-reports	/api/analytics/v1/warehouse-measurements	GET	Отчёты об удержаниях	Замеры склада
+12-reports	/api/analytics/v1/deductions	GET	Отчёты об удержаниях	Подмены и неверные вложения
+12-reports	/api/v1/analytics/antifraud-details	GET	Отчёты об удержаниях	Самовыкупы
+12-reports	/api/v1/analytics/goods-labeling	GET	Отчёты об удержаниях	Маркировка товара
+12-reports	/api/v1/acceptance_report	GET	Операции при приёмке	Создать отчёт
+12-reports	/api/v1/acceptance_report/tasks/{task_id}/status	GET	Операции при приёмке	Проверить статус
+12-reports	/api/v1/acceptance_report/tasks/{task_id}/download	GET	Операции при приёмке	Получить отчёт
+12-reports	/api/v1/paid_storage	GET	Платное хранение	Создать отчёт
+12-reports	/api/v1/paid_storage/tasks/{task_id}/status	GET	Платное хранение	Проверить статус
+12-reports	/api/v1/paid_storage/tasks/{task_id}/download	GET	Платное хранение	Получить отчёт
+12-reports	/api/v1/analytics/region-sale	GET	Продажи по регионам	Получить отчёт
+12-reports	/api/v1/analytics/brand-share/brands	GET	Доля бренда в продажах	Бренды продавца
+12-reports	/api/v1/analytics/brand-share/parent-subjects	GET	Доля бренда в продажах	Родительские категории бренда
+12-reports	/api/v1/analytics/brand-share	GET	Доля бренда в продажах	Получить отчёт
+12-reports	/api/v1/analytics/banned-products/blocked	GET	Скрытые товары	Заблокированные карточки
+12-reports	/api/v1/analytics/banned-products/shadowed	GET	Скрытые товары	Скрытые из каталога
+12-reports	/api/v1/analytics/goods-return	GET	Отчёт о возвратах и перемещении товаров	Получить отчёт
+13-finances	/api/v1/account/balance	GET	Баланс	Получить баланс продавца
+13-finances	/api/finance/v1/sales-reports/list	POST	Финансовые отчёты	Список отчётов реализации
+13-finances	/api/finance/v1/sales-reports/detailed/{reportId}	POST	Финансовые отчёты	Детализации к отчётам реализации по ID отчётов
+13-finances	/api/finance/v1/sales-reports/detailed	POST	Финансовые отчёты	Детализации к отчётам реализации за период
+13-finances	/api/v5/supplier/reportDetailByPeriod	GET	Финансовые отчёты	Отчёт о продажах по реализации
+13-finances	/api/finance/v1/acquiring/list	POST	Финансовые отчёты	Список отчётов об издержках на приём платежей
+13-finances	/api/finance/v1/acquiring/detailed/{reportId}	POST	Финансовые отчёты	Детализации к отчётам об издержках на приём платежей по ID отчётов
+13-finances	/api/finance/v1/acquiring/detailed	POST	Финансовые отчёты	Детализации к отчётам об издержках на приём платежей за период
+13-finances	/api/v1/documents/categories	GET	Документы	Категории документов
+13-finances	/api/v1/documents/list	GET	Документы	Список документов
+13-finances	/api/v1/documents/download	GET	Документы	Получить документ
+13-finances	/api/v1/documents/download/all	POST	Документы	Получить документы
+14-wbd	/api/v1/keys-api/keys	POST	Ключи активации	Добавить ключи активации
+14-wbd	/api/v1/keys-api/keys	DELETE	Ключи активации	Удалить ключи активации
+14-wbd	/api/v1/keys-api/keys/redeemed	GET	Ключи активации	Получить купленные ключи
+14-wbd	/api/v1/offer/keys/{offer_id}	GET	Ключи активации	Получить количество ключей для предложения
+14-wbd	/api/v1/offer/keys/{offer_id}/list	GET	Ключи активации	Получить список ключей
+14-wbd	/api/v1/offers	POST	Предложения	Создать новое предложение
+14-wbd	/api/v1/offers/thumb	POST	Предложения	Добавить или обновить обложку предложения
+14-wbd	/api/v1/offers/{offer_id}	POST	Предложения	Редактировать предложение
+14-wbd	/api/v1/offers/{offer_id}	GET	Предложения	Получить информацию о предложении
+14-wbd	/api/v1/offers/author	GET	Предложения	Получить список своих предложений
+14-wbd	/api/v1/offer/price/{offer_id}	POST	Предложения	Обновить цену
+14-wbd	/api/v1/offer/{offer_id}	POST	Предложения	Обновить статус
+14-wbd	/api/v1/catalog	GET	Предложения	Получить категории и их подкатегории
+14-wbd	/api/v1/content/illustration	POST	Контент	Загрузить обложку контента
+14-wbd	/api/v1/content/upload/init	POST	Контент	Инициализировать новый контент
+14-wbd	/api/v1/content/upload/chunk	POST	Контент	Загрузить контент (файл)
+14-wbd	/api/v1/content/author/{content_id}	POST	Контент	Редактировать контент
+14-wbd	/api/v1/content/author/{content_id}	GET	Контент	Получить информацию о контенте
+14-wbd	/api/v1/content/author	GET	Контент	Получить список своего контента
+14-wbd	/api/v1/content/download/{uri}	GET	Контент	Скачать контент
+14-wbd	/api/v1/content/delete	POST	Контент	Удалить контент
+14-wbd	/api/v1/content/gallery	POST	Контент	Загрузить медиафайлы для предложения

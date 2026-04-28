@@ -1,0 +1,158 @@
+/v1/businesses/{businessId}/goods-questions	POST	goods-questions	Получение вопросов о товарах продавца
+/v1/businesses/{businessId}/goods-questions/answers	POST	goods-questions	Получение ответов на вопрос
+/v1/businesses/{businessId}/goods-questions/update	POST	goods-questions	Создание, изменение и удаление ответа или комментария
+/v1/businesses/{businessId}/logistics-points	POST	logistic-points	Получение точек ПВЗ Маркета
+/v1/businesses/{businessId}/offer-mappings/barcodes/generate	POST	business-offer-mappings	Генерация штрихкодов
+/v1/businesses/{businessId}/operations	POST	operations	Получение статусов операций
+/v1/businesses/{businessId}/orders	POST	orders	Информация о заказах в кабинете
+/v1/businesses/{businessId}/returns/decisions	POST	returns	Получение возможных решений по возврату
+/v1/campaigns/{campaignId}/delivery-options	POST	delivery-options	Получение доступных вариантов доставки заказов
+/v1/campaigns/{campaignId}/orders/create	POST	orders	Создание заказа
+/v1/campaigns/{campaignId}/orders/update-options	POST	orders	Получение временных интервалов для изменения заказа
+/v1/campaigns/{campaignId}/orders/update	POST	orders	Изменение заказа
+/v1/campaigns/{campaignId}/return-delivery-options	POST	delivery-options	Получение подходящих для возврата пунктов выдачи
+/v1/campaigns/{campaignId}/returns/cancel	POST	returns	Отмена возврата
+/v1/campaigns/{campaignId}/returns/create	POST	returns	Создание возврата
+/v1/reports/documents/barcodes/generate	POST	reports	Получение файла со штрихкодами
+/v2/auth/token	POST	auth	Получение информации о токене авторизации
+/v2/businesses/{businessId}/bids	PUT	bids	Включение буста продаж и установка ставок
+/v2/businesses/{businessId}/bids/info	POST	bids	Информация об установленных ставках
+/v2/businesses/{businessId}/bids/recommendations	POST	bids	Рекомендованные ставки для заданных товаров
+/v2/businesses/{businessId}/chat	GET	chats	Получение чата по идентификатору
+/v2/businesses/{businessId}/chats	POST	chats	Получение доступных чатов
+/v2/businesses/{businessId}/chats/file/send	POST	chats	Отправка файла в чат
+/v2/businesses/{businessId}/chats/history	POST	chats	Получение истории сообщений в чате
+/v2/businesses/{businessId}/chats/message	POST	chats	Отправка сообщения в чат
+/v2/businesses/{businessId}/chats/message	GET	chats	Получение сообщения в чате
+/v2/businesses/{businessId}/chats/new	POST	chats	Создание нового чата с покупателем
+/v2/businesses/{businessId}/goods-feedback	POST	goods-feedback	Получение отзывов о товарах продавца
+/v2/businesses/{businessId}/goods-feedback/comments	POST	goods-feedback	Получение комментариев к отзыву
+/v2/businesses/{businessId}/goods-feedback/comments/delete	POST	goods-feedback	Удаление комментария к отзыву
+/v2/businesses/{businessId}/goods-feedback/comments/update	POST	goods-feedback	Добавление нового или изменение созданного комментария
+/v2/businesses/{businessId}/goods-feedback/skip-reaction	POST	goods-feedback	Пропуск реакции на отзывы
+/v2/businesses/{businessId}/offer-cards	POST	content	Получение информации о заполненности карточек магазина
+/v2/businesses/{businessId}/offer-cards/update	POST	content	Редактирование категорийных характеристик товара
+/v2/businesses/{businessId}/offer-mappings	POST	business-offer-mappings	Информация о товарах в каталоге
+/v2/businesses/{businessId}/offer-mappings/archive	POST	business-offer-mappings	Добавление товаров в архив
+/v2/businesses/{businessId}/offer-mappings/delete	POST	business-offer-mappings	Удаление товаров из каталога
+/v2/businesses/{businessId}/offer-mappings/unarchive	POST	business-offer-mappings	Удаление товаров из архива
+/v2/businesses/{businessId}/offer-mappings/update	POST	business-offer-mappings	Добавление товаров в каталог и изменение информации о них
+/v2/businesses/{businessId}/offer-prices	POST	prices	Просмотр цен на указанные товары во всех магазинах
+/v2/businesses/{businessId}/offer-prices/updates	POST	prices	Установка цен на товары для всех магазинов
+/v2/businesses/{businessId}/offers/recommendations	POST	offers	Рекомендации Маркета, касающиеся цен
+/v2/businesses/{businessId}/price-quarantine	POST	price-quarantine	Список товаров, находящихся в карантине по цене в кабинете
+/v2/businesses/{businessId}/price-quarantine/confirm	POST	price-quarantine	Удаление товара из карантина по цене в кабинете
+/v2/businesses/{businessId}/promos	POST	promos	Получение списка акций
+/v2/businesses/{businessId}/promos/offers	POST	promos	Получение списка товаров, которые участвуют или могут участвовать в акции
+/v2/businesses/{businessId}/promos/offers/delete	POST	promos	Удаление товаров из акции
+/v2/businesses/{businessId}/promos/offers/update	POST	promos	Добавление товаров в акцию или изменение их цен
+/v2/businesses/{businessId}/ratings/quality	POST	ratings	Индекс качества магазинов
+/v2/businesses/{businessId}/settings	POST	businesses	Настройки кабинета
+/v2/businesses/{businessId}/warehouses	GET	warehouses	Список складов и групп складов
+/v2/businesses/{businessId}/warehouses	POST	warehouses	Список складов
+/v2/campaigns	GET	campaigns	Список магазинов пользователя
+/v2/campaigns/{campaignId}	GET	campaigns	Информация о магазине
+/v2/campaigns/{campaignId}/bids	PUT	bids	Включение буста продаж и установка ставок для магазина
+/v2/campaigns/{campaignId}/first-mile/shipments	PUT	shipments	Получение информации о нескольких отгрузках
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}	GET	shipments	Получение информации об одной отгрузке
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/act	GET	shipments	Получение акта приема-передачи
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/confirm	POST	shipments	Подтверждение отгрузки
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/discrepancy-act	GET	shipments	Получение акта расхождений
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/inbound-act	GET	shipments	Получение фактического акта приема-передачи
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/orders/info	GET	shipments	Получение информации о возможности печати ярлыков
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/orders/transfer	POST	shipments	Перенос заказов в следующую отгрузку
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/pallet/labels	GET	shipments	Ярлыки для доверительной приемки
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/pallets	PUT	shipments	Передача количества упаковок для доверительной приемки
+/v2/campaigns/{campaignId}/first-mile/shipments/{shipmentId}/transportation-waybill	GET	shipments	Получение транспортной накладной
+/v2/campaigns/{campaignId}/hidden-offers	POST	hidden-offers	Скрытие товаров и настройки скрытия
+/v2/campaigns/{campaignId}/hidden-offers	GET	hidden-offers	Информация о скрытых вами товарах
+/v2/campaigns/{campaignId}/hidden-offers/delete	POST	hidden-offers	Возобновление показа товаров
+/v2/campaigns/{campaignId}/offer-prices	GET	prices	Список цен
+/v2/campaigns/{campaignId}/offer-prices	POST	prices	Просмотр цен на указанные товары в конкретном магазине
+/v2/campaigns/{campaignId}/offer-prices/updates	POST	prices	Установка цен на товары в конкретном магазине
+/v2/campaigns/{campaignId}/offers	POST	offers	Информация о товарах, которые размещены в заданном магазине
+/v2/campaigns/{campaignId}/offers/delete	POST	offers	Удаление товаров из ассортимента магазина
+/v2/campaigns/{campaignId}/offers/stocks	PUT	stocks	Передача информации об остатках
+/v2/campaigns/{campaignId}/offers/stocks	POST	stocks	Информация об остатках и оборачиваемости
+/v2/campaigns/{campaignId}/offers/update	POST	offers	Изменение условий продажи товаров в магазине
+/v2/campaigns/{campaignId}/orders	GET	orders	Информация о заказах в магазине
+/v2/campaigns/{campaignId}/orders/{orderId}	GET	orders	Информация об одном заказе в магазине
+/v2/campaigns/{campaignId}/orders/{orderId}/boxes	PUT	orders	Подготовка заказа
+/v2/campaigns/{campaignId}/orders/{orderId}/business-buyer	POST	order-business-information	Информация о покупателе — юридическом лице
+/v2/campaigns/{campaignId}/orders/{orderId}/buyer	GET	order-delivery	Информация о покупателе — физическом лице
+/v2/campaigns/{campaignId}/orders/{orderId}/cancellation/accept	PUT	orders	Отмена заказа покупателем
+/v2/campaigns/{campaignId}/orders/{orderId}/{deliverDigitalGoods}	POST	orders	Передача ключей цифровых товаров
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/date	PUT	order-delivery	Изменение даты доставки заказа
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/labels	GET	order-labels	Готовые ярлыки‑наклейки на все коробки в одном заказе
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/labels/data	GET	order-labels	Данные для самостоятельного изготовления ярлыков
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/shipments/{shipmentId}/boxes	PUT	orders	Передача количества грузовых мест в заказе
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/shipments/{shipmentId}/boxes/{boxId}/label	GET	order-labels	Готовый ярлык‑наклейка для коробки в заказе
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/storage-limit	PUT	order-delivery	Продление срока хранения заказа
+/v2/campaigns/{campaignId}/orders/{orderId}/delivery/track	POST	order-delivery	Передача трек‑номера посылки
+/v2/campaigns/{campaignId}/orders/{orderId}/documents	POST	order-business-information	Информация о документах
+/v2/campaigns/{campaignId}/orders/{orderId}/external-id	POST	orders	Передача внешнего идентификатора заказа
+/v2/campaigns/{campaignId}/orders/{orderId}/identifiers	PUT	orders	Передача кодов маркировки единиц товара
+/v2/campaigns/{campaignId}/orders/{orderId}/identifiers/status	POST	orders	Статусы проверки кодов маркировки
+/v2/campaigns/{campaignId}/orders/{orderId}/items	PUT	orders	Удаление товаров из заказа или уменьшение их числа
+/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}	GET	returns	Информация о невыкупе или возврате
+/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}/application	GET	returns	Получение заявления на возврат
+/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}/decision	POST	returns	Принятие или изменение решения по возврату
+/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}/decision/{itemId}/image/{imageHash}	GET	returns	Получение фотографий товаров в возврате
+/v2/campaigns/{campaignId}/orders/{orderId}/returns/{returnId}/decision/submit	POST	returns	Передача решения по возврату
+/v2/campaigns/{campaignId}/orders/{orderId}/status	PUT	orders	Изменение статуса одного заказа
+/v2/campaigns/{campaignId}/orders/{orderId}/{verifyEac}	PUT	order-delivery	Передача кода подтверждения
+/v2/campaigns/{campaignId}/orders/status-update	POST	orders	Изменение статусов нескольких заказов
+/v2/campaigns/{campaignId}/outlets	POST	outlets	Создание точки продаж
+/v2/campaigns/{campaignId}/outlets	GET	outlets	Информация о нескольких точках продаж
+/v2/campaigns/{campaignId}/outlets/licenses	GET	outlet-licenses	Информация о лицензиях для точек продаж
+/v2/campaigns/{campaignId}/outlets/licenses	DELETE	outlet-licenses	Удаление лицензий для точек продаж
+/v2/campaigns/{campaignId}/outlets/licenses	POST	outlet-licenses	Создание и изменение лицензий для точек продаж
+/v2/campaigns/{campaignId}/outlets/{outletId}	PUT	outlets	Изменение информации о точке продаж
+/v2/campaigns/{campaignId}/outlets/{outletId}	GET	outlets	Информация об одной точке продаж
+/v2/campaigns/{campaignId}/outlets/{outletId}	DELETE	outlets	Удаление точки продаж
+/v2/campaigns/{campaignId}/price-quarantine	POST	price-quarantine	Список товаров, находящихся в карантине по цене в магазине
+/v2/campaigns/{campaignId}/price-quarantine/confirm	POST	price-quarantine	Удаление товара из карантина по цене в магазине
+/v2/campaigns/{campaignId}/ratings/quality/details	POST	ratings	Заказы, которые повлияли на индекс качества
+/v2/campaigns/{campaignId}/returns	GET	returns	Список невыкупов и возвратов
+/v2/campaigns/{campaignId}/settings	GET	campaigns	Настройки магазина
+/v2/campaigns/{campaignId}/shipments/reception-transfer-act	GET	shipments	Подтверждение ближайшей отгрузки и получение акта приема-передачи для нее
+/v2/campaigns/{campaignId}/stats/orders	POST	orders-stats	Детальная информация по заказам
+/v2/campaigns/{campaignId}/stats/skus	POST	goods-stats	Отчет по товарам
+/v2/campaigns/{campaignId}/supply-requests	POST	supply-requests	Получение информации о заявках на поставку, вывоз и утилизацию
+/v2/campaigns/{campaignId}/supply-requests/documents	POST	supply-requests	Получение документов по заявке на поставку, вывоз или утилизацию
+/v2/campaigns/{campaignId}/supply-requests/items	POST	supply-requests	Получение товаров в заявке на поставку, вывоз или утилизацию
+/v2/campaigns/{campaignId}/warehouse/status	POST	warehouses	Изменение статуса склада
+/v2/categories/max-sale-quantum	POST	categories	Лимит на установку кванта продажи и минимального количества товаров в заказе
+/v2/categories/tree	POST	categories	Дерево категорий
+/v2/category/{categoryId}/parameters	POST	content	Списки характеристик товаров по категориям
+/v2/delivery/services	GET	delivery-services	Справочник служб доставки
+/v2/regions	GET	regions	Поиск регионов по их имени
+/v2/regions/countries	POST	regions	Список допустимых кодов стран
+/v2/regions/{regionId}	GET	regions	Информация о регионе
+/v2/regions/{regionId}/children	GET	regions	Информация о дочерних регионах
+/v2/reports/banners-statistics/generate	POST	reports	Отчет по охватному продвижению
+/v2/reports/boost-consolidated/generate	POST	reports	Отчет по бусту продаж
+/v2/reports/closure-documents/detalization/generate	POST	reports	Отчет по схождению с закрывающими документами
+/v2/reports/closure-documents/generate	POST	reports	Закрывающие документы
+/v2/reports/competitors-position/generate	POST	reports	Отчет «Конкурентная позиция»
+/v2/reports/documents/labels/generate	POST	reports	Готовые ярлыки‑наклейки на все коробки в нескольких заказах
+/v2/reports/documents/shipment-list/generate	POST	reports	Получение листа сборки
+/v2/reports/goods-feedback/generate	POST	reports	Отчет по отзывам о товарах
+/v2/reports/goods-movement/generate	POST	reports	Отчет по движению товаров
+/v2/reports/goods-prices/generate	POST	reports	Отчет «Цены»
+/v2/reports/goods-realization/generate	POST	reports	Отчет по реализации
+/v2/reports/goods-turnover/generate	POST	reports	Отчет по оборачиваемости
+/v2/reports/info/{reportId}	GET	reports	Получение заданного отчета или документа
+/v2/reports/jewelry-fiscal/generate	POST	reports	Отчет по заказам с ювелирными изделиями
+/v2/reports/key-indicators/generate	POST	reports	Отчет по ключевым показателям
+/v2/reports/sales-geography/generate	POST	reports	Отчет по географии продаж
+/v2/reports/shelf-statistics/generate	POST	reports	Отчет по полкам
+/v2/reports/shows-boost/generate	POST	reports	Отчет по бусту показов
+/v2/reports/shows-sales/generate	POST	reports	Отчет «Аналитика продаж»
+/v2/reports/stocks-on-warehouses/generate	POST	reports	Отчет по остаткам на складах
+/v2/reports/united-marketplace-services/generate	POST	reports	Отчет по стоимости услуг
+/v2/reports/united-netting/generate	POST	reports	Отчет по платежам
+/v2/reports/united-orders/generate	POST	reports	Отчет по заказам
+/v2/reports/united-returns/generate	POST	reports	Отчет по невыкупам и возвратам
+/v2/tariffs/calculate	POST	tariffs	Калькулятор стоимости услуг
+/v2/warehouses	GET	warehouses	Идентификаторы фулфилмент-складов Маркета

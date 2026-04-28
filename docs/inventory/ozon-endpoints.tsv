@@ -1,0 +1,425 @@
+/v1/roles	POST	APIkey	Получить список ролей и методов по API-ключу
+/v1/seller/info	POST	SellerInfo	Информация о кабинете продавца
+/v1/seller/ozon-logistics/info	POST	SellerInfo	Информация о подключении Ozon Доставки
+/v1/description-category/tree	POST	CategoryAPI	Дерево категорий и типов товаров
+/v1/description-category/attribute	POST	CategoryAPI	Список характеристик категории
+/v1/description-category/attribute/values	POST	CategoryAPI	Справочник значений характеристики
+/v1/description-category/attribute/values/search	POST	CategoryAPI	Поиск по справочным значениям характеристики
+/v3/product/import	POST	ProductAPI	Создать или обновить товар
+/v1/product/import/info	POST	ProductAPI	Узнать статус добавления или обновления товара
+/v1/product/import-by-sku	POST	ProductAPI	Создать товар по SKU
+/v1/product/attributes/update	POST	ProductAPI	Обновить характеристики товара
+/v1/product/pictures/import	POST	ProductAPI	Загрузить или обновить изображения товара
+/v3/product/list	POST	ProductAPI	Список товаров
+/v1/product/rating-by-sku	POST	ProductAPI	Получить контент-рейтинг товаров по SKU
+/v3/product/info/list	POST	ProductAPI	Получить информацию о товарах по идентификаторам
+/v4/product/info/attributes	POST	ProductAPI	Получить описание характеристик товара
+/v1/product/info/description	POST	ProductAPI	Получить описание товара
+/v4/product/info/limit	POST	ProductAPI	Лимиты на ассортимент, создание и обновление товаров
+/v1/product/update/offer-id	POST	ProductAPI	Изменить артикулы товаров из системы продавца
+/v1/product/archive	POST	ProductAPI	Перенести товар в архив
+/v1/product/unarchive	POST	ProductAPI	Вернуть товар из архива
+/v2/products/delete	POST	ProductAPI	Удалить товар без SKU из архива
+/v1/product/info/subscription	POST	ProductAPI	Количество подписавшихся на товар пользователей
+/v1/product/related-sku/get	POST	ProductAPI	Получить связанные SKU
+/v2/product/pictures/info	POST	ProductAPI	Получить изображения товаров
+/v1/product/info/wrong-volume	POST	ProductAPI	Список товаров с некорректными ОВХ
+/v1/product/placement-zone/info	POST	ProductAPI	Получить зоны размещения товаров по SKU перед поставкой
+/v1/barcode/add	POST	BarcodeAPI	Привязать штрихкод к товару
+/v1/barcode/generate	POST	BarcodeAPI	Создать штрихкод для товара
+/v2/products/stocks	POST	Prices&StocksAPI	Обновить количество товаров на складах
+/v4/product/info/stocks	POST	Prices&StocksAPI	Информация о количестве товаров
+/v1/product/info/warehouse/stocks	POST	Prices&StocksAPI	Получить информацию по остаткам на складе FBS и rFBS
+/v1/product/info/stocks-by-warehouse/fbs	POST	Prices&StocksAPI	Информация об остатках на складах продавца (FBS и rFBS)
+/v2/product/info/stocks-by-warehouse/fbs	POST	Prices&StocksAPI	Информация об остатках на складах продавца
+/v1/product/import/prices	POST	Prices&StocksAPI	Обновить цену
+/v1/product/action/timer/update	POST	Prices&StocksAPI	Обновление таймера актуальности минимальной цены
+/v1/product/action/timer/status	POST	Prices&StocksAPI	Получить статус установленного таймера
+/v5/product/info/prices	POST	Prices&StocksAPI	Получить информацию о цене товара
+/v1/product/info/discounted	POST	Prices&StocksAPI	Узнать информацию об уценке и основном товаре по SKU уценённого товара
+/v1/product/update/discount	POST	Prices&StocksAPI	Установить скидку на уценённый товар
+/v1/actions	GET	Promos	Список акций
+/v1/actions/candidates	POST	Promos	Список доступных для акции товаров
+/v1/actions/products	POST	Promos	Список участвующих в акции товаров
+/v1/actions/products/activate	POST	Promos	Добавить товар в акцию
+/v1/actions/products/deactivate	POST	Promos	Удалить товары из акции
+/v1/actions/discounts-task/list	POST	Promos	Список заявок на скидку
+/v1/actions/discounts-task/approve	POST	Promos	Согласовать заявку на скидку
+/v1/actions/discounts-task/decline	POST	Promos	Отклонить заявку на скидку
+/v1/pricing-strategy/competitors/list	POST	PricingStrategyAPI	Список конкурентов
+/v1/pricing-strategy/list	POST	PricingStrategyAPI	Список стратегий
+/v1/pricing-strategy/create	POST	PricingStrategyAPI	Создать стратегию
+/v1/pricing-strategy/info	POST	PricingStrategyAPI	Информация о стратегии
+/v1/pricing-strategy/update	POST	PricingStrategyAPI	Обновить стратегию
+/v1/pricing-strategy/products/add	POST	PricingStrategyAPI	Добавить товары в стратегию
+/v1/pricing-strategy/strategy-ids-by-product-ids	POST	PricingStrategyAPI	Список идентификаторов стратегий
+/v1/pricing-strategy/products/list	POST	PricingStrategyAPI	Список товаров в стратегии
+/v1/pricing-strategy/product/info	POST	PricingStrategyAPI	Цена товара у конкурента
+/v1/pricing-strategy/products/delete	POST	PricingStrategyAPI	Удалить товары из стратегии
+/v1/pricing-strategy/status	POST	PricingStrategyAPI	Изменить статус стратегии
+/v1/pricing-strategy/delete	POST	PricingStrategyAPI	Удалить стратегию
+/v1/pass/list	POST	Pass	Список пропусков
+/v1/carriage/pass/create	POST	Pass	Создать пропуск
+/v1/carriage/pass/update	POST	Pass	Обновить пропуск
+/v1/carriage/pass/delete	POST	Pass	Удалить пропуск
+/v1/return/pass/create	POST	Pass	Создать пропуск для возврата
+/v1/return/pass/update	POST	Pass	Обновить пропуск для возврата
+/v1/return/pass/delete	POST	Pass	Удалить пропуск для возврата
+/v1/brand/company-certification/list	POST	BrandAPI	Список сертифицируемых брендов
+/v1/product/certificate/accordance-types	GET	CertificationAPI	Список типов соответствия требованиям (версия 1)
+/v2/product/certificate/accordance-types/list	GET	CertificationAPI	Список типов соответствия требованиям (версия 2)
+/v1/product/certificate/types	GET	CertificationAPI	Справочник типов документов
+/v2/product/certification/list	POST	CertificationAPI	Список сертифицируемых категорий
+/v1/product/certification/list	POST	CertificationAPI	Список сертифицируемых категорий
+/v1/product/certificate/create	POST	CertificationAPI	Добавить сертификаты для товаров
+/v1/product/certificate/bind	POST	CertificationAPI	Привязать сертификат к товару
+/v1/product/certificate/delete	POST	CertificationAPI	Удалить сертификат
+/v1/product/certificate/info	POST	CertificationAPI	Информация о сертификате
+/v1/product/certificate/list	POST	CertificationAPI	Список сертификатов
+/v1/product/certificate/product_status/list	POST	CertificationAPI	Список возможных статусов товаров
+/v1/product/certificate/products/list	POST	CertificationAPI	Список товаров, привязанных к сертификату
+/v1/product/certificate/unbind	POST	CertificationAPI	Отвязать товар от сертификата
+/v1/product/certificate/rejection_reasons/list	POST	CertificationAPI	Возможные причины отклонения сертификата
+/v1/product/certificate/status/list	POST	CertificationAPI	Возможные статусы сертификатов
+/v1/warehouse/list	POST	WarehouseAPI	Список складов
+/v1/delivery-method/list	POST	WarehouseAPI	Список методов доставки склада
+/v2/delivery-method/list	POST	WarehouseAPI	Список методов доставки realFBS-склада
+/v1/delivery-method/return/settings/get	POST	WarehouseAPI	Получить информацию по возвратным настройкам rFBS и rFBS Express
+/v2/warehouse/list	POST	WarehouseAPI	Список складов
+/v1/warehouse/operation/status	POST	WarehouseAPI	Получить статус операции
+/v1/warehouse/archive	POST	WarehouseAPI	Перенести склад в архив
+/v1/warehouse/unarchive	POST	WarehouseAPI	Перенести склад из архива
+/v1/warehouse/invalid-products/get	POST	WarehouseAPI	Получить список товаров с ограничениями по доставке
+/v1/warehouse/warehouses-with-invalid-products	POST	WarehouseAPI	Получить список складов с ограниченными для доставки товарами
+/v1/polygon/create	POST	PolygonAPI	Создайте полигон доставки
+/v1/polygon/bind	POST	PolygonAPI	Свяжите метод доставки с полигоном доставки
+/v2/posting/fbo/list	POST	FBO	Список отправлений
+/v2/posting/fbo/get	POST	FBO	Информация об отправлении
+/v1/posting/fbo/cancel-reason/list	POST	FBO	Причины отмены отправлений по схеме FBO
+/v1/supply-order/status/counter	POST	FBO	Количество заявок по статусам
+/v1/supply-order/bundle	POST	FBO	Состав поставки или заявки на поставку
+/v3/supply-order/list	POST	FBO	Список заявок на поставку на склад Ozon
+/v3/supply-order/get	POST	FBO	Информация о заявке на поставку
+/v1/supply-order/timeslot/get	POST	FBO	Интервалы поставки
+/v1/supply-order/timeslot/update	POST	FBO	Обновить интервал поставки
+/v1/supply-order/timeslot/status	POST	FBO	Статус интервала поставки
+/v1/supply-order/pass/create	POST	FBO	Указать данные о водителе и автомобиле
+/v1/supply-order/pass/status	POST	FBO	Статус ввода данных о водителе и автомобиле
+/v1/supply-order/details	POST	FBO	Получить подробную информацию о заявке на поставку
+/v1/supplier/available_warehouses	GET	FBO	Загруженность складов Ozon
+/v1/cluster/list	POST	FboSupplyRequest	Информация о кластерах и их складах
+/v1/warehouse/fbo/list	POST	FboSupplyRequest	Поиск точек для отгрузки поставки
+/v1/draft/create	POST	FboSupplyRequest	Создать черновик заявки на поставку
+/v1/draft/crossdock/create	POST	FboSupplyRequest	Создать черновик заявки на поставку кросс-докингом
+/v1/draft/direct/create	POST	FboSupplyRequest	Создать черновик заявки на прямую поставку
+/v1/draft/multi-cluster/create	POST	FboSupplyRequest	Создать черновик заявки на поставку для нескольких кластеров
+/v1/draft/create/info	POST	FboSupplyRequest	Информация о черновике заявки на поставку
+/v1/draft/timeslot/info	POST	FboSupplyRequest	Доступные таймслоты
+/v2/draft/create/info	POST	FboSupplyRequest	Получить информацию о черновике заявки на поставку
+/v1/draft/supply/create	POST	FboSupplyRequest	Создать заявку на поставку по черновику
+/v1/draft/supply/create/status	POST	FboSupplyRequest	Информация о создании заявки на поставку
+/v2/draft/timeslot/info	POST	FboSupplyRequest	Получить список доступных таймслотов
+/v1/cargoes/create	POST	FboSupplyRequest	Установка грузомест
+/v1/cargoes/create/info	POST	FboSupplyRequest	Получить информацию по установке грузомест
+/v2/cargoes/create/info	POST	FboSupplyRequest	Получить информацию по установке грузомест
+/v1/cargoes/get	POST	FboSupplyRequest	Получить информацию о грузоместах
+/v1/cargoes/delete	POST	FboSupplyRequest	Удалить грузоместо в заявке на поставку
+/v1/cargoes/delete/status	POST	FboSupplyRequest	Информация о статусе удаления грузоместа
+/v1/cargoes/rules/get	POST	FboSupplyRequest	Чек-лист по установке грузомест FBO
+/v1/cargoes-label/create	POST	FboSupplyRequest	Сгенерировать этикетки для грузомест
+/v1/cargoes-label/get	POST	FboSupplyRequest	Получить идентификатор этикетки для грузомест
+/v1/cargoes-label/file/{file_guid}	GET	FboSupplyRequest	Получить PDF с этикетками грузовых мест
+/v1/supply-order/cancel	POST	FboSupplyRequest	Отменить заявку на поставку
+/v1/supply-order/cancel/status	POST	FboSupplyRequest	Получить статус отмены заявки на поставку
+/v1/supply-order/content/update	POST	FboSupplyRequest	Редактирование товарного состава
+/v1/supply-order/content/update/status	POST	FboSupplyRequest	Информация о статусе редактирования товарного состава
+/v1/supply-order/content/update/validation	POST	FboSupplyRequest	Проверить новый товарный состав
+/v2/draft/supply/create	POST	FboSupplyRequest	Создать заявку на поставку по черновику
+/v2/draft/supply/create/status	POST	FboSupplyRequest	Получить информацию о создании заявки на поставку
+/v1/warehouse/fbo/seller/list	POST	FboSupplyRequest	Получить список складов продавца
+/v4/posting/fbs/ship	POST	FBS&rFBSMarks	Собрать заказ (версия 4)
+/v4/posting/fbs/ship/package	POST	FBS&rFBSMarks	Частичная сборка отправления (версия 4)
+/v6/fbs/posting/product/exemplar/set	POST	FBS&rFBSMarks	Проверить и сохранить данные экземпляров
+/v6/fbs/posting/product/exemplar/create-or-get	POST	FBS&rFBSMarks	Получить данные созданных экземпляров
+/v5/fbs/posting/product/exemplar/status	POST	FBS&rFBSMarks	Получить статус добавления экземпляров
+/v5/fbs/posting/product/exemplar/validate	POST	FBS&rFBSMarks	Валидация кодов маркировки
+/v1/fbs/posting/product/exemplar/update	POST	FBS&rFBSMarks	Обновить данные экземпляров
+/v1/carriage/create	POST	DeliveryFBS	Создание отгрузки
+/v1/carriage/approve	POST	DeliveryFBS	Подтверждение отгрузки
+/v1/carriage/set-postings	POST	DeliveryFBS	Изменение состава отгрузки
+/v1/carriage/cancel	POST	DeliveryFBS	Удаление отгрузки
+/v1/carriage/delivery/list	POST	DeliveryFBS	Список методов доставки и отгрузок
+/v2/carriage/delivery/list	POST	DeliveryFBS	Список методов доставки и отгрузок
+/v2/posting/fbs/act/create	POST	DeliveryFBS	Подтвердить отгрузку и создать документы
+/v1/posting/carriage-available/list	POST	DeliveryFBS	Список доступных перевозок
+/v1/carriage/get	POST	DeliveryFBS	Информация о перевозке
+/v1/posting/fbs/split	POST	DeliveryFBS	Разделить заказ на отправления без сборки
+/v2/posting/fbs/act/get-postings	POST	DeliveryFBS	Список отправлений в акте
+/v2/posting/fbs/act/get-container-labels	POST	DeliveryFBS	Этикетки для грузового места
+/v2/posting/fbs/act/get-barcode	POST	DeliveryFBS	Штрихкод для отгрузки отправления
+/v2/posting/fbs/act/get-barcode/text	POST	DeliveryFBS	Значение штрихкода для отгрузки отправления
+/v2/posting/fbs/digital/act/check-status	POST	DeliveryFBS	Статус формирования накладной
+/v2/posting/fbs/act/get-pdf	POST	DeliveryFBS	Получить PDF c документами
+/v2/posting/fbs/act/list	POST	DeliveryFBS	Список актов по отгрузкам
+/v2/posting/fbs/digital/act/get-pdf	POST	DeliveryFBS	Получить лист отгрузки по перевозке
+/v2/posting/fbs/act/check-status	POST	DeliveryFBS	Статус отгрузки и документов
+/v1/posting/fbs/traceable/split	POST	DeliveryFBS	Разделить отправление с прослеживаемыми товарами
+/v1/posting/fbs/product/traceable/attribute	POST	DeliveryFBS	Получить список незаполненных атрибутов для прослеживаемых товаров
+/v1/carriage/ettn/status	POST	DeliveryFBS	Получить статус проверки электронной ТТН на прослеживаемой перевозке FBS
+/v1/assembly/carriage/posting/list	POST	DeliveryFBS	Получить список отправлений в отгрузке
+/v1/assembly/carriage/product/list	POST	DeliveryFBS	Получить список товаров в отгрузке
+/v1/assembly/fbs/posting/list	POST	DeliveryFBS	Получить список отправлений
+/v1/assembly/fbs/product/list	POST	DeliveryFBS	Получить список товаров в отправлениях
+/v2/fbs/posting/tracking-number/set	POST	DeliveryrFBS	Добавить трек-номера
+/v2/fbs/posting/delivering	POST	DeliveryrFBS	Изменить статус на «Доставляется»
+/v2/fbs/posting/last-mile	POST	DeliveryrFBS	Изменить статус на «Последняя миля»
+/v2/fbs/posting/delivered	POST	DeliveryrFBS	Изменить статус на «Доставлено»
+/v1/posting/fbs/timeslot/change-restrictions	POST	DeliveryrFBS	Доступные даты для переноса доставки
+/v1/posting/fbs/timeslot/set	POST	DeliveryrFBS	Перенести дату доставки
+/v1/posting/cutoff/set	POST	DeliveryrFBS	Уточнить дату отгрузки отправления
+/v3/posting/fbs/unfulfilled/list	POST	FBS	Список необработанных отправлений
+/v3/posting/fbs/list	POST	FBS	Список отправлений
+/v3/posting/fbs/get	POST	FBS	Получить информацию об отправлении по идентификатору
+/v2/posting/fbs/get-by-barcode	POST	FBS	Получить информацию об отправлении по штрихкоду
+/v3/posting/multiboxqty/set	POST	FBS	Указать количество коробок для многокоробочных отправлений
+/v2/posting/fbs/product/country/list	POST	FBS	Список доступных стран-изготовителей
+/v2/posting/fbs/product/country/set	POST	FBS	Добавить информацию о стране-изготовителе товара
+/v1/posting/fbs/restrictions	POST	FBS	Получить ограничения пункта приёма
+/v2/posting/fbs/package-label	POST	FBS	Напечатать этикетку
+/v1/posting/fbs/package-label/create	POST	FBS	Создать задание на выгрузку этикеток
+/v2/posting/fbs/package-label/create	POST	FBS	Создать задание на формирование этикеток
+/v1/posting/fbs/package-label/get	POST	FBS	Получить файл с этикетками
+/v1/posting/fbs/cancel-reason	POST	FBS	Причины отмены отправления
+/v2/posting/fbs/cancel-reason/list	POST	FBS	Причины отмены отправлений
+/v2/posting/fbs/product/cancel	POST	FBS	Отменить отправку некоторых товаров в отправлении
+/v2/posting/fbs/cancel	POST	FBS	Отменить отправление
+/v2/posting/fbs/arbitration	POST	FBS	Открыть спор по отправлению
+/v2/posting/fbs/awaiting-delivery	POST	FBS	Передать отправление к отгрузке
+/v1/posting/fbs/pick-up-code/verify	POST	FBS	Проверить код курьера
+/v1/posting/global/etgb	POST	FBS	Таможенные декларации ETGB
+/v1/posting/unpaid-legal/product/list	POST	FBS	Список неоплаченных товаров, заказанных юридическими лицами
+/v2/returns/rfbs/list	POST	RFBSReturnsAPI	Список заявок на возврат
+/v2/returns/rfbs/get	POST	RFBSReturnsAPI	Информация о заявке на возврат
+/v2/returns/rfbs/reject	POST	RFBSReturnsAPI	Отклонить заявку на возврат
+/v2/returns/rfbs/compensate	POST	RFBSReturnsAPI	Вернуть часть стоимости товара
+/v2/returns/rfbs/verify	POST	RFBSReturnsAPI	Одобрить заявку на возврат
+/v2/returns/rfbs/receive-return	POST	RFBSReturnsAPI	Подтвердить получение товара на проверку
+/v2/returns/rfbs/return-money	POST	RFBSReturnsAPI	Вернуть деньги покупателю
+/v1/returns/rfbs/action/set	POST	RFBSReturnsAPI	Передать доступные действия для rFBS возвратов
+/v2/conditional-cancellation/list	POST	CancellationAPI	Получить список заявок на отмену rFBS
+/v2/conditional-cancellation/approve	POST	CancellationAPI	Подтвердить заявку на отмену rFBS
+/v2/conditional-cancellation/reject	POST	CancellationAPI	Отклонить заявку на отмену rFBS
+/v1/returns/list	POST	ReturnsAPI	Информация о возвратах FBO и FBS
+/v1/returns/company/fbs/info	POST	ReturnAPI	Количество возвратов FBS
+/v1/returns/settings/utilization/history	POST	ReturnsAPI	Получить историю изменений автоутилизации
+/v1/returns/settings/utilization/info	POST	ReturnsAPI	Получить настройки автоутилизации
+/v1/returns/settings/utilization/update	POST	ReturnsAPI	Обновить настройки автоутилизации
+/v1/return/giveout/is-enabled	POST	ReturnAPI	Проверить возможность получения возвратных отгрузок по штрихкоду
+/v1/return/giveout/list	POST	ReturnAPI	Список возвратных отгрузок
+/v1/return/giveout/info	POST	ReturnAPI	Информация о возвратной отгрузке
+/v1/return/giveout/barcode	POST	ReturnAPI	Значение штрихкода для возвратных отгрузок
+/v1/return/giveout/get-pdf	POST	ReturnAPI	Штрихкод для получения возвратной отгрузки в формате PDF
+/v1/return/giveout/get-png	POST	ReturnAPI	Штрихкод для получения возвратной отгрузки в формате PNG
+/v1/return/giveout/barcode-reset	POST	ReturnAPI	Сгенерировать новый штрихкод
+/v1/chat/send/file	POST	ChatAPI	Отправить файл
+/v2/chat/list	POST	ChatAPI	Список чатов
+/v3/chat/list	POST	ChatAPI	Список чатов
+/v3/chat/history	POST	ChatAPI	История чата
+/v2/invoice/create-or-update	POST	SupplierAPI	Создать или изменить счёт-фактуру
+/v1/invoice/file/upload	POST	SupplierAPI	Загрузка счёта-фактуры
+/v2/invoice/get	POST	SupplierAPI	Получить информацию о счёте-фактуре
+/v1/invoice/delete	POST	SupplierAPI	Удалить ссылку на счёт-фактуру
+/v1/report/info	POST	ReportAPI	Информация об отчёте
+/v1/report/list	POST	ReportAPI	Список отчётов
+/v1/report/products/create	POST	ReportAPI	Отчёт по товарам
+/v2/report/returns/create	POST	ReportAPI	Отчёт о возвратах
+/v1/report/postings/create	POST	ReportAPI	Отчёт об отправлениях
+/v1/finance/cash-flow-statement/list	POST	ReportAPI	Финансовый отчёт
+/v1/report/discounted/create	POST	ReportAPI	Отчёт об уценённых товарах
+/v1/report/warehouse/stock	POST	ReportAPI	Отчёт об остатках на FBS-складе
+/v1/report/placement/by-products/create	POST	ReportAPI	Получить отчёт о стоимости размещения по товарам
+/v1/report/placement/by-supplies/create	POST	ReportAPI	Получить отчёт о стоимости размещения по поставкам
+/v1/report/marked-products-sales/create	POST	ReportAPI	Сгенерировать отчёт по продажам товаров с маркировкой
+/v2/analytics/stock_on_warehouses	POST	AnalyticsAPI	Отчёт по остаткам и товарам
+/v1/analytics/turnover/stocks	POST	AnalyticsAPI	Оборачиваемость товара
+/v1/analytics/average-delivery-time	POST	AnalyticsAPI	Получить аналитику по среднему времени доставки
+/v1/analytics/average-delivery-time/details	POST	AnalyticsAPI	Получить детальную аналитику по среднему времени доставки
+/v1/analytics/average-delivery-time/summary	POST	AnalyticsAPI	Получить общую аналитику по среднему времени доставки
+/v1/analytics/stocks	POST	AnalyticsAPI	Получить аналитику по остаткам
+/v2/finance/realization	POST	FinanceAPI	Отчёт о реализации товаров (версия 2)
+/v1/finance/realization/posting	POST	FinanceAPI	Позаказный отчёт о реализации товаров
+/v3/finance/transaction/list	POST	FinanceAPI	Список транзакций
+/v3/finance/transaction/totals	POST	FinanceAPI	Суммы транзакций
+/v1/finance/document-b2b-sales	POST	FinanceAPI	Реестр продаж юридическим лицам
+/v1/finance/document-b2b-sales/json	POST	FinanceAPI	Реестр продаж юридическим лицам в JSON-формате
+/v1/finance/mutual-settlement	POST	FinanceAPI	Отчёт о взаиморасчётах
+/v1/finance/products/buyout	POST	FinanceAPI	Отчёт о выкупленных товарах
+/v1/finance/compensation	POST	FinanceAPI	Отчёт о компенсациях
+/v1/finance/decompensation	POST	FinanceAPI	Отчёт о декомпенсациях
+/v1/receipts/get	POST	Receipt	Получить чек в формате PDF
+/v1/receipts/seller/list	POST	Receipt	Получить список чеков продавца
+/v1/receipts/upload	POST	Receipt	Загрузить чек
+/v1/rating/summary	POST	SellerRating	Получить информацию о текущих рейтингах продавца
+/v1/rating/history	POST	SellerRating	Получить информацию о рейтингах продавца за период
+/v1/rating/index/fbs/info	POST	SellerRating	Получить индекс ошибок FBS и rFBS
+/v1/rating/index/fbs/posting/list	POST	SellerRating	Список отправлений, которые повлияли на индекс ошибок FBS и rFBS
+/v1/posting/digital/codes/upload	POST	Digital	Загрузить коды цифровых товаров для отправления
+/v1/posting/digital/list	POST	Digital	Получить список отправлений
+/v1/product/digital/stocks/import	POST	Digital	Обновить количество цифровых товаров
+/v1/analytics/manage/stocks	POST	BetaMethod	Управление остатками
+/v1/removal/from-supply/list	POST	BetaMethod	Отчёт по вывозу и утилизации с поставки FBO
+/v1/removal/from-stock/list	POST	BetaMethod	Отчёт по вывозу и утилизации со стока FBO
+/v1/product/stairway-discount/by-quantity/set	POST	BetaMethod	Управлять скидкой от количества
+/v1/product/stairway-discount/by-quantity/get	POST	BetaMethod	Получить информацию о скидке от количества
+/v1/finance/balance	POST	BetaMethod	Получить отчёт о балансе
+/v2/actions/discounts-task/list	POST	BetaMethod	Получить список заявок на скидку
+/v1/carriage/act-discrepancy/pdf	POST	BetaMethod	Получить акт о расхождениях по отгрузке FBS
+/v1/warehouse/ozon/list	POST	BetaMethod	Получить список складов Ozon
+/v2/cluster/list	POST	BetaMethod	Получить информацию о макролокальных кластерах
+/v1/product/visibility/set	POST	BetaMethod	Настроить видимость товара на витрине Ozon и Ozon Селект
+/v1/warehouse/rfbs/pause	POST	BetaMethod	Поставить rFBS-склад на паузу
+/v1/warehouse/rfbs/unpause	POST	BetaMethod	Снять rFBS-склад с паузы
+/v1/warehouse/fbs/create/drop-off/list	POST	FBSWarehouseSetup	Получить список drop-off пунктов для создания склада
+/v1/warehouse/fbs/update/drop-off/list	POST	FBSWarehouseSetup	Получить список drop-off пунктов для изменения информации склада
+/v1/warehouse/fbs/create/drop-off/timeslot/list	POST	FBSWarehouseSetup	Получить список таймслотов для создания склада с отгрузкой drop-off
+/v1/warehouse/fbs/update/drop-off/timeslot/list	POST	FBSWarehouseSetup	Получить список таймслотов для обновления склада с отгрузкой drop-off
+/v1/warehouse/fbs/create/pick-up/timeslot/list	POST	FBSWarehouseSetup	Получить список таймслотов для создания склада с отгрузкой pick-up
+/v1/warehouse/fbs/update/pick-up/timeslot/list	POST	FBSWarehouseSetup	Получить список таймслотов для обновления склада с отгрузкой pick-up
+/v1/warehouse/fbs/create	POST	FBSWarehouseSetup	Создать склад
+/v1/warehouse/fbs/update	POST	FBSWarehouseSetup	Обновить склад
+/v1/warehouse/fbs/first-mile/update	POST	FBSWarehouseSetup	Обновить первую милю
+/v1/warehouse/fbs/create/return-point/list	POST	FBSWarehouseSetup	Получить список пунктов возврата для создания склада
+/v1/warehouse/fbs/update/return-point/list	POST	FBSWarehouseSetup	Получить список пунктов возврата для обновления склада
+/v1/warehouse/fbs/return-mile/info	POST	FBSWarehouseSetup	Получить информацию о возвратной миле
+/v1/warehouse/fbs/return-mile/check	POST	FBSWarehouseSetup	Проверить необходимость установки возвратной мили на склад
+/v1/warehouse/fbs/pickup/courier/create	POST	FBSWarehouseSetup	Создать вызов курьера на забор отгрузки pick-up
+/v1/warehouse/fbs/pickup/courier/cancel	POST	FBSWarehouseSetup	Отменить вызов курьера на забор отгрузки pick-up
+/v1/warehouse/fbs/pickup/history/list	POST	FBSWarehouseSetup	Получить историю отгрузок курьерам
+/v1/warehouse/fbs/pickup/planning/list	POST	FBSWarehouseSetup	Получить список складов для планирования отгрузок курьеру
+/v1/warehouse/erfbs/aggregator/create	POST	rFBSWarehouseSetup	Создать склад с методом доставки «Партнёры Ozon»
+/v1/warehouse/erfbs/update	POST	rFBSWarehouseSetup	Обновить склад
+/v1/warehouse/erfbs/aggregator/delivery-method/update	POST	rFBSWarehouseSetup	Обновить метод доставки «Партнёры Ozon»
+/v1/warehouse/erfbs/non-integrated/create	POST	rFBSWarehouseSetup	Создать склад с методом доставки «Вы или сторонняя служба»
+/v1/warehouse/erfbs/non-integrated/delivery-method/update	POST	rFBSWarehouseSetup	Обновить метод доставки «Вы или сторонняя служба»
+/v2/polygon/bind	POST	PolygonAPI	Связать метод доставки с полигоном
+/v1/polygon/delete	POST	PolygonAPI	Удалить полигон из области доставки
+/v1/polygon/list	POST	PolygonAPI	Получить список установленных полигонов на метод доставки
+/v1/polygon/time/coordinates/update	POST	PolygonAPI	Обновить координаты полигона доставки
+/v1/polygon/time/set	POST	PolygonAPI	Установить новое время доставки в полигоне
+/v1/review/comment/create	POST	ReviewAPI	Оставить комментарий на отзыв
+/v1/review/comment/delete	POST	ReviewAPI	Удалить комментарий на отзыв
+/v2/review/comment/delete	POST	ReviewAPI	Удалить комментарий на отзыв
+/v1/review/comment/list	POST	ReviewAPI	Получить список комментариев на отзыв
+/v1/review/change-status	POST	ReviewAPI	Изменить статус отзывов
+/v2/review/change-status	POST	ReviewAPI	Изменить статус отзывов
+/v1/review/count	POST	ReviewAPI	Количество отзывов по статусам
+/v2/review/count	POST	ReviewAPI	Получить количество отзывов по статусам
+/v1/review/info	POST	ReviewAPI	Получить информацию об отзыве
+/v2/review/info	POST	ReviewAPI	Получить информацию по отзыву
+/v1/review/list	POST	ReviewAPI	Получить список отзывов
+/v2/review/list	POST	ReviewAPI	Получить список отзывов
+/v1/product/quant/list	POST	Quants	Список эконом-товаров
+/v1/product/quant/info	POST	Quants	Информация об эконом-товаре
+/v1/question/answer/create	POST	Questions&Answers	Создать ответ на вопрос
+/v1/question/answer/delete	POST	Questions&Answers	Удалить ответ на вопрос
+/v1/question/answer/list	POST	Questions&Answers	Список ответов на вопрос
+/v1/question/change-status	POST	Questions&Answers	Изменить статус вопросов
+/v1/question/count	POST	Questions&Answers	Количество вопросов по статусам
+/v1/question/info	POST	Questions&Answers	Информация о вопросе
+/v1/question/list	POST	Questions&Answers	Список вопросов
+/v1/question/top-sku	POST	Questions&Answers	Товары с наибольшим количеством вопросов
+/v1/seller-actions/create/discount	POST	SellerActions	Создать акцию с механикой «Скидка»
+/v1/seller-actions/create/discount-with-condition	POST	SellerActions	Создать акцию с механикой «Скидка от суммы заказа»
+/v1/seller-actions/create/installment	POST	SellerActions	Создать акцию с механикой «Беспроцентная рассрочка»
+/v1/seller-actions/create/multi-level-discount	POST	SellerActions	Создать акцию с механикой «Многоуровневая скидка от суммы»
+/v1/seller-actions/create/voucher	POST	SellerActions	Создать акцию с механикой «Скидка по промокоду»
+/v1/seller-actions/update/discount	POST	SellerActions	Обновить акцию с механикой «Скидка»
+/v1/seller-actions/update/discount-with-condition	POST	SellerActions	Обновить акцию с механикой «Скидка от суммы заказа»
+/v1/seller-actions/update/installment	POST	SellerActions	Обновить акцию с механикой «Беспроцентная рассрочка»
+/v1/seller-actions/update/multi-level-discount	POST	SellerActions	Обновить акцию с механикой «Многоуровневая скидка от суммы»
+/v1/seller-actions/update/voucher	POST	SellerActions	Обновить акцию с механикой «Скидка по промокоду»
+/v1/seller-actions/products/add	POST	SellerActions	Добавить товары в акцию
+/v1/seller-actions/products/candidates	POST	SellerActions	Получить список доступных для акции товаров
+/v1/seller-actions/products/delete	POST	SellerActions	Удалить товары из акции
+/v1/seller-actions/products/list	POST	SellerActions	Получить список участвующих в акции товаров
+/v1/seller-actions/archive	POST	SellerActions	Перенести акцию в архив
+/v1/seller-actions/change-activity	POST	SellerActions	Включить или выключить акцию
+/v1/seller-actions/list	POST	SellerActions	Получить список акций
+/v1/seller-actions/voucher/get	POST	SellerActions	Получить файл с промокодами в формате CSV
+/v1/notification/set	POST	Notification	Подключить URL-адрес для уведомлений
+/v1/notification/update	POST	Notification	Изменить URL-адрес для уведомлений
+/v1/notification/delete	POST	Notification	Удалить URL-адрес для уведомлений
+/v1/notification/check	POST	Notification	Проверить URL-адрес для уведомлений
+/v1/notification/enable	POST	Notification	Включить или выключить уведомления на URL-адрес
+/v1/notification/list	POST	Notification	Получить информацию по подключённым URL-адресам
+/v1/notification/push-type/list	POST	Notification	Получить типы пуш-уведомлений
+/v1/fbp/draft/direct/seller-dlv/create	POST	DraftDirectFBP	Создать черновик с доставкой силами продавца
+/v1/fbp/draft/direct/seller-dlv/edit	POST	DraftDirectFBP	Обновить информацию о доставке силами продавца в черновике
+/v1/fbp/draft/direct/timeslot/edit	POST	DraftDirectFBP	Отредактировать таймслот в черновике
+/v1/fbp/draft/direct/timeslot/get	POST	DraftDirectFBP	Получить список таймслотов для прямой поставки
+/v1/fbp/draft/direct/create	POST	DraftDirectFBP	Создать черновик заявки на поставку без указания способа доставки
+/v1/fbp/draft/direct/delete	POST	DraftDirectFBP	Удалить черновик заявки на поставку
+/v1/fbp/draft/direct/product/validate	POST	DraftDirectFBP	Проверить список товаров для склада партнёра
+/v1/fbp/draft/direct/registrate	POST	DraftDirectFBP	Перевести черновик в действующую поставку
+/v1/fbp/draft/drop-off/create	POST	DraftDropOffFBP	Создать черновик для доставки в drop-off пункт
+/v1/fbp/draft/drop-off/delete	POST	DraftDropOffFBP	Удалить черновик для доставки в drop-off пункт
+/v1/fbp/draft/drop-off/dlv/edit	POST	DraftDropOffFBP	Отредактировать детали доставки для drop-off черновика
+/v1/fbp/draft/drop-off/registrate	POST	DraftDropOffFBP	Перевести черновик в действующую поставку
+/v1/fbp/draft/drop-off/province/list	POST	DraftDropOffFBP	Получить список провинций
+/v1/fbp/draft/drop-off/point/list	POST	DraftDropOffFBP	Получить список drop-off пунктов в провинции
+/v1/fbp/draft/drop-off/point/timetable	POST	DraftDropOffFBP	Получить расписание работы drop-off пункта
+/v1/fbp/draft/drop-off/product/validate	POST	DraftDropOffFBP	Проверить список товаров, которые склад партнёра может принять
+/v1/fbp/order/direct/cancel	POST	OrderDirectFBP	Отменить поставку
+/v1/fbp/order/direct/seller-dlv/edit	POST	OrderDirectFBP	Обновить информацию о доставке силами продавца
+/v1/fbp/order/direct/timeslot/edit	POST	OrderDirectFBP	Отредактировать таймслот в заявке на поставку
+/v1/fbp/order/direct/timeslot/list	POST	OrderDirectFBP	Получить список таймслотов для поставки
+/v1/fbp/act-from/create	POST	DeliveryFBP	Сгенерировать акт приёмки
+/v1/fbp/act-from/get	POST	DeliveryFBP	Получить статус генерации акта приёмки
+/v1/fbp/act-to/create	POST	DeliveryFBP	Сгенерировать транспортную накладную
+/v1/fbp/act-to/get	POST	DeliveryFBP	Получить статус генерации транспортной накладной
+/v1/fbp/archive/get	POST	DeliveryFBP	Получить информацию о завершённой поставке
+/v1/fbp/archive/list	POST	DeliveryFBP	Получить список завершённых поставок
+/v1/fbp/label/create	POST	DeliveryFBP	Cоздать задание на генерацию этикеток
+/v1/fbp/label/get	POST	DeliveryFBP	Получить статус задания на генерацию этикеток
+/v1/fbp/draft/pick-up/create	POST	DraftPickupFBP	Создать черновик заявки на pick-up поставку
+/v1/fbp/draft/pick-up/delete	POST	DraftPickupFBP	Отменить черновик заявки на pick-up поставку
+/v1/fbp/draft/pick-up/dlv/edit	POST	DraftPickupFBP	Изменить черновик заявки на pick-up поставку
+/v1/fbp/draft/pick-up/product/validate	POST	DraftPickupFBP	Провалидировать список товаров для pick-up поставки
+/v1/fbp/warehouse/list	POST	DeliveryFBPDraft	Получить список партнёрских складов
+/v1/fbp/draft/pick-up/registrate	POST	DraftPickupFBP	Перевести черновик в действующую поставку
+/v1/fbp/draft/get	POST	DeliveryFBPDraft	Получить информацию о черновике поставки
+/v1/fbp/draft/list	POST	DeliveryFBPDraft	Список черновиков поставки
+/v1/fbp/draft/direct/tpl-dlv/create	POST	DraftDirectFBP	Создать черновик заявки на доставку сторонней транспортной компанией
+/v1/fbp/draft/direct/tpl-dlv/edit	POST	DraftDirectFBP	Редактировать черновик поставки со способом доставки сторонней транспортной компанией
+/v1/fbp/order/drop-off/cancel	POST	OrderDropOffFBP	Отменить поставку drop-off
+/v1/fbp/order/drop-off/dlv/edit	POST	OrderDropOffFBP	Отредактировать информацию о поставке на drop-off пункт
+/v1/fbp/order/drop-off/timetable	POST	OrderDropOffFBP	Получить график работы drop-off пункта
+/v1/fbp/order/get	POST	DeliveryFBP	Получить информацию о конкретной поставке
+/v1/fbp/order/list	POST	DeliveryFBP	Получить список поставок
+/v1/fbp/order/pick-up/cancel	POST	OrderPickupFBP	Отменить pick-up поставку
+/v1/fbp/order/pick-up/dlv/edit	POST	OrderPickupFBP	Изменить данные о точке забора
+/v1/chat/send/message	POST	Premium	Отправить сообщение
+/v1/chat/start	POST	Premium	Создать новый чат
+/v2/chat/read	POST	Premium	Отметить сообщения как прочитанные
+/v1/analytics/data	POST	Premium	Данные аналитики
+/v1/analytics/product-queries	POST	Premium	Получить информацию о запросах моих товаров
+/v1/analytics/product-queries/details	POST	Premium	Получить детализацию запросов по товару
+/v1/finance/realization/by-day	POST	Premium	Отчёт о реализации товаров за день
+/v1/search-queries/text	POST	Premium	Получить список поисковых запросов по тексту
+/v1/search-queries/top	POST	Premium	Получить список популярных поисковых запросов
+/v1/product/prices/details	POST	Premium	Получить подробную информацию о ценах товаров
+/v1/cancel-reason/list	POST	CancelReasonAPI	Причины отмены отправлений
+/v1/cancel-reason/list-by-order	POST	CancelReasonAPI	Причины отмены заказа
+/v1/cancel-reason/list-by-posting	POST	CancelReasonAPI	Причины отмены отправления
+/v1/delivery/check	POST	DeliveryAPI	Проверить доступность доставки для покупателя
+/v2/delivery/checkout	POST	DeliveryAPI	Получить доступные варианты доставки
+/v1/delivery/map	POST	DeliveryAPI	Отрисовать точки на карте
+/v1/delivery/point/info	POST	DeliveryAPI	Получить информацию о точке самовывоза
+/v1/delivery/point/list	POST	DeliveryAPI	Получить список точек самовывоза
+/v1/order/cancel	POST	OrderAPI	Отменить заказ
+/v1/order/cancel/check	POST	OrderAPI	Проверить возможность отмены заказа
+/v1/order/cancel/status	POST	OrderAPI	Получить статус отмены заказа
+/v2/order/create	POST	OrderAPI	Создать заказ
+/v1/posting/cancel	POST	FboPostingAPI	Отменить отправление из заказа
+/v1/posting/cancel/status	POST	FboPostingAPI	Проверить статус отмены отправления
+/v1/posting/marks	POST	FboPostingAPI	Получить маркировки экземпляров из отправления

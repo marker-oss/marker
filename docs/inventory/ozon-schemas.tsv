@@ -1,0 +1,253 @@
+/v1/finance/cash-flow-statement/list	result	object	
+/v1/finance/cash-flow-statement/list	result.cash_flows	?	Список отчётов.
+/v1/finance/cash-flow-statement/list	result.details	object	Детализированная информация.
+/v1/finance/cash-flow-statement/list	result.details.begin_balance_amount	number	Баланс на начало периода.
+/v1/finance/cash-flow-statement/list	result.details.delivery	object	Результат работы метода.
+/v1/finance/cash-flow-statement/list	result.details.delivery.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.delivery.amount	number	Сумма, на которую выкуплено товаров с учётом комиссий.
+/v1/finance/cash-flow-statement/list	result.details.delivery.delivery_services	object	Плата за обработку и доставку.
+/v1/finance/cash-flow-statement/list	result.details.delivery.delivery_services.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.delivery.delivery_services.items	object	Детализация.
+/v1/finance/cash-flow-statement/list	result.details.delivery.delivery_services.items.name	string	Название операции. Возможные значения:  - `MarketplaceServiceItemDirectFlowLogis
+/v1/finance/cash-flow-statement/list	result.details.delivery.delivery_services.items.price	number	Сумма по операции.
+/v1/finance/cash-flow-statement/list	result.details.invoice_transfer	number	Сумма к выплате за период.
+/v1/finance/cash-flow-statement/list	result.details.loan	number	Перевод по договорам займа.
+/v1/finance/cash-flow-statement/list	result.details.payments	object	Выплачено в периоде.
+/v1/finance/cash-flow-statement/list	result.details.payments.currency_code	string	Валюта.
+/v1/finance/cash-flow-statement/list	result.details.payments.payment	number	Сумма выплаты.
+/v1/finance/cash-flow-statement/list	result.details.period	object	Период.
+/v1/finance/cash-flow-statement/list	result.details.period.begin	string	Начало периода.
+/v1/finance/cash-flow-statement/list	result.details.period.end	string	Конец периода.
+/v1/finance/cash-flow-statement/list	result.details.period.id	integer	Идентификатор.
+/v1/finance/cash-flow-statement/list	result.details.return	object	
+/v1/finance/cash-flow-statement/list	result.details.return.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.return.amount	number	Сумма, на которую получено возвратов с учётом комиссий.
+/v1/finance/cash-flow-statement/list	result.details.return.return_services	object	Плата за возвраты и отмены.
+/v1/finance/cash-flow-statement/list	result.details.return.return_services.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.return.return_services.items	object	Детализация.
+/v1/finance/cash-flow-statement/list	result.details.return.return_services.items.name	string	Название операции. Возможные значения:  - `MarketplaceServiceItemReturnAfterDeli
+/v1/finance/cash-flow-statement/list	result.details.return.return_services.items.price	number	Сумма по операции.
+/v1/finance/cash-flow-statement/list	result.details.rfbs	object	Перечисления по схеме rFBS.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.transfer_delivery	number	Перечисления от покупателей.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.transfer_delivery_return	number	Возврат перечислений покупателям.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.compensation_delivery_return	number	Компенсация перечислений за доставку.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.partial_compensation	number	Перечисления частичных компенсаций покупателям.
+/v1/finance/cash-flow-statement/list	result.details.rfbs.partial_compensation_return	number	Возврат частичных компенсаций.
+/v1/finance/cash-flow-statement/list	result.details.services	object	Услуги.
+/v1/finance/cash-flow-statement/list	result.details.services.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.services.items[]	array<object>	Детализация.
+/v1/finance/cash-flow-statement/list	result.details.services.items[].name	string	Название операции:   - `MarketplaceServiceItemElectronicServiceStencil` — услуга
+/v1/finance/cash-flow-statement/list	result.details.services.items[].price	number	Сумма по операции.
+/v1/finance/cash-flow-statement/list	result.details.others	object	Компенсация и прочие начисления.
+/v1/finance/cash-flow-statement/list	result.details.others.total	number	Общая сумма.
+/v1/finance/cash-flow-statement/list	result.details.others.items[]	array<object>	Детализация.
+/v1/finance/cash-flow-statement/list	result.details.others.items[].name	string	Название операции. Возможные значения:  - `MarketplaceRedistributionOfAcquiringO
+/v1/finance/cash-flow-statement/list	result.details.others.items[].price	number	Сумма по операции.
+/v1/finance/cash-flow-statement/list	result.details.end_balance_amount	number	Баланс на конец периода.
+/v1/finance/cash-flow-statement/list	result.page_count	integer	Количество страниц с отчётами.
+/v1/report/placement/by-products/create	code	string	Уникальный идентификатор отчёта. Чтобы получить отчёт, передайте это значение в 
+/v2/analytics/stock_on_warehouses	result	object	
+/v2/analytics/stock_on_warehouses	result.rows[]	array<object>	Информация о товарах и остатках.
+/v2/analytics/stock_on_warehouses	result.rows[].sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v2/analytics/stock_on_warehouses	result.rows[].item_code	string	Идентификатор товара в системе продавца — артикул.
+/v2/analytics/stock_on_warehouses	result.rows[].item_name	string	Название товара в системе Ozon.
+/v2/analytics/stock_on_warehouses	result.rows[].free_to_sell_amount	integer	Количество товара, доступное к продаже на Ozon.
+/v2/analytics/stock_on_warehouses	result.rows[].promised_amount	integer	Количество товара, указанное в подтверждённых будущих поставках.
+/v2/analytics/stock_on_warehouses	result.rows[].reserved_amount	integer	Количество товара, зарезервированное для покупки, возврата и перевозки между скл
+/v2/analytics/stock_on_warehouses	result.rows[].warehouse_name	string	Название склада, где находится товар.
+/v1/analytics/turnover/stocks	items[]	array<object>	Товары.
+/v1/analytics/turnover/stocks	items[].ads	number	Среднесуточное количество проданных единиц товара за последние 60 дней.
+/v1/analytics/turnover/stocks	items[].current_stock	integer	Остаток товара, шт.
+/v1/analytics/turnover/stocks	items[].idc	number	На сколько дней хватит остатка товара с учётом среднесуточных продаж.
+/v1/analytics/turnover/stocks	items[].idc_grade	string	Уровень остатка товара: - `GRADES_NONE` — ожидаются поставки; - `GRADES_NOSALES`
+/v1/analytics/turnover/stocks	items[].name	string	Название товара.
+/v1/analytics/turnover/stocks	items[].offer_id	string	Идентификатор товара в системе продавца — артикул.
+/v1/analytics/turnover/stocks	items[].sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v1/analytics/turnover/stocks	items[].turnover	number	Фактическая оборачиваемость в днях.
+/v1/analytics/turnover/stocks	items[].turnover_grade	string	Уровень оборачиваемости: - `GRADES_NONE` — ожидаются поставки; - `GRADES_NOSALES
+/v2/finance/realization	result	object	
+/v2/finance/realization	result.header	object	
+/v2/finance/realization	result.header.contract_date	string	Дата заключения договора.
+/v2/finance/realization	result.header.contract_number	string	Номер договора.
+/v2/finance/realization	result.header.currency_sys_name	string	Валюта.
+/v2/finance/realization	result.header.doc_date	string	Дата формирования документа.
+/v2/finance/realization	result.header.number	string	Номер отчёта о реализации.
+/v2/finance/realization	result.header.payer_inn	string	ИНН плательщика.
+/v2/finance/realization	result.header.payer_kpp	string	КПП плательщика.
+/v2/finance/realization	result.header.payer_name	string	Название плательщика.
+/v2/finance/realization	result.header.receiver_inn	string	ИНН получателя.
+/v2/finance/realization	result.header.receiver_kpp	string	КПП получателя.
+/v2/finance/realization	result.header.receiver_name	string	Название получателя.
+/v2/finance/realization	result.header.start_date	string	Начало периода.
+/v2/finance/realization	result.header.stop_date	string	Конец периода.
+/v2/finance/realization	result.rows[]	array<object>	Таблица отчёта.
+/v2/finance/realization	result.rows[].commission_ratio	number	Доля комиссии за продажу по категории.
+/v2/finance/realization	result.rows[].delivery_commission	object	
+/v2/finance/realization	result.rows[].delivery_commission.amount	number	Сумма.
+/v2/finance/realization	result.rows[].delivery_commission.bonus	number	Баллы за скидки.
+/v2/finance/realization	result.rows[].delivery_commission.commission	number	Итоговая комиссия с учётом скидок и наценки.  <aside class="warning"> Для отчёто
+/v2/finance/realization	result.rows[].delivery_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v2/finance/realization	result.rows[].delivery_commission.price_per_instance	number	Цена за экземпляр.
+/v2/finance/realization	result.rows[].delivery_commission.quantity	integer	Количество товара.
+/v2/finance/realization	result.rows[].delivery_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v2/finance/realization	result.rows[].delivery_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v2/finance/realization	result.rows[].delivery_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v2/finance/realization	result.rows[].delivery_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v2/finance/realization	result.rows[].delivery_commission.total	number	Итого к начислению.
+/v2/finance/realization	result.rows[].item	object	
+/v2/finance/realization	result.rows[].item.barcode	string	Штрихкод товара.
+/v2/finance/realization	result.rows[].item.name	string	Наименование товара.
+/v2/finance/realization	result.rows[].item.offer_id	string	Идентификатор товара в системе продавца — артикул.
+/v2/finance/realization	result.rows[].item.sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v2/finance/realization	result.rows[].return_commission	object	
+/v2/finance/realization	result.rows[].return_commission.amount	number	Сумма.
+/v2/finance/realization	result.rows[].return_commission.bonus	number	Баллы за скидки.
+/v2/finance/realization	result.rows[].return_commission.commission	number	Итоговая комиссия с учётом скидок и наценки. <aside class="warning"> Для отчётов
+/v2/finance/realization	result.rows[].return_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v2/finance/realization	result.rows[].return_commission.price_per_instance	number	Цена за экземпляр.
+/v2/finance/realization	result.rows[].return_commission.quantity	integer	Количество товара.
+/v2/finance/realization	result.rows[].return_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v2/finance/realization	result.rows[].return_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v2/finance/realization	result.rows[].return_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v2/finance/realization	result.rows[].return_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v2/finance/realization	result.rows[].return_commission.total	number	Итого к начислению.
+/v2/finance/realization	result.rows[].rowNumber	integer	Номер строки в отчёте.
+/v2/finance/realization	result.rows[].seller_price_per_instance	number	Цена продавца с учётом скидки.
+/v1/finance/realization/posting	header	object	
+/v1/finance/realization/posting	header.contract_date	string	Дата заключения договора.
+/v1/finance/realization/posting	header.contract_number	string	Номер договора.
+/v1/finance/realization/posting	header.currency_sys_name	string	Валюта.
+/v1/finance/realization/posting	header.doc_date	string	Дата формирования документа.
+/v1/finance/realization/posting	header.number	string	Номер отчёта о реализации.
+/v1/finance/realization/posting	header.payer_inn	string	ИНН плательщика.
+/v1/finance/realization/posting	header.payer_kpp	string	КПП плательщика.
+/v1/finance/realization/posting	header.payer_name	string	Название плательщика.
+/v1/finance/realization/posting	header.receiver_inn	string	ИНН получателя.
+/v1/finance/realization/posting	header.receiver_kpp	string	КПП получателя.
+/v1/finance/realization/posting	header.receiver_name	string	Название получателя.
+/v1/finance/realization/posting	header.start_date	string	Начало периода.
+/v1/finance/realization/posting	header.stop_date	string	Конец периода.
+/v1/finance/realization/posting	rows[]	array<object>	Таблица отчёта.
+/v1/finance/realization/posting	rows[].commission_ratio	number	Доля комиссии за продажу по категории.
+/v1/finance/realization/posting	rows[].delivery_commission	object	
+/v1/finance/realization/posting	rows[].delivery_commission.amount	number	Сумма.
+/v1/finance/realization/posting	rows[].delivery_commission.bonus	number	Баллы за скидки.
+/v1/finance/realization/posting	rows[].delivery_commission.commission	number	Итоговая комиссия с учётом скидок и наценки.  <aside class="warning"> Для отчёто
+/v1/finance/realization/posting	rows[].delivery_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v1/finance/realization/posting	rows[].delivery_commission.price_per_instance	number	Цена за экземпляр.
+/v1/finance/realization/posting	rows[].delivery_commission.quantity	integer	Количество товара.
+/v1/finance/realization/posting	rows[].delivery_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v1/finance/realization/posting	rows[].delivery_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v1/finance/realization/posting	rows[].delivery_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v1/finance/realization/posting	rows[].delivery_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v1/finance/realization/posting	rows[].delivery_commission.total	number	Итого к начислению.
+/v1/finance/realization/posting	rows[].item	object	
+/v1/finance/realization/posting	rows[].item.barcode	string	Штрихкод товара.
+/v1/finance/realization/posting	rows[].item.name	string	Наименование товара.
+/v1/finance/realization/posting	rows[].item.offer_id	string	Идентификатор товара в системе продавца — артикул.
+/v1/finance/realization/posting	rows[].item.sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v1/finance/realization/posting	rows[].return_commission	object	
+/v1/finance/realization/posting	rows[].return_commission.amount	number	Сумма.
+/v1/finance/realization/posting	rows[].return_commission.bonus	number	Баллы за скидки.
+/v1/finance/realization/posting	rows[].return_commission.commission	number	Итоговая комиссия с учётом скидок и наценки. <aside class="warning"> Для отчётов
+/v1/finance/realization/posting	rows[].return_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v1/finance/realization/posting	rows[].return_commission.price_per_instance	number	Цена за экземпляр.
+/v1/finance/realization/posting	rows[].return_commission.quantity	integer	Количество товара.
+/v1/finance/realization/posting	rows[].return_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v1/finance/realization/posting	rows[].return_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v1/finance/realization/posting	rows[].return_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v1/finance/realization/posting	rows[].return_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v1/finance/realization/posting	rows[].return_commission.total	number	Итого к начислению.
+/v1/finance/realization/posting	rows[].row_number	integer	Номер строки в отчёте.
+/v1/finance/realization/posting	rows[].seller_price_per_instance	number	Цена продавца с учётом скидки.
+/v1/finance/realization/posting	rows[].order	object	
+/v1/finance/realization/posting	rows[].order.posting_number	string	Номер отправления.
+/v1/finance/realization/posting	rows[].order.created_date	string	Дата заказа в формате «ГГГГ-ММ-ДД».
+/v1/finance/realization/posting	rows[].legal_entity_document	object	
+/v1/finance/realization/posting	rows[].legal_entity_document.number	string	Номер счёта-фактуры.
+/v1/finance/realization/posting	rows[].legal_entity_document.sale_date	string	Дата в формате «ГГГГ-ММ-ДД».
+/v3/finance/transaction/list	result	object	
+/v3/finance/transaction/list	result.operations[]	array<object>	Информация об операциях.
+/v3/finance/transaction/list	result.operations[].accruals_for_sale	number	Стоимость товаров с учётом скидок продавца.
+/v3/finance/transaction/list	result.operations[].amount	number	Итоговая сумма операции.
+/v3/finance/transaction/list	result.operations[].delivery_charge	number	Стоимость доставки для начислений по тарифам, которые действовали до 1 февраля 2
+/v3/finance/transaction/list	result.operations[].items[]	array<object>	Информация о товаре.
+/v3/finance/transaction/list	result.operations[].items[].name	string	Название товара.
+/v3/finance/transaction/list	result.operations[].items[].sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v3/finance/transaction/list	result.operations[].operation_date	string	Дата операции.
+/v3/finance/transaction/list	result.operations[].operation_id	integer	Идентификатор операции.
+/v3/finance/transaction/list	result.operations[].operation_type	string	Тип операции.
+/v3/finance/transaction/list	result.operations[].operation_type_name	string	Название типа операции.
+/v3/finance/transaction/list	result.operations[].posting	object	
+/v3/finance/transaction/list	result.operations[].posting.delivery_schema	string	Схема доставки:   - `FBO` — доставка со склада Ozon,   - `FBS` — доставка со сво
+/v3/finance/transaction/list	result.operations[].posting.order_date	string	Дата принятия отправления в обработку.
+/v3/finance/transaction/list	result.operations[].posting.posting_number	string	Номер отправления.
+/v3/finance/transaction/list	result.operations[].posting.warehouse_id	integer	Идентификатор склада.
+/v3/finance/transaction/list	result.operations[].return_delivery_charge	number	Плата за возвраты и отмены для начислений по тарифам, которые действовали до 1 ф
+/v3/finance/transaction/list	result.operations[].sale_commission	number	Комиссия за продажу или возврат комиссии за продажу.
+/v3/finance/transaction/list	result.operations[].services[]	array<object>	Название услуги.
+/v3/finance/transaction/list	result.operations[].services[].name	string	Название услуги:   - `MarketplaceNotDeliveredCostItem` — возврат невостребованно
+/v3/finance/transaction/list	result.operations[].services[].price	number	Цена.
+/v3/finance/transaction/list	result.operations[].type	string	Тип начисления: - `all` — все, - `orders` — заказы, - `returns` — возвраты и отм
+/v3/finance/transaction/list	result.page_count	integer	Количество страниц. Если 0, страниц больше нет.
+/v3/finance/transaction/list	result.row_count	integer	Количество транзакций на всех страницах. Если 0, транзакций больше нет.
+/v3/finance/transaction/totals	result	object	
+/v3/finance/transaction/totals	result.accruals_for_sale	number	Общая стоимость товаров и возвратов в заданный период.
+/v3/finance/transaction/totals	result.compensation_amount	number	Компенсации.
+/v3/finance/transaction/totals	result.money_transfer	number	Начисления за доставку и возвраты при работе по схеме «Доставка по выбору продав
+/v3/finance/transaction/totals	result.others_amount	number	Прочие начисления.
+/v3/finance/transaction/totals	result.processing_and_delivery	number	Стоимость услуг обработки отправлений, сборки заказов, магистрали и последней ми
+/v3/finance/transaction/totals	result.refunds_and_cancellations	number	Стоимость обратной магистрали, обработки возвратов, отмен и невыкупа товара, а т
+/v3/finance/transaction/totals	result.sale_commission	number	Сумма комиссии, которая была удержана при продаже товара и возвращена при его во
+/v3/finance/transaction/totals	result.services_amount	number	Стоимость дополнительных услуг, не связанных напрямую с доставками и возвратами 
+/v1/finance/mutual-settlement	result	object	
+/v1/finance/mutual-settlement	result.code	string	Уникальный идентификатор отчёта. По нему вы можете получить отчёт в течение 3 дн
+/v1/finance/products/buyout	products[]	array<object>	Список выкупленных товаров
+/v1/finance/products/buyout	products[].amount	number	Сумма к начислению.
+/v1/finance/products/buyout	products[].buyout_price	number	Цена выкупа товара с НДС.
+/v1/finance/products/buyout	products[].deduction_by_category_percent	number	Скидка по категории в процентах.
+/v1/finance/products/buyout	products[].name	string	Название товара.
+/v1/finance/products/buyout	products[].offer_id	string	Идентификатор товара в системе продавца — артикул.
+/v1/finance/products/buyout	products[].posting_number	string	Номер отправления.
+/v1/finance/products/buyout	products[].quantity	integer	Количество товара.
+/v1/finance/products/buyout	products[].seller_price_per_instance	number	Цена продавца с учётом скидки.
+/v1/finance/products/buyout	products[].sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v1/finance/products/buyout	products[].vat_percent	integer	Ставка НДС для товара в процентах.
+/v1/finance/compensation	result	object	
+/v1/finance/compensation	result.code	string	Уникальный идентификатор отчёта. Чтобы получить отчёт, передайте это значение в 
+/v1/finance/decompensation	result	object	
+/v1/finance/decompensation	result.code	string	Уникальный идентификатор отчёта. Чтобы получить отчёт, передайте это значение в 
+/v1/finance/realization/by-day	rows[]	array<object>	Таблица отчёта.
+/v1/finance/realization/by-day	rows[].commission_ratio	number	Доля комиссии за продажу по категории.
+/v1/finance/realization/by-day	rows[].delivery_commission	object	
+/v1/finance/realization/by-day	rows[].delivery_commission.amount	number	Сумма.
+/v1/finance/realization/by-day	rows[].delivery_commission.bonus	number	Баллы за скидки.
+/v1/finance/realization/by-day	rows[].delivery_commission.commission	number	Итоговая комиссия с учётом скидок и наценки.  <aside class="warning"> Для отчёто
+/v1/finance/realization/by-day	rows[].delivery_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v1/finance/realization/by-day	rows[].delivery_commission.price_per_instance	number	Цена за экземпляр.
+/v1/finance/realization/by-day	rows[].delivery_commission.quantity	integer	Количество товара.
+/v1/finance/realization/by-day	rows[].delivery_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v1/finance/realization/by-day	rows[].delivery_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v1/finance/realization/by-day	rows[].delivery_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v1/finance/realization/by-day	rows[].delivery_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v1/finance/realization/by-day	rows[].delivery_commission.total	number	Итого к начислению.
+/v1/finance/realization/by-day	rows[].item	object	
+/v1/finance/realization/by-day	rows[].item.barcode	string	Штрихкод товара.
+/v1/finance/realization/by-day	rows[].item.name	string	Наименование товара.
+/v1/finance/realization/by-day	rows[].item.offer_id	string	Идентификатор товара в системе продавца — артикул.
+/v1/finance/realization/by-day	rows[].item.sku	integer	Идентификатор товара в системе Ozon — SKU.
+/v1/finance/realization/by-day	rows[].return_commission	object	
+/v1/finance/realization/by-day	rows[].return_commission.amount	number	Сумма.
+/v1/finance/realization/by-day	rows[].return_commission.bonus	number	Баллы за скидки.
+/v1/finance/realization/by-day	rows[].return_commission.commission	number	Итоговая комиссия с учётом скидок и наценки. <aside class="warning"> Для отчётов
+/v1/finance/realization/by-day	rows[].return_commission.compensation	number	Доплата за счёт Ozon.  <aside class="warning"> Для отчётов до 30 апреля 2024 год
+/v1/finance/realization/by-day	rows[].return_commission.price_per_instance	number	Цена за экземпляр.
+/v1/finance/realization/by-day	rows[].return_commission.quantity	integer	Количество товара.
+/v1/finance/realization/by-day	rows[].return_commission.standard_fee	number	Базовое вознаграждение Ozon.
+/v1/finance/realization/by-day	rows[].return_commission.bank_coinvestment	number	Выплаты по механикам лояльности партнёров: зелёные цены.
+/v1/finance/realization/by-day	rows[].return_commission.stars	number	Выплаты по механикам лояльности партнёров: звёзды.
+/v1/finance/realization/by-day	rows[].return_commission.pick_up_point_coinvestment	number	Выплаты по механикам лояльности партнёров: АПВЗ.
+/v1/finance/realization/by-day	rows[].return_commission.total	number	Итого к начислению.
+/v1/finance/realization/by-day	rows[].rowNumber	integer	Номер строки в отчёте.
+/v1/finance/realization/by-day	rows[].seller_price_per_instance	number	Цена продавца с учётом скидки.
