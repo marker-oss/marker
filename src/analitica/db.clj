@@ -72,13 +72,15 @@
       subject            TEXT,
       brand              TEXT,
       operation          TEXT,
+      operation_kind     TEXT,
+      operation_subtype  TEXT,
       doc_type           TEXT,
       quantity           INTEGER,
       retail_price       REAL,
       retail_amount      REAL,
       sale_percent       REAL,
       commission_pct     REAL,
-      wb_commission      REAL,
+      mp_commission      REAL,
       wb_reward          REAL,
       wb_kvw_prc         REAL,
       spp_prc            REAL,
@@ -115,6 +117,35 @@
       marketplace   TEXT DEFAULT 'wb',
       synced_at     TEXT
     )"
+
+   ;; RFC-13 (closed 2026-04-28): per-day snapshot of `stocks` so we can
+   ;; compute trends, velocity, and days-of-supply. Populated by
+   ;; `analitica.materialize/snapshot-stocks-history!` (one row per
+   ;; (snapshot_date, marketplace, article, warehouse) tuple). PK enforces
+   ;; idempotent re-runs of the snapshot for the same day.
+   "CREATE TABLE IF NOT EXISTS stocks_history (
+      snapshot_date TEXT NOT NULL,
+      marketplace   TEXT NOT NULL DEFAULT 'wb',
+      article       TEXT NOT NULL,
+      warehouse     TEXT NOT NULL DEFAULT '',
+      quantity      INTEGER,
+      quantity_full INTEGER,
+      in_way_to     INTEGER,
+      in_way_from   INTEGER,
+      nm_id         INTEGER,
+      barcode       TEXT,
+      tech_size     TEXT,
+      subject       TEXT,
+      brand         TEXT,
+      synced_at     TEXT,
+      PRIMARY KEY (snapshot_date, marketplace, article, warehouse)
+    )"
+
+   "CREATE INDEX IF NOT EXISTS idx_stocks_history_article
+      ON stocks_history(marketplace, article, snapshot_date)"
+
+   "CREATE INDEX IF NOT EXISTS idx_stocks_history_date
+      ON stocks_history(snapshot_date)"
 
    "CREATE TABLE IF NOT EXISTS cost_prices (
       article        TEXT NOT NULL,
@@ -440,13 +471,15 @@
                               subject            TEXT,
                               brand              TEXT,
                               operation          TEXT,
+                              operation_kind     TEXT,
+                              operation_subtype  TEXT,
                               doc_type           TEXT,
                               quantity           INTEGER,
                               retail_price       REAL,
                               retail_amount      REAL,
                               sale_percent       REAL,
                               commission_pct     REAL,
-                              wb_commission      REAL,
+                              mp_commission      REAL,
                               wb_reward          REAL,
                               wb_kvw_prc         REAL,
                               spp_prc            REAL,
@@ -470,7 +503,7 @@
                                      article, nm_id, barcode, subject, brand,
                                      operation, doc_type, quantity,
                                      retail_price, retail_amount, sale_percent,
-                                     commission_pct, wb_commission, wb_reward,
+                                     commission_pct, mp_commission, wb_reward,
                                      wb_kvw_prc, spp_prc, price_with_disc,
                                      delivery_amount, return_amount, delivery_cost,
                                      for_pay, penalty, storage_fee, acceptance,
@@ -496,6 +529,39 @@
       (when-not has-ad-cost?
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN ad_cost REAL DEFAULT 0"])
         (println "Migration: finance.ad_cost column added")))
+    ;; Migration (RFC-6, 2026-04-28): rename finance.wb_commission →
+    ;; finance.mp_commission. The field is cross-MP (Ozon and YM also use
+    ;; it for MP commission RUB) — the WB-prefixed legacy name was misleading.
+    ;; SQLite ≥ 3.25 supports ALTER TABLE ... RENAME COLUMN. Idempotent: only
+    ;; runs when the old column is still present.
+    (let [info         (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                      {:builder-fn rs/as-unqualified-maps})
+          has-old?     (some #(= "wb_commission" (:name %)) info)
+          has-new?     (some #(= "mp_commission" (:name %)) info)]
+      (cond
+        (and has-old? (not has-new?))
+        (do (jdbc/execute! ds ["ALTER TABLE finance RENAME COLUMN wb_commission TO mp_commission"])
+            (println "Migration: finance.wb_commission → mp_commission (RFC-6)"))
+        (and has-old? has-new?)
+        (println "Migration: both wb_commission and mp_commission exist — manual cleanup required")))
+    ;; Migration (E-1, 2026-04-28): persist :operation-kind / :operation-subtype
+    ;; introduced by RFC-3. Phase B added the fields to the Malli schema and
+    ;; transform output, but they had no DB columns — so they were silently
+    ;; dropped by the sync layer. Phase D audit caught this when the
+    ;; :ozon-finance-vs-cashflow rule's `SELECT operation_kind ...` failed.
+    ;; Idempotent via PRAGMA check.
+    (let [info       (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                    {:builder-fn rs/as-unqualified-maps})
+          has-kind?  (some #(= "operation_kind" (:name %)) info)
+          has-subt?  (some #(= "operation_subtype" (:name %)) info)]
+      (when-not has-kind?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN operation_kind TEXT"])
+        (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_operation_kind
+                            ON finance(marketplace, operation_kind)"])
+        (println "Migration: finance.operation_kind column + index added (E-1)"))
+      (when-not has-subt?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN operation_subtype TEXT"])
+        (println "Migration: finance.operation_subtype column added (E-1)")))
     ;; Migrate finance.event_date: per-event date extracted from raw at
     ;; transform time. Replaces overlap-on-date_from/date_to queries with
     ;; precise event-level filtering. Legacy rows have NULL event_date

@@ -46,12 +46,16 @@
    (:article f) (:nm-id f) (:barcode f) (:subject f) (:brand f)
    (:operation f) (:doc-type f) (:quantity f)
    (:retail-price f) (:retail-amount f) (:sale-percent f)
-   (:commission-pct f) (:wb-commission f) (:wb-reward f)
+   (:commission-pct f) (:mp-commission f) (:wb-reward f)
    (:wb-kvw-prc f) (:spp-prc f) (:price-with-disc f)
    (:delivery-amount f) (:return-amount f) (:delivery-cost f)
    (:for-pay f) (:penalty f) (:storage-fee f) (:acceptance f)
    (:additional-payment f) (:deduction f) (:acquiring-fee f)
    (:ad-cost f)
+   ;; RFC-3 / E-1 (2026-04-28): canonical operation classification.
+   ;; :operation-kind is a keyword in transform output; persist as string.
+   (when-let [k (:operation-kind f)] (name k))
+   (:operation-subtype f)
    (name (or (:marketplace f) :wb)) (now-str)])
 
 (def finance-columns
@@ -59,12 +63,13 @@
    :article :nm_id :barcode
    :subject :brand :operation :doc_type :quantity
    :retail_price :retail_amount :sale_percent
-   :commission_pct :wb_commission :wb_reward
+   :commission_pct :mp_commission :wb_reward
    :wb_kvw_prc :spp_prc :price_with_disc
    :delivery_amount :return_amount :delivery_cost
    :for_pay :penalty :storage_fee :acceptance
    :additional_payment :deduction :acquiring_fee
    :ad_cost
+   :operation_kind :operation_subtype
    :marketplace :synced_at])
 
 (defn storage->row [s]
