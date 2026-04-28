@@ -333,12 +333,15 @@ case'а. Предложение: отдельная sync-skew tolerance (rel ≤
 | **E-1** | Persist `:operation-kind` / `:operation-subtype` в DB columns | Schema migration + sync update | ✅ closed |
 | **E-2** | Re-materialize legacy finance rows для применения RFC-3 normalization | One-time data migration | ✅ closed (17,679 rows backfilled) |
 | **E-3** | Per-rule tolerance overrides — `:aggregate-vs-raw` (rel ≤ 0.5), `:wb-finance-vs-sales-events` (rel ≤ 0.1), `:l2-cross-report-agreement` (rel ≤ 0.001) | Audit framework feature | ✅ closed (`:rule/tolerance` key in rule-map; framework support in `audit.rules/run-rule`; tests in `rules_test.clj`) |
-| **E-4** | Field-by-field Ozon settlement reconciliation — почему 491k₽ gap | Ozon domain investigation | 🟡 open (нужен реальный sample из Ozon ЛК) |
+| **E-4** | Field-by-field Ozon settlement reconciliation — почему 491k₽ gap | Ozon domain investigation | ✅ closed (rule now compares vs `orders+returns`, not `invoice_transfer`; cash-flow restricted to finance coverage; gap = 0 on Feb-Apr 2026 production data) |
 | **E-5** | YM data-quality alerting — flag rows where `BUYER price` сомнительно низкое | New audit rule | ✅ closed (`:ym-buyer-price-anomaly` — cap `for_pay > 5 × retail_amount`; tests in `phase_c_rules_test.clj`) |
 | **E-6** | CI integration — auto-fire audit на data churn | DevOps | ✅ closed (post-`materialize` hook в `audit/hook.clj`, wired в `cli.clj handle-materialize`; cron остался опциональным fallback) |
 
-E-1, E-2, E-3, E-5, E-6 закрыты в Phase B/C/D/E работе 2026-04-28.
-E-4 ждёт Ozon-domain expertise или sample выгрузку из ЛК.
+**Все E-1 … E-6 закрыты** в Phase B/C/D/E работе 2026-04-28. E-4 закрыт
+переводом сравнения на `cash_flow.orders + returns` + coverage-фильтром
+(вместо старого `invoice_transfer`); finance-side и cash-flow-side
+сходятся точно за все периоды где realization опубликована.
+
 Дополнительный bonus rule `:l2-cross-report-agreement` (L2-C) добавлен
 в этом же sprint — проверяет cross-report consistency Finance/P&L/UE.
 

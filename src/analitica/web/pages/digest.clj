@@ -20,6 +20,7 @@
             [analitica.domain.sales    :as sales]
             [analitica.domain.finance  :as finance]
             [analitica.domain.pnl      :as pnl]
+            [analitica.domain.preliminary :as prelim]
             [analitica.domain.stock    :as stock]
             [analitica.domain.buyout   :as buyout]
             [analitica.util.period     :as period]))
@@ -249,7 +250,11 @@
            [:td.px-3.py-2.text-right
             (fmt-rub (:revenue m))
             (when (:preliminary? m)
-              [:span.ml-1.text-xs.text-amber-600 {:title "Финансовый отчёт ещё не опубликован — показана gross-выручка по продажам"} "(предв.)"])]
+              [:span.ml-1.text-xs.text-amber-600
+               {:title (if (= :ozon (:marketplace m))
+                         "Реализация Ozon ещё не опубликована — показана выручка по cash-flow (orders − returns). Совпадёт с finance.for_pay net когда отчёт придёт."
+                         "Финансовый отчёт ещё не опубликован — показана gross-выручка по продажам.")}
+               "(предв.)"])]
            [:td.px-3.py-2.text-right
             {:class (cond (and (number? (:profit m)) (neg? (:profit m))) "text-red-600"
                           (and (number? (:profit m)) (pos? (:profit m))) "text-green-600")}
@@ -576,8 +581,12 @@
         ;; full P&L report for each MP. When the finance/realization report
         ;; for the period hasn't been published yet (Ozon realization is
         ;; monthly, current month always lags), revenue from PnL is 0 — fall
-        ;; back to gross sales-side total to avoid showing «0 ₽» when there
-        ;; is real data, marking the row as preliminary.
+        ;; back to a preliminary source:
+        ;;   - Ozon → cash_flow_periods.orders+returns (matches finance net
+        ;;     exactly when realization arrives — verified Feb/Mar 2026).
+        ;;     See analitica.domain.preliminary.
+        ;;   - Other MPs → sales-side gross from /v3/posting/list etc.
+        ;;     (kept as fallback; WB/YM realization is generally realtime).
         by-marketplace
         (vec
          (for [mp [:wb :ozon :ym]]
@@ -585,6 +594,13 @@
                                 (catch Exception _ []))
                  mp-pnl    (try (pnl/calculate mp-fin :marketplace mp)
                                 (catch Exception _ {}))
+                 ;; Ozon: try cash-flow overlay first (numerically closer to
+                 ;; what realization will publish than sales table).
+                 mp-pnl    (if (= mp :ozon)
+                             (prelim/maybe-overlay-preliminary
+                               mp-pnl
+                               {:period curr-period :marketplace :ozon})
+                             mp-pnl)
                  mp-sales  (try (sales/fetch-sales curr-period :marketplace mp)
                                 (catch Exception _ []))
                  sales-totals (try (sales/totals mp-sales) (catch Exception _ {}))
@@ -592,10 +608,14 @@
                  sales-rev (or (:total-revenue sales-totals)
                                (:revenue sales-totals)
                                0.0)
-                 ;; If finance hasn't published yet but sales has data, show
-                 ;; sales-based gross as preliminary.
-                 prelim?   (and (zero? fin-rev) (pos? sales-rev))
-                 revenue   (if prelim? sales-rev fin-rev)
+                 ;; If still 0 after preliminary overlay (non-Ozon, or no
+                 ;; cash-flow data), fall through to sales-side gross.
+                 sales-prelim? (and (zero? fin-rev) (pos? sales-rev))
+                 revenue   (cond
+                             (:preliminary? mp-pnl) (:revenue mp-pnl)
+                             sales-prelim?          sales-rev
+                             :else                  fin-rev)
+                 prelim?   (or (:preliminary? mp-pnl) sales-prelim?)
                  profit    (or (:net-profit mp-pnl) 0.0)
                  margin    (when (and (number? revenue) (pos? revenue))
                              (* 100.0 (/ profit revenue)))

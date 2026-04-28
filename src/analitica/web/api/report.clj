@@ -4,6 +4,7 @@
             [analitica.domain.finance :as finance]
             [analitica.domain.unit-economics :as ue]
             [analitica.domain.pnl :as pnl]
+            [analitica.domain.preliminary :as preliminary]
             [analitica.domain.abc :as abc]
             [analitica.domain.stock :as stock]
             [analitica.domain.returns :as returns]
@@ -70,16 +71,24 @@
             totals (ue/totals rows)]
         {:rows (vec rows) :totals totals})
 
-      ;; P&L report — single summary map goes to :totals; :rows is empty
+      ;; P&L report — single summary map goes to :totals; :rows is empty.
+      ;; For Ozon: when realization isn't yet published for the period
+      ;; (current month always lags ~3 weeks), revenue from finance is 0.
+      ;; Overlay with cash-flow-derived preliminary so the user sees a
+      ;; real number with a "preliminary" badge instead of «0 ₽».
+      ;; See analitica.domain.preliminary.
       :pnl
       (let [[from to]    (resolve-dates period)
             finance-data (finance/fetch-finance period
                                                 :marketplace marketplace
                                                 :source :db)
             cf-adj       (pnl/load-cf-adjustments from to marketplace)
-            totals       (pnl/calculate finance-data
-                                        :marketplace marketplace
-                                        :cf-adjustments cf-adj)]
+            totals       (-> (pnl/calculate finance-data
+                                            :marketplace marketplace
+                                            :cf-adjustments cf-adj)
+                             (preliminary/maybe-overlay-preliminary
+                               {:period      {:from from :to to}
+                                :marketplace marketplace}))]
         {:rows [] :totals totals})
 
       ;; ABC analysis
