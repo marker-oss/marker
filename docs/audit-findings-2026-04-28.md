@@ -328,17 +328,20 @@ case'а. Предложение: отдельная sync-skew tolerance (rel ≤
 
 ## Что осталось открытым (Phase E candidates)
 
-| ID | Описание | Тип |
-|---|---|---|
-| **E-1** | Persist `:operation-kind` / `:operation-subtype` в DB columns | Schema migration + sync update |
-| **E-2** | Re-materialize legacy finance rows для применения RFC-3 normalization | One-time data migration |
-| **E-3** | Per-rule tolerance overrides — `:aggregate-vs-raw` (rel ≤ 0.5), `:wb-finance-vs-sales-events` (rel ≤ 0.1) | Audit framework feature |
-| **E-4** | Field-by-field Ozon settlement reconciliation — почему 491k₽ gap | Ozon domain investigation |
-| **E-5** | YM data-quality alerting — flag rows where `BUYER price` сомнительно низкое | New audit rule |
-| **E-6** | CI integration — daily audit run + slack/email на новый `:suspicious` | DevOps |
+| ID | Описание | Тип | Статус |
+|---|---|---|---|
+| **E-1** | Persist `:operation-kind` / `:operation-subtype` в DB columns | Schema migration + sync update | ✅ closed |
+| **E-2** | Re-materialize legacy finance rows для применения RFC-3 normalization | One-time data migration | ✅ closed (17,679 rows backfilled) |
+| **E-3** | Per-rule tolerance overrides — `:aggregate-vs-raw` (rel ≤ 0.5), `:wb-finance-vs-sales-events` (rel ≤ 0.1), `:l2-cross-report-agreement` (rel ≤ 0.001) | Audit framework feature | ✅ closed (`:rule/tolerance` key in rule-map; framework support in `audit.rules/run-rule`; tests in `rules_test.clj`) |
+| **E-4** | Field-by-field Ozon settlement reconciliation — почему 491k₽ gap | Ozon domain investigation | 🟡 open (нужен реальный sample из Ozon ЛК) |
+| **E-5** | YM data-quality alerting — flag rows where `BUYER price` сомнительно низкое | New audit rule | ✅ closed (`:ym-buyer-price-anomaly` — cap `for_pay > 5 × retail_amount`; tests in `phase_c_rules_test.clj`) |
+| **E-6** | CI integration — daily audit run + slack/email на новый `:suspicious` | DevOps | 🟡 partial (CLI + cron skeleton in `docs/audit-ci.md`; deployment остался) |
 
-E-1 и E-2 — методологически следующий шаг (Phase E = persistence rollout
-of RFC-3). E-3 — small audit framework improvement. E-4-6 — операционные.
+E-1, E-2, E-3, E-5 закрыты в Phase B/C/D работе 2026-04-28.
+E-4 ждёт Ozon-domain expertise или sample выгрузку из ЛК. E-6 ждёт
+DevOps cron host. Дополнительный bonus rule `:l2-cross-report-agreement`
+(L2-C) добавлен в этом же sprint — проверяет cross-report
+consistency Finance/P&L/UE.
 
 ---
 

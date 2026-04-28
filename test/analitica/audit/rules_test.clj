@@ -154,6 +154,52 @@
     (is (= :buggy (:disc/rule-id (first result))))
     (is (re-find #"boom" (:disc/classification-reason (first result))))))
 
+;; E-3 (2026-04-28) — per-rule tolerance override.
+;; A rule may carry `:rule/tolerance` to displace the global ctx tolerance
+;; for the duration of its run. Used by design-gap rules (aggregate-vs-raw,
+;; wb-finance-vs-sales-events) so the global default can stay strict
+;; without polluting reports with predictable noise.
+
+(deftest run-rule-per-rule-tolerance-override
+  (testing "rule's :rule/tolerance replaces ctx tolerance during its run"
+    (let [seen-tolerances (atom [])
+          ctx  {:ctx/period {:from "2026-03-01" :to "2026-03-31"}
+                :ctx/marketplace :wb
+                :ctx/tolerance {:abs 10.0 :rel 0.01}}
+          rule {:rule/id        :loose-rule
+                :rule/tolerance {:abs 1000.0 :rel 0.5}
+                :rule/fn (fn [c]
+                           (swap! seen-tolerances conj (:ctx/tolerance c))
+                           [])}]
+      (r/run-rule rule ctx)
+      (is (= [{:abs 1000.0 :rel 0.5}] @seen-tolerances)
+          "rule fn observes the per-rule tolerance, not the ctx default"))))
+
+(deftest run-rule-no-override-uses-ctx-tolerance
+  (testing "without :rule/tolerance the ctx default is used unchanged"
+    (let [seen-tolerances (atom [])
+          ctx  {:ctx/period {:from "2026-03-01" :to "2026-03-31"}
+                :ctx/marketplace :wb
+                :ctx/tolerance default-t}
+          rule {:rule/id :no-override
+                :rule/fn (fn [c]
+                           (swap! seen-tolerances conj (:ctx/tolerance c))
+                           [])}]
+      (r/run-rule rule ctx)
+      (is (= [default-t] @seen-tolerances)))))
+
+(deftest run-rule-override-does-not-leak-to-caller
+  (testing "ctx is not mutated — caller still sees the original tolerance"
+    (let [ctx  {:ctx/period {:from "2026-03-01" :to "2026-03-31"}
+                :ctx/marketplace :wb
+                :ctx/tolerance default-t}
+          rule {:rule/id        :leaky?
+                :rule/tolerance {:abs 999.0 :rel 0.99}
+                :rule/fn (fn [_] [])}]
+      (r/run-rule rule ctx)
+      (is (= default-t (:ctx/tolerance ctx))
+          "caller's ctx unchanged"))))
+
 ;; ---------------------------------------------------------------------------
 ;; make-context validation
 ;; ---------------------------------------------------------------------------
