@@ -1,22 +1,63 @@
+# --- Secrets & local config ---
 .env
 config.edn
+
+# --- Build / runtime caches ---
 .cpcache/
 .nrepl-port
 target/
 *.class
 *.jar
-.lsp/
-.clj-kondo/
 data/
 *.db
+*.db-shm
+*.db-wal
+
+# --- Generated reports & local data ---
 reports/
+
+# --- Editor / IDE / tooling ---
+.lsp/
+.clj-kondo/
+.calva/
 .kiro/
-tmp_*
+.claude/
+.specify/
 .superpowers/
+.playwright-mcp/
+
+# --- Node (only used by ad-hoc Playwright scripts) ---
+node_modules/
+package.json
+package-lock.json
+
+# --- AI session / scratch files ---
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+docs/superpowers/
+
+# --- Internal planning docs (Russian scratch, not for OSS) ---
+docs/scope.md
+docs/vision.md
+docs/web-ui-spec.md
+
+# --- Scratch screenshots & session snapshots ---
+*.png
+sync-snapshot.md
+sync-*.md
+
+# --- One-off scripts ---
+tmp_*
 check_*.clj
 test_safety_check*.clj
 start_web*.clj
 restore_data.clj
+playwright-audit.js
+test-audit-*.db
 
-# Local-only API spec cache (committed on auto-adaptation branch, not here)
+# --- Vendor doc dumps (copyrighted) ---
+resources/Документация*
+
+# --- Local-only API spec cache (must be fetched manually due to Cloudflare) ---
 resources/schemas/ozon/swagger.json
