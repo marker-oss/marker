@@ -4,6 +4,7 @@
             [analitica.sync :as sync]
             [analitica.ingest :as ingest]
             [analitica.materialize :as materialize]
+            [analitica.audit.hook :as audit-hook]
             [analitica.marketplace.registry :as registry]
             [analitica.marketplace.wb.client :as wb-client]
             [analitica.marketplace.wb.impl]
@@ -241,19 +242,29 @@
   (let [[args opts] (reparse-subcommand-args args opts)
         what   (keyword (first args))
         period (resolve-period opts)
-        mp     (keyword (:marketplace opts "wb"))]
-    (case what
-      :all     (materialize/materialize! :all     :period period :marketplace mp)
-      :sales   (materialize/materialize! :sales   :period period :marketplace mp)
-      :orders  (materialize/materialize! :orders  :period period :marketplace mp)
-      :finance (materialize/materialize! :finance :period period :marketplace mp)
-      :storage (materialize/materialize! :storage :period period :marketplace mp)
-      :stocks  (materialize/materialize! :stocks  :marketplace mp)
-      :stats   (materialize/materialize! :stats   :period period :marketplace mp)
-      :prices  (materialize/materialize! :prices  :marketplace mp)
-      :regions  (materialize/materialize! :regions  :period period :marketplace mp)
-      :cashflow (materialize/materialize! :cashflow :period period :marketplace mp)
-      (println "Unknown materialize target:" (first args)))))
+        mp     (keyword (:marketplace opts "wb"))
+        result (case what
+                 :all     (materialize/materialize! :all     :period period :marketplace mp)
+                 :sales   (materialize/materialize! :sales   :period period :marketplace mp)
+                 :orders  (materialize/materialize! :orders  :period period :marketplace mp)
+                 :finance (materialize/materialize! :finance :period period :marketplace mp)
+                 :storage (materialize/materialize! :storage :period period :marketplace mp)
+                 :stocks  (materialize/materialize! :stocks  :marketplace mp)
+                 :stats   (materialize/materialize! :stats   :period period :marketplace mp)
+                 :prices  (materialize/materialize! :prices  :marketplace mp)
+                 :regions  (materialize/materialize! :regions  :period period :marketplace mp)
+                 :cashflow (materialize/materialize! :cashflow :period period :marketplace mp)
+                 (do (println "Unknown materialize target:" (first args)) ::unknown))]
+    ;; E-6 (2026-04-28): post-materialize audit hook. Fires only for
+    ;; finance-touching targets and only when --from/--to gave a concrete
+    ;; period (the hook silently skips keyword periods). Errors never
+    ;; propagate — see audit.hook docstring.
+    (when (and (not= ::unknown result) (not (:no-audit opts)))
+      (audit-hook/audit-after-materialize!
+        {:entity-type what
+         :period      (when (map? period) period)
+         :marketplace mp}))
+    result))
 
 (defn- handle-rebuild [args opts]
   (let [[args opts] (reparse-subcommand-args args opts)

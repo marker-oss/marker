@@ -1,12 +1,79 @@
-# Audit CI Integration (Phase E-6)
+# Audit Integration (Phase E-6)
 
-> Scheduled / CI-driven reconciliation runs using `analitica.audit.cli`.
-> Audit framework is in `src/analitica/audit/`, rules in `rule_impl.clj`,
-> doc in [`reconciliation.md`](reconciliation.md).
+> Триггеры для запуска reconciliation rules. Audit framework живёт в
+> `src/analitica/audit/`, правила — в `rule_impl.clj`, каталог
+> в [`reconciliation.md`](reconciliation.md).
 >
-> Date: 2026-04-28.
+> Date: 2026-04-28 (post-sync hook), updated from cron-only design.
 
-## CLI usage
+## Два триггера
+
+1. **Post-materialize хук** *(default, рекомендованный)* — после каждого
+   `cli materialize finance` или `cli materialize all` с конкретным
+   периодом аудит запускается автоматически и печатает digest.
+   **Не требует крона / внешнего хоста.** Работает там, где работает
+   твой CLI.
+2. **CLI on-demand** — `clojure -M:audit ...` для разовых прогонов
+   (исследование, CI-регрессия, period-cumulative проверки).
+
+В единосельерном workflow хук покрывает 95% пользы крона. Крон опционален
+ниже, но обычно избыточен.
+
+---
+
+## Post-materialize хук
+
+### Что происходит
+
+После каждого `cli materialize finance` или `cli materialize all` с
+явным `--from/--to` периодом, `analitica.audit.hook/audit-after-materialize!`
+вызывает `audit/run-reconcile!` на свежем периоде и пишет digest вида:
+
+```
+──────────────────────────────────────────────────────────────
+  Audit (post-materialize)  wb  2026-04-01 → 2026-04-30
+──────────────────────────────────────────────────────────────
+  expected:        18
+  suspicious:       2
+  unclassified:     0
+
+  Findings (non-:expected):
+  • aggregate-vs-raw                suspicious   account-level bleed: Δ=42k₽ (rel=0.31)
+  • wb-finance-vs-sales-events      suspicious   sync skew Δ=132k₽
+```
+
+### Когда срабатывает
+
+| Materialize target | Hook fires? | Reason |
+|---|---|---|
+| `:finance` | ✅ | основной use-case — finance just changed |
+| `:all` | ✅ | sweep mode — finance тоже включён |
+| `:sales` / `:orders` / `:stocks` / `:prices` / `:regions` / `:cashflow` | ⚪ skip | audit правила читают только из `finance` |
+| Любой target с keyword-период (`:last-30-days`) | ⚪ skip | rules требуют конкретный `{:from :to}` |
+
+### Опт-аут
+
+```bash
+clojure -M -m analitica.cli materialize finance \
+  --from 2026-04-01 --to 2026-04-30 --marketplace wb \
+  --no-audit                                # ← skip the hook
+```
+
+Используй когда нужно прогнать большой backfill без шума в логах
+(или когда отдельный `:audit` запуск планируется отдельно).
+
+### Failure mode
+
+Если правило бросает / DB уезжает / любой другой сбой в audit —
+xook ловит исключение, пишет `WARN: post-materialize audit failed ...`
+в `*err*` и **никогда** не блокирует успешный materialize. Audit —
+сигнал, не блокер.
+
+---
+
+## CLI on-demand
+
+Для исследования, period-cumulative прогонов, или CI-регрессии.
 
 ```bash
 # Whole month
@@ -35,53 +102,26 @@ clojure -M:audit --help
 | 64 | bad CLI args | fail with hint |
 | 70 | runtime error (DB connection lost, etc.) | fail with `STDERR` content |
 
-### What's printed to stdout
+### Что пишется в EDN (с `--report-dir`)
 
-- One-screen digest (counts + non-`:expected` findings with rule id, classification, reason).
-- When `--report-dir` is given, the path of the written EDN report.
+Filename format: `audit-{from}_{to}_{scope}-{stamp}.edn`. Содержит
+**полный** report с каждым discrepancy (включая `:expected`) плюс rule
+metadata. Полезно для:
+- diff'а двух последовательных прогонов (новые findings = drift),
+- backfill в дашборд,
+- forensic review при изменении `:suspicious` count.
 
-### What's written to disk (with `--report-dir`)
+---
 
-Filename format: `audit-{from}_{to}_{scope}-{stamp}.edn`. Contains the
-**full** report with every discrepancy (including `:expected`) plus rule
-metadata. Useful for:
+## CI: regression check на изменения кода
 
-- Diffing two consecutive runs (new findings = drift).
-- Backfill into a dashboard.
-- Forensic review when `:suspicious` count changes between runs.
-
-## Cron setup
-
-Add to `crontab`:
-
-```cron
-# Run analytics audit daily at 08:00 MSK; alert if exit ≠ 0
-0 8 * * *  cd /home/mama/DEV/analitica && \
-           ANALITICA_DB=/home/mama/DEV/analitica/analitica.db \
-           clojure -M:audit --period $(date -d 'yesterday' '+\%Y-\%m') \
-                            --marketplace all \
-                            --report-dir /var/log/analitica/audit/ \
-           > /var/log/analitica/audit/$(date -I).log 2>&1 || \
-           mail -s "analitica audit FAIL ($?)" you@example.com < /var/log/analitica/audit/$(date -I).log
-```
-
-Notes:
-- `$(date -d 'yesterday' '+%Y-%m')` audits the previous **calendar
-  month** so the realization data has had time to land. For
-  same-day audits, use `--from $(date -I -d '-7 days') --to $(date -I)`.
-- The `\%` escapes are needed because cron treats `%` specially.
-- Replace `mail` with your channel of choice (slack-cli, telegram-bot,
-  pagerduty trigger).
-
-## GitHub Actions skeleton
+Если хочется ловить регрессии формул при PR — добавь GitHub Actions
+job, который прогоняет audit на тестовой DB:
 
 ```yaml
-# .github/workflows/audit.yml
-name: Reconciliation audit
-on:
-  schedule:
-    - cron: '0 5 * * *'   # daily at 05:00 UTC = 08:00 MSK
-  workflow_dispatch:
+# .github/workflows/audit-regression.yml
+name: Audit regression
+on: [pull_request]
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -90,20 +130,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13
         with:
           cli: '1.12.0.1530'
-      - name: Restore SQLite DB from S3
-        run: aws s3 cp s3://analitica-prod-db/analitica.db ./analitica.db
+      - name: Run unit tests (includes audit rule tests)
+        run: clojure -M:test
+      - name: Audit on test fixture DB (если есть фикстура)
+        if: hashFiles('test-fixtures/analitica.db') != ''
         env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
-      - name: Run audit
+          ANALITICA_DB: ./test-fixtures/analitica.db
         run: |
           mkdir -p reports
-          clojure -M:audit \
-                  --period $(date -d 'yesterday' '+%Y-%m') \
-                  --marketplace all \
-                  --report-dir reports/
-        env:
-          ANALITICA_DB: ./analitica.db
+          clojure -M:audit --period 2026-04 --marketplace all --report-dir reports/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -111,10 +146,40 @@ jobs:
           path: reports/
 ```
 
+Это ловит **изменения в формулах** (через `:l2-cross-report-agreement`
+и friends), а не data sync issues — последние закроет post-materialize
+хук в production.
+
+---
+
+## Cron *(альтернатива, обычно избыточна)*
+
+Если ты захочешь period-level cumulative прогон (например, проверять
+закрытые месяцы после задержки realization) — крон всё ещё работает:
+
+```cron
+# Run period reconciliation monthly after realization is fully landed
+0 8 1 * *  cd /home/mama/DEV/analitica && \
+           ANALITICA_DB=/home/mama/DEV/analitica/analitica.db \
+           clojure -M:audit --period $(date -d 'last month' '+\%Y-\%m') \
+                            --marketplace all \
+                            --report-dir /var/log/analitica/audit/ \
+           > /var/log/analitica/audit/$(date -I).log 2>&1 || \
+           mail -s "analitica audit FAIL ($?)" you@example.com < /var/log/analitica/audit/$(date -I).log
+```
+
+Notes:
+- `\%` экранирование нужно потому что cron treats `%` specially.
+- Заменить `mail` на slack-cli / telegram-bot / pagerduty trigger по вкусу.
+- Для одного селлера monthly cadence обычно достаточно — daily через
+  post-sync хук уже покрыто.
+
+---
+
 ## Diffing reports between runs
 
-Each report is a self-contained EDN map. To detect new
-`:suspicious` findings between successive runs:
+Каждый report — self-contained EDN map. Для детектирования новых
+`:suspicious` findings между прогонами:
 
 ```clojure
 (require '[clojure.edn :as edn] '[clojure.set :as set])
@@ -132,20 +197,11 @@ Each report is a self-contained EDN map. To detect new
   new-findings)
 ```
 
-A simple shell wrapper that exits non-zero on new findings is
-straightforward to bolt on once the EDN files land in a known location.
-
-## Recommended cadence
-
-| Frequency | Period arg | Use case |
-|---|---|---|
-| Daily | `--from $(date -I -d -7 days) --to $(date -I)` | Catch sync gaps within a week |
-| Monthly | `--period $(date -d 'last month' '+%Y-%m')` | Full-month reconciliation after realization closes |
-| On-demand | `--period 2026-04 --marketplace ozon` | Investigation when something looks off |
+---
 
 ## Per-rule debug
 
-To run a single rule:
+Запустить одно правило:
 
 ```clojure
 (require '[analitica.db :as db]
@@ -159,6 +215,8 @@ To run a single rule:
                             :tolerance {:abs 100.0 :rel 0.01}})]
   (r/run-rule rule ctx))
 ```
+
+---
 
 ## Related
 

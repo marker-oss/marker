@@ -335,13 +335,16 @@ case'а. Предложение: отдельная sync-skew tolerance (rel ≤
 | **E-3** | Per-rule tolerance overrides — `:aggregate-vs-raw` (rel ≤ 0.5), `:wb-finance-vs-sales-events` (rel ≤ 0.1), `:l2-cross-report-agreement` (rel ≤ 0.001) | Audit framework feature | ✅ closed (`:rule/tolerance` key in rule-map; framework support in `audit.rules/run-rule`; tests in `rules_test.clj`) |
 | **E-4** | Field-by-field Ozon settlement reconciliation — почему 491k₽ gap | Ozon domain investigation | 🟡 open (нужен реальный sample из Ozon ЛК) |
 | **E-5** | YM data-quality alerting — flag rows where `BUYER price` сомнительно низкое | New audit rule | ✅ closed (`:ym-buyer-price-anomaly` — cap `for_pay > 5 × retail_amount`; tests in `phase_c_rules_test.clj`) |
-| **E-6** | CI integration — daily audit run + slack/email на новый `:suspicious` | DevOps | 🟡 partial (CLI + cron skeleton in `docs/audit-ci.md`; deployment остался) |
+| **E-6** | CI integration — auto-fire audit на data churn | DevOps | ✅ closed (post-`materialize` hook в `audit/hook.clj`, wired в `cli.clj handle-materialize`; cron остался опциональным fallback) |
 
-E-1, E-2, E-3, E-5 закрыты в Phase B/C/D работе 2026-04-28.
-E-4 ждёт Ozon-domain expertise или sample выгрузку из ЛК. E-6 ждёт
-DevOps cron host. Дополнительный bonus rule `:l2-cross-report-agreement`
-(L2-C) добавлен в этом же sprint — проверяет cross-report
-consistency Finance/P&L/UE.
+E-1, E-2, E-3, E-5, E-6 закрыты в Phase B/C/D/E работе 2026-04-28.
+E-4 ждёт Ozon-domain expertise или sample выгрузку из ЛК.
+Дополнительный bonus rule `:l2-cross-report-agreement` (L2-C) добавлен
+в этом же sprint — проверяет cross-report consistency Finance/P&L/UE.
+
+E-6 был переориентирован с крона на post-`materialize` хук
+(см. дискуссия 2026-04-28): для одного селлера крон избыточен,
+а хук срабатывает с zero latency и без внешнего scheduler.
 
 ---
 
