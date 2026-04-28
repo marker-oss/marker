@@ -17,7 +17,32 @@
    numeric pillars (for-pay, retail-amount, quantity) are required.
    Every other field is optional-nilable because not every marketplace
    has every field (see data-dictionary.md §finance.source-mapping
-   for the coverage matrix)."
+   for the coverage matrix).
+
+   Operation classification (RFC-3, two-level — see canonical-formulas
+   §4.3 and concept-crosswalk §2.1):
+   - :operation         — legacy string, deprecated; kept for backward
+                          compat with existing DB rows. New writers should
+                          set it to (name operation-kind).
+   - :operation-kind    — canonical enum {:sale :return :service
+                          :adjustment}. Required for L2 formulas.
+                          Optional in schema during rollout; once all
+                          rows are re-materialized this becomes required
+                          and `:operation` is dropped.
+   - :operation-subtype — raw classifier from the marketplace
+                          (e.g. \"Продажа\" / \"Логистика\" / \"DELIVERED\"
+                          / \"MarketplaceServiceItemReturnAfterDelivery\").
+                          Optional. Used by audit/UI for drill-down.
+
+   Sign conventions (RFC-14, RFC-15 — invariants enforced by transforms,
+   not yet by schema until DB backfill is complete):
+   - :for-pay   ≥ 0 always. Sign is encoded in :operation-kind (sale = +,
+                return = − under L2 mp_payout formula). For :service /
+                :adjustment rows :for-pay is 0 — actual money lives in
+                dedicated fields (delivery-cost / storage-fee /
+                additional-payment / penalty / deduction).
+   - :quantity  ≥ 0 always. Returns use positive quantity together with
+                operation-kind = :return."
   [:map {:closed false}
    [:marketplace    [:enum :wb :ozon :ym]]
    [:rrd-id         [:or :int :double]]
@@ -29,10 +54,20 @@
    [:event-date     {:optional true} [:maybe :string]]
    [:article        [:maybe :string]]
    [:operation      :string]
+   [:operation-kind    {:optional true} [:maybe [:enum :sale :return :service :adjustment]]]
+   [:operation-subtype {:optional true} [:maybe :string]]
    [:quantity       [:maybe [:or :int :double]]]
    [:for-pay        [:or :int :double]]
 
    [:report-id          {:optional true} [:maybe [:or :int :double]]]
+   ;; :nm-id holds the marketplace's internal product id — WB `nmId`,
+   ;; Ozon `sku`, YM `marketSku`. The WB-era prefix is a legacy of the
+   ;; project's single-MP origin; despite the name, the field is
+   ;; cross-MP. RFC-1 (concept-crosswalk §1.2) was closed 2026-04-28
+   ;; *without* a rename — the cost-benefit of touching ~256 references
+   ;; (incl. UI data-attributes, URL params, JS payloads) outweighed the
+   ;; cosmetic gain. Semantics are now anchored in this docstring and in
+   ;; data-dictionary.md §finance.
    [:nm-id              {:optional true} [:maybe [:or :int :double]]]
    [:barcode            {:optional true} [:maybe :string]]
    [:subject            {:optional true} [:maybe :string]]
@@ -42,7 +77,11 @@
    [:retail-amount      {:optional true} [:maybe [:or :int :double]]]
    [:sale-percent       {:optional true} [:maybe [:or :int :double]]]
    [:commission-pct     {:optional true} [:maybe [:or :int :double]]]
-   [:wb-commission      {:optional true} [:maybe [:or :int :double]]]
+   ;; RFC-6 (closed 2026-04-28): renamed from :wb-commission. The
+   ;; WB-prefixed name was misleading — Ozon and YM also use this field
+   ;; for MP commission RUB. The legacy alias :wb-commission is no longer
+   ;; written by transforms; readers should accept :mp-commission only.
+   [:mp-commission      {:optional true} [:maybe [:or :int :double]]]
    [:wb-reward          {:optional true} [:maybe [:or :int :double]]]
    [:wb-kvw-prc         {:optional true} [:maybe [:or :int :double]]]
    [:spp-prc            {:optional true} [:maybe [:or :int :double]]]

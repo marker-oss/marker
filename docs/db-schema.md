@@ -73,7 +73,7 @@ erDiagram
         int quantity
         real retail_amount
         real for_pay "MP net payout, ALWAYS >= 0"
-        real wb_commission
+        real mp_commission
         real delivery_cost
         real storage_fee
         real acceptance

@@ -32,7 +32,7 @@
   (let [row (merge minimal-row
                    {:nm-id nil :barcode nil :subject nil :brand nil
                     :doc-type nil :retail-price nil :retail-amount nil
-                    :sale-percent nil :commission-pct nil :wb-commission nil
+                    :sale-percent nil :commission-pct nil :mp-commission nil
                     :wb-reward nil :wb-kvw-prc nil :spp-prc nil
                     :price-with-disc nil :delivery-amount nil
                     :return-amount nil :delivery-cost nil :penalty nil

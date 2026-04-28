@@ -48,7 +48,7 @@
             (prevents drift when canon-audit adds metrics)"
     (let [;; minimal fixture matching finance-row semantics (one sale)
           fixture [{:article "A1" :barcode "b1" :operation :sale :quantity 1
-                    :retail-amount 100.0 :wb-reward 15.0 :wb-commission 5.0
+                    :retail-amount 100.0 :wb-reward 15.0 :mp-commission 5.0
                     :logistics 10.0 :storage 2.0 :acceptance 0.0 :penalties 0.0
                     :acquiring 1.5 :deduction 0.0 :additional 0.0
                     :for-pay 80.0 :cost-price 40.0 :spp-amount 0.0}]

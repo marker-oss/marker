@@ -8,6 +8,7 @@
             [analitica.marketplace.ozon.transform :as ozon-t]
             [analitica.marketplace.ym.transform :as ym-t]
             [analitica.util.time :as t]
+            [clojure.string :as str]
             [com.brunobonacci.mulog :as mu]
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]))
@@ -233,7 +234,7 @@
 ;; Design invariants:
 ;;   - UPDATE-only: never INSERT new finance rows. Orphan postings / missing
 ;;     target rows are skipped with a mu/log event.
-;;   - B-005: `for_pay`, `retail_amount`, `wb_commission` are NOT touched
+;;   - B-005: `for_pay`, `retail_amount`, `mp_commission` are NOT touched
 ;;     — those fields remain fully owned by the realization path.
 ;;   - Only cost-fields can be written:
 ;;       :delivery-cost :acquiring-fee :acceptance :storage-fee
@@ -1223,3 +1224,69 @@
     (apply materialize! what
            (cond-> [:marketplace marketplace]
              period (into [:period period])))))
+
+;; ---------------------------------------------------------------------------
+;; RFC-13 (closed 2026-04-28): stocks_history snapshot capture
+;; ---------------------------------------------------------------------------
+
+(defn- today-iso []
+  (str (java.time.LocalDate/now)))
+
+(defn snapshot-stocks-history!
+  "Copy the current `stocks` table into `stocks_history` for today's date.
+
+   Idempotent: rows are inserted via `INSERT OR IGNORE` against the
+   composite PK `(snapshot_date, marketplace, article, warehouse)`,
+   so re-running on the same day is a no-op.
+
+   Args:
+     :date           override snapshot date (default: today). Useful for
+                     backfilling a known-good day from raw_data, or
+                     replaying tests.
+     :marketplace    optional scope filter; default :all.
+
+   Returns {:date D :inserted N :skipped M}."
+  [& {:keys [date marketplace] :or {date nil marketplace :all}}]
+  (let [snap-date (or date (today-iso))
+        synced-at (str (java.time.Instant/now))
+        rows (if (= :all marketplace)
+               (db/query ["SELECT * FROM stocks"])
+               (db/query ["SELECT * FROM stocks WHERE marketplace = ?"
+                          (name marketplace)]))
+        before-count (-> (db/query ["SELECT COUNT(*) AS n FROM stocks_history WHERE snapshot_date = ?"
+                                    snap-date])
+                         first :n)]
+    (when (seq rows)
+      (let [col-names "snapshot_date,marketplace,article,warehouse,quantity,quantity_full,in_way_to,in_way_from,nm_id,barcode,tech_size,subject,brand,synced_at"
+            row-ph    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            ;; SQLite param limit is 999; we have 14 cols, so chunk to ~70 rows.
+            chunk-sz  70]
+        (doseq [chunk (partition-all chunk-sz rows)]
+          (let [sql    (str "INSERT OR IGNORE INTO stocks_history (" col-names ") VALUES "
+                            (str/join "," (repeat (count chunk) row-ph)))
+                params (into [sql]
+                             (mapcat (fn [r]
+                                       [snap-date
+                                        (or (:marketplace r) "wb")
+                                        (or (:article r) "")
+                                        (or (:warehouse r) "")
+                                        (:quantity r)
+                                        (:quantity-full r)
+                                        (:in-way-to r)
+                                        (:in-way-from r)
+                                        (:nm-id r)
+                                        (:barcode r)
+                                        (:tech-size r)
+                                        (:subject r)
+                                        (:brand r)
+                                        synced-at])
+                                     chunk))]
+            (db/execute! params)))))
+    (let [after-count (-> (db/query ["SELECT COUNT(*) AS n FROM stocks_history WHERE snapshot_date = ?"
+                                     snap-date])
+                          first :n)
+          inserted (- (or after-count 0) (or before-count 0))]
+      {:date     snap-date
+       :inserted inserted
+       :skipped  (- (count rows) inserted)
+       :total-from-stocks (count rows)})))

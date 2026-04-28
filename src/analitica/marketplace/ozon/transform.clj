@@ -200,7 +200,7 @@
      :retail-amount      (or (get raw :accruals_for_sale) 0)
      :sale-percent       nil
      :commission-pct     nil
-     :wb-commission      (Math/abs (or (get raw :sale_commission) 0))
+     :mp-commission      (Math/abs (or (get raw :sale_commission) 0))
      :wb-reward          nil
      :wb-kvw-prc         nil
      :spp-prc            nil
@@ -240,7 +240,7 @@
 ;;   - for_pay = amount + bonus + compensation + stars + bank_coinvestment
 ;;                + pick_up_point_coinvestment (full Ozon payout to seller)
 ;;   - retail_amount = qty * seller_price_per_instance (gross revenue)
-;;   - wb_commission = standard_fee - amount (commission deducted;
+;;   - mp_commission = standard_fee - amount (commission deducted;
 ;;     negative value means seller got MORE than base rate due to
 ;;     bonus / bank_coinvestment / stars)
 ;;   - Returns carry POSITIVE for_pay (matches WB convention; by-article
@@ -312,25 +312,29 @@
                            payout (seller-payout dc)
                            total  (or (get dc :total) 0)]
                        (assoc common
-                              :rrd-id        (hash [:ozon-real :sale row-no article sku date-from date-to])
-                              :operation     "sale"
-                              :quantity      q
-                              :retail-price  price
-                              :retail-amount (* q total)
-                              :wb-commission (max 0 (- (* q total) payout))
-                              :for-pay       payout)))
+                              :rrd-id            (hash [:ozon-real :sale row-no article sku date-from date-to])
+                              :operation         "sale"
+                              :operation-kind    :sale
+                              :operation-subtype "realization"
+                              :quantity          q
+                              :retail-price      price
+                              :retail-amount     (* q total)
+                              :mp-commission     (max 0 (- (* q total) payout))
+                              :for-pay           payout)))
         return-row (when (pos? (or (get rc :quantity) 0))
                      (let [q      (get rc :quantity)
                            payout (seller-payout rc)
                            total  (or (get rc :total) 0)]
                        (assoc common
-                              :rrd-id        (hash [:ozon-real :return row-no article sku date-from date-to])
-                              :operation     "return"
-                              :quantity      q
-                              :retail-price  price
-                              :retail-amount (* q total)
-                              :wb-commission (max 0 (- (* q total) payout))
-                              :for-pay       payout)))]
+                              :rrd-id            (hash [:ozon-real :return row-no article sku date-from date-to])
+                              :operation         "return"
+                              :operation-kind    :return
+                              :operation-subtype "realization"
+                              :quantity          q
+                              :retail-price      price
+                              :retail-amount     (* q total)
+                              :mp-commission     (max 0 (- (* q total) payout))
+                              :for-pay           payout)))]
     (into [] (remove nil? [sale-row return-row]))))
 
 (defn ->finance-from-realization

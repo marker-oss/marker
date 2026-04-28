@@ -56,7 +56,7 @@
        :event-date "2026-03-03"
        :article "A" :operation "sale" :quantity 1
        :retail-amount 100.0 :retail-price 100.0
-       :for-pay 80.0 :wb-commission 15.0 :wb-reward 15.0
+       :for-pay 80.0 :mp-commission 15.0 :wb-reward 15.0
        :delivery-cost 1.0 :storage-fee 0.5 :acceptance 0.2
        :penalty 0.0 :acquiring-fee 2.0 :deduction 0.1
        :additional-payment 0.0 :ad-cost 0.0})
@@ -67,7 +67,7 @@
        :event-date "2026-03-05"
        :article "A" :operation "return" :quantity 1
        :retail-amount 0.0 :retail-price 0.0
-       :for-pay 0.0 :wb-commission 0.0 :wb-reward 0.0
+       :for-pay 0.0 :mp-commission 0.0 :wb-reward 0.0
        :delivery-cost 0.5 :storage-fee 0.0 :acceptance 0.0
        :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
        :additional-payment 0.0 :ad-cost 0.0})
@@ -78,7 +78,7 @@
        :event-date "2026-03-04"
        :article "B" :operation "sale" :quantity 1
        :retail-amount 50.0 :retail-price 50.0
-       :for-pay 42.0 :wb-commission 8.0 :wb-reward 8.0
+       :for-pay 42.0 :mp-commission 8.0 :wb-reward 8.0
        :delivery-cost 0.5 :storage-fee 0.2 :acceptance 0.1
        :penalty 0.0 :acquiring-fee 1.0 :deduction 0.0
        :additional-payment 0.0 :ad-cost 0.0})
@@ -89,7 +89,7 @@
        :event-date "2026-03-06"
        :article "C" :operation "return" :quantity 1
        :retail-amount 0.0 :retail-price 0.0
-       :for-pay 0.0 :wb-commission 0.0 :wb-reward 0.0
+       :for-pay 0.0 :mp-commission 0.0 :wb-reward 0.0
        :delivery-cost 0.5 :storage-fee 0.0 :acceptance 0.0
        :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
        :additional-payment 0.0 :ad-cost 0.0})))

@@ -29,8 +29,8 @@
   (case report-type
     :sales [[:group "Дата"] [:sales-count "Продажи"] [:returns-count "Возвраты"] 
             [:revenue "Выручка"] [:avg-price "Ср. чек"]]
-    :finance [[:article "Артикул"] [:sales-qty "Продано"] [:revenue "Выручка"] 
-              [:wb-reward "Вознаграждение"] [:logistics "Логистика"] 
+    :finance [[:article "Артикул"] [:sales-qty "Продано"] [:revenue "Выручка"]
+              [:wb-reward "Возмещение ПВЗ"] [:logistics "Логистика"]
               [:storage "Хранение"] [:for-pay "К выплате"] [:total-cost "Затраты"]]
     :ue [[:article "Артикул"] [:brand "Бренд"] [:subject "Категория"] 
          [:sales-qty "Продано"] [:buyout-rate "% выкупа"] [:revenue "Выручка"] 

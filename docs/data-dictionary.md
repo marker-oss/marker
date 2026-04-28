@@ -20,6 +20,7 @@
 - [paid_storage](#paid_storage) — WB paid-storage daily cost
 - [region_sales](#region_sales) — per-region sales aggregates
 - [cash_flow_periods](#cash_flow_periods) — Ozon period-level cash flow
+- [stocks_history](#stocks_history) — daily snapshot of `stocks` (RFC-13)
 
 ## Contract Format (per table)
 
@@ -60,7 +61,7 @@ report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
 | marketplace | endpoint                                | raw field → normalized field |
 |---|---|---|
 | WB  | `/api/v5/supplier/reportDetailByPeriod` | `rrd_id` → `rrd-id`, `date_from` → `date-from`, `retail_amount` → `retail-amount`, `for_pay` → `for-pay`, `ppvz_for_pay` → `for-pay` (fallback), `bonus_type_name` → `operation`, `commission_percent` → `commission-pct`, `ppvz_vw` → `wb-reward`, `delivery_rub` → `delivery-cost`, `storage_fee` → `storage-fee`, `acceptance` → `acceptance`, `penalty` → `penalty`, `additional_payment` → `additional-payment`, `deduction` → `deduction`, `acquiring_fee` → `acquiring-fee` |
-| Ozon | `/v3/finance/transaction/list` + `/v2/finance/realization` | `amount` → `for-pay` (transaction) / `payout` → `for-pay` (realization), `operation_type` → `operation`, `services[*].name` → field-mapped cost per service type (see `transform.clj`), `commission_amount` → `wb-commission` (reused field, see known gap), `sku` → `article` via `ozon_sku_map` |
+| Ozon | `/v3/finance/transaction/list` + `/v2/finance/realization` | `amount` → `for-pay` (transaction) / `payout` → `for-pay` (realization), `operation_type` → `operation`, `services[*].name` → field-mapped cost per service type (see `transform.clj`), `commission_amount` → `mp-commission`, `sku` → `article` via `ozon_sku_map` |
 | YM | `/campaigns/{id}/stats/orders` + `/reports/united-netting` | `status` → `operation` (`DELIVERED` → `sale`, `CANCELLED` → `cancel`, etc.), `netting.*` → for-pay, `bidFee` → `ad-cost`, order item `price * count` → `retail-amount` |
 
 ### Field dictionary
@@ -72,14 +73,16 @@ report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
 | `date-from` | `:string` | no | ISO date | — | reporting period start |
 | `date-to` | `:string` | no | ISO date | — | reporting period end |
 | `article` | `:string` | yes | — | — | seller-facing article (offer_id for Ozon, supplierArticle for WB) |
-| `operation` | `:string` | no | — | sale/return/commission/logistics/storage/ad/penalty/cancel/other | normalized operation kind |
-| `quantity` | int/double | yes | units | — | units moved (positive for sale, negative or separate row for return) |
-| `for-pay` | int/double | no | RUB | — | net amount credited to seller for this row |
+| `operation` | `:string` | no | — | sale/return + raw subtypes (legacy) | **deprecated** — kept for back-compat with rows materialised before 2026-04-28. New writers always set it to `(name operation-kind)`. |
+| `operation-kind` | `[:enum :sale :return :service :adjustment]` | yes (during rollout) | — | sale/return/service/adjustment | **canonical** classifier (RFC-3 closed 2026-04-28). L2 formulas filter on this. `nil` only for legacy rows or unrecognised raw values; transform logs a warning. |
+| `operation-subtype` | `:string` | yes | — | — | raw MP classifier preserved verbatim ("Логистика" / "Хранение" / "DELIVERED" / "MarketplaceServiceItemReturnAfterDelivery" / …). Used by audit + UI drill-down. |
+| `quantity` | int/double | yes | units | — | units moved; **always ≥ 0** (RFC-14 closed 2026-04-28). Direction encoded in `operation-kind`. |
+| `for-pay` | int/double | no | RUB | — | net payout from MP; **always ≥ 0** (RFC-15 closed 2026-04-28). Direction encoded in `operation-kind` (sale=+, return=−, service/adjustment=0). |
 | `retail-price` | int/double | yes | RUB | — | list price per unit |
 | `retail-amount` | int/double | yes | RUB | — | retail price × quantity before discounts |
 | `sale-percent` | int/double | yes | % | — | discount pct applied |
 | `commission-pct` | int/double | yes | % | — | MP commission as declared in report |
-| `wb-commission` | int/double | yes | RUB | — | WB: from report; Ozon: `commission_amount` (reused field — see known gap) |
+| `mp-commission` | int/double | yes | RUB | — | MP commission per row (RUB). WB: `ppvz_sales_commission`; Ozon: `commission_amount` from realization or `sale_commission` from transaction; YM: `commissions[type=FEE].actual`. Renamed from `wb-commission` 2026-04-28 (RFC-6). |
 | `wb-reward` | int/double | yes | RUB | — | WB: `ppvz_vw`; other MP: nil |
 | `wb-kvw-prc` | int/double | yes | % | — | WB-specific discount margin |
 | `spp-prc` | int/double | yes | % | — | WB SPP percentage |
@@ -95,31 +98,50 @@ report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
 | `acquiring-fee` | int/double | yes | RUB | — | payment-processing fee |
 | `ad-cost` | int/double | yes | RUB | — | ad spend allocated to this row (per-article for YM/Ozon; proportional for WB — spec 003 US5) |
 | `report-id` | int/double | yes | — | — | MP report batch id (for traceability) |
-| `nm-id` | int/double | yes | — | — | WB-specific numeric article id |
+| `nm-id` | int/double | yes | — | — | **MP internal product id** — WB `nmId`, Ozon `sku`, YM `marketSku`. WB-prefixed name is a legacy from single-MP days; the field is cross-MP. Rename to `mp-internal-id` was considered (RFC-1) but rejected 2026-04-28 due to ~256 cross-cutting references; semantics anchored here. |
 | `barcode` | `:string` | yes | — | — | product barcode if available |
 | `subject`, `brand`, `doc-type` | `:string` | yes | — | — | catalog metadata |
 | `synced-at` | `:string` | yes | ISO timestamp | — | when sync wrote this row |
 
 ### Invariants
 
-- `for-pay` must be numeric (not nil). All other money fields may be nil.
+- `for-pay` is non-nil and **≥ 0** for rows produced after 2026-04-28 (RFC-15). Sign carried by `operation-kind`. Legacy rows may still hold negative values until re-materialised.
+- `quantity` is **≥ 0** for rows produced after 2026-04-28 (RFC-14). Direction carried by `operation-kind`. Legacy rows may still hold negative values.
 - For WB, `rrd-id` is always a positive integer.
-- For a sale row, `quantity >= 1`. For a return row, either `quantity <= 0` or `return-amount >= 1` (marketplace-dependent — see edge cases).
 - `marketplace` must be one of `:wb` `:ozon` `:ym`. Stale string values are rejected by schema.
+- `operation-kind` is a keyword from `{:sale :return :service :adjustment}` (or `nil` for unrecognised raw values; the transform logs `::wb-unknown-op` / `::ym-unknown-status`).
 
 ### Edge cases
 
-- **WB return rows** may have `quantity` negative or `return_amount > 0` depending on report version.
-- **Ozon cancellations** appear as transactions with `operation_type = OperationTypeRefund` — normalized to `operation = "return"` by `ozon/transform.clj`.
+- **Legacy rows** materialised before 2026-04-28 retain raw signs (negative `quantity` / `for-pay` for returns) and `nil` `operation-kind`. Domain-layer predicates fall back to the legacy `:operation` string set (`#{"sale" "Продажа"}` / `#{"return" "Возврат"}`) so reports remain consistent until re-materialisation.
+- **WB service rows** ("Логистика", "Хранение", "Платная приёмка", …) carry `operation-kind = :service`, `for-pay = 0`; the actual money lives in `delivery-cost` / `storage-fee` / `acceptance`.
+- **WB adjustment rows** ("Компенсация ущерба", "Корректировка вознаграждения", "Штраф", …) carry `operation-kind = :adjustment`, `for-pay = 0`; cash impact lives in `additional-payment` / `penalty` / `deduction`.
+- **Ozon cancellations** appear as transactions with `operation_type = OperationTypeRefund` — normalized to `operation-kind = :return` by `ozon/transform.clj`.
 - **Ozon per-article service costs** live as separate rows with `quantity = 0` or `nil` and a single cost field populated (e.g. `delivery-cost`). See B-009 in `specs/002-calculation-audit/verdicts.md`.
-- **YM cancelled orders still accrue `ad-cost`** — bidFee charged even if order never delivered.
+- **YM cancelled orders** carry `operation-kind = :adjustment` with `for-pay = 0`; the bidFee loss lives in `ad-cost` (and any commissions still charged in `mp-commission` / `delivery-cost`). L2 `mp_payout` ignores adjustment rows.
 - **Multi-article ad campaigns** (WB) allocate `ad-cost` proportionally to revenue per article (spec 003 US5).
 - **Timezone:** all dates are in Moscow TZ as emitted by MPs; no UTC conversion.
 - **`as-kebab-maps` namespacing:** `next.jdbc.result-set/as-kebab-maps` returns keys namespaced by table (`:finance/rrd-id`). Callers must strip the namespace qualifier before passing rows to `validate-rows`. See `strip-ns` helper in `finance_test.clj`.
 
+### Price-field semantics (RFC-4 closed 2026-04-28)
+
+Each MP has its own native «revenue base» convention. The L1 fields capture each MP's most natural value; full cross-MP alignment is **not** achievable without losing precision:
+
+| Field | WB | Ozon | YM |
+|---|---|---|---|
+| `retail-price` | `retail_price` (gross list per unit, before any discount) | `seller_price_per_instance` (per-unit after seller discount) | `BUYER costPerItem` (per-unit post all discounts incl. coupons) |
+| `retail-amount` | `retail_amount` (gross list × qty) | `q × delivery_commission.total` (total accrued to seller) | `BUYER total` (= buyer-paid × qty, post-coupon) |
+| `price-with-disc` | `retail_price_withdisc_rub` (post-seller, pre-MP) | nil | nil |
+
+**L2 `revenue := SUM(retail-amount)` interpretation**: «sum the seller's books recognise as gross sale before commissions and refunds» — *not* literally what buyers paid (WB's SPP and Ozon's bonuses are MP-side subsidies, not in retail-amount). For exact buyer-paid amounts, use endpoint-specific data (WB `supplier/sales.finishedPrice`, YM `prices[BUYER]`, Ozon `accruals_for_sale`).
+
 ### Known gaps
 
-- `wb-commission` field is reused by Ozon `transform.clj` to carry `commission_amount` from realization — semantically the same (MP commission in RUB) but the WB-prefixed name is misleading. Rename deferred.
+- ~~`wb-commission` field is reused by Ozon `transform.clj` to carry `commission_amount` from realization — semantically the same (MP commission in RUB) but the WB-prefixed name is misleading.~~ **Closed 2026-04-28 (RFC-6)** — renamed to `mp-commission`; DB column auto-migrates via `ALTER TABLE … RENAME COLUMN` on `init!`.
+- **RFC-4 closed 2026-04-28 via documentation** — `retail-price` / `retail-amount` semantics differ per MP by design (WB gross / Ozon accrual / YM buyer-paid). Documented above; no field changes required.
+- **RFC-5 closed 2026-04-28 (no decomposition)** — MP-sponsored discounts are heterogeneous: WB СПП is buyer-side (no impact on seller `for-pay`); Ozon `bonus`/`bank_coinvestment`/`stars`/`pick_up_point_coinvestment` and YM `subsidies[*]` are seller-side and **already included in `for-pay`**. WB SPP as % is in `:spp-prc`. No unified L1 sponsored-discount field. For per-source breakdown, query MP-specific raw fields.
+- **`operation-kind` is currently optional** in the Malli schema. It becomes required once the existing finance table is re-materialised end-to-end. Tracked as part of the RFC-3 rollout.
+- **`for-pay` and `quantity` schema invariants are not yet `[:>= 0]`** — legacy rows in the table may still violate. Schema tightening is deferred until backfill ships.
 - **Ozon finance_realization sometimes omits `return_commission` and `delivery_commission`** — wrapped in `[:maybe ...]` at the API schema layer; not a FinanceRow concern.
 - **YM has no storage/acceptance fees at per-article grain** — those fields are nil for `:ym` rows.
 - **WB advertising allocation** is proportional to revenue, not actual campaign-to-article attribution — approximation documented as B-003 in 002-audit verdicts.
@@ -510,3 +532,60 @@ schema accepts both nil from app layer and 0 from DB).
 - **WB has no equivalent endpoint** — WB provides settlement data per-row in `finance`, not per-period summary. `cash_flow_periods` stays Ozon-only for now.
 - **YM has reports but no period-level cash-flow statement** — same situation.
 - **Ozon partial months**: fields like `storage` cover only the reported period; for a full-month P&L you must sum multiple period rows.
+
+## stocks_history
+
+### Purpose
+
+Daily per-(article, warehouse, marketplace) snapshot of stock levels.
+Where `stocks` is overwritten on every sync, `stocks_history` accumulates
+one row per `(snapshot_date, marketplace, article, warehouse)` so we can
+compute trends, velocity, and days-of-supply.
+
+Closed RFC-13 2026-04-28. Population is **forward-looking only** — we
+cannot reconstruct historic snapshots before the table existed.
+
+### Grain
+
+One row = one (snapshot_date, marketplace, article, warehouse) tuple.
+
+### Source mapping
+
+| source | how | raw → normalized |
+|---|---|---|
+| Daily snapshot | `analitica.materialize/snapshot-stocks-history!` | reads from `stocks` table; same row shape with `:snapshot-date` added |
+
+Future versions may also pull from MP-specific historic endpoints:
+- WB `analytics/v1/stocks-report/wb-warehouses` (real history)
+- Ozon `analytics/turnover/stocks` (turnover history)
+- YM `reports/goods-turnover/generate` (downloadable XLSX, no OpenAPI)
+
+### Field dictionary
+
+| field | Malli type | nullable | unit | meaning |
+|---|---|---|---|---|
+| `snapshot-date` | `:string` | no | ISO date | day the snapshot was taken |
+| `marketplace` | enum `:wb :ozon :ym` | no | — | source marketplace |
+| `article` | `:string` | no | — | seller article |
+| `warehouse` | `:string` | no | — | warehouse name (empty string `""` if absent — keeps PK stable) |
+| `quantity` | int/double | yes | units | available for sale at snapshot time |
+| `quantity-full` | int/double | yes | units | total including reserved |
+| `in-way-to` | int/double | yes | units | inbound shipments |
+| `in-way-from` | int/double | yes | units | customer returns in transit |
+| `nm-id`, `barcode`, `tech-size`, `subject`, `brand` | various | yes | — | catalog metadata captured at snapshot |
+| `synced-at` | `:string` | yes | ISO timestamp | when the snapshot was written |
+
+### Invariants
+
+- `quantity ≥ 0` (snapshots can't be negative).
+- PK `(snapshot_date, marketplace, article, warehouse)` — INSERT OR IGNORE is used so re-running the snapshot for today is a no-op.
+
+### Edge cases
+
+- **Empty `warehouse`**: WB-cross-warehouse rows or test data may have warehouse = `""`. Stored as empty string (not NULL) so PK stays usable.
+- **Same article in `stocks` multiple times** (legacy duplicates from re-syncs): IGNORE keeps only the first; this is acceptable for trend purposes since we only care about the canonical level per warehouse.
+- **Backfill is impossible** — until snapshot has been running for `D` days, queries with windows > `D` return partial results.
+
+### Known gaps
+
+- **MP-native history endpoints not consumed** — current implementation just snapshots local `stocks`. Full-fidelity historical sync (e.g., WB stocks-report-wb-warehouses for past months) would require a separate ingest path. Deferred until business need.

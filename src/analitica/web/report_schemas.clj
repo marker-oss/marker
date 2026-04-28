@@ -88,11 +88,11 @@
    :chart
    {:type :waterfall
     :title "P&L Waterfall"
-    :metrics [:revenue :wb-commission :logistics :storage :penalties
+    :metrics [:revenue :mp-commission :logistics :storage :penalties
               :ad-spend :total-cost :net-profit]}
 
    :drawer-metrics
-   [:revenue :wb-commission :wb-reward :logistics :storage :acceptance
+   [:revenue :mp-commission :wb-reward :logistics :storage :acceptance
     :penalties :acquiring :deduction :additional :ad-spend :total-cost
     :gross-profit :net-profit :margin-gross :margin-net]})
 
@@ -123,7 +123,7 @@
    :columns [{:key :article :title "Артикул" :group :identity :format :text :default-visible? true :linkable? true}
              {:key :sales-qty :title "Продажи" :group :volume :format :int :default-visible? true :delta-supported? true}
              {:key :revenue :title "Выручка" :group :money :format :rub :default-visible? true :delta-supported? true}
-             {:key :wb-reward :title "Вознаграждение WB" :group :money :format :rub :default-visible? true}
+             {:key :wb-reward :title "Возмещение ПВЗ" :group :money :format :rub :default-visible? true}
              {:key :logistics :title "Логистика" :group :money :format :rub :default-visible? true}
              {:key :storage :title "Хранение" :group :money :format :rub :default-visible? true}
              {:key :for-pay :title "К оплате" :group :money :format :rub :default-visible? true :delta-supported? true}

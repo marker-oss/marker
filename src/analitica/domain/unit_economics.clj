@@ -238,7 +238,9 @@
      [["Выручка (розница)"      (:total-revenue s)]
       ["" nil]
       ["ИЗДЕРЖКИ МП:" nil]
-      ["  Комиссия МП"          (:total-wb-reward s)]
+      ;; F-1 (2026-04-28): :wb-reward = WB ppvz_reward (PVZ pickup
+      ;; reimbursement, income to seller). Was "Комиссия МП" — misleading.
+      ["  Возмещение ПВЗ"       (:total-wb-reward s)]
       ["  Логистика"            (:total-logistics s)]
       ["  Хранение"             (:total-storage s)]
       ["  Приёмка"              (:total-acceptance s)]
@@ -308,7 +310,7 @@
    [:sales-qty "Sales"] [:buyout-rate "Buyout %"] [:returns-qty "Returns"]
    [:revenue "Revenue"] [:revenue-per-unit "Price/unit"]
    [:cost-per-unit "COGS/unit"] [:total-cost "COGS total"] [:cogs-pct "COGS%"]
-   [:wb-reward "MP Commission"] [:reward-per-unit "Commission/unit"]
+   [:wb-reward "PVZ Reimbursement"] [:reward-per-unit "PVZ Reimb/unit"]
    [:logistics "Logistics"] [:logistics-per-op "Logistics/op"] [:logistics-per-unit "Logistics/buyout"] [:logistics-pct "Logistics%"]
    [:storage "Storage"] [:storage-per-unit "Storage/unit"]
    [:acceptance "Acceptance"] [:penalties "Penalties"] [:acquiring "Acquiring"]
@@ -328,7 +330,7 @@
         ops         (+ sales-qty returns-qty)
         buyout-rate (math/percentage sales-qty ops)]
     [{:metric "Revenue"        :value (:total-revenue summary)}
-     {:metric "MP Commission"  :value (:total-wb-reward summary)}
+     {:metric "PVZ Reimbursement"  :value (:total-wb-reward summary)}
      {:metric "Logistics"      :value (:total-logistics summary)}
      {:metric "Storage"        :value (:total-storage summary)}
      {:metric "Acceptance"     :value (:total-acceptance summary)}
@@ -364,7 +366,7 @@
 (def ^:private wb-costs-cols
   [[:article "Article"] [:brand "Brand"]
    [:sales-qty "Sales"] [:buyout-rate "Buyout %"] [:revenue "Revenue"]
-   [:wb-reward "MP Commission"] [:logistics "Logistics"] [:storage "Storage"]
+   [:wb-reward "PVZ Reimbursement"] [:logistics "Logistics"] [:storage "Storage"]
    [:acceptance "Acceptance"] [:penalties "Penalties"] [:acquiring "Acquiring"]
    [:deduction "Deduction"]
    [:total-wb-costs "Total MP costs"] [:wb-cost-pct "MP costs%"]

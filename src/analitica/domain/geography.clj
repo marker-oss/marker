@@ -10,19 +10,66 @@
 (defn- resolve-dates [period]
   (if (keyword? period) (t/period period) [(:from period) (:to period)]))
 
-(defn fetch-regions
-  "Fetch region sales from DB or API.
+(defn- fetch-from-region-sales
+  "Read pre-aggregated WB region_sales rows. Each row spans its reporting
+   batch window, so the query is overlap-style."
+  [from to]
+  (db/query ["SELECT * FROM region_sales WHERE date_from <= ? AND date_to >= ?" to from]))
 
-   The DB query intersects (overlap-style) — `date_from ≤ to AND date_to ≥ from`
-   — because each `region_sales` row spans the full reporting batch window
-   it came from (often weeks). Strict `date_from >= ?` would miss every
-   real row whenever the requested period starts mid-batch."
-  [period & {:keys [source] :or {source :db}}]
+(defn- fetch-from-sales
+  "RFC-12 (closed 2026-04-28): augment region data from per-event `sales`
+   table. Aggregates `:sale` rows by region for the requested date range,
+   producing rows with the same `:region`/`:qty`/`:sum-price` shape as
+   `region_sales`. Covers MPs that lack a pre-aggregated regions endpoint
+   — primarily YM (`stats/orders.deliveryRegion`) but also fills WB gaps
+   on periods where `analytics/region-sale` was not synced. Ozon currently
+   has no event-level region in `sales` table, so it contributes nothing
+   here.
+
+   Per concept-crosswalk §9.1: the `sales` table already captures region
+   per-event (WB `regionName`, YM `deliveryRegion.name`); this function
+   surfaces it to the Geography report without requiring a separate
+   ingest pipeline."
+  [from to marketplace]
+  (let [base-sql ["SELECT region, COUNT(*) AS qty,
+                          SUM(COALESCE(for_pay, total_price, 0)) AS sum_price,
+                          ? AS date_from, ? AS date_to,
+                          NULL AS city, NULL AS country, NULL AS fo
+                   FROM sales
+                   WHERE type = 'sale'
+                     AND region IS NOT NULL AND region <> ''
+                     AND date >= ? AND date <= ?"
+                  from to from to]
+        with-mp  (if marketplace
+                   (-> base-sql
+                       (update 0 #(str % " AND marketplace = ?"))
+                       (conj (name marketplace)))
+                   base-sql)
+        final    (update with-mp 0 #(str % " GROUP BY region"))]
+    (db/query final)))
+
+(defn fetch-regions
+  "Fetch region sales rows.
+
+   Sources:
+     :db          (default) — pre-aggregated WB `region_sales` table.
+                  Overlap query because each row spans its batch window.
+     :sales       per-event aggregation from `sales` table. Closes RFC-12 —
+                  surfaces region data for MPs without a pre-aggregated
+                  endpoint (YM, partial WB). Pass `:marketplace` to scope.
+     :combined    UNION of `:db` and `:sales`. Same article appearing in
+                  both sources is summed twice — use only when sources are
+                  known not to overlap (e.g., separate marketplace scopes).
+     :api         live WB `region-sale` endpoint (legacy fallback)."
+  [period & {:keys [source marketplace] :or {source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
-      :db  (db/query ["SELECT * FROM region_sales WHERE date_from <= ? AND date_to >= ?" to from])
-      :api (let [mp (registry/get-marketplace :wb)]
-             (wb-api/region-sales mp from to)))))
+      :db       (fetch-from-region-sales from to)
+      :sales    (fetch-from-sales from to marketplace)
+      :combined (concat (fetch-from-region-sales from to)
+                        (fetch-from-sales from to marketplace))
+      :api      (let [mp (registry/get-marketplace :wb)]
+                  (wb-api/region-sales mp from to)))))
 
 (defn by-region
   "Aggregate region_sales rows by region name → {:region :qty :sum} per region.

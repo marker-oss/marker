@@ -130,7 +130,7 @@
             retail_amount      REAL,
             sale_percent       REAL,
             commission_pct     REAL,
-            wb_commission      REAL,
+            mp_commission      REAL,
             wb_reward          REAL,
             wb_kvw_prc         REAL,
             spp_prc            REAL,

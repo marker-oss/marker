@@ -18,7 +18,7 @@
    :quantity       1
    :for-pay        500.0
    :retail-amount  650.0
-   :wb-commission  120.0
+   :mp-commission  120.0
    :delivery-cost  0.0
    :penalty        0.0})
 
@@ -33,7 +33,7 @@
    :for-pay        440.0
    :retail-amount  600.0
    :nm-id          987654
-   :wb-commission  60.0})
+   :mp-commission  60.0})
 
 (deftest valid?-accepts-canonical-rows
   (is (frow/valid? valid-wb-row))

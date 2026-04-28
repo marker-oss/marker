@@ -210,7 +210,11 @@
      (cond->
        [["ДОХОДЫ" nil]
         ["  Выручка (розница)"    (:revenue pnl)]
-        ["  Комиссия МП"          (:wb-reward pnl)]
+        ;; :wb-reward = WB ppvz_reward = "Возмещение за выдачу и возврат
+        ;; товаров на ПВЗ" — income to seller, NOT a commission. The
+        ;; previous label "Комиссия МП" was misleading (Phase D finding,
+        ;; 2026-04-28). Other MPs leave this nil.
+        ["  Возмещение ПВЗ"       (:wb-reward pnl)]
         ["  К выплате от МП"      (:for-pay pnl)]
         ["" nil]
         ["РАСХОДЫ (из транзакций)" nil]
@@ -273,7 +277,9 @@
                                :marketplace marketplace)
         pnl-rows    (cond->
                       [{:line "REVENUE"            :amount (:revenue pnl)}
-                       {:line "  MP Commission"   :amount (:wb-reward pnl)}
+                       ;; See Russian section above — :wb-reward is PVZ
+                       ;; reimbursement income, not commission.
+                       {:line "  PVZ Reimbursement" :amount (:wb-reward pnl)}
                        {:line "  MP Payout"       :amount (:for-pay pnl)}
                        {:line "" :amount nil}
                        {:line "EXPENSES (transactions)" :amount nil}

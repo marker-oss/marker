@@ -52,10 +52,29 @@
   (or (cost-price/get-price (:article line) (:barcode line))
       0.0))
 
+;; RFC-3 (concept-crosswalk §2.1): canonical :operation-kind keyword.
+;; E-2 backfill (2026-04-28) populated this column for every legacy row.
+;; Predicates accept the kind as either keyword or string (DB read path
+;; gives string), and fall back to the canonical English `:operation`
+;; string for tests that construct rows inline without setting the
+;; kind. The dirty Russian fallback ("Продажа"/"Возврат") is gone.
+(defn- kind-string [v]
+  (cond (keyword? v) (name v)
+        (string?  v) v
+        :else        nil))
+
+(defn- sale-row? [row]
+  (or (= "sale" (kind-string (:operation-kind row)))
+      (= "sale" (:operation row))))
+
+(defn- return-row? [row]
+  (or (= "return" (kind-string (:operation-kind row)))
+      (= "return" (:operation row))))
+
 (defn- article-row
   [article lines storage-by-article]
-  (let [sales-lines  (filter #(#{"sale" "Продажа"} (:operation %)) lines)
-        return-lines (filter #(#{"return" "Возврат"} (:operation %)) lines)
+  (let [sales-lines  (filter sale-row? lines)
+        return-lines (filter return-row? lines)
         total-cost   (reduce + 0.0
                        (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
                             sales-lines))]
@@ -66,7 +85,7 @@
      :returns-qty   (reduce + 0 (map #(or (:quantity %) 0) return-lines))
      :revenue       (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
      :wb-reward     (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
-     :wb-commission (math/round2 (reduce + 0.0 (map #(or (:wb-commission %) 0) sales-lines)))
+     :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
      :acquiring     (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
      :sales-pay     (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines)))
      :returns-pay   (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines)))
@@ -81,8 +100,10 @@
                        (reduce + 0.0 (map #(or (:storage-fee %) 0) lines))))
      :acceptance    (math/round2 (reduce + 0.0 (map #(or (:acceptance %) 0) lines)))
      :deduction     (math/round2 (reduce + 0.0 (map #(or (:deduction %) 0) lines)))
+     ;; RFC-15 / E-2: `for-pay` is non-negative for both sale and return rows;
+     ;; direction comes from operation-kind. Net payout = sales − returns.
      :for-pay       (math/round2 (- (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines))
-                                    (Math/abs (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines)))))
+                                    (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines))))
      :cost-price    (math/round2 (line-cost (first sales-lines)))
      :total-cost    (math/round2 total-cost)}))
 
@@ -95,7 +116,7 @@
    :returns-qty   0
    :revenue       0.0
    :wb-reward     0.0
-   :wb-commission 0.0
+   :mp-commission 0.0
    :acquiring     0.0
    :sales-pay     0.0
    :returns-pay   0.0
@@ -137,8 +158,8 @@
   (->> finance-data
        (group-by (fn [r] [(:article r) (:barcode r)]))
        (map (fn [[[article barcode] lines]]
-              (let [sales-lines  (filter #(#{"sale" "Продажа"} (:operation %)) lines)
-                    return-lines (filter #(#{"return" "Возврат"} (:operation %)) lines)
+              (let [sales-lines  (filter sale-row? lines)
+                    return-lines (filter return-row? lines)
                     total-cost   (reduce + 0.0
                                    (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
                                         sales-lines))]
@@ -151,7 +172,7 @@
                  :returns-qty (reduce + 0 (map #(or (:quantity %) 0) return-lines))
                  :revenue     (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
                  :wb-reward   (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
-                 :wb-commission (math/round2 (reduce + 0.0 (map #(or (:wb-commission %) 0) sales-lines)))
+                 :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
                  :acquiring   (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
                  :sales-pay   (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines)))
                  :returns-pay (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines)))
@@ -213,7 +234,8 @@
      [["Продажи (шт)"     (:total-sales-qty summary)]
       ["Возвраты (шт)"    (:total-returns-qty summary)]
       ["Выручка"          (:total-revenue summary)]
-      ["Комиссия МП"      (:total-wb-reward summary)]
+      ;; F-1 (2026-04-28): :wb-reward = ppvz_reward (PVZ pickup income).
+      ["Возмещение ПВЗ"   (:total-wb-reward summary)]
       ["Компенс. СПП"     (:total-spp summary)]
       ["Логистика"        (:total-logistics summary)]
       ["Хранение"         (:total-storage summary)]
@@ -227,7 +249,7 @@
 ── Детализация по артикулам ──")
     (table/print-table
      [[:article "Артикул"] [:sales-qty "Прод."] [:returns-qty "Возвр."]
-      [:revenue "Выручка"] [:wb-reward "Комиссия"] [:logistics "Логистика"]
+      [:revenue "Выручка"] [:wb-reward "Возмещение ПВЗ"] [:logistics "Логистика"]
       [:storage "Хранение"] [:for-pay "К выплате"]]
      (by-article data))
 
@@ -249,7 +271,7 @@
 (def ^:private finance-export-cols
   [[:article "Артикул"] [:brand "Бренд"] [:subject "Предмет"]
    [:sales-qty "Продажи шт"] [:returns-qty "Возвраты шт"]
-   [:revenue "Выручка"] [:wb-reward "Комиссия МП"] [:wb-commission "Комиссия продаж"]
+   [:revenue "Выручка"] [:wb-reward "Возмещение ПВЗ"] [:mp-commission "Комиссия МП"]
    [:acquiring "Эквайринг"] [:spp-amount "Компенс СПП"]
    [:logistics "Логистика"] [:storage "Хранение"] [:acceptance "Приёмка"]
    [:penalties "Штрафы"] [:additional "Доплаты"]
@@ -264,7 +286,7 @@
   [{:metric "Продажи (шт)"     :value (:total-sales-qty summary)}
    {:metric "Возвраты (шт)"    :value (:total-returns-qty summary)}
    {:metric "Выручка"          :value (:total-revenue summary)}
-   {:metric "Комиссия МП"      :value (:total-wb-reward summary)}
+   {:metric "Возмещение ПВЗ"   :value (:total-wb-reward summary)}
    {:metric "Компенс. СПП"     :value (:total-spp summary)}
    {:metric "Логистика"        :value (:total-logistics summary)}
    {:metric "Хранение"         :value (:total-storage summary)}

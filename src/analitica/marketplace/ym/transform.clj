@@ -84,6 +84,21 @@
                       :item-status item-status)
               "sale"))))
 
+(defn- ym-operation-kind
+  "Map YM per-item operation string to canonical :operation-kind. See
+   RFC-3 in docs/concept-crosswalk.md §2.1.
+
+   Cancelled orders are classified as :adjustment (not :return) because
+   they have no buyer payment but still accrue ad spend (bidFee) and
+   sometimes commissions. They reverse seller cash flow without a
+   physical delivery / return event."
+  [op]
+  (case op
+    "sale"      :sale
+    "return"    :return
+    "cancelled" :adjustment
+    nil))
+
 (defn- commission-value
   "Extract commission amount by type from commissions list."
   [commissions type-name]
@@ -300,10 +315,38 @@
         ;; Distribute order-level commissions across items proportionally
         ;; For simplicity, divide evenly when multiple items
         n-items     (max 1 (count items))
+        ;; Commission attribution to canonical fields (RFC-7/8/10 closed
+        ;; 2026-04-28). YM publishes ~15 commission types via
+        ;; `commissions[].type`; map them to L1 fields per concept-crosswalk
+        ;; §6.1 / §6.3 / §6.7. `all-comm` (below) still subtracts every type
+        ;; from for-pay so the payout math stays correct; the per-type
+        ;; extraction here is purely about which L1 field gets credited.
         fee         (/ (or (commission-value commissions "FEE") 0) n-items)
-        delivery    (/ (or (commission-value commissions "DELIVERY_TO_CUSTOMER") 0) n-items)
-        acquiring   (/ (or (commission-value commissions "PAYMENT_TRANSFER") 0) n-items)
-        agency      (/ (or (commission-value commissions "AGENCY") 0) n-items)
+        delivery    (/ (+ (or (commission-value commissions "DELIVERY_TO_CUSTOMER") 0)
+                          ;; Express и средняя миля — те же логистические
+                          ;; начисления, просто отдельные SKU услуги. Кладём
+                          ;; в один canonical field, чтобы L2 logistics не
+                          ;; терял эти куски.
+                          (or (commission-value commissions "EXPRESS_DELIVERY_TO_CUSTOMER") 0)
+                          (or (commission-value commissions "CROSSREGIONAL_DELIVERY") 0))
+                       n-items)
+        ;; RFC-10: AGENCY (приём платежа) + PAYMENT_TRANSFER (перевод
+        ;; платежа) — обе части цепочки эквайринга. Раньше AGENCY ошибочно
+        ;; складывали с FEE в `wb-commission`; теперь обе компоненты
+        ;; попадают в `:acquiring-fee`.
+        acquiring   (/ (+ (or (commission-value commissions "PAYMENT_TRANSFER") 0)
+                          (or (commission-value commissions "AGENCY") 0))
+                       n-items)
+        ;; RFC-7: хранение возвратов / невыкупов (FBS). Не общее FBO-
+        ;; storage (того у YM нет в stats/orders), но уже не nil.
+        storage     (/ (or (commission-value commissions "RETURNED_ORDERS_STORAGE") 0)
+                       n-items)
+        ;; RFC-8: SORTING + INTAKE_SORTING + RETURN_PROCESSING — все
+        ;; склад-операции, аналог WB acceptance.
+        acceptance  (/ (+ (or (commission-value commissions "SORTING") 0)
+                          (or (commission-value commissions "INTAKE_SORTING") 0)
+                          (or (commission-value commissions "RETURN_PROCESSING") 0))
+                       n-items)
         ;; AUCTION_PROMOTION is the REAL ad-auction commission (Vickrey
         ;; second-price clear), usually 2–4 ₽ per order. Keep it out of
         ;; `all-comm` so that ad-cost isn't subtracted twice (once inside
@@ -345,12 +388,22 @@
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   qty         (or (get item :count) 1)
+                  op-string   (classify-item-operation order item)
+                  op-kind     (ym-operation-kind op-string)
                   ;; :for-pay = BUYER − Σ(non-ad commissions) + net_subsidies.
                   ;; AUCTION_PROMOTION (ad) is held separately in :ad-cost
                   ;; so the UE.4 profit formula subtracts it once; the
                   ;; other commissions stay inside for-pay.
-                  net-pay     (+ (- (or buyer-price 0) all-comm)
-                                 subsidy-net)]
+                  ;; RFC-15: for :adjustment (cancelled) rows for-pay = 0;
+                  ;; the cash impact (commissions still charged, bidFee
+                  ;; consumed) lives in :ad-cost / :mp-commission /
+                  ;; :delivery-cost / :acquiring-fee fields. L2 mp_payout
+                  ;; only sums sale/return rows.
+                  raw-net     (+ (- (or buyer-price 0) all-comm)
+                                 subsidy-net)
+                  net-pay     (case op-kind
+                                (:sale :return) (Math/abs (double raw-net))
+                                0.0)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
                :report-id          nil
@@ -362,14 +415,17 @@
                :barcode            (extract-barcode (get item :cisList))
                :subject            nil
                :brand              nil
-               :operation          (classify-item-operation order item)
+               :operation          op-string
+               :operation-kind     op-kind
+               :operation-subtype  status
                :doc-type           status
                :quantity           qty
                :retail-price       (or buyer-price 0)
                :retail-amount      (* (or buyer-price 0) qty)
                :sale-percent       nil
                :commission-pct     nil
-               :wb-commission      (+ fee agency)
+               ;; RFC-10: AGENCY больше не складывается с FEE — она в acquiring-fee.
+               :mp-commission      fee
                :wb-reward          nil
                :wb-kvw-prc         nil
                :spp-prc            nil
@@ -379,8 +435,10 @@
                :delivery-cost      delivery
                :for-pay            net-pay
                :penalty            nil
-               :storage-fee        nil
-               :acceptance         nil
+               ;; RFC-7: хранение невыкупов/возвратов (FBS) — раньше всегда nil.
+               :storage-fee        (when (pos? storage) storage)
+               ;; RFC-8: SORTING + INTAKE_SORTING + RETURN_PROCESSING.
+               :acceptance         (when (pos? acceptance) acceptance)
                :additional-payment nil
                :deduction          nil
                :acquiring-fee      acquiring
