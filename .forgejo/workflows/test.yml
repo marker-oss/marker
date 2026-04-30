@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: clojure:temurin-21-tools-deps-bookworm-slim
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Restore Maven dep cache between runs so re-builds are fast.
+      - name: Cache Clojure deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: clj-${{ hashFiles('deps.edn') }}
+          restore-keys: |
+            clj-
+
+      - name: Pre-fetch dependencies
+        run: clojure -P -X:deps prep
+
+      - name: Run unit + integration tests
+        run: clojure -M:test
