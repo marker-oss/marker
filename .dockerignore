@@ -1,0 +1,65 @@
+# Exclude things that aren't needed in the image (build context size + security).
+
+# Build artifacts
+.cpcache/
+.nrepl-port
+target/
+
+# Local-only data (mounted as volumes at runtime instead)
+data/
+*.db
+*.db-shm
+*.db-wal
+reports/
+*.log
+
+# Secrets — never bake these into the image
+.env
+config.edn
+
+# Editor / tooling
+.lsp/
+.clj-kondo/
+.calva/
+.idea/
+.vscode/
+.kiro/
+.specify/
+.claude/
+.superpowers/
+.playwright-mcp/
+
+# AI session scratch
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+docs/superpowers/
+
+# Tests + dev resources don't need to ship in prod image
+test/
+dev/
+
+# Documentation isn't needed at runtime
+docs/
+specs/
+
+# Git metadata
+.git/
+.gitignore
+.github/
+.forgejo/
+
+# Node leftovers from ad-hoc Playwright scripts
+node_modules/
+package*.json
+
+# Vendored vendor docs
+resources/Документация*
+
+# Misc one-offs
+tmp_*
+check_*.clj
+test_safety_check*.clj
+start_web*.clj
+restore_data.clj
+playwright-audit.js

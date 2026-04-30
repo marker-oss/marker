@@ -1,0 +1,32 @@
+# Docker Compose for production deployment.
+# Build context = repo root. Image rebuild on `docker compose up --build`.
+#
+# Volumes mount sensitive runtime files from the host:
+#   ./config.edn   — secrets (WB/Ozon/YM tokens). Created by operator.
+#   ./.env         — env-prop overrides. Created by operator.
+#   ./data         — SQLite DB lives here, persists across rebuilds.
+#   ./reports      — audit/report EDN dumps land here.
+#
+# The host should pre-create ./data/analitica.db (copy from existing host or
+# leave empty for fresh start; analitica.db/init! creates schema on first run).
+
+services:
+  analitica:
+    build: .
+    container_name: analitica
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      ANALITICA_DB: /app/data/analitica.db
+    volumes:
+      - ./config.edn:/app/config.edn:ro
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+      - ./reports:/app/reports
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:3000/", "-o", "/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
