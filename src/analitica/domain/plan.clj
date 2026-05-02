@@ -8,8 +8,7 @@
 
    Pace multiplier answers: 'how much faster than current velocity must
    we go to hit target?' 1.0 = on track, > 1.0 = behind, < 1.0 = ahead."
-  (:require [analitica.db :as db]
-            [clojure.string :as str]))
+  (:require [analitica.db :as db]))
 
 (defn run-rate
   "Forecast end-of-month value.
