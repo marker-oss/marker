@@ -21,7 +21,12 @@
      - If `sales` total qty for the SKU differs from realization qty
        (typical: sales table lags or has gaps), weights are still
        computed from sales but applied to the realization totals so
-       Σ amounts and Σ qty stay equal to the original."
+       Σ amounts and Σ qty stay equal to the original.
+
+   Bug F note: Ozon orphan service rows (`operation = service`, written
+   by `materialize-ozon-orphan-services!`) are also month-aggregates
+   stamped with `event_date = date_from`. They get the same treatment,
+   grouped by article only since they carry no sku."
   (:require [analitica.db :as db]))
 
 (defn- ozon? [v]
@@ -30,36 +35,56 @@
 (defn- realization? [v]
   (or (= :realization v) (= "realization" v)))
 
-(defn- realization-row?
+(defn- service-op? [row]
+  (or (= "service" (:operation row))
+      (= :service  (:operation row))
+      (= "service" (:operation-kind row))
+      (= :service  (:operation-kind row))))
+
+(defn- spreadable-row?
+  "An Ozon finance row whose event_date is artificially stamped at the
+   start of the report month. Two flavours:
+     - realization rows (sale/return) from /v2/finance/realization
+     - orphan service rows from materialize-ozon-orphan-services!"
   [row]
   (and (ozon? (:marketplace row))
-       (realization? (:operation-subtype row))))
+       (or (realization? (:operation-subtype row))
+           (service-op? row))))
 
 (defn- group-key
-  "Group realization rows by (article, sku, date-from, date-to). One
-   sales-distribution lookup per group is enough."
+  "Group rows so one sales-distribution lookup serves every row in the
+   bucket. SKU is part of the key for realization rows (they carry one);
+   nil for orphan service rows so their distribution falls back to the
+   article-only weights query."
   [row]
   [(:article row) (:nm-id row) (:date-from row) (:date-to row)])
 
 (defn- daily-sales-weights
-  "Return {iso-day → weight} for an Ozon SKU between [from..to] using
-   the `sales` table. Weights normalise to 1.0. Returns nil when the
-   SKU has no sales coverage in the period."
-  [article from to]
-  (let [rows (try
-               (db/query
-                 ["SELECT substr(date, 1, 10) AS day,
+  "Return {iso-day → weight} for an Ozon (article, sku?) between
+   [from..to] using the `sales` table. Weights normalise to 1.0.
+   Tries (article, sku) first, falls back to (article) only when
+   sku is nil or yields no rows. Returns nil if the article has no
+   sales coverage in the window at all."
+  [article sku from to]
+  (let [base-sql "SELECT substr(date, 1, 10) AS day,
                           SUM(COALESCE(NULLIF(total_price, 0),
                                        price_with_disc, 0)) AS rev
                    FROM sales
                    WHERE marketplace = 'ozon'
                      AND article = ?
-                     AND substr(date, 1, 10) BETWEEN ? AND ?
-                   GROUP BY substr(date, 1, 10)
-                   HAVING SUM(COALESCE(NULLIF(total_price, 0),
-                                       price_with_disc, 0)) > 0"
-                  article from to])
-               (catch Throwable _ nil))]
+                     AND substr(date, 1, 10) BETWEEN ? AND ?"
+        run     (fn [extra params]
+                  (try
+                    (db/query (into [(str base-sql extra
+                                          " GROUP BY substr(date, 1, 10)
+                                            HAVING SUM(COALESCE(NULLIF(total_price, 0),
+                                                                price_with_disc, 0)) > 0")]
+                                    params))
+                    (catch Throwable _ nil)))
+        rows    (or (when sku
+                      (let [r (run " AND nm_id = ?" [article from to sku])]
+                        (when (seq r) r)))
+                    (run "" [article from to]))]
     (when (seq rows)
       (let [total (reduce + 0.0 (map :rev rows))]
         (when (pos? total)
@@ -99,22 +124,24 @@
 
 (defn redistribute-realization
   "Pass `finance-data` through the spreader: replace each Ozon
-   realization row with N daily children weighted by `sales` table
-   coverage. Non-realization and non-Ozon rows pass through unchanged.
+   realization or orphan-service row with N daily children weighted by
+   `sales` table coverage. Non-spreadable rows pass through unchanged.
 
    Pure on the input vector; performs DB queries via
-   `daily-sales-weights` for SKU lookups (cached per group)."
+   `daily-sales-weights` for (article, sku) lookups (cached per group).
+   The function name is kept for backward compatibility — semantics
+   widened in 2026-05 to cover orphan service rows too (Bug F)."
   [finance-data]
-  (let [;; Cache sales lookups by (article, sku, date-from, date-to)
-        cache (atom {})]
+  (let [cache (atom {})]
     (reduce
       (fn [acc row]
-        (if-not (realization-row? row)
+        (if-not (spreadable-row? row)
           (conj acc row)
           (let [k (group-key row)
                 weights (or (get @cache k)
                             (let [w (daily-sales-weights
                                       (:article row)
+                                      (:nm-id row)
                                       (:date-from row)
                                       (:date-to row))]
                               (swap! cache assoc k w)

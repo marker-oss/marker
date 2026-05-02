@@ -25,8 +25,10 @@
    :for-pay           800.0
    :mp-commission     200.0})
 
-(def ^:private non-realization-row
-  "A transaction-list service row — should pass through untouched."
+(def ^:private inert-row
+  "A non-spreadable row (no marker for monthly aggregation): pure
+   transaction-list contribution that already has a real per-event
+   event_date. Stays untouched."
   {:marketplace       :ozon
    :rrd-id            99
    :date-from         "2026-04-01"
@@ -34,8 +36,24 @@
    :event-date        "2026-04-15"
    :article           "ART-A"
    :nm-id             1001
-   :operation-subtype "service"
+   :operation         "tx"
+   :operation-subtype "transaction"
    :delivery-cost     50.0})
+
+(def ^:private orphan-service-row
+  "Bug F shape: orphan service row written by
+   materialize-ozon-orphan-services! — operation = service, sku = nil,
+   event_date stuck at start-of-month."
+  {:marketplace   :ozon
+   :rrd-id        77
+   :date-from     "2026-04-01"
+   :date-to       "2026-04-30"
+   :event-date    "2026-04-01"
+   :article       "ART-A"
+   :nm-id         nil
+   :operation     "service"
+   :delivery-cost 70.0
+   :storage-fee   30.0})
 
 (defn- with-sales-rows [rows f]
   (with-redefs [db/query (fn [_] rows)]
@@ -89,12 +107,26 @@
          (is (= 3 (count (distinct ids))))
          (is (every? integer? ids))))))
 
-(deftest non-realization-rows-pass-through
-  (testing "transaction-list service rows are NOT spread"
+(deftest inert-rows-pass-through
+  (testing "Rows without the month-aggregate markers are not spread"
     (with-sales-rows
       [{:day "2026-04-05" :rev 1.0}]
-      #(let [out (od/redistribute-realization [non-realization-row])]
-         (is (= [non-realization-row] out))))))
+      #(let [out (od/redistribute-realization [inert-row])]
+         (is (= [inert-row] out))))))
+
+(deftest orphan-service-row-spreads-by-article-weights
+  (testing "Orphan service row (sku=nil) uses article-only sales weights"
+    (with-sales-rows
+      [{:day "2026-04-05" :rev 700.0}
+       {:day "2026-04-12" :rev 300.0}]
+      (fn []
+        (let [out (od/redistribute-realization [orphan-service-row])]
+          (is (= 2 (count out)))
+          (let [by-day (into {} (map (juxt :event-date identity) out))]
+            (is (< (Math/abs (- 49.0 (:delivery-cost (by-day "2026-04-05")))) 0.01))
+            (is (< (Math/abs (- 21.0 (:delivery-cost (by-day "2026-04-12")))) 0.01))
+            (is (< (Math/abs (- 21.0 (:storage-fee   (by-day "2026-04-05")))) 0.01))
+            (is (< (Math/abs (- 9.0  (:storage-fee   (by-day "2026-04-12")))) 0.01))))))))
 
 (deftest non-ozon-rows-pass-through
   (testing "WB / YM rows untouched even if marked subtype=realization"
@@ -105,14 +137,14 @@
              out    (od/redistribute-realization [wb-row ym-row])]
          (is (= [wb-row ym-row] out))))))
 
-(deftest mixed-input-only-realization-spread
-  (testing "Realization rows spread; non-realization neighbours preserved"
+(deftest mixed-input-only-spreadable-spread
+  (testing "Spreadable rows expand; inert neighbours preserved"
     (with-sales-rows
       [{:day "2026-04-05" :rev 1.0}
        {:day "2026-04-06" :rev 1.0}]
       (fn []
         (let [out (od/redistribute-realization
-                    [realization-row non-realization-row])]
-          ;; 2 children + 1 untouched service row
+                    [realization-row inert-row])]
+          ;; 2 realization children + 1 untouched inert row
           (is (= 3 (count out)))
           (is (some (fn [r] (= 99 (:rrd-id r))) out)))))))
