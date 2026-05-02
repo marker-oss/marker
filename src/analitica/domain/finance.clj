@@ -3,6 +3,7 @@
             [analitica.marketplace.registry :as registry]
             [analitica.db :as db]
             [analitica.domain.cost-price :as cost-price]
+            [analitica.domain.ozon-distribute :as ozon-distribute]
             [analitica.report.table :as table]
             [analitica.report.export :as export]
             [analitica.util.time :as t]
@@ -17,30 +18,69 @@
     (vector? period)  period
     :else             [(:from period) (:to period)]))
 
+(defn- db-finance-event-date [from to mp-clause params]
+  ;; Default event_date-precise query (with legacy overlap fallback).
+  (db/query
+    (into [(str "SELECT * FROM finance
+                 WHERE 1=1" mp-clause "
+                   AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
+                        OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))
+                 ORDER BY rrd_id")]
+          (concat params [from to to from]))))
+
+(defn- db-finance-ozon-overlap [from to]
+  ;; Ozon's realization & service rows all carry event_date = start of
+  ;; the report month, so an event_date BETWEEN filter would drop every
+  ;; non-first-of-month week. Fetch by date_from/date_to overlap instead;
+  ;; the post-fetch redistribute step replaces realization rows with
+  ;; daily children whose event_date is real, after which we can safely
+  ;; filter by [from..to].
+  (db/query ["SELECT * FROM finance
+              WHERE marketplace = 'ozon'
+                AND date_from <= ? AND date_to >= ?
+              ORDER BY rrd_id"
+             to from]))
+
 (defn- db-finance [from to & [marketplace]]
   ;; Event-precise query when event_date is populated; falls back to
   ;; overlap semantics on the weekly report period for legacy rows that
   ;; pre-date the 2026-04-23 event_date migration (event_date IS NULL).
   ;; See docs/canonical-formulas.md §Unit Economics UE.11 for context.
-  (if marketplace
-    (db/query ["SELECT * FROM finance
-                WHERE marketplace = ?
-                  AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
-                       OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))
-                ORDER BY rrd_id"
-               (name marketplace) from to to from])
-    (db/query ["SELECT * FROM finance
-                WHERE (event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
-                   OR (event_date IS NULL AND date_from <= ? AND date_to >= ?)
-                ORDER BY rrd_id"
-               from to to from])))
+  (cond
+    (= :ozon marketplace)
+    (db-finance-ozon-overlap from to)
+
+    marketplace
+    (db-finance-event-date from to " AND marketplace = ?" [(name marketplace)])
+
+    :else
+    (db-finance-event-date from to "" [])))
+
+(defn- in-window? [from to row]
+  (when-let [d (or (:event-date row) (:event_date row))]
+    (and (not (neg? (compare d from)))
+         (not (pos? (compare d to))))))
 
 (defn fetch-finance
   [period & {:keys [marketplace source] :or {source :db}}]
-  (let [[from to] (resolve-dates period)]
-    (case source
-      :db  (db-finance from to marketplace)
-      :api (proto/fetch-finance-report (get-mp marketplace) from to))))
+  (let [[from to] (resolve-dates period)
+        rows      (case source
+                    :db  (db-finance from to marketplace)
+                    :api (proto/fetch-finance-report (get-mp marketplace) from to))]
+    (cond->> rows
+      ;; Ozon's /v2/finance/realization is a month-level aggregate — every
+      ;; row carries event_date = start-of-month. Spread realization rows
+      ;; into daily children weighted by `sales` coverage so weekly slicing
+      ;; reflects the actual day-level revenue distribution. Sums are
+      ;; preserved exactly. See domain.ozon-distribute.
+      (or (nil? marketplace) (= :ozon marketplace))
+      (ozon-distribute/redistribute-realization)
+
+      ;; After spread, drop any row whose (post-spread) event_date falls
+      ;; outside the requested window. Only Ozon goes through overlap
+      ;; fetch, so this filter is a no-op for other marketplaces.
+      (= :ozon marketplace)
+      (filterv #(in-window? from to %)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregation
