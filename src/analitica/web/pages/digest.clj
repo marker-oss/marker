@@ -765,12 +765,20 @@
           (try
             (first
               (db/query
+                ;; Period-wide CTR / CPC must be derived from the SUMs,
+                ;; not averaged across rows. AVG(ctr) over sparse rows
+                ;; (most rows have 1 view, 0 clicks → ctr=0; rare 1/1
+                ;; rows give ctr=100) skews to 100% and is meaningless.
                 ["SELECT
                     COALESCE(SUM(views),  0) AS impressions,
                     COALESCE(SUM(clicks), 0) AS clicks,
                     COALESCE(SUM(spend),  0) AS spend,
-                    COALESCE(AVG(NULLIF(ctr, 0)), 0) AS ctr,
-                    COALESCE(AVG(NULLIF(cpc, 0)), 0) AS cpc
+                    CASE WHEN COALESCE(SUM(views), 0) > 0
+                         THEN 100.0 * COALESCE(SUM(clicks), 0) / SUM(views)
+                         ELSE 0 END AS ctr,
+                    CASE WHEN COALESCE(SUM(clicks), 0) > 0
+                         THEN COALESCE(SUM(spend), 0) / SUM(clicks)
+                         ELSE 0 END AS cpc
                   FROM ad_stats
                   WHERE date >= ? AND date <= ?"
                  curr-from curr-to]))
