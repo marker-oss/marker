@@ -7,7 +7,7 @@
 ;; Sidebar structure tests — pure rendering, no DB, no :integration tag
 ;; ---------------------------------------------------------------------------
 
-(deftest sidebar-renders-5-groups-test
+(deftest sidebar-renders-6-groups-test
   (testing "nav-items contains exactly 6 top-level groups"
     (is (= 6 (count layout/nav-items))))
 

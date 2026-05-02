@@ -60,7 +60,7 @@
        [:label.text-sm.text-gray-700 "Период:"]
        [:select.border.rounded.px-2.py-1
         {:name "period_month"
-         :onchange "this.form.submit()"}
+         :onchange "window.location='/plan?period_month='+this.value"}
         (for [m (next-months 6)]
           [:option {:value m :selected (= m period-month)} m])]]
       [:table.min-w-full.border-collapse
