@@ -3,6 +3,8 @@
             [analitica.domain.plan :as plan]
             analitica.test-helpers))
 
+(use-fixtures :once analitica.test-helpers/with-test-db)
+
 (deftest run-rate-mid-month-uses-7d-velocity
   (testing "Mid-month: forecast = MTD + last-7d-avg × days-remaining"
     (let [r (plan/run-rate
@@ -137,8 +139,6 @@
 ;; ---------------------------------------------------------------------------
 ;; save-plan! + fetch-plans — round-trip through SQLite
 ;; ---------------------------------------------------------------------------
-
-(use-fixtures :once analitica.test-helpers/with-test-db)
 
 (deftest save-plan-insert-then-fetch
   (testing "Insert a row and read it back"

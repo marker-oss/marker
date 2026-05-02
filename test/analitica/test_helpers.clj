@@ -62,8 +62,9 @@
 (defn- clear-all-tables!
   "Clear all tables in the test database."
   []
-  (doseq [table [:sales :orders :finance :paid_storage :stocks 
-                 :product_stats :region_sales :cost_prices :prices :ad_stats]]
+  (doseq [table [:sales :orders :finance :paid_storage :stocks
+                 :product_stats :region_sales :cost_prices :prices :ad_stats
+                 :monthly_plans]]
     (try
       (db/clear-table! table)
       (catch Exception e
