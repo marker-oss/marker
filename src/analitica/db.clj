@@ -377,7 +377,18 @@
       next_run_at     TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL
-    )"])
+    )"
+
+   "CREATE TABLE IF NOT EXISTS monthly_plans (
+      period_month TEXT NOT NULL,
+      marketplace  TEXT NOT NULL,
+      metric       TEXT NOT NULL,
+      target_value REAL NOT NULL,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (period_month, marketplace, metric)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_monthly_plans_period
+      ON monthly_plans(period_month)"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
