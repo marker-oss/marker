@@ -17,13 +17,56 @@
             [jsonista.core :as json]
             [analitica.web.components :as c]
             [analitica.alerts :as alerts]
-            [analitica.domain.sales    :as sales]
+            [analitica.domain.buyout   :as buyout]
             [analitica.domain.finance  :as finance]
+            [analitica.domain.plan     :as plan]
             [analitica.domain.pnl      :as pnl]
             [analitica.domain.preliminary :as prelim]
+            [analitica.domain.sales    :as sales]
             [analitica.domain.stock    :as stock]
-            [analitica.domain.buyout   :as buyout]
-            [analitica.util.period     :as period]))
+            [analitica.util.period     :as period]
+            [analitica.web.components.pulse.ads-traffic     :as p-at]
+            [analitica.web.components.pulse.custom          :as p-cust]
+            [analitica.web.components.pulse.hypotheses      :as p-hyp]
+            [analitica.web.components.pulse.margin-roi      :as p-mroi]
+            [analitica.web.components.pulse.plan-fact       :as p-pf]
+            [analitica.web.components.pulse.products-stock  :as p-ps]
+            [analitica.web.components.pulse.profit-forecast :as p-pforecast]
+            [analitica.web.components.pulse.sales-conversion :as p-sc]))
+
+;; ---------------------------------------------------------------------------
+;; Period helpers for Pulse Dashboard (calendar-month semantics)
+;; ---------------------------------------------------------------------------
+
+(defn- ->local-date [s]
+  (try (java.time.LocalDate/parse s) (catch Exception _ (java.time.LocalDate/now))))
+
+(defn- month-period
+  "From a `:to` date string return calendar-month period info usable by
+   Pulse plan-fact and friends. Returns
+     {:period-month \"YYYY-MM\"
+      :from         \"YYYY-MM-01\"
+      :to           same as input
+      :days-elapsed int
+      :days-in-month int}"
+  [to]
+  (let [d           (->local-date to)
+        ym          (java.time.YearMonth/from d)
+        first-day   (.atDay ym 1)
+        days-in-mo  (.lengthOfMonth ym)
+        days-elap   (.getDayOfMonth d)]
+    {:period-month  (str ym)
+     :from          (str first-day)
+     :to            (str d)
+     :days-elapsed  days-elap
+     :days-in-month days-in-mo}))
+
+(defn- last-7d-period
+  "Period covering the last 7 days ending at `to` (inclusive)."
+  [to]
+  (let [d  (->local-date to)
+        f  (.minusDays d 6)]
+    {:from (str f) :to (str d)}))
 
 ;; ---------------------------------------------------------------------------
 ;; Sparkline — inline SVG <polyline> scaled to 80×24 viewBox
@@ -384,7 +427,8 @@
     :freshness     — {:wb :ozon :ym} with iso-datetime or nil
     :from / :to    — ISO date strings
     :daily-revenue — vector of {:day :revenue} for 30-day bar chart (unused in SVG path)"
-  [{:keys [kpi alerts movers fallers freshness from to daily-revenue by-marketplace]}]
+  [{:keys [kpi alerts movers fallers freshness from to daily-revenue by-marketplace
+           pulse period-month days-elapsed days-in-month]}]
   (let [today-str (fmt-date-header (or to (str (java.time.LocalDate/now))))
         n-alerts  (count alerts)]
     [:div.digest-page.max-w-7xl.mx-auto.px-4.py-6
@@ -394,6 +438,25 @@
        (str "Сегодня · " today-str)]
       [:div.text-sm.text-gray-500
        (str (fmt-date-header from) " — " today-str)]]
+
+     ;; ---- Pulse Dashboard 8 sections ---------------------------------
+     ;; See docs/superpowers/specs/2026-05-02-pulse-dashboard-design.md
+     (when pulse
+       (let [d-elap (or days-elapsed 0)
+             d-mo   (or days-in-month 31)]
+         [:section#digest-pulse.mb-6
+          (p-hyp/render        (:hypotheses pulse))
+          (p-pf/render         (assoc (:plan-fact pulse)
+                                :days-elapsed  d-elap
+                                :days-in-month d-mo))
+          (p-sc/render         (:sales-conversion pulse))
+          (p-pforecast/render  (assoc (:profit-forecast pulse)
+                                :days-elapsed  d-elap
+                                :days-in-month d-mo))
+          (p-mroi/render       (:margin-roi pulse))
+          (p-ps/render         (:products-stock pulse))
+          (p-at/render         (:ads-traffic pulse))
+          (p-cust/render       (:custom pulse))]))
 
      ;; Row 1: KPI tiles
      [:div.grid.grid-cols-1.md:grid-cols-4.gap-4.mb-6
@@ -643,7 +706,94 @@
               :margin      margin
               :sales-qty   sales-qty
               :returns-qty ret-qty
-              :preliminary? prelim?})))]
+              :preliminary? prelim?})))
+        ;; ---- Pulse Dashboard data ----------------------------------------
+        ;; Plan-Fact uses CALENDAR-MONTH semantics, not the 30-day window
+        ;; the rest of the page uses. Re-fetch PnL for current month + last 7 days.
+        m-info     (month-period curr-to)
+        m-period   {:from (:from m-info) :to (:to m-info)}
+        l7         (last-7d-period curr-to)
+        m-finance  (try (finance/fetch-finance m-period :marketplace marketplace)
+                        (catch Exception _ []))
+        l7-finance (try (finance/fetch-finance l7 :marketplace marketplace)
+                        (catch Exception _ []))
+        m-pnl      (try (pnl/calculate m-finance
+                                       :marketplace marketplace
+                                       :from (:from m-period) :to (:to m-period))
+                        (catch Exception _ {}))
+        l7-pnl     (try (pnl/calculate l7-finance
+                                       :marketplace marketplace
+                                       :from (:from l7) :to (:to l7))
+                        (catch Exception _ {}))
+        ;; Plans for the current calendar month
+        plan-rows  (try (plan/fetch-plans (:period-month m-info))
+                        (catch Exception _ []))
+        plan-mp    (or marketplace :all)
+        metric-actuals
+          {:revenue       {:mtd  (or (:revenue m-pnl)    0.0)
+                           :l7d  (or (:revenue l7-pnl)   0.0)}
+           :gross_profit  {:mtd  (or (:gross-profit m-pnl)
+                                     (:net-profit  m-pnl) 0.0)
+                           :l7d  (or (:gross-profit l7-pnl)
+                                     (:net-profit  l7-pnl) 0.0)}
+           :ad_spend      {:mtd  (or (:ad-spend m-pnl)   0.0)
+                           :l7d  (or (:ad-spend l7-pnl)  0.0)}}
+        plan-targets
+          (vec
+            (for [metric [:revenue :gross_profit :ad_spend]
+                  :let [t (plan/lookup-plan plan-rows
+                            {:period-month (:period-month m-info)
+                             :marketplace  plan-mp
+                             :metric       metric})
+                        a (get metric-actuals metric)]
+                  :when t]
+              {:metric     metric
+               :target     t
+               :actual-mtd (:mtd a)
+               :last-7d    (:l7d a)}))
+        sales-totals-curr
+          (try (sales/totals curr-sales) (catch Exception _ {}))
+        buyout-totals
+          (try (:totals buyout-data) (catch Exception _ {}))
+        pulse-data
+          {:hypotheses       nil
+           :plan-fact        {:period-month (:period-month m-info)
+                              :targets      plan-targets}
+           :sales-conversion {:orders-qty   (or (:sales-count   sales-totals-curr)
+                                                (:total-orders  sales-totals-curr))
+                              :orders-rub   (or (:total-revenue sales-totals-curr) 0.0)
+                              :avg-check    (or (:avg-check     sales-totals-curr) 0.0)
+                              :buyout-pct   (or (:buyout-pct    buyout-totals)     0.0)
+                              :wow {}}
+           :profit-forecast  {:gross-profit-mtd      (or (:gross-profit m-pnl)
+                                                         (:net-profit   m-pnl) 0.0)
+                              :gross-profit-target   (plan/lookup-plan plan-rows
+                                                       {:period-month (:period-month m-info)
+                                                        :marketplace  plan-mp
+                                                        :metric       :gross_profit})
+                              :last-7d-gross-profit  (or (:gross-profit l7-pnl)
+                                                         (:net-profit   l7-pnl) 0.0)
+                              :ad-budget-remaining   (when-let [t (plan/lookup-plan plan-rows
+                                                                    {:period-month (:period-month m-info)
+                                                                     :marketplace  plan-mp
+                                                                     :metric       :ad_spend})]
+                                                       (max 0 (- t (or (:ad-spend m-pnl) 0.0))))
+                              :romi-on-remaining     nil}
+           :margin-roi       {:gross-profit   np-curr
+                              :margin-pct     margin-curr
+                              :roi-pct        nil
+                              :commission-pct nil
+                              :logistics-rub  nil}
+           :products-stock   {:oos-skus      (count (filter #(zero? (or (:stock %) 0)) stocks-by-art))
+                              :turnover-days nil
+                              :return-pct    nil}
+           :ads-traffic      {:impressions nil
+                              :clicks      nil
+                              :ctr-pct     nil
+                              :cpc-rub     nil
+                              :romi        nil
+                              :drr-pct     drr-curr}
+           :custom           nil}]
     {:kpi     {:revenue          rev-curr
                :net-profit       np-curr
                :margin           margin-curr
@@ -666,7 +816,11 @@
      :from            curr-from
      :to              curr-to
      :daily-revenue   curr-by-day
-     :by-marketplace  by-marketplace}))
+     :by-marketplace  by-marketplace
+     :period-month   (:period-month m-info)
+     :days-elapsed   (:days-elapsed m-info)
+     :days-in-month  (:days-in-month m-info)
+     :pulse          pulse-data}))
 
 ;; ---------------------------------------------------------------------------
 ;; Ring page handler
