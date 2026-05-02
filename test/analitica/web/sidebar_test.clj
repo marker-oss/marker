@@ -8,16 +8,17 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest sidebar-renders-5-groups-test
-  (testing "nav-items contains exactly 5 top-level groups"
-    (is (= 5 (count layout/nav-items))))
+  (testing "nav-items contains exactly 6 top-level groups"
+    (is (= 6 (count layout/nav-items))))
 
-  (testing "group labels are the 5 expected sections"
+  (testing "group labels are the 6 expected sections"
     (let [labels (set (map :label layout/nav-items))]
       (is (contains? labels "Главная"))
       (is (contains? labels "Финансы"))
       (is (contains? labels "Товары"))
       (is (contains? labels "Склады"))
-      (is (contains? labels "Управление"))))
+      (is (contains? labels "Управление"))
+      (is (contains? labels "План"))))
 
   (testing "each report appears in exactly one group"
     (let [all-child-routes (mapcat (fn [item]
@@ -64,13 +65,14 @@
       (is (= "/" (:route home))))))
 
 (deftest sidebar-html-contains-5-group-labels-test
-  (testing "rendered sidebar HTML contains all 5 group headings"
+  (testing "rendered sidebar HTML contains all 6 group headings"
     (let [page-html (layout/page "Test" [:div "content"] :active-route "/")]
       (is (re-find #"Главная" page-html))
       (is (re-find #"Финансы" page-html))
       (is (re-find #"Товары" page-html))
       (is (re-find #"Склады" page-html))
-      (is (re-find #"Управление" page-html)))))
+      (is (re-find #"Управление" page-html))
+      (is (re-find #"План" page-html)))))
 
 (deftest sidebar-active-route-highlighting-test
   (testing "/reports/pnl makes Финансы group <details> open"

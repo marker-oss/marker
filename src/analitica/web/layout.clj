@@ -37,7 +37,8 @@
    {:label "Склады" :icon "🏬" :route "/reports/stock"
     :children [{:label "Остатки" :route "/reports/stock"}]}
    {:label "Управление" :icon "⚙" :route "/sync"
-    :children [{:label "Синхронизация" :route "/sync"}]}])
+    :children [{:label "Синхронизация" :route "/sync"}]}
+   {:label "План" :icon "🎯" :route "/plan"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers

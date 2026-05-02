@@ -16,6 +16,7 @@
             [analitica.web.pages.sync :as sync-page]
             [analitica.web.pages.dashboard :as dashboard-page]
             [analitica.web.pages.digest :as digest-page]
+            [analitica.web.pages.plan]
             [analitica.web.pages.reports :as reports-page]
             [analitica.web.api.sync :as sync-api]
             [analitica.sync.plan :as sync-plan]
@@ -146,6 +147,8 @@
 
 (defroutes app-routes
   ;; Pages
+  (GET  "/plan" req (analitica.web.pages.plan/get-handler  req))
+  (POST "/plan" req (analitica.web.pages.plan/post-handler req))
   ;; Phase 2: GET / now points to the action-first digest page.
   ;; Legacy summary-page kept at /dashboard/summary.
   (GET "/" {params :params}
