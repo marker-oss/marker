@@ -15,6 +15,7 @@
   (:require [clojure.string :as str]
             [hiccup.core :refer [html]]
             [jsonista.core :as json]
+            [analitica.db              :as db]
             [analitica.web.components :as c]
             [analitica.alerts :as alerts]
             [analitica.domain.buyout   :as buyout]
@@ -760,6 +761,20 @@
                 bs    (reduce + 0 (keep :bought rows))
                 tot   (reduce + 0 (keep :total-ops rows))]
             (when (pos? tot) (* 100.0 (/ bs (double tot)))))
+        ads-stats-curr
+          (try
+            (first
+              (db/query
+                ["SELECT
+                    COALESCE(SUM(views),  0) AS impressions,
+                    COALESCE(SUM(clicks), 0) AS clicks,
+                    COALESCE(SUM(spend),  0) AS spend,
+                    COALESCE(AVG(NULLIF(ctr, 0)), 0) AS ctr,
+                    COALESCE(AVG(NULLIF(cpc, 0)), 0) AS cpc
+                  FROM ad_stats
+                  WHERE date >= ? AND date <= ?"
+                 curr-from curr-to]))
+            (catch Exception _ {}))
         pulse-data
           {:hypotheses       nil
            :plan-fact        {:period-month (:period-month m-info)
@@ -786,19 +801,31 @@
                                                                      :metric       :ad_spend})]
                                                        (max 0 (- t (or (:ad-spend m-pnl) 0.0))))
                               :romi-on-remaining     nil}
-           :margin-roi       {:gross-profit   np-curr
-                              :margin-pct     margin-curr
-                              :roi-pct        nil
-                              :commission-pct nil
-                              :logistics-rub  nil}
-           :products-stock   {:oos-skus      (count (filter #(zero? (or (:stock %) 0)) stocks-by-art))
-                              :turnover-days nil
-                              :return-pct    nil}
-           :ads-traffic      {:impressions nil
-                              :clicks      nil
-                              :ctr-pct     nil
-                              :cpc-rub     nil
-                              :romi        nil
+           :margin-roi       {:gross-profit   (when curr-pnl (:gross-profit curr-pnl))
+                              :margin-pct     (when curr-pnl (:margin-gross curr-pnl))
+                              :roi-pct        (when curr-pnl
+                                               (let [net  (or (:net-profit curr-pnl) 0.0)
+                                                     cost (max 1.0 (+ (or (:cogs curr-pnl) 0.0)
+                                                                       (or (:ad-spend curr-pnl) 0.0)))]
+                                                 (* 100.0 (/ net cost))))
+                              :commission-pct (when curr-pnl
+                                               (let [rev (or (:revenue curr-pnl) 0.0)
+                                                     wb  (or (:wb-reward curr-pnl) 0.0)]
+                                                 (when (pos? rev)
+                                                   (* 100.0 (/ wb rev)))))
+                              :logistics-rub  (when curr-pnl (:logistics curr-pnl))}
+           :products-stock   {:oos-skus      (count (filter #(zero? (or (:quantity-full %) (:quantity %) 0)) stocks-by-art))
+                              :turnover-days (let [vs (keep :days-left stocks-turn)]
+                                              (when (seq vs)
+                                                (/ (Math/round (* 10.0 (/ (double (reduce + vs)) (count vs))))
+                                                   10.0)))
+                              :return-pct    (:return-rate sales-totals-curr)}
+           :ads-traffic      {:impressions (:impressions ads-stats-curr)
+                              :clicks      (:clicks ads-stats-curr)
+                              :ctr-pct     (:ctr ads-stats-curr)
+                              :cpc-rub     (:cpc ads-stats-curr)
+                              :romi        (when (and (number? rev-curr) (number? ad-curr) (pos? ad-curr))
+                                             (/ rev-curr ad-curr))
                               :drr-pct     drr-curr}
            :custom           nil}]
     {:kpi     {:revenue          rev-curr
