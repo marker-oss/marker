@@ -37,9 +37,15 @@
       (.format (.plusMonths base i)
                (DateTimeFormatter/ofPattern "yyyy-MM")))))
 
-(defn- format-target [v]
+(defn- format-target
+  "Render a saved plan value into a string usable as an
+   <input type=\"number\"> value attribute. The browser rejects values
+   containing whitespace or thousand separators and silently blanks
+   the field, so emit a plain integer (no formatting). The visual
+   thousand separator can be added by a future client-side formatter."
+  [v]
   (when (number? v)
-    (str/replace (format "%,.0f" (double v)) "," " ")))
+    (format "%.0f" (double v))))
 
 (defn- index-rows
   "Build {[mp metric] target-value}."

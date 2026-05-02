@@ -753,17 +753,24 @@
                :last-7d    (:l7d a)}))
         sales-totals-curr
           (try (sales/totals curr-sales) (catch Exception _ {}))
-        buyout-totals
-          (try (:totals buyout-data) (catch Exception _ {}))
+        ;; buyout/analyze returns a per-article seq; aggregate to a period-wide
+        ;; rate = Σ bought / Σ (bought+returned). Falls back to nil when no rows.
+        buyout-pct-curr
+          (let [rows  (or buyout-data [])
+                bs    (reduce + 0 (keep :bought rows))
+                tot   (reduce + 0 (keep :total-ops rows))]
+            (when (pos? tot) (* 100.0 (/ bs (double tot)))))
         pulse-data
           {:hypotheses       nil
            :plan-fact        {:period-month (:period-month m-info)
                               :targets      plan-targets}
-           :sales-conversion {:orders-qty   (or (:sales-count   sales-totals-curr)
-                                                (:total-orders  sales-totals-curr))
+           :sales-conversion {:orders-qty   (or (:sales-count sales-totals-curr) 0)
                               :orders-rub   (or (:total-revenue sales-totals-curr) 0.0)
-                              :avg-check    (or (:avg-check     sales-totals-curr) 0.0)
-                              :buyout-pct   (or (:buyout-pct    buyout-totals)     0.0)
+                              ;; sales/totals exposes :avg-price (per-unit average);
+                              ;; the section labels it as "Средний чек" — same number
+                              ;; for one-item-per-sale data, close enough for v1.
+                              :avg-check    (or (:avg-price sales-totals-curr) 0.0)
+                              :buyout-pct   buyout-pct-curr
                               :wow {}}
            :profit-forecast  {:gross-profit-mtd      (or (:gross-profit m-pnl)
                                                          (:net-profit   m-pnl) 0.0)
