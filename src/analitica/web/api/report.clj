@@ -85,7 +85,8 @@
             cf-adj       (pnl/load-cf-adjustments from to marketplace)
             totals       (-> (pnl/calculate finance-data
                                             :marketplace marketplace
-                                            :cf-adjustments cf-adj)
+                                            :cf-adjustments cf-adj
+                                            :from from :to to)
                              (preliminary/maybe-overlay-preliminary
                                {:period      {:from from :to to}
                                 :marketplace marketplace}))]

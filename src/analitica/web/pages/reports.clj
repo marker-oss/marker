@@ -23,7 +23,9 @@
      (for [mp [:wb :ozon :ym]]
        (let [fin     (try (finance/fetch-finance period :marketplace mp)
                           (catch Exception _ []))
-             p       (try (pnl/calculate fin :marketplace mp)
+             p       (try (pnl/calculate fin
+                                         :marketplace mp
+                                         :from from :to to)
                           (catch Exception _ {}))
              mp-sales (try (sales/fetch-sales period :marketplace mp)
                            (catch Exception _ []))

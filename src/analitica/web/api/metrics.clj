@@ -223,7 +223,9 @@
 
         ;; Calculate current metrics from finance
         current-totals (finance/totals current-finance)
-        current-pnl (pnl/calculate current-finance :marketplace marketplace)
+        current-pnl (pnl/calculate current-finance
+                                   :marketplace marketplace
+                                   :from from :to to)
         current-sales-qty (:total-sales-qty current-totals)
         current-returns-qty (:total-returns-qty current-totals)
         current-return-rate (math/percentage current-returns-qty
@@ -231,7 +233,9 @@
 
         ;; Calculate previous metrics from finance
         prev-totals (finance/totals prev-finance)
-        prev-pnl (pnl/calculate prev-finance :marketplace marketplace)
+        prev-pnl (pnl/calculate prev-finance
+                                :marketplace marketplace
+                                :from prev-from :to prev-to)
         prev-sales-qty (:total-sales-qty prev-totals)
         prev-returns-qty (:total-returns-qty prev-totals)
         prev-return-rate (math/percentage prev-returns-qty
@@ -253,7 +257,9 @@
                                                                     :marketplace mp
                                                                     :source :db)
                                  mp-totals (finance/totals mp-finance)
-                                 mp-pnl (pnl/calculate mp-finance :marketplace mp)
+                                 mp-pnl (pnl/calculate mp-finance
+                                                       :marketplace mp
+                                                       :from from :to to)
                                  mp-sq (:total-sales-qty mp-totals)
                                  mp-rq (:total-returns-qty mp-totals)]
                              {:marketplace mp
@@ -356,7 +362,9 @@
           
           ;; Financial breakdown
           finance-totals (finance/totals finance-data)
-          pnl-data (pnl/calculate finance-data :marketplace marketplace)
+          pnl-data (pnl/calculate finance-data
+                                  :marketplace marketplace
+                                  :from from :to to)
           finance-breakdown {:commission (:total-wb-reward finance-totals)
                              :logistics (:total-logistics finance-totals)
                              :storage (:total-storage finance-totals)

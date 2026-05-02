@@ -511,9 +511,13 @@
                           (catch Exception _ []))
         prev-finance (try (finance/fetch-finance prev-period :marketplace marketplace)
                           (catch Exception _ []))
-        curr-pnl    (try (pnl/calculate curr-finance :marketplace marketplace)
+        curr-pnl    (try (pnl/calculate curr-finance
+                                        :marketplace marketplace
+                                        :from curr-from :to curr-to)
                          (catch Exception _ {:revenue 0 :net-profit 0 :ad-spend 0}))
-        prev-pnl    (try (pnl/calculate prev-finance :marketplace marketplace)
+        prev-pnl    (try (pnl/calculate prev-finance
+                                        :marketplace marketplace
+                                        :from prev-from :to prev-to)
                          (catch Exception _ {:revenue 0 :net-profit 0 :ad-spend 0}))
         ;; KPI deltas
         rev-curr    (or (:revenue curr-pnl) 0.0)
@@ -592,7 +596,9 @@
          (for [mp [:wb :ozon :ym]]
            (let [mp-fin    (try (finance/fetch-finance curr-period :marketplace mp)
                                 (catch Exception _ []))
-                 mp-pnl    (try (pnl/calculate mp-fin :marketplace mp)
+                 mp-pnl    (try (pnl/calculate mp-fin
+                                               :marketplace mp
+                                               :from curr-from :to curr-to)
                                 (catch Exception _ {}))
                  ;; Ozon: try cash-flow overlay first (numerically closer to
                  ;; what realization will publish than sales table).

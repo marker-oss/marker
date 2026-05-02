@@ -100,7 +100,9 @@
                         (let [finance-data (finance/fetch-finance {:from from :to to}
                                                                    :marketplace mp
                                                                    :source :db)
-                              pnl-data (pnl/calculate finance-data :marketplace mp)]
+                              pnl-data (pnl/calculate finance-data
+                                                      :marketplace mp
+                                                      :from from :to to)]
                           (or (:revenue pnl-data) 0.0))))]
     {:labels (mapv name marketplaces)
      :datasets [{:data revenues
@@ -170,7 +172,9 @@
       (let [finance-data (finance/fetch-finance {:from from :to to}
                                                  :marketplace marketplace
                                                  :source :db)
-            pnl-data (pnl/calculate finance-data :marketplace marketplace)]
+            pnl-data (pnl/calculate finance-data
+                                    :marketplace marketplace
+                                    :from from :to to)]
         {:labels ["Выручка" "Комиссия МП" "Логистика" "Хранение" "Себестоимость" "Реклама" "Чистая прибыль"]
          :datasets [{:label "P&L"
                      :data [(:revenue pnl-data)
@@ -321,7 +325,9 @@
                                              :marketplace marketplace
                                              :source :db)
         finance-totals (finance/totals finance-data)
-        pnl-data (pnl/calculate finance-data :marketplace marketplace)]
+        pnl-data (pnl/calculate finance-data
+                                :marketplace marketplace
+                                :from from :to to)]
     {:labels ["Финансы"]
      :datasets [{:label "Выручка" 
                  :data [(:total-revenue finance-totals)]

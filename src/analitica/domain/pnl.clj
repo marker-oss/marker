@@ -4,10 +4,17 @@
             [analitica.db :as db]
             [analitica.report.table :as table]
             [analitica.report.export :as export]
-            [analitica.util.math :as math]))
+            [analitica.util.math :as math]
+            [analitica.util.time :as t]))
 
 (defn- derive-date-range
-  "Extract min date-from and max date-to from finance data."
+  "Fallback used only when the caller did not pass `:from`/`:to`: take
+   min(date_from)/max(date_to) across the rows. This expands the
+   window for pre-aggregated reports (rows whose date_from/date_to
+   span the whole report range), which causes side-query
+   double-counting when the caller is slicing into sub-periods.
+   Prefer passing `:from`/`:to` explicitly; this fallback exists for
+   call sites that build finance rows inline without a period."
   [finance-data]
   (let [pick (fn [k1 k2 m] (or (get m k1) (get m k2)))
         dates-from (->> finance-data (map #(pick :date-from :date_from %)) (remove nil?))
@@ -110,12 +117,21 @@
      :marketplace          keyword :wb | :ozon | :ym | nil. Scopes
                            ad-spend lookup; does NOT filter finance-data
                            (caller must pre-filter).
+     :from / :to           ISO date strings bounding the period. Used
+                           for ad-spend side-query. When omitted, falls
+                           back to min/max of date_from/date_to across
+                           rows — which over-extends the window for
+                           pre-aggregated reports and silently
+                           double-counts ad-spend when the caller
+                           slices a month into weeks.
 
    Returns a map with the P&L.1–P&L.5 fields unconditionally; P&L.6
    cf-* / adjusted-* fields appear only when cf-adjustments is non-nil."
-  [finance-data & {:keys [cf-adjustments marketplace]}]
+  [finance-data & {:keys [cf-adjustments marketplace from to]}]
   (let [by-art        (finance/by-article finance-data)
-        [from to]     (derive-date-range finance-data)
+        [from to]     (if (and from to)
+                        [from to]
+                        (derive-date-range finance-data))
         revenue       (reduce + 0.0 (map :revenue by-art))
         wb-reward     (reduce + 0.0 (map :wb-reward by-art))
         logistics     (reduce + 0.0 (map :logistics by-art))
@@ -198,12 +214,13 @@
   "Print P&L report."
   [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (println "\nЗагрузка P&L...")
-  (let [fin-data  (finance/fetch-finance period :marketplace marketplace :source source)
-        [from to] (derive-date-range fin-data)
+  (let [[from to] (t/resolve-period period)
+        fin-data  (finance/fetch-finance period :marketplace marketplace :source source)
         cf-adj    (load-cf-adjustments from to marketplace)
         pnl       (calculate fin-data
                              :cf-adjustments cf-adj
-                             :marketplace marketplace)]
+                             :marketplace marketplace
+                             :from from :to to)]
 
     (table/print-summary
      "P&L (ОТЧЁТ О ПРИБЫЛЯХ И УБЫТКАХ)"
@@ -269,12 +286,13 @@
   [period path & opts]
   (let [opts-map    (apply hash-map opts)
         marketplace (:marketplace opts-map)
+        [from to]   (t/resolve-period period)
         fin-data    (apply finance/fetch-finance period opts)
-        [from to]   (derive-date-range fin-data)
         cf-adj      (load-cf-adjustments from to marketplace)
         pnl         (calculate fin-data
                                :cf-adjustments cf-adj
-                               :marketplace marketplace)
+                               :marketplace marketplace
+                               :from from :to to)
         pnl-rows    (cond->
                       [{:line "REVENUE"            :amount (:revenue pnl)}
                        ;; See Russian section above — :wb-reward is PVZ
