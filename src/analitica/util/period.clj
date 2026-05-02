@@ -55,6 +55,51 @@
   [from to]
   (inc (.until (parse-date from) (parse-date to) ChronoUnit/DAYS)))
 
+(defn intersect-days
+  "Inclusive-day overlap between two date ranges. Returns 0 when ranges
+   do not overlap. Inputs are ISO strings or LocalDate."
+  [a-from a-to b-from b-to]
+  (let [a-f (parse-date a-from)
+        a-t (parse-date a-to)
+        b-f (parse-date b-from)
+        b-t (parse-date b-to)
+        start (if (.isAfter b-f a-f) b-f a-f)
+        end   (if (.isBefore b-t a-t) b-t a-t)]
+    (if (.isAfter start end)
+      0
+      (inc (.until start end ChronoUnit/DAYS)))))
+
+(defn pro-rate-rows
+  "Pro-rate a seq of period-bucketed rows against a target window
+   [from..to]. Each row must expose its own period via `period-begin-key`
+   and `period-end-key`; numeric fields listed in `numeric-keys` are
+   scaled by the day-overlap ratio (overlap-days / row-period-days).
+
+   Rows whose period does not overlap [from..to] are dropped.
+
+   Returns a seq of maps with the same keys as input plus an
+   additional `:overlap-days` field. Non-numeric / missing values
+   pass through unchanged."
+  [rows {:keys [from to period-begin-key period-end-key numeric-keys]
+         :or   {period-begin-key :period-begin
+                period-end-key   :period-end}}]
+  (->> rows
+       (keep (fn [row]
+               (let [pb (get row period-begin-key)
+                     pe (get row period-end-key)
+                     row-days   (when (and pb pe) (days-between pb pe))
+                     overlap    (when (and pb pe) (intersect-days from to pb pe))]
+                 (when (and overlap (pos? overlap) (pos? row-days))
+                   (let [factor (/ (double overlap) (double row-days))]
+                     (-> (reduce (fn [acc k]
+                                   (let [v (get acc k)]
+                                     (if (number? v)
+                                       (assoc acc k (* (double v) factor))
+                                       acc)))
+                                 row
+                                 numeric-keys)
+                         (assoc :overlap-days overlap)))))))))
+
 (defn compare-period
   "Same-length prior period ending the day before :from.
    Input {:from :to} where both are ISO strings. Returns [from-str to-str] as ISO strings."

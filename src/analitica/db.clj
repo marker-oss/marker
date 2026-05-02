@@ -1,7 +1,8 @@
 (ns analitica.db
   (:require [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
-            [jsonista.core :as j]))
+            [jsonista.core :as j]
+            [analitica.util.period :as period]))
 
 (defonce ^:private datasource (atom nil))
 
@@ -872,22 +873,35 @@
   (into {} (map (juxt :sku :offer-id)
                 (query ["SELECT sku, offer_id FROM ozon_sku_map"]))))
 
+(def ^:private cash-flow-adjustment-keys
+  [:subscription :warehouse-movement :returns-cargo :fines
+   :corrections :compensation :other-services :packaging])
+
 (defn cash-flow-adjustments
   "Sum cash flow period costs for the given source and date range.
-   Returns a map with summed values (all values keep original signs: costs are negative)."
+   Cash-flow rows are weekly buckets that rarely align with arbitrary
+   UI windows (e.g. ISO weeks vs Mon-Sun reporting weeks). Each
+   overlapping row is pro-rated by day-overlap before summing so that
+   Σ(weekly slices) reconciles with the full period.
+
+   Returns a map with summed values (signs preserved: costs are negative)."
   [source from to]
-  (first (query ["SELECT
-                    SUM(subscription) AS subscription,
-                    SUM(warehouse_movement) AS warehouse_movement,
-                    SUM(returns_cargo) AS returns_cargo,
-                    SUM(fines) AS fines,
-                    SUM(corrections) AS corrections,
-                    SUM(compensation) AS compensation,
-                    SUM(other_services) AS other_services,
-                    SUM(packaging) AS packaging
-                  FROM cash_flow_periods
-                  WHERE source = ? AND period_begin >= ? AND period_end <= ?"
-                 source from to])))
+  (let [rows (query ["SELECT period_begin, period_end,
+                             subscription, warehouse_movement, returns_cargo,
+                             fines, corrections, compensation,
+                             other_services, packaging
+                      FROM cash_flow_periods
+                      WHERE source = ?
+                        AND period_begin <= ? AND period_end >= ?"
+                     source to from])
+        prorated (period/pro-rate-rows
+                   rows
+                   {:from from :to to
+                    :numeric-keys cash-flow-adjustment-keys})]
+    (reduce (fn [acc k]
+              (assoc acc k (reduce + 0.0 (keep k prorated))))
+            {}
+            cash-flow-adjustment-keys)))
 
 (defn save-ozon-sku-map!
   "Save Ozon SKU→offer_id mappings to DB. Input: seq of [sku offer-id] pairs."

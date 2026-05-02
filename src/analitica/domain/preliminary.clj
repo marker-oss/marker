@@ -14,7 +14,8 @@
 
    Use this namespace as a fallback ONLY when the canonical source is
    empty — never to override a published realization."
-  (:require [analitica.db :as db]))
+  (:require [analitica.db :as db]
+            [analitica.util.period :as period]))
 
 (defn ozon-preliminary-totals
   "Aggregate Ozon cash_flow_periods rows overlapping [from..to] into a
@@ -43,8 +44,21 @@
                  ;; that opt into the overlay never break on missing table.
                  nil))]
     (when (seq rows)
-      (let [orders   (reduce + 0.0 (keep :orders-amount rows))
-            returns  (reduce + 0.0 (keep :returns-amount rows))
+      ;; Pro-rate amounts by day-overlap with [from..to] so that a
+      ;; weekly UI slice doesn't double-count the same cash-flow bucket
+      ;; that also bleeds into the adjacent week. For a full-period
+      ;; window every row gets factor=1.0, preserving the original
+      ;; aggregate.
+      (let [prorated (period/pro-rate-rows
+                       rows
+                       {:from from :to to
+                        :numeric-keys [:orders-amount :returns-amount
+                                       :invoice-transfer]})
+            orders   (reduce + 0.0 (keep :orders-amount prorated))
+            returns  (reduce + 0.0 (keep :returns-amount prorated))
+            ;; Settled / pending classification stays per-row (not
+            ;; weighted) — it's about whether a bucket has been paid
+            ;; out, not about money amounts.
             settled  (filter #(not (zero? (or (:invoice-transfer %) 0))) rows)
             pending  (filter #(zero? (or (:invoice-transfer %) 0)) rows)]
         {:revenue          (+ orders returns)

@@ -119,3 +119,44 @@
                 {:period apr-period :marketplace :ozon})]
         (is (zero? (:revenue r)))
         (is (nil? (:preliminary? r)))))))
+
+;; ---------------------------------------------------------------------------
+;; Weekly slicing — cash-flow buckets and ISO weeks rarely align, so
+;; pro-rate by day-overlap is the only way Σ(weekly) reconciles back to
+;; the full-period total. Without pro-rate, two adjacent ISO weeks both
+;; "see" the same Mon-Sun bucket entirely, doubling the revenue.
+;; ---------------------------------------------------------------------------
+
+(deftest weekly-slices-reconcile-to-monthly
+  (testing "Σ(four ISO weeks of April) ≈ monthly preliminary revenue"
+    (with-redefs [db/query (constantly apr-cf-rows)]
+      (let [m  (:revenue (p/ozon-preliminary-totals apr-period))
+            w1 (:revenue (p/ozon-preliminary-totals
+                           {:from "2026-04-01" :to "2026-04-07"}))
+            w2 (:revenue (p/ozon-preliminary-totals
+                           {:from "2026-04-08" :to "2026-04-14"}))
+            w3 (:revenue (p/ozon-preliminary-totals
+                           {:from "2026-04-15" :to "2026-04-21"}))
+            w4 (:revenue (p/ozon-preliminary-totals
+                           {:from "2026-04-22" :to "2026-04-28"}))
+            sum (+ w1 w2 w3 w4)]
+        (is (<= sum m)
+            (str "Σ(weekly) must not exceed monthly; got " sum " > " m))
+        ;; Tail (04-27..04-30) has no source bucket, so allow up to one
+        ;; week's worth of "missing" revenue.
+        (is (< (- m sum) (* 0.20 m))
+            (str "monthly=" m " sum(w1..w4)=" sum
+                 " — gap should be small (only the trailing days "
+                 "outside w1..w4 are unaccounted)"))))))
+
+(deftest weekly-slice-pro-rates-overlapping-bucket
+  (testing "[04-08..04-14] picks up pro-rated portions of the 04-06..04-12
+            and 04-13..04-19 buckets, not their full sums"
+    (with-redefs [db/query (constantly apr-cf-rows)]
+      (let [r (p/ozon-preliminary-totals
+                {:from "2026-04-08" :to "2026-04-14"})
+            ;; bucket-2 orders 114328 × 5/7  + bucket-3 orders 107479 × 2/7
+            expected-orders (+ (* 114328.0 (/ 5.0 7.0))
+                                (* 107479.0 (/ 2.0 7.0)))]
+        (is (< (Math/abs (- expected-orders (:gross-orders r))) 0.01)
+            (str "expected ≈" expected-orders " got " (:gross-orders r)))))))
