@@ -298,6 +298,39 @@
 
      (when show-no-data (no-data-banner))
 
+     ;; What-if calculator — only on UE report.
+     (when (= report-type :ue)
+       [:div#what-if-card.bg-white.rounded-lg.shadow.p-4.mb-4
+        [:h3.text-lg.font-semibold.text-gray-900.mb-3 "Калькулятор Что-если"]
+        [:p.text-xs.text-gray-500.mb-4
+         "Введите параметры юнита и увидите чистую прибыль и ROMI в реальном времени."]
+        [:div.grid.grid-cols-1.md:grid-cols-2.gap-4
+         (for [[k label min max step default unit]
+               [["price"          "Цена"            0     5000  10    1500  "₽"]
+                ["buyoutPct"      "% выкупа"        0.5   1.0   0.01  0.92  ""]
+                ["commissionPct"  "Комиссия"        0     0.5   0.005 0.17  ""]
+                ["logisticsRub"   "Логистика/шт"    0     500   5     80    "₽"]
+                ["cogs"           "Себестоимость"   0     3000  10    500   "₽"]
+                ["cpcRub"         "CPC"             0     500   1     30    "₽"]
+                ["cr"             "Конверсия CR"    0.001 0.5   0.001 0.05  ""]]]
+           [:div.flex.flex-col
+            [:div.flex.items-center.justify-between.mb-1
+             [:label.text-sm.text-gray-700 (str label (when (seq unit) (str ", " unit)))]
+             [:span.text-sm.font-mono.text-gray-900
+              {:data-whatif-label k} (str default)]]
+            [:input.w-full
+             {:type        "range"
+              :data-whatif-input k
+              :min         min :max max :step step
+              :value       default}]])]
+        [:div.mt-4.pt-3.border-t.grid.grid-cols-2.gap-4
+         [:div [:span.text-xs.text-gray-500 "Чистая прибыль ₽/шт: "]
+          [:span.text-xl.font-semibold.text-gray-900
+           {:data-whatif-output "net"} "—"]]
+         [:div [:span.text-xs.text-gray-500 "ROMI: "]
+          [:span.text-xl.font-semibold.text-gray-900
+           {:data-whatif-output "romi"} "—"]]]])
+
      [:div.bg-white.rounded-lg.shadow.p-4.mb-6
       [:div.flex.items-center.justify-between.flex-wrap.gap-4
        [:div.flex.items-center.gap-4.flex-wrap

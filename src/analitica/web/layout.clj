@@ -171,6 +171,7 @@
      [:script {:src "/js/table-columns.js"}]
      [:script {:src "/js/drill-panel.js"}]
      [:script {:src "/js/period-picker.js"}]
+     [:script {:src "/js/what-if.js" :defer true}]
      ;; sku-sheet.js is loaded at end of <body> after its <dialog> element
      ;; exists; loading here would make the IIFE bail silently.
 
