@@ -40,6 +40,18 @@
 (rf/reg-fx ::persist-tweaks persist-tweaks!)
 
 ;; ---------------------------------------------------------------------------
+;; Time helper
+;; ---------------------------------------------------------------------------
+
+(defn- current-time-hhmm
+  "Returns current local time as \"HH:MM\" string."
+  []
+  (let [d  (js/Date.)
+        hh (-> (.getHours d) str (.padStart 2 "0"))
+        mm (-> (.getMinutes d) str (.padStart 2 "0"))]
+    (str hh ":" mm)))
+
+;; ---------------------------------------------------------------------------
 ;; initialize-db
 ;; ---------------------------------------------------------------------------
 
@@ -116,6 +128,22 @@
   (fn [db [_ state]]
     (assoc db :marker/sync-state state)))
 
+(rf/reg-event-fx ::refresh-finished
+  ;; Transitions sync-state to :success (auto-clears after 4s) or nil on failure.
+  ;; No-op when sync-state is not :running (protects against spurious calls
+  ;; from per-row detail loads that run outside of sync-and-refresh).
+  (fn [{:keys [db]} [_ outcome]]
+    (let [running? (= (:kind (:marker/sync-state db)) :running)]
+      (cond
+        (not running?)       {:db db}
+        (= outcome :failure) {:db (assoc db :marker/sync-state nil)}
+        (= outcome :success) {:db (assoc db :marker/sync-state
+                                          {:kind :success
+                                           :time (current-time-hhmm)})
+                              :fx [[:dispatch-later
+                                    {:ms       4000
+                                     :dispatch [::set-sync-state nil]}]]}))))
+
 (rf/reg-event-db ::toggle-tweaks
   (fn [db _]
     (update db :marker/tweaks-open not)))
@@ -183,18 +211,20 @@
                        [::pulse-data-loaded ckey]
                        [::pulse-load-failed])}))))
 
-(rf/reg-event-db ::pulse-data-loaded
-  (fn [db [_ ckey data]]
-    (-> db
-        (assoc :marker/pulse-data    data
-               :marker/pulse-loading? false)
-        (assoc-in [:marker/cache ckey] data)
-        (update :marker/api-errors dissoc pulse-url))))
+(rf/reg-event-fx ::pulse-data-loaded
+  (fn [{:keys [db]} [_ ckey data]]
+    {:db (-> db
+             (assoc :marker/pulse-data    data
+                    :marker/pulse-loading? false)
+             (assoc-in [:marker/cache ckey] data)
+             (update :marker/api-errors dissoc pulse-url))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
 
 (rf/reg-event-fx ::pulse-load-failed
   (fn [{:keys [db]} [_ failure]]
-    {:db       (assoc db :marker/pulse-loading? false)
-     :dispatch [::api-error pulse-url failure]}))
+    {:db (assoc db :marker/pulse-loading? false)
+     :fx [[:dispatch [::api-error pulse-url failure]]
+          [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: P&L
@@ -218,18 +248,20 @@
                        [::pnl-data-loaded ckey]
                        [::pnl-load-failed])}))))
 
-(rf/reg-event-db ::pnl-data-loaded
-  (fn [db [_ ckey data]]
-    (-> db
-        (assoc :marker/pnl-data    data
-               :marker/pnl-loading? false)
-        (assoc-in [:marker/cache ckey] data)
-        (update :marker/api-errors dissoc pnl-url))))
+(rf/reg-event-fx ::pnl-data-loaded
+  (fn [{:keys [db]} [_ ckey data]]
+    {:db (-> db
+             (assoc :marker/pnl-data    data
+                    :marker/pnl-loading? false)
+             (assoc-in [:marker/cache ckey] data)
+             (update :marker/api-errors dissoc pnl-url))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
 
 (rf/reg-event-fx ::pnl-load-failed
   (fn [{:keys [db]} [_ failure]]
-    {:db       (assoc db :marker/pnl-loading? false)
-     :dispatch [::api-error pnl-url failure]}))
+    {:db (assoc db :marker/pnl-loading? false)
+     :fx [[:dispatch [::api-error pnl-url failure]]
+          [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: SKU list
@@ -253,18 +285,20 @@
                        [::sku-list-data-loaded ckey]
                        [::sku-list-load-failed])}))))
 
-(rf/reg-event-db ::sku-list-data-loaded
-  (fn [db [_ ckey data]]
-    (-> db
-        (assoc :marker/sku-list-data    (:skus data)
-               :marker/sku-list-loading? false)
-        (assoc-in [:marker/cache ckey] (:skus data))
-        (update :marker/api-errors dissoc sku-list-url))))
+(rf/reg-event-fx ::sku-list-data-loaded
+  (fn [{:keys [db]} [_ ckey data]]
+    {:db (-> db
+             (assoc :marker/sku-list-data    (:skus data)
+                    :marker/sku-list-loading? false)
+             (assoc-in [:marker/cache ckey] (:skus data))
+             (update :marker/api-errors dissoc sku-list-url))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
 
 (rf/reg-event-fx ::sku-list-load-failed
   (fn [{:keys [db]} [_ failure]]
-    {:db       (assoc db :marker/sku-list-loading? false)
-     :dispatch [::api-error sku-list-url failure]}))
+    {:db (assoc db :marker/sku-list-loading? false)
+     :fx [[:dispatch [::api-error sku-list-url failure]]
+          [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: SKU detail (keyed by sku-id inside :marker/sku-detail-data map)
@@ -374,18 +408,20 @@
                        [::report-loaded ckey report-type]
                        [::report-load-failed report-type])}))))
 
-(rf/reg-event-db ::report-loaded
-  (fn [db [_ ckey report-type data]]
-    (-> db
-        (assoc-in [:marker/reports-data     report-type] data)
-        (assoc-in [:marker/reports-loading? report-type] false)
-        (assoc-in [:marker/cache ckey] data)
-        (update :marker/api-errors dissoc (reports-url report-type)))))
+(rf/reg-event-fx ::report-loaded
+  (fn [{:keys [db]} [_ ckey report-type data]]
+    {:db (-> db
+             (assoc-in [:marker/reports-data     report-type] data)
+             (assoc-in [:marker/reports-loading? report-type] false)
+             (assoc-in [:marker/cache ckey] data)
+             (update :marker/api-errors dissoc (reports-url report-type)))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
 
 (rf/reg-event-fx ::report-load-failed
   (fn [{:keys [db]} [_ report-type failure]]
-    {:db       (assoc-in db [:marker/reports-loading? report-type] false)
-     :dispatch [::api-error (reports-url report-type) failure]}))
+    {:db (assoc-in db [:marker/reports-loading? report-type] false)
+     :fx [[:dispatch [::api-error (reports-url report-type) failure]]
+          [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: Sync / refresh — clear cache + reload current page

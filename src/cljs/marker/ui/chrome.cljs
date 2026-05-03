@@ -273,7 +273,7 @@
       ($ :div {:class "sync-banner"}
          ($ :div {:class "sync-spin"})
          ($ :span
-            ($ :strong (str "Синхронизация " (:section state)))
+            ($ :strong (str "Обновление " (:section state)))
             " — " (:elapsed state))
          ($ :div {:class "sync-progress"}
             ($ :div {:style {:width (str (:progress state) "%")}}))

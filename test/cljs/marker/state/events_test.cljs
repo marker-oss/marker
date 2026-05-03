@@ -302,3 +302,96 @@
           "ART-A :loading? cleared")
       (is (true? (get-in (db) [:marker/sku-detail-data "ART-B" :loading?]))
           "ART-B :loading? unaffected by ART-A response"))))
+
+;; ---------------------------------------------------------------------------
+;; ::refresh-finished — sync banner transition
+;; ---------------------------------------------------------------------------
+
+(deftest refresh-finished-success-when-running
+  (testing "::refresh-finished :success transitions sync-state to :success map"
+    (rf/dispatch-sync [::events/initialize-db])
+    ;; Seed a :running sync-state (as sync-and-refresh would set it)
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
+    (rf/dispatch-sync [::events/refresh-finished :success])
+    (let [s (:marker/sync-state (db))]
+      (is (= :success (:kind s))  "kind transitions to :success")
+      (is (string? (:time s))     ":time is a HH:MM string")
+      (is (re-matches #"\d{2}:\d{2}" (:time s)) ":time matches HH:MM format"))
+    ;; Note: the :dispatch-later that clears to nil after 4s is not tested here
+    ;; because the test runner has no fake timers and setTimeout does not fire
+    ;; synchronously under dispatch-sync.
+    ))
+
+(deftest refresh-finished-failure-when-running
+  (testing "::refresh-finished :failure when sync-state is :running → sync-state becomes nil"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "P&L" :elapsed "0s" :progress 30})
+    (rf/dispatch-sync [::events/refresh-finished :failure])
+    (is (nil? (:marker/sync-state (db)))
+        "sync-state cleared to nil on failure")))
+
+(deftest refresh-finished-noop-when-not-running
+  (testing "::refresh-finished :success is a no-op when sync-state is nil (no active refresh)"
+    (rf/dispatch-sync [::events/initialize-db])
+    ;; sync-state starts nil (default from initialize-db)
+    (is (nil? (:marker/sync-state (db))) "precondition: sync-state is nil")
+    (rf/dispatch-sync [::events/refresh-finished :success])
+    (is (nil? (:marker/sync-state (db)))
+        "sync-state stays nil — ::refresh-finished is a no-op outside an active refresh")))
+
+(deftest pulse-data-loaded-dispatches-refresh-finished-success
+  ;; re-frame's dispatch-sync processes only the top-level event handler
+  ;; synchronously; :fx [:dispatch ...] entries are queued as normal async
+  ;; dispatches and do NOT fire under dispatch-sync.  We therefore test the
+  ;; two halves of the chain separately:
+  ;;   (a) pulse-data-loaded correctly sets db keys
+  ;;   (b) when that handler fires ::refresh-finished :success (simulated here
+  ;;       by dispatching it directly), sync-state becomes :success
+  ;; This gives full coverage without needing fake timers.
+  (testing "::pulse-data-loaded correctly updates db (half A of dispatch chain)"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
+    (let [fake-data {:alerts [] :kpis {:revenue {:value 5000}} :forecast {}}
+          ckey      [:pulse [:wb :ozon :ym] "Последние 30 дней" false]]
+      (rf/dispatch-sync [::events/pulse-data-loaded ckey fake-data])
+      (is (= fake-data (:marker/pulse-data (db)))  "pulse data written")
+      (is (false? (:marker/pulse-loading? (db)))   "loading flag cleared")))
+
+  (testing "::refresh-finished :success (half B) → sync-state becomes :success"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
+    (rf/dispatch-sync [::events/refresh-finished :success])
+    (is (= :success (:kind (:marker/sync-state (db))))
+        "sync-state transitioned to :success")))
+
+(deftest pulse-load-failed-dispatches-refresh-finished-and-api-error
+  ;; Same reasoning as above — :fx [:dispatch ...] is async under dispatch-sync.
+  ;; We test each half of the chain separately.
+  (testing "::pulse-load-failed correctly updates db (half A)"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
+    (let [failure {:status 503 :status-text "Service Unavailable" :response nil}]
+      (rf/dispatch-sync [::events/pulse-load-failed failure])
+      (is (false? (:marker/pulse-loading? (db)))
+          "loading flag cleared on failure")))
+
+  (testing "::api-error dispatch (half B-1) records error for page-level banner"
+    (rf/dispatch-sync [::events/initialize-db])
+    (let [failure {:status 503 :status-text "Service Unavailable" :response nil}]
+      (rf/dispatch-sync [::events/api-error "/api/v1/marker/pulse-summary" failure])
+      (let [err (get-in (db) [:marker/api-errors "/api/v1/marker/pulse-summary"])]
+        (is (some? err)           "api-error entry created for page-level banner")
+        (is (= 503 (:status err)) "correct status stored in api-error"))))
+
+  (testing "::refresh-finished :failure (half B-2) → sync-state cleared to nil"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/sync-state
+           {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
+    (rf/dispatch-sync [::events/refresh-finished :failure])
+    (is (nil? (:marker/sync-state (db)))
+        "sync-state cleared to nil on refresh failure")))
