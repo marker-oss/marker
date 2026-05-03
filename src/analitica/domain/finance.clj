@@ -129,8 +129,14 @@
         return-lines (filter return-row? lines)
         total-cost   (reduce + 0.0
                        (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
-                            sales-lines))]
+                            sales-lines))
+        ;; First non-nil :marketplace wins; cross-MP article collisions
+        ;; (rare but possible per Sales.7.3) collapse to whichever MP
+        ;; appears first in the row order. Caller should disambiguate
+        ;; by (marketplace, article) when this matters.
+        marketplace  (some :marketplace lines)]
     {:article       article
+     :marketplace   marketplace
      :brand         (or (:brand (first lines)) (:brand-name (first lines)))
      :subject       (or (:subject (first lines)) (:subject-name (first lines)))
      :sales-qty     (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
