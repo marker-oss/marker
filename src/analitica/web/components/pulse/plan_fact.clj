@@ -34,18 +34,22 @@
    :drr_pct            "ДРР"
    :profit_margin_pct  "% чистой прибыли"})
 
+(defn- finite? [x]
+  (and (number? x) (Double/isFinite (double x))))
+
 (defn- pace-class [m]
   (cond
-    (nil? m)         "text-gray-500"
-    (<= m 1.02)      "text-green-600"
-    (<= m 1.10)      "text-amber-600"
-    :else            "text-red-600"))
+    (nil? m)                       "text-gray-500"
+    (and (finite? m) (<= m 1.02))  "text-green-600"
+    (and (finite? m) (<= m 1.10))  "text-amber-600"
+    :else                          "text-red-600"))
 
 (defn- pace-label [m]
   (cond
-    (nil? m)        "—"
-    (<= m 1.02)     "✓ в плане"
-    :else           (format "нужен темп ×%.2f" (double m))))
+    (nil? m)                       "—"
+    (and (finite? m) (<= m 1.02))  "✓ в плане"
+    (finite? m)                    (format "нужен темп ×%.2f" (double m))
+    :else                          "не успеть"))
 
 (defn- target-card [{:keys [metric target actual-mtd last-7d
                             days-elapsed days-in-month]}]

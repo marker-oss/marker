@@ -29,13 +29,20 @@
 
 (defn pace-multiplier
   "Multiplier for current velocity needed to land on target.
-   Returns 1.0 when degenerate (no momentum / no time left)."
+
+   1.0  → already on/over target (no acceleration needed).
+   >1.0 → must speed up by this factor to land on target.
+   <1.0 → ahead of plan; can comfortably slow down by this factor.
+   POSITIVE_INFINITY → target unmet AND we have no path: either no time
+                       remaining, or zero forecast momentum from
+                       actual-MTD. Callers should render as 'не успеть'."
   [{:keys [actual-mtd forecast target days-remaining]}]
   (let [delta-needed   (- target actual-mtd)
         delta-forecast (- forecast actual-mtd)]
     (cond
-      (zero? days-remaining)        1.0
-      (<= delta-forecast 0)         1.0
+      (<= delta-needed 0)           1.0
+      (zero? days-remaining)        Double/POSITIVE_INFINITY
+      (<= delta-forecast 0)         Double/POSITIVE_INFINITY
       :else                         (double (/ delta-needed delta-forecast)))))
 
 ;; ---------------------------------------------------------------------------

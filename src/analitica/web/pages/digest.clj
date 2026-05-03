@@ -529,6 +529,44 @@
        (sort-by :group)
        (mapv #(or (:revenue %) 0.0))))
 
+(defn- recent-sale?
+  "True when a sale row's :date (or :event-date fallback) is on or after
+   `threshold` (an ISO YYYY-MM-DD string). Returns false — never throws —
+   for missing or sub-10-char date strings."
+  [row threshold]
+  (let [d (or (:date row) (:event-date row))]
+    (boolean
+      (and (string? d)
+           (>= (count d) 10)
+           (>= (compare (subs d 0 10) threshold) 0)))))
+
+(defn- collect-ads-traffic
+  "Aggregate `ad_stats` rows for the period [from, to] (inclusive).
+   Returns {:impressions :clicks :spend :ctr-pct :cpc-rub} where CTR
+   and CPC are derived from period totals — *not* AVG of per-row
+   percentages, which over- or under-weights small campaigns. Returns
+   zeros and nil derived ratios when the period has no rows or the
+   query throws."
+  [from to]
+  (let [row (try
+              (first
+                (db/query
+                  ["SELECT COALESCE(SUM(views),  0) AS impressions,
+                           COALESCE(SUM(clicks), 0) AS clicks,
+                           COALESCE(SUM(spend),  0) AS spend
+                      FROM ad_stats
+                     WHERE date >= ? AND date <= ?"
+                   from to]))
+              (catch Exception _ {}))
+        imp (long   (or (:impressions row) 0))
+        clk (long   (or (:clicks      row) 0))
+        spd (double (or (:spend       row) 0.0))]
+    {:impressions imp
+     :clicks      clk
+     :spend       spd
+     :ctr-pct     (when (pos? imp) (* 100.0 (/ (double clk) (double imp))))
+     :cpc-rub     (when (pos? clk) (/ spd (double clk)))}))
+
 (defn- compute-movers-fallers
   "Compare current vs prev sales-by-article, return mover/faller rows."
   [curr-by-art prev-by-art]
@@ -543,6 +581,7 @@
                                  (* 100.0 (/ (- curr-rev prev-rev) prev-rev)))]
                   {:article      art
                    :name         (or (:subject curr) art)
+                   :nm-id        (:nm-id curr)
                    :revenue      curr-rev
                    :prev-revenue prev-rev
                    :delta-pct    (or delta 0.0)})))
@@ -617,11 +656,7 @@
         three-days-ago (-> (java.time.LocalDate/parse curr-to)
                            (.minusDays 2)
                            str)
-        last-3-sales (->> curr-sales
-                          (filter (fn [s]
-                                    (let [d (or (:date s) (:event-date s) "")]
-                                      (and (seq d)
-                                           (>= (compare (subs d 0 10) three-days-ago) 0))))))
+        last-3-sales (filter #(recent-sale? % three-days-ago) curr-sales)
         ;; Stocks for OUT_OF_STOCK alerts
         stocks-raw   (try (stock/fetch-stocks :marketplace (or marketplace :wb))
                           (catch Exception _ []))
@@ -761,28 +796,7 @@
                 bs    (reduce + 0 (keep :bought rows))
                 tot   (reduce + 0 (keep :total-ops rows))]
             (when (pos? tot) (* 100.0 (/ bs (double tot)))))
-        ads-stats-curr
-          (try
-            (first
-              (db/query
-                ;; Period-wide CTR / CPC must be derived from the SUMs,
-                ;; not averaged across rows. AVG(ctr) over sparse rows
-                ;; (most rows have 1 view, 0 clicks → ctr=0; rare 1/1
-                ;; rows give ctr=100) skews to 100% and is meaningless.
-                ["SELECT
-                    COALESCE(SUM(views),  0) AS impressions,
-                    COALESCE(SUM(clicks), 0) AS clicks,
-                    COALESCE(SUM(spend),  0) AS spend,
-                    CASE WHEN COALESCE(SUM(views), 0) > 0
-                         THEN 100.0 * COALESCE(SUM(clicks), 0) / SUM(views)
-                         ELSE 0 END AS ctr,
-                    CASE WHEN COALESCE(SUM(clicks), 0) > 0
-                         THEN COALESCE(SUM(spend), 0) / SUM(clicks)
-                         ELSE 0 END AS cpc
-                  FROM ad_stats
-                  WHERE date >= ? AND date <= ?"
-                 curr-from curr-to]))
-            (catch Exception _ {}))
+        ads-traffic-curr (collect-ads-traffic curr-from curr-to)
         pulse-data
           {:hypotheses       nil
            :plan-fact        {:period-month (:period-month m-info)
@@ -828,10 +842,10 @@
                                                 (/ (Math/round (* 10.0 (/ (double (reduce + vs)) (count vs))))
                                                    10.0)))
                               :return-pct    (:return-rate sales-totals-curr)}
-           :ads-traffic      {:impressions (:impressions ads-stats-curr)
-                              :clicks      (:clicks ads-stats-curr)
-                              :ctr-pct     (:ctr ads-stats-curr)
-                              :cpc-rub     (:cpc ads-stats-curr)
+           :ads-traffic      {:impressions (:impressions ads-traffic-curr)
+                              :clicks      (:clicks      ads-traffic-curr)
+                              :ctr-pct     (:ctr-pct     ads-traffic-curr)
+                              :cpc-rub     (:cpc-rub     ads-traffic-curr)
                               :romi        (when (and (number? rev-curr) (number? ad-curr) (pos? ad-curr))
                                              (/ rev-curr ad-curr))
                               :drr-pct     drr-curr}

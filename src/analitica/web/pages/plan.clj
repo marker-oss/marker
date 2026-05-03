@@ -31,11 +31,18 @@
 (defn- current-month-iso []
   (.format (YearMonth/now) (DateTimeFormatter/ofPattern "yyyy-MM")))
 
-(defn- next-months [n]
-  (let [base (YearMonth/now)]
-    (for [i (range n)]
-      (.format (.plusMonths base i)
-               (DateTimeFormatter/ofPattern "yyyy-MM")))))
+(defn- month-options
+  "Ascending vector of yyyy-MM strings covering a 12-month window
+   centered on the current month (6 past + current + 6 future).
+   `selected` is unioned in if it falls outside that window so the
+   dropdown can always highlight the rendered period."
+  [selected]
+  (let [base   (YearMonth/now)
+        window (for [i (range -6 7)]
+                 (str (.plusMonths base i)))]
+    (->> (cond-> (set window) selected (conj selected))
+         sort
+         vec)))
 
 (defn- format-target
   "Render a saved plan value into a string usable as an
@@ -67,7 +74,7 @@
        [:select.border.rounded.px-2.py-1
         {:name "period_month"
          :onchange "window.location='/plan?period_month='+this.value"}
-        (for [m (next-months 6)]
+        (for [m (month-options period-month)]
           [:option {:value m :selected (= m period-month)} m])]]
       [:table.min-w-full.border-collapse
        [:thead

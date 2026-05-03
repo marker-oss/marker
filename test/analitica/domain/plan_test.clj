@@ -60,17 +60,38 @@
              :target 400000.0 :days-remaining 8})]
     (is (== 0.5 m))))
 
-(deftest pace-multiplier-zero-velocity-degenerate
-  (testing "Forecast equals MTD (no momentum) → 1.0 to avoid div/0"
+(deftest pace-multiplier-zero-velocity-target-unmet-is-infinite
+  (testing "No momentum + unmet target → POSITIVE_INFINITY (cannot reach target)"
     (let [m (plan/pace-multiplier
               {:actual-mtd 200000.0 :forecast 200000.0
                :target 600000.0 :days-remaining 8})]
+      (is (= Double/POSITIVE_INFINITY m)))))
+
+(deftest pace-multiplier-zero-mtd-with-unmet-target-is-infinite
+  (testing "Bug #3 regression: actual=0 / forecast=0 / target>0 must NOT report 1.0"
+    (let [m (plan/pace-multiplier
+              {:actual-mtd 0.0 :forecast 0.0
+               :target 600000.0 :days-remaining 20})]
+      (is (= Double/POSITIVE_INFINITY m)))))
+
+(deftest pace-multiplier-target-met-returns-1
+  (testing "Already met or exceeded target → 1.0 regardless of momentum"
+    (let [m (plan/pace-multiplier
+              {:actual-mtd 700000.0 :forecast 700000.0
+               :target 600000.0 :days-remaining 5})]
       (is (== 1.0 m)))))
 
-(deftest pace-multiplier-last-day
-  (testing "days-remaining 0 → 1.0 (cannot accelerate today)"
+(deftest pace-multiplier-last-day-target-unmet-is-infinite
+  (testing "days-remaining=0 with unmet target → POSITIVE_INFINITY (no time to catch up)"
     (let [m (plan/pace-multiplier
               {:actual-mtd 500000.0 :forecast 500000.0
+               :target 600000.0 :days-remaining 0})]
+      (is (= Double/POSITIVE_INFINITY m)))))
+
+(deftest pace-multiplier-last-day-target-met-returns-1
+  (testing "days-remaining=0 with met target → 1.0"
+    (let [m (plan/pace-multiplier
+              {:actual-mtd 600000.0 :forecast 600000.0
                :target 600000.0 :days-remaining 0})]
       (is (== 1.0 m)))))
 

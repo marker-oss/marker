@@ -51,8 +51,13 @@
 ;; Aggregation helpers
 ;; ---------------------------------------------------------------------------
 
-(defn- parse-date-str [s]
-  (when s (subs s 0 10)))
+(defn- parse-date-str
+  "Trim a date/datetime string to YYYY-MM-DD. Returns nil when input is
+   nil, blank, or shorter than 10 chars — `subs` would otherwise throw
+   StringIndexOutOfBoundsException on data with malformed dates."
+  [s]
+  (when (and (string? s) (>= (count s) 10))
+    (subs s 0 10)))
 
 (defn- group-and-sum [data group-fn]
   (->> data
@@ -89,8 +94,19 @@
 (defn by-day [sales-data]
   (group-and-sum sales-data #(parse-date-str (:date %))))
 
-(defn by-article [sales-data]
-  (group-and-sum sales-data :article))
+(defn by-article
+  "Group sales by `:article`. Each output row carries summary metrics
+   plus :nm-id and :subject pulled from the first matching source row,
+   so callers (homepage Top-movers, sku-sheet links) can resolve the
+   article to a marketplace card."
+  [sales-data]
+  (let [meta-by-art (->> (group-by :article sales-data)
+                         (into {} (map (fn [[art items]]
+                                         (let [item (first items)]
+                                           [art {:nm-id   (:nm-id item)
+                                                 :subject (:subject item)}])))))]
+    (mapv (fn [row] (merge row (get meta-by-art (:group row))))
+          (group-and-sum sales-data :article))))
 
 (defn by-category [sales-data]
   (group-and-sum sales-data :subject))
