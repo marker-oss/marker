@@ -181,6 +181,28 @@
       (is (not (some #(= :OUT_OF_STOCK (:rule %)) alerts))
           "Should NOT fire OUT_OF_STOCK for slow movers (avg-daily-sales < 1)"))))
 
+;; Bug #8 regression — production data path uses :days-left / :daily-rate
+;; (the keys emitted by stock/with-turnover) not the :days-of-cover /
+;; :avg-daily-sales pair the existing tests use. Without an explicit
+;; assertion on the production shape, dead destructuring in the rule
+;; could silently regress.
+
+(deftest test-out-of-stock-fires-on-with-turnover-shape
+  (testing "Rule must accept :days-left / :daily-rate (stock/with-turnover output)"
+    (let [stocks [{:article "art-1" :name "Product A" :size "M"
+                   :days-left 3.0 :daily-rate 4.0}]
+          data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     stocks
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           []
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (some #(= :OUT_OF_STOCK (:rule %)) alerts)
+          "Production stock-with-turnover row must trigger OUT_OF_STOCK"))))
+
 ;; ---------------------------------------------------------------------------
 ;; Rule: ZERO_SALES_TOP_SKU
 ;; ---------------------------------------------------------------------------
@@ -253,18 +275,46 @@
       (is (not (some #(= :MARGIN_DROP (:rule %)) alerts))
           "Should NOT fire MARGIN_DROP when drop is only 10 ppts"))))
 
-(deftest test-margin-drop-no-fire-on-zero-revenue
-  (testing "MARGIN_DROP does NOT throw when revenue is 0"
-    (let [data {:current-sales-by-article []
-                :prev-sales-by-article    []
-                :stocks-with-turnover     []
-                :current-pnl              (pnl-map 0 0)
-                :prev-pnl                 (pnl-map 0 0)
-                :current-buyout           []
-                :sales-last-3-days        []
-                :top-10-by-revenue        []}]
-      (is (coll? (alerts/detect-alerts data))
-          "Should return a collection even when revenue is 0"))))
+(defn- margin-drop-data [curr-pnl prev-pnl]
+  {:current-sales-by-article []
+   :prev-sales-by-article    []
+   :stocks-with-turnover     []
+   :current-pnl              curr-pnl
+   :prev-pnl                 prev-pnl
+   :current-buyout           []
+   :sales-last-3-days        []
+   :top-10-by-revenue        []})
+
+(deftest test-margin-drop-no-throw-on-zero-revenue
+  (testing "MARGIN_DROP does NOT throw when both periods have zero revenue"
+    (is (coll? (alerts/detect-alerts
+                 (margin-drop-data (pnl-map 0 0) (pnl-map 0 0)))))))
+
+;; Bug #6: revenue collapse to 0 used to silence MARGIN_DROP entirely
+;; (safe-margin returned nil → rule guard skipped). Pin the new behaviour:
+;; treat curr-margin as 0 when revenue collapsed from positive to zero.
+
+(deftest test-margin-drop-fires-on-revenue-collapse
+  (testing "Revenue 100k @ 30% margin → 0 revenue must fire MARGIN_DROP"
+    (let [alerts (alerts/detect-alerts
+                   (margin-drop-data (pnl-map 0 -2000)
+                                     (pnl-map 100000 30000)))]
+      (is (some #(= :MARGIN_DROP (:rule %)) alerts)
+          "Catastrophic revenue loss is the WORST possible margin drop and must alert"))))
+
+(deftest test-margin-drop-no-fire-when-prev-margin-was-tiny
+  (testing "Revenue collapse from low-margin period → drop = prev-margin (e.g. 5%) below threshold"
+    (let [alerts (alerts/detect-alerts
+                   (margin-drop-data (pnl-map 0 -1000)
+                                     (pnl-map 100000 5000)))]
+      (is (not (some #(= :MARGIN_DROP (:rule %)) alerts))
+          "5% prev margin → 5 ppt 'drop' is below 15% threshold"))))
+
+(deftest test-margin-drop-no-fire-when-prev-also-zero
+  (testing "If revenue was 0 in prev period too there is no signal — skip"
+    (let [alerts (alerts/detect-alerts
+                   (margin-drop-data (pnl-map 0 0) (pnl-map 0 0)))]
+      (is (not (some #(= :MARGIN_DROP (:rule %)) alerts))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregator: detect-alerts cap + sort

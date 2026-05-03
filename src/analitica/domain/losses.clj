@@ -114,6 +114,30 @@
          (sort-by :article))))
 
 ;; ---------------------------------------------------------------------------
+;; Loss aggregation helpers (pure)
+;; ---------------------------------------------------------------------------
+
+(defn- sum-negative-profit
+  "Sum :profit across `rows`, counting only negative values. Mirrors the
+   semantics already used for :total-loss — positive profits in any
+   loss-class must NOT inflate (or worse, cancel out) the reported loss."
+  [rows]
+  (math/round2
+    (reduce + 0.0 (keep #(let [p (or (:profit %) 0)] (when (neg? p) p)) rows))))
+
+(defn- loss-totals
+  "Pure totals for a (dead, eat, fcst) loss-row triple. Exposed for
+   testing — the orchestrator just calls this with the classified rows."
+  [dead eat fcst]
+  {:total-loss          (sum-negative-profit (concat dead eat fcst))
+   :dead-stock-loss     (sum-negative-profit dead)
+   :storage-eats-loss   (sum-negative-profit eat)
+   :forecast-count      (count fcst)
+   :dead-stock-count    (count dead)
+   :storage-eats-count  (count eat)
+   :total-sku-affected  (+ (count dead) (count eat) (count fcst))})
+
+;; ---------------------------------------------------------------------------
 ;; Losses.4 — Orchestrator
 ;; ---------------------------------------------------------------------------
 
@@ -163,17 +187,5 @@
 
         all-rows (vec (concat dead eat fcst))]
 
-    {:rows all-rows
-     :totals
-     {:total-loss          (math/round2
-                            (reduce + 0.0
-                                    (keep #(when (neg? (or (:profit %) 0)) (:profit %))
-                                          all-rows)))
-      :dead-stock-loss     (math/round2
-                            (reduce + 0.0 (keep :profit dead)))
-      :storage-eats-loss   (math/round2
-                            (reduce + 0.0 (keep :profit eat)))
-      :forecast-count      (count fcst)
-      :dead-stock-count    (count dead)
-      :storage-eats-count  (count eat)
-      :total-sku-affected  (count all-rows)}}))
+    {:rows   all-rows
+     :totals (loss-totals dead eat fcst)}))

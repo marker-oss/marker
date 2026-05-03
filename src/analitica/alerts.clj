@@ -36,13 +36,16 @@
 
 (defn- rule-out-of-stock
   "Fires for every SKU where days-of-cover < threshold AND avg-daily-sales >= 1.
-   stocks-with-turnover: rows from (stock/with-turnover ...)."
+
+   Accepts both shapes: production rows from `stock/with-turnover` carry
+   `:days-left`/`:daily-rate`; inline test fixtures use the canonical
+   `:days-of-cover`/`:avg-daily-sales`."
   [stocks-with-turnover]
   (let [min-days  (:out-of-stock-days thresholds)
         min-daily (:out-of-stock-min-daily thresholds)]
     (->> stocks-with-turnover
          (filter (fn [s]
-                   (let [doc  (or (:days-of-cover (:days-left s)) (:days-of-cover s) (:days-left s))
+                   (let [doc  (or (:days-of-cover s) (:days-left s))
                          ads  (or (:avg-daily-sales s) (:daily-rate s))]
                      (and (some? doc)
                           (< doc min-days)
@@ -99,20 +102,32 @@
 
 (defn- rule-margin-drop
   "Fires when absolute margin drop from prev-pnl to current-pnl exceeds threshold.
-   Both pnl maps must have :revenue and :net-profit."
+
+   Revenue-collapse case (curr-revenue = 0, prev-revenue > 0): safe-margin
+   would return nil and the rule used to silently skip — masking the worst
+   possible scenario. We treat the effective current margin as 0 in that
+   case so a healthy prev period correctly triggers the alert."
   [current-pnl prev-pnl]
-  (let [curr-margin (safe-margin current-pnl)
+  (let [curr-rev    (or (:revenue current-pnl) 0)
+        prev-rev    (or (:revenue prev-pnl)    0)
+        curr-margin (safe-margin current-pnl)
         prev-margin (safe-margin prev-pnl)
+        effective-curr (cond
+                         curr-margin                            curr-margin
+                         (and (zero? curr-rev) (pos? prev-rev)) 0.0
+                         :else                                  nil)
         threshold   (:margin-drop-abs-pct thresholds)]
-    (when (and curr-margin prev-margin)
-      (let [drop-pct (- prev-margin curr-margin)]
+    (when (and effective-curr prev-margin)
+      (let [drop-pct (- prev-margin effective-curr)]
         (when (> drop-pct threshold)
           [{:rule         :MARGIN_DROP
             :severity     :yellow
-            :delta        (- drop-pct)  ; negative = bigger drop = more urgent
+            :delta        (- drop-pct)
             :title        (format "Маржа упала на %.0f%%" drop-pct)
-            :body         (format "Маржа упала на %.1f%% за период (с %.1f%% до %.1f%%)"
-                                  drop-pct prev-margin curr-margin)
+            :body         (if (and (zero? curr-rev) (pos? prev-rev))
+                            (format "Выручка обвалилась до 0₽ (была маржа %.1f%%)" prev-margin)
+                            (format "Маржа упала на %.1f%% за период (с %.1f%% до %.1f%%)"
+                                    drop-pct prev-margin effective-curr))
             :action-route "/reports/pnl"
             :action-label "Смотреть P&L"}])))))
 

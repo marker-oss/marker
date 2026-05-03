@@ -3,8 +3,14 @@
             [analitica.report.table :as table]
             [analitica.util.math :as math]))
 
-(defn- parse-date-str [s]
-  (when s (subs s 0 10)))
+(defn- parse-date-str
+  "Trim a date/datetime string to YYYY-MM-DD. Returns nil when input is
+   nil or shorter than 10 chars — `subs` would otherwise throw and crash
+   the whole returns report on a single malformed row. Mirror of the
+   guard added to sales/parse-date-str."
+  [s]
+  (when (and (string? s) (>= (count s) 10))
+    (subs s 0 10)))
 
 (defn by-article
   "Return rate analysis by article."

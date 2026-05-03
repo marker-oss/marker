@@ -26,8 +26,13 @@
 
 (defn by-article
   "Aggregate stock by article (sum across warehouses). §Stock.1
-   NOTE: output keys :in-way-to / :in-way-from are renamed from
-   source keys :in-way-to-client / :in-way-from-client (§Stock.8.1)."
+
+   Accepts rows in either shape:
+     - DB shape (kebab from `db/query`):  :in-way-to / :in-way-from
+     - API shape (pre-insert WB transform): :in-way-to-client / :in-way-from-client
+   Output keys are always :in-way-to / :in-way-from. Without the dual-key
+   fallback the DB-fed path would silently sum nil → 0 and the stock
+   reports would render `В пути = 0` regardless of actual transit stock."
   [stocks]
   (->> stocks
        (group-by :article)
@@ -37,8 +42,8 @@
                :brand         (:brand (first items))
                :quantity      (reduce + 0 (map #(or (:quantity %) 0) items))
                :quantity-full (reduce + 0 (map #(or (:quantity-full %) 0) items))
-               :in-way-to     (reduce + 0 (map #(or (:in-way-to-client %) 0) items))
-               :in-way-from   (reduce + 0 (map #(or (:in-way-from-client %) 0) items))
+               :in-way-to     (reduce + 0 (map #(or (:in-way-to %) (:in-way-to-client %) 0) items))
+               :in-way-from   (reduce + 0 (map #(or (:in-way-from %) (:in-way-from-client %) 0) items))
                :warehouses    (count (distinct (map :warehouse items)))}))
        (sort-by :quantity-full >)))
 
@@ -54,13 +59,17 @@
                :quantity-full (reduce + 0 (map #(or (:quantity-full %) 0) items))}))
        (sort-by :quantity-full >)))
 
-(defn totals [stocks]
-  {:total-quantity   (reduce + 0 (map #(or (:quantity %) 0) stocks))
-   :total-full       (reduce + 0 (map #(or (:quantity-full %) 0) stocks))
-   :total-to-client  (reduce + 0 (map #(or (:in-way-to-client %) 0) stocks))
-   :total-from-client (reduce + 0 (map #(or (:in-way-from-client %) 0) stocks))
-   :unique-articles  (count (distinct (map :article stocks)))
-   :warehouses       (count (distinct (map :warehouse stocks)))})
+(defn totals
+  "Cross-warehouse totals. Same dual-key fallback as `by-article` so
+   DB-shape rows (db/query) and API-shape rows (WB transform pre-insert)
+   produce identical output."
+  [stocks]
+  {:total-quantity    (reduce + 0 (map #(or (:quantity %) 0) stocks))
+   :total-full        (reduce + 0 (map #(or (:quantity-full %) 0) stocks))
+   :total-to-client   (reduce + 0 (map #(or (:in-way-to %) (:in-way-to-client %) 0) stocks))
+   :total-from-client (reduce + 0 (map #(or (:in-way-from %) (:in-way-from-client %) 0) stocks))
+   :unique-articles   (count (distinct (map :article stocks)))
+   :warehouses        (count (distinct (map :warehouse stocks)))})
 
 ;; ---------------------------------------------------------------------------
 ;; Turnover (requires sales data)
