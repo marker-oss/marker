@@ -8,7 +8,7 @@
 
    load-schedule! and save-schedule! remain in sync.cljs because they are
    closures over that page's state setters and the private fetch/post helpers."
-  (:require [uix.core :refer [$ defui use-state use-effect]]
+  (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
             [marker.ui.icons :refer [icon]]))
 
 ;; ---------------------------------------------------------------------------
@@ -76,14 +76,28 @@
   [{:keys [schedule on-save loading? saving? save-error save-status]}]
   (let [[form set-form!] (use-state (merge defaults (dissoc schedule :next-run-at)))
         next-run        (:next-run-at schedule)
-        on-field        (fn [k v] (set-form! #(assoc % k v)))]
+        ;; dirty-ref tracks whether the user has touched the form in this
+        ;; component lifetime.  Once true it is never reset — the form is the
+        ;; source of truth and the server's state (arriving via the :schedule
+        ;; prop) must not overwrite the user's work.
+        ;;
+        ;; Design rationale: the race we guard against is narrow — the user
+        ;; starts editing before GET /api/sync/schedule returns.  After a
+        ;; successful save the user typically navigates away or the page
+        ;; refreshes, so the "never reset" policy is acceptable.  If future
+        ;; requirements demand post-save re-sync, pass a :saved? prop and add
+        ;; a second use-effect that resets dirty-ref when saved? becomes true.
+        dirty-ref       (use-ref false)
+        on-field        (fn [k v]
+                          (reset! dirty-ref true)
+                          (set-form! #(assoc % k v)))]
 
-    ;; Fix 1: re-sync form when schedule arrives async (use-state only reads
-    ;; its initial value once at mount; if schedule is nil at mount and arrives
-    ;; later, the form would permanently show stale defaults without this effect).
+    ;; Sync form from prop only on the nil→loaded transition and only when the
+    ;; user has not yet touched anything.  Prevents the GET response from
+    ;; clobbering edits already entered while the request was in-flight.
     (use-effect
      (fn []
-       (when schedule
+       (when (and schedule (not @dirty-ref))
          (set-form! (merge defaults (dissoc schedule :next-run-at)))))
      [schedule])
 
