@@ -228,6 +228,32 @@
       (is (= [5 6 7 8 9] (paginate items nil 5))  "no limit, offset=5")
       (is (= []          (paginate items 3 10))   "offset beyond end → empty"))))
 
+(deftest sku-list-orphan-filter
+  ;; Drop SKUs with revenue=0 AND orders=0 (typical Ozon "orphan service"
+  ;; articles — only logistics/storage cost rows survived the period
+  ;; filter, no actual sale activity). Keep everything else.
+  (testing "filter-orphan-skus removes revenue=0 AND orders=0 SKUs"
+    (let [skus [{:id "A" :revenue 100.0 :orders 5}
+                {:id "B" :revenue 0.0   :orders 3}    ; pre-orders-only — keep
+                {:id "C" :revenue 50.0  :orders 0}    ; refund-only — keep
+                {:id "D" :revenue 0.0   :orders 0}    ; orphan — drop
+                {:id "E" :revenue 0     :orders nil}  ; orphan — drop
+                {:id "F" :revenue nil   :orders nil}] ; orphan — drop
+          kept (marker-api/filter-orphan-skus skus)
+          ids  (map :id kept)]
+      (is (= #{"A" "B" "C"} (set ids))
+          (str "Expected only A/B/C to remain. Got " ids))))
+
+  (testing "filter-orphan-skus on empty input returns empty"
+    (is (= [] (marker-api/filter-orphan-skus []))))
+
+  (testing "filter-orphan-skus preserves order of remaining items"
+    (let [skus [{:id 1 :revenue 0 :orders 0}
+                {:id 2 :revenue 5 :orders 1}
+                {:id 3 :revenue 0 :orders 0}
+                {:id 4 :revenue 7 :orders 2}]]
+      (is (= [2 4] (mapv :id (marker-api/filter-orphan-skus skus)))))))
+
 ;; ---------------------------------------------------------------------------
 ;; B2 (fix). what-if-handler validation — pure, no DB required
 ;; ---------------------------------------------------------------------------

@@ -601,6 +601,20 @@
 ;; B3. sku-list
 ;; ---------------------------------------------------------------------------
 
+(defn filter-orphan-skus
+  "Drop SKUs that had no activity in the window — revenue=0 AND orders=0.
+
+   These are typically Ozon 'orphan service' rows: articles with
+   logistics/storage costs from a previous period whose sale rows were
+   redistributed away by the in-window filter. They clutter the catalog
+   without representing current activity. Set ?include-orphans=true on
+   the sku-list endpoint to opt back in."
+  [skus]
+  (filterv (fn [s]
+             (or (pos? (or (:revenue s) 0))
+                 (pos? (or (:orders s) 0))))
+           skus))
+
 (defn sku-list-handler
   "Handler for GET /api/v1/marker/sku-list"
   [request]
@@ -666,9 +680,14 @@
                                :roas      roas
                                :spark     []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
                           by-art)
+          ;; Default: drop orphan service-only SKUs (revenue=0 AND orders=0).
+          ;; Pass ?include-orphans=true to see them.
+          include-orphans? (= "true" (or (:include-orphans params)
+                                         (get params "include-orphans")))
+          skus-active (if include-orphans? skus (filter-orphan-skus skus))
           limit     (some-> (get params :limit) parse-long)
           offset    (or (some-> (get params :offset) parse-long) 0)
-          skus-paged (cond->> skus
+          skus-paged (cond->> skus-active
                        true   (drop offset)
                        limit  (take limit)
                        true   vec)]
