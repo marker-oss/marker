@@ -206,7 +206,7 @@
                      speed (math/round2 (or (:daily-rate s) (:avg-daily-sales s) 0))]
                  {:id     (str (:article s))
                   :name   (or (:subject s) (:article s))
-                  :mp     [(or (:marketplace s) :wb)]
+                  :mp     [(keyword (or (:marketplace s) :wb))]
                   :stock  (or (:quantity-full s) (:quantity s) 0)
                   :speed  (int (Math/round (double (or speed 0))))
                   :days   (int (Math/round (double dl)))
@@ -480,7 +480,7 @@
           sku-det  (mapv (fn [a]
                            {:id         (str (:article a))
                             :name       (or (:subject a) (:article a))
-                            :mp         [(or (:marketplace a) :wb)]
+                            :mp         [(keyword (or (:marketplace a) :wb))]
                             :revenue    (or (:revenue a) 0.0)
                             :cogs       (or (:total-cost a) 0.0)
                             :commission (or (:deduction a) 0.0)
@@ -546,7 +546,7 @@
                                   buyout    (math/percentage orders (+ orders returns))]
                               {:id        art
                                :name      (or (:subject a) art)
-                               :mp        [(or (:marketplace a) :wb)]
+                               :mp        [(keyword (or (:marketplace a) :wb))]
                                :revenue   rev
                                :orders    orders
                                :margin    (or margin 0.0)
@@ -612,7 +612,7 @@
                                        days (if (pos? sp)
                                               (int (Math/round (/ (double qty) sp)))
                                               nil)]
-                                   {:mp    (or (:marketplace s) :wb)
+                                   {:mp    (keyword (or (:marketplace s) :wb))
                                     :stock qty
                                     :days  days}))))
 
@@ -638,8 +638,8 @@
 
           nm-id    (some :nm-id by-art)
           subject  (or (:subject agg) sku-id)
-          mps-list (or (seq (distinct (map :marketplace fin-art)))
-                       (filterv some? [mp1 :wb])
+          mps-list (or (seq (distinct (map (comp keyword :marketplace) fin-art)))
+                       (filterv some? [(some-> mp1 keyword) :wb])
                        [:wb])]
 
       {:id       sku-id
