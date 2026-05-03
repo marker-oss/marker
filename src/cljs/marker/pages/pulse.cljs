@@ -376,7 +376,8 @@
                         :class    (str "tab" (when (= active id) " active"))
                         :on-click #(set-active! id)}
                label
-               ($ :span {:class "tab-counter"} 5))))
+               ($ :span {:class "tab-counter"}
+                  (count (get filtered-skus (keyword id)))))))
        ($ top-table {:skus tab-skus}))))
 
 ;; ---------------------------------------------------------------------------
@@ -384,10 +385,16 @@
 ;; ---------------------------------------------------------------------------
 
 (defui ^:private critical-stocks [{:keys [mp-filter]}]
+  ;; Filter by days-of-cover (days-to-zero) ≤ 14, mirroring the section
+  ;; subtitle. Days-of-cover = stock / (orders/30); guard against zero
+  ;; sales velocity so a SKU with 0 orders never shows as critical.
   (let [rows (use-memo
               (fn []
                 (->> mock/skus
                      (filterv #(some (set mp-filter) (:mp %)))
+                     (filterv (fn [{:keys [stock orders]}]
+                                (let [speed (max 1 (/ orders 30))]
+                                  (<= (/ stock speed) 14))))
                      (sort-by :stock)
                      (take 7)))
               [mp-filter])]
