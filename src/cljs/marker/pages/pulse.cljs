@@ -444,7 +444,7 @@
 ;; KPI section — reads from API :kpis map
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private kpi-section [{:keys [compare? kpis]}]
+(defui ^:private kpi-section [{:keys [compare? kpis preliminary?]}]
   (let [k      (or kpis {})
         rev    (:revenue k)
         profit (:profit k)
@@ -458,7 +458,8 @@
                  :value     (fmt/format-rub (safe-num (:value rev)))
                  :delta     (:delta-pct rev)
                  :spark     (safe-spark (:spark rev))
-                 :sub       "WoW"}
+                 :sub       (if preliminary? "WoW · предварительная" "WoW")
+                 :badge     (when preliminary? "≈")}
                 {:label     "Чистая прибыль"
                  :value     (fmt/format-rub (safe-num (:value profit)))
                  :delta     (:delta-pct profit)
@@ -501,7 +502,7 @@
                 ($ :span {:class "dot-status green"})
                 " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted?]} cards]
+          (for [{:keys [label value delta sub spark inverted? badge]} cards]
             ($ kpi-card {:key       label
                          :label     label
                          :value     value
@@ -509,7 +510,8 @@
                          :sub       sub
                          :spark     spark
                          :compare?  compare?
-                         :inverted? (boolean inverted?)}))))))
+                         :inverted? (boolean inverted?)
+                         :badge     badge}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Loading skeleton helpers
@@ -629,7 +631,9 @@
             critical       (or (:critical-stocks data) [])
             rev-spark      (safe-spark (:revenue-30d charts))
             rev-prev-spark (safe-spark (:revenue-prev-30d charts))
-            orders-by-mp   (or (:orders-by-mp charts) {})]
+            orders-by-mp   (or (:orders-by-mp charts) {})
+            preliminary?   (boolean (:preliminary? data))
+            prelim-as-of   (:preliminary-as-of data)]
         ($ :div {:class "page-content"}
 
            ;; Error banner overlay (data available but stale load failed)
@@ -648,8 +652,22 @@
                                  :body  (:body a)
                                  :cta   (or (:cta a) "Подробнее")}))))
 
+           ;; Preliminary-data notice — revenue includes Ozon cash-flow
+           ;; estimate when /v2/finance/realization is delayed.
+           (when preliminary?
+             ($ :div {:class "alert alert-info"
+                      :style {:margin-bottom "10px"}}
+                ($ icon {:name :info :class "alert-icon"})
+                ($ :div {:class "alert-body"}
+                   ($ :div {:class "alert-title"} "Предварительные данные")
+                   ($ :div
+                      "Часть выручки рассчитана из cash-flow Ozon, пока не опубликован realization-отчёт. "
+                      "Цифры уточнятся после его выхода"
+                      (when prelim-as-of (str " (последняя точка: " prelim-as-of ")"))
+                      "."))))
+
            ;; KPI grid
-           ($ kpi-section {:compare? compare? :kpis kpis})
+           ($ kpi-section {:compare? compare? :kpis kpis :preliminary? preliminary?})
 
            ;; Plan-fact + Donut
            ($ :div {:class "grid-12"}

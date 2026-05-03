@@ -349,10 +349,19 @@
   "KPI metric card with optional sparkline and delta indicator.
    Props: :label (string), :value (string), :delta-pct (number, optional),
           :sub (string, optional secondary label), :spark (vec of numbers, optional),
-          :compare? (bool, default false), :inverted? (bool, default false)."
-  [{:keys [label value delta-pct sub spark compare? inverted?]}]
+          :compare? (bool, default false), :inverted? (bool, default false),
+          :badge (string, optional — small inline tag next to label, e.g. '≈')."
+  [{:keys [label value delta-pct sub spark compare? inverted? badge]}]
   ($ :div {:class "kpi" :style {:position "relative"}}
-     ($ :div {:class "kpi-label"} label)
+     ($ :div {:class "kpi-label"}
+        label
+        (when badge
+          ($ :span {:class "tag tag-sm tag-info"
+                    :title "Предварительное значение — будет уточнено"
+                    :style {:margin-left "6px"
+                            :font-size "10px"
+                            :font-family "var(--font-mono)"}}
+             badge)))
      ($ :div {:class "kpi-value"} value)
      ($ :div {:class "kpi-foot"}
         (when compare?
