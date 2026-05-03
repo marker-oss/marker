@@ -276,10 +276,11 @@
         enrich     (fn [r]
                      (let [art       (or (:group r) (:article r))
                            cur-rev   (or (:revenue r) 0.0)
-                           prev-rev  (or (get prev-map art) 0.0)]
+                           prev-rev  (or (get prev-map art) 0.0)
+                           mp        (or (some-> r :marketplace keyword) :wb)]
                        {:id        (str art)
                         :name      (or (:subject r) art)
-                        :mp        [:wb]        ; TODO: derive from finance rows when available
+                        :mp        [mp]
                         :revenue   cur-rev
                         :delta-pct (math/pct-delta cur-rev prev-rev)
                         :spark     (spark-fn art)}))
