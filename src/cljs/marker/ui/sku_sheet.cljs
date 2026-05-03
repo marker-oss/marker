@@ -1,35 +1,38 @@
 (ns marker.ui.sku-sheet
-  "SKU detail panel content — rendered inside the Sheet chrome component.
-   Subscribes to ::subs/sheet-sku; looks up the SKU in mock/skus and
-   renders KPI mini-cards, 30-day revenue chart, plan-fact, stocks table."
+  "SKU detail panel content — Phase 8.
+   Fetches from /api/v1/marker/sku-detail/:id on open via ::events/open-sheet-and-load.
+   Falls back to showing a loading skeleton while data arrives.
+   marker.mock is no longer used here."
   (:require ["chart.js/auto" :refer [Chart]]
             [uix.core :refer [$ defui use-effect use-ref use-memo]]
             [uix.re-frame :refer [use-subscribe]]
             [re-frame.core :as rf]
             [marker.state.subs   :as subs]
             [marker.state.events :as events]
-            [marker.ui.chrome    :refer [delta mp-badge sparkline kpi-card]]
+            [marker.ui.chrome    :refer [delta mp-badge kpi-card]]
             [marker.ui.icons     :refer [icon]]
-            [marker.mock         :as mock]
             [marker.util.format  :as fmt]))
+
+(defn- safe-num [v] (if (and (some? v) (not (js/isNaN v))) v 0))
 
 ;; ---------------------------------------------------------------------------
 ;; Revenue chart canvas
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private revenue-chart [{:keys [sku]}]
-  (let [ref (use-ref nil)]
+(defui ^:private revenue-chart [{:keys [spark]}]
+  (let [ref  (use-ref nil)]
     (use-effect
      (fn []
-       (when (and sku @ref)
-         (let [ctx (.getContext @ref "2d")
-               labels (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range 30))
+       (when @ref
+         (let [data   (if (seq spark) spark [])
+               labels (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05")
+                            (range (count data)))
                c (Chart.
-                  ctx
+                  @ref
                   #js {:type "line"
                        :data #js {:labels (clj->js labels)
                                   :datasets #js [#js {:label         "Выручка"
-                                                       :data          (clj->js (:spark sku))
+                                                       :data          (clj->js data)
                                                        :borderColor   "#4f46e5"
                                                        :backgroundColor "rgba(79,70,229,0.12)"
                                                        :fill          true
@@ -49,139 +52,169 @@
                                                                        :color "#94a3b8"
                                                                        :callback (fn [v] (fmt/format-short v))}
                                                            :beginAtZero true}}}})]
-           #(do (.destroy c)))))
-     [sku])
+           #(do (.destroy c))))
+       js/undefined)
+     [spark])
     ($ :div {:style {:height "160px"}}
        ($ :canvas {:ref ref}))))
 
 ;; ---------------------------------------------------------------------------
-;; Stock rows helper
+;; Skeleton
 ;; ---------------------------------------------------------------------------
 
-(defn- stock-rows [sku]
-  (mapv (fn [m]
-          (let [stock (js/Math.round (* (:stock sku)
-                                        (case m :wb 0.6 :ozon 0.3 0.1)))
-                speed (max 1 (js/Math.round (* (/ (:orders sku) 30)
-                                               (case m :wb 0.6 0.3))))]
-            {:mp    m
-             :stock stock
-             :speed speed
-             :days  (js/Math.round (/ stock speed))}))
-        (:mp sku)))
+(defui ^:private sheet-skeleton []
+  ($ :<>
+     ($ :div {:class "sheet-head"}
+        ($ :div
+           ($ :div {:class "skel" :style {:height "14px" :width "60%" :margin-bottom "8px" :border-radius "4px"}})
+           ($ :div {:class "skel" :style {:height "20px" :width "80%" :border-radius "4px"}})))
+     ($ :div {:class "sheet-body"}
+        ($ :div {:style {:display "grid" :grid-template-columns "1fr 1fr" :gap "10px"}}
+           (for [i (range 4)]
+             ($ :div {:key i :class "skel card section-card" :style {:height "70px"}})))
+        ($ :div {:class "skel card section-card" :style {:height "180px" :margin-top "12px"}}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Main SKU sheet content
 ;; ---------------------------------------------------------------------------
 
 (defui sku-sheet-content []
-  (let [sheet-sku-id (use-subscribe [::subs/sheet-sku])
-        sku          (use-memo
-                      (fn []
-                        (when sheet-sku-id
-                          (first (filter #(= (:id %) sheet-sku-id) mock/skus))))
-                      [sheet-sku-id])]
-    (when sku
-      (let [plan-pct (js/Math.round (* (/ (:revenue sku) (:plan sku)) 100))
-            kpis     [{:l "Выручка 30 дн"
-                       :v (fmt/format-rub (:revenue sku))
-                       :d (:delta-pct sku)}
-                      {:l "Заказы"
-                       :v (str (fmt/format-int (:orders sku)) " шт")
-                       :d (* (:delta-pct sku) 0.7)}
-                      {:l "Маржа"
-                       :v (fmt/format-pct (* (:margin sku) 100))
-                       :d -1.5}
-                      {:l "ROAS"
-                       :v (fmt/format-mul (:roas sku))
-                       :d 4.2}]]
-        ($ :<>
-           ;; Header
-           ($ :div {:class "sheet-head"}
-              ($ :div
-                 ($ :div {:class "row"}
-                    ($ :span {:class "mono"
-                              :style {:font-size "12px"
-                                      :color     "var(--color-fg-muted)"}}
-                       (:id sku))
-                    (for [m (:mp sku)]
-                      ($ mp-badge {:key (name m) :mp m})))
-                 ($ :div {:style {:font-size "18px"
-                                  :font-weight 600
-                                  :margin-top "4px"}}
-                    (:name sku)))
-              ($ :div {:class "row"}
-                 ($ :button {:class "icon-btn"}
-                    ($ icon {:name :more-h}))
-                 ($ :button {:class    "icon-btn"
-                             :on-click #(rf/dispatch [::events/close-sheet])}
-                    ($ icon {:name :x}))))
+  (let [sheet-sku-id  (use-subscribe [::subs/sheet-sku])
+        all-detail    (use-subscribe [::subs/sku-detail-data])
+        loading?      (use-subscribe [::subs/sku-detail-loading?])
+        sku           (when sheet-sku-id (get all-detail sheet-sku-id))]
 
-           ;; Body
-           ($ :div {:class "sheet-body"}
-              ;; 4 KPI mini-cards
-              ($ :div {:style {:display               "grid"
-                               :grid-template-columns "repeat(2, 1fr)"
-                               :gap                   "10px"}}
-                 (for [{:keys [l v d]} kpis]
-                   ($ kpi-card {:key       l
-                                :label     l
-                                :value     v
-                                :delta-pct d
-                                :compare?  true})))
+    (when sheet-sku-id
+      (cond
+        ;; Loading — show skeleton
+        (and loading? (nil? sku))
+        ($ sheet-skeleton)
 
-              ;; Revenue chart
-              ($ :div {:class "card section-card"}
-                 ($ :div {:class "section-head"}
-                    ($ :h3 {:class "section-title" :style {:font-size "13px"}}
-                       "Динамика выручки"))
-                 ($ revenue-chart {:sku sku}))
+        ;; Error / not found
+        (nil? sku)
+        ($ :div {:class "sheet-body"
+                 :style {:color "var(--color-fg-muted)" :font-size "13px"}}
+           "Данные недоступны")
 
-              ;; Plan-fact
-              ($ :div {:class "card section-card"}
-                 ($ :div {:class "section-head"}
-                    ($ :h3 {:class "section-title" :style {:font-size "13px"}}
-                       "План — факт")
-                    ($ :span {:class "badge badge-info"} (str plan-pct "%")))
-                 ($ :div {:class "row" :style {:margin-bottom "8px"}}
-                    ($ :span {:class "mono" :style {:font-size "16px" :font-weight 600}}
-                       (fmt/format-rub (:revenue sku)))
-                    ($ :span {:style {:color "var(--color-fg-muted)" :font-size "12px"}}
-                       (str "из " (fmt/format-rub (:plan sku)))))
-                 ($ :div {:class (str "progress"
-                                      (cond (>= plan-pct 100) " success"
-                                            (>= plan-pct 80)  " warning"
-                                            :else             ""))}
-                    ($ :div {:style {:width (str (min 100 plan-pct) "%")}})))
+        :else
+        (let [;; Extract KPIs from API shape
+              kpis-raw  (:kpis sku)
+              rev-kpi   (:revenue kpis-raw)
+              ord-kpi   (:orders kpis-raw)
+              mar-kpi   (:margin kpis-raw)
+              ads-kpi   (:ads kpis-raw)
 
-              ;; Stocks table
-              ($ :div {:class "card section-card"}
-                 ($ :div {:class "section-head"}
-                    ($ :h3 {:class "section-title" :style {:font-size "13px"}}
-                       "Остатки"))
-                 ($ :table {:class "tbl"}
-                    ($ :thead
-                       ($ :tr
-                          ($ :th "МП")
-                          ($ :th {:class "num"} "Шт")
-                          ($ :th {:class "num"} "Скорость")
-                          ($ :th {:class "num"} "Дней")))
-                    ($ :tbody
-                       (for [{:keys [mp stock speed days]} (stock-rows sku)]
-                         ($ :tr {:key (name mp)}
-                            ($ :td
-                               ($ :span {:class "row"}
-                                  ($ mp-badge {:mp mp})
-                                  (.toUpperCase (name mp))))
-                            ($ :td {:class "num mono"} (fmt/format-int stock))
-                            ($ :td {:class "num mono"} (str speed "/день"))
-                            ($ :td {:class "num mono"} days)))))))
+              spark     (or (:revenue-30d sku) [])
+              plan-fact (or (:plan-fact sku) {})
+              stocks    (or (:stocks-by-mp sku) [])
 
-           ;; Footer
-           ($ :div {:class "sheet-foot"}
-              ($ :button {:class    "btn btn-ghost"
-                          :on-click #(rf/dispatch [::events/close-sheet])}
-                 "Закрыть")
-              ($ :button {:class "btn btn-primary"}
-                 "Открыть полную страницу "
-                 ($ icon {:name :arrow-right :size 14}))))))))
+              plan      (:plan plan-fact)
+              fact      (safe-num (:fact plan-fact))
+              plan-pct  (if (and plan (pos? plan))
+                          (js/Math.round (* (/ fact plan) 100))
+                          nil)
+
+              kpis      [{:l "Выручка 30 дн"
+                          :v (fmt/format-rub (safe-num (:value rev-kpi)))
+                          :d (:delta-pct rev-kpi)}
+                         {:l "Заказы"
+                          :v (str (fmt/format-int (safe-num (:value ord-kpi))) " шт")
+                          :d nil}
+                         {:l "Маржа"
+                          :v (fmt/format-pct (safe-num (:value mar-kpi)))
+                          :d nil}
+                         {:l "Реклама"
+                          :v (fmt/format-rub (safe-num (:value ads-kpi)))
+                          :d nil}]]
+          ($ :<>
+             ;; Header
+             ($ :div {:class "sheet-head"}
+                ($ :div
+                   ($ :div {:class "row"}
+                      ($ :span {:class "mono"
+                                :style {:font-size "12px"
+                                        :color     "var(--color-fg-muted)"}}
+                         (:id sku))
+                      (for [m (:mp sku)]
+                        ($ mp-badge {:key (name m) :mp m})))
+                   ($ :div {:style {:font-size "18px"
+                                    :font-weight 600
+                                    :margin-top "4px"}}
+                      (or (:name sku) (:id sku))))
+                ($ :div {:class "row"}
+                   ($ :button {:class "icon-btn"}
+                      ($ icon {:name :more-h}))
+                   ($ :button {:class    "icon-btn"
+                               :on-click #(rf/dispatch [::events/close-sheet])}
+                      ($ icon {:name :x}))))
+
+             ;; Body
+             ($ :div {:class "sheet-body"}
+                ;; 4 KPI mini-cards
+                ($ :div {:style {:display               "grid"
+                                 :grid-template-columns "repeat(2, 1fr)"
+                                 :gap                   "10px"}}
+                   (for [{:keys [l v d]} kpis]
+                     ($ kpi-card {:key       l
+                                  :label     l
+                                  :value     v
+                                  :delta-pct d
+                                  :compare?  (some? d)})))
+
+                ;; Revenue chart
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "section-head"}
+                      ($ :h3 {:class "section-title" :style {:font-size "13px"}}
+                         "Динамика выручки"))
+                   ($ revenue-chart {:spark spark}))
+
+                ;; Plan-fact (if plan is available)
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "section-head"}
+                      ($ :h3 {:class "section-title" :style {:font-size "13px"}}
+                         "Выручка / прогноз")
+                      (when plan-pct
+                        ($ :span {:class "badge badge-info"} (str plan-pct "%"))))
+                   ($ :div {:class "row" :style {:margin-bottom "8px"}}
+                      ($ :span {:class "mono" :style {:font-size "16px" :font-weight 600}}
+                         (fmt/format-rub fact))
+                      (when plan
+                        ($ :span {:style {:color "var(--color-fg-muted)" :font-size "12px"}}
+                           (str "из " (fmt/format-rub plan) " плана"))))
+                   (when plan-pct
+                     ($ :div {:class (str "progress"
+                                          (cond (>= plan-pct 100) " success"
+                                                (>= plan-pct 80)  " warning"
+                                                :else             ""))}
+                        ($ :div {:style {:width (str (min 100 plan-pct) "%")}}))))
+
+                ;; Stocks by MP
+                (when (seq stocks)
+                  ($ :div {:class "card section-card"}
+                     ($ :div {:class "section-head"}
+                        ($ :h3 {:class "section-title" :style {:font-size "13px"}}
+                           "Остатки"))
+                     ($ :table {:class "tbl"}
+                        ($ :thead
+                           ($ :tr
+                              ($ :th "МП")
+                              ($ :th {:class "num"} "Шт")
+                              ($ :th {:class "num"} "Дней")))
+                        ($ :tbody
+                           (for [{:keys [mp stock days]} stocks]
+                             ($ :tr {:key (name (or mp :wb))}
+                                ($ :td
+                                   ($ :span {:class "row"}
+                                      ($ mp-badge {:mp (or mp :wb)})
+                                      (.toUpperCase (name (or mp :wb)))))
+                                ($ :td {:class "num mono"} (fmt/format-int (safe-num stock)))
+                                ($ :td {:class "num mono"} (or days "—")))))))))
+
+             ;; Footer
+             ($ :div {:class "sheet-foot"}
+                ($ :button {:class    "btn btn-ghost"
+                            :on-click #(rf/dispatch [::events/close-sheet])}
+                   "Закрыть")
+                ($ :button {:class "btn btn-primary"}
+                   "Открыть полную страницу "
+                   ($ icon {:name :arrow-right :size 14})))))))))

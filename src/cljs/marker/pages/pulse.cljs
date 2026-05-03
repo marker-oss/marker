@@ -1,26 +1,19 @@
 (ns marker.pages.pulse
-  "Pulse Dashboard — Phase 5.
-   Driven entirely by marker.mock (deterministic seed data).
-   Real API wiring happens in Phase 8.
+  "Pulse Dashboard — Phase 8.
+   Data comes from the live /api/v1/marker/pulse-summary endpoint via
+   ::events/load-pulse.  marker.mock is kept as a fallback shape reference
+   but is NOT the source of truth for any rendered value.
 
-   Layout:
-     1. Alerts strip
-     2. KPI grid (8 cards × 2 rows)
-     3. Plan-vs-Fact card  +  Donut  (col-8 / col-4, inside grid-12)
-        The revenue line chart lives *inside* the plan-fact card.
-     4. Stacked-bar orders  +  Top-movers/fallers tabs  (col-7 / col-5)
-     5. Critical stocks table
-
-   Chart.js: imported as chart.js/auto (registers all controllers).
-   Each canvas ref lives in its own defui so use-effect/use-ref hooks
-   are scoped correctly."
+   Loading skeleton: when ::subs/pulse-data is nil, .skel placeholders render
+   in place of real content."
   (:require ["chart.js/auto" :refer [Chart]]
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [uix.re-frame :refer [use-subscribe]]
+            [re-frame.core :as rf]
             [marker.state.subs     :as subs]
+            [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
-            [marker.mock           :as mock]
             [marker.util.format    :as fmt]))
 
 ;; ---------------------------------------------------------------------------
@@ -30,7 +23,6 @@
 (def ^:private wb-color   "#4f46e5")
 (def ^:private ozon-color "#0891b2")
 (def ^:private ym-color   "#ca8a04")
-(def ^:private mp-colors  {:wb wb-color :ozon ozon-color :ym ym-color})
 
 (def ^:private day-labels
   (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range 30)))
@@ -38,6 +30,25 @@
 (defn- css-var [name]
   (let [v (.getPropertyValue (js/getComputedStyle js/document.documentElement) name)]
     (if (seq (.trim v)) (.trim v) nil)))
+
+;; ---------------------------------------------------------------------------
+;; Safe accessor helpers — guard nil / empty backend stubs
+;; ---------------------------------------------------------------------------
+
+(defn- safe-spark
+  "Return spark data as-is, or an empty vec; Chart.js handles empty arrays gracefully."
+  [v]
+  (if (seq v) v []))
+
+(defn- safe-num
+  "Return number, or 0 if nil/NaN."
+  [v]
+  (if (and (some? v) (not (js/isNaN v))) v 0))
+
+(defn- or-ndash
+  "Return formatted string, or '—' when value is nil."
+  [v fmt-fn]
+  (if (nil? v) "—" (fmt-fn v)))
 
 ;; ---------------------------------------------------------------------------
 ;; Alert card
@@ -55,10 +66,10 @@
           cta))))
 
 ;; ---------------------------------------------------------------------------
-;; Revenue line chart (lives inside plan-fact card)
+;; Revenue line chart
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private revenue-chart [{:keys [compare? mp-filter]}]
+(defui ^:private revenue-chart [{:keys [compare? rev-spark rev-prev-spark]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -67,35 +78,15 @@
                border-subtle (or (css-var "--color-border-subtle") "#e2e8f0")
                bg-subtle     (or (css-var "--color-bg-subtle")     "#f1f5f9")
                base-font     #js{:family "Inter" :size 11}
-               common-opts   #js{:responsive         true
-                                 :maintainAspectRatio false
-                                 :plugins #js{:legend #js{:position "bottom"
-                                                          :align    "start"
-                                                          :labels   #js{:boxWidth 10
-                                                                        :boxHeight 10
-                                                                        :padding  14
-                                                                        :font     base-font
-                                                                        :color    "#475569"}}
-                                              :tooltip #js{:backgroundColor "#0f172a"
-                                                           :titleColor      "#fff"
-                                                           :bodyColor       "#cbd5e1"
-                                                           :borderColor     "#334155"
-                                                           :borderWidth     1
-                                                           :cornerRadius    6
-                                                           :padding         10
-                                                           :titleFont       #js{:family "Inter" :size 11 :weight 600}
-                                                           :bodyFont        base-font}}
-                                 :scales #js{:x #js{:grid   #js{:display false}
-                                                    :ticks  #js{:font base-font :color fg-muted :maxTicksLimit 10}
-                                                    :border #js{:color border-subtle}}
-                                             :y #js{:grid   #js{:color bg-subtle :drawBorder false}
-                                                    :ticks  #js{:font base-font :color fg-muted
-                                                                :callback (fn [v] (fmt/format-short v))}
-                                                    :border #js{:display false}
-                                                    :beginAtZero true}}}
+               data          (safe-spark rev-spark)
+               prev-data     (safe-spark rev-prev-spark)
+               labels        (if (seq data)
+                               (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05")
+                                     (range (count data)))
+                               day-labels)
                datasets      (clj->js
                               (cond-> [{:label           "Выручка"
-                                        :data            mock/revenue-series
+                                        :data            data
                                         :borderColor     "#4f46e5"
                                         :backgroundColor "rgba(79,70,229,0.12)"
                                         :fill            true
@@ -103,11 +94,9 @@
                                         :borderWidth     2
                                         :pointRadius     0
                                         :pointHoverRadius 4}]
-                                compare?
+                                (and compare? (seq prev-data))
                                 (conj {:label       "Пред. период"
-                                       :data        (map-indexed
-                                                     (fn [i v] (* v (+ 0.85 (* (mod i 5) 0.02))))
-                                                     mock/revenue-series)
+                                       :data        prev-data
                                        :borderColor  "#94a3b8"
                                        :borderDash   [4 4]
                                        :borderWidth  1.5
@@ -116,55 +105,7 @@
                                        :tension      0.3})))
                chart         (Chart. canvas
                                      #js{:type "line"
-                                         :data #js{:labels   (clj->js day-labels)
-                                                   :datasets datasets}
-                                         :options common-opts})]
-           (fn [] (.destroy chart)))))
-     ;; mp-filter not yet read by this chart (Phase 8 will derive per-MP
-     ;; revenue series). Excluding it here avoids a full Chart.js teardown
-     ;; on every MP-chip click.
-     [compare?])
-    ($ :canvas {:ref canvas-ref})))
-
-;; ---------------------------------------------------------------------------
-;; Stacked bar — orders by MP
-;; ---------------------------------------------------------------------------
-
-(defui ^:private orders-bar [{:keys [mp-filter]}]
-  (let [canvas-ref (use-ref nil)]
-    (use-effect
-     (fn []
-       (when-let [canvas @canvas-ref]
-         (let [fg-muted      (or (css-var "--color-fg-muted")      "#94a3b8")
-               border-subtle (or (css-var "--color-border-subtle") "#e2e8f0")
-               bg-subtle     (or (css-var "--color-bg-subtle")     "#f1f5f9")
-               base-font     #js{:family "Inter" :size 11}
-               active?       (fn [mp] (some #{mp} mp-filter))
-               wb-data       (mapv #(if (active? :wb)   (* % 0.55) 0) mock/orders-series)
-               oz-data       (mapv #(if (active? :ozon) (* % 0.30) 0) mock/orders-series)
-               ym-data       (mapv #(if (active? :ym)   (* % 0.15) 0) mock/orders-series)
-               datasets      (clj->js
-                              [{:label           "WB"
-                                :data            wb-data
-                                :backgroundColor wb-color
-                                :stack           "s"
-                                :borderRadius    2
-                                :barThickness    10}
-                               {:label           "Ozon"
-                                :data            oz-data
-                                :backgroundColor ozon-color
-                                :stack           "s"
-                                :borderRadius    2
-                                :barThickness    10}
-                               {:label           "YM"
-                                :data            ym-data
-                                :backgroundColor ym-color
-                                :stack           "s"
-                                :borderRadius    2
-                                :barThickness    10}])
-               chart         (Chart. canvas
-                                     #js{:type "bar"
-                                         :data #js{:labels   (clj->js day-labels)
+                                         :data #js{:labels   (clj->js labels)
                                                    :datasets datasets}
                                          :options #js{:responsive         true
                                                       :maintainAspectRatio false
@@ -181,34 +122,104 @@
                                                                                 :padding         10
                                                                                 :titleFont       #js{:family "Inter" :size 11 :weight 600}
                                                                                 :bodyFont        base-font}}
-                                                      :scales #js{:x #js{:stacked true
-                                                                         :grid    #js{:display false}
-                                                                         :ticks   #js{:font base-font :color fg-muted :maxTicksLimit 10}
-                                                                         :border  #js{:color border-subtle}}
-                                                                  :y #js{:stacked     true
-                                                                         :grid        #js{:color bg-subtle :drawBorder false}
-                                                                         :ticks       #js{:font base-font :color fg-muted
-                                                                                          :callback (fn [v] (fmt/format-short v))}
-                                                                         :border      #js{:display false}
+                                                      :scales #js{:x #js{:grid   #js{:display false}
+                                                                         :ticks  #js{:font base-font :color fg-muted :maxTicksLimit 10}
+                                                                         :border #js{:color border-subtle}}
+                                                                  :y #js{:grid   #js{:color bg-subtle :drawBorder false}
+                                                                         :ticks  #js{:font base-font :color fg-muted
+                                                                                     :callback (fn [v] (fmt/format-short v))}
+                                                                         :border #js{:display false}
                                                                          :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     ;; compare? unused — bar chart has no compare variant per prototype.
-     [mp-filter])
+     [rev-spark rev-prev-spark compare?])
+    ($ :canvas {:ref canvas-ref})))
+
+;; ---------------------------------------------------------------------------
+;; Stacked bar — orders by MP
+;; ---------------------------------------------------------------------------
+
+(defui ^:private orders-bar [{:keys [mp-filter orders-by-mp]}]
+  (let [canvas-ref (use-ref nil)]
+    (use-effect
+     (fn []
+       (when-let [canvas @canvas-ref]
+         (let [fg-muted      (or (css-var "--color-fg-muted")      "#94a3b8")
+               border-subtle (or (css-var "--color-border-subtle") "#e2e8f0")
+               bg-subtle     (or (css-var "--color-bg-subtle")     "#f1f5f9")
+               base-font     #js{:family "Inter" :size 11}
+               active?       (fn [mp] (some #{mp} mp-filter))
+               ;; orders-by-mp may be nil when loading or all-filtered
+               wb-data   (when (active? :wb)   (safe-spark (:wb orders-by-mp)))
+               oz-data   (when (active? :ozon) (safe-spark (:ozon orders-by-mp)))
+               ym-data   (when (active? :ym)   (safe-spark (:ym orders-by-mp)))
+               n         (max (count wb-data) (count oz-data) (count ym-data) 30)
+               zero-pad  (fn [v] (or v (vec (repeat n 0))))
+               labels    (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range n))
+               datasets  (clj->js
+                          [{:label           "WB"
+                            :data            (zero-pad wb-data)
+                            :backgroundColor wb-color
+                            :stack           "s"
+                            :borderRadius    2
+                            :barThickness    10}
+                           {:label           "Ozon"
+                            :data            (zero-pad oz-data)
+                            :backgroundColor ozon-color
+                            :stack           "s"
+                            :borderRadius    2
+                            :barThickness    10}
+                           {:label           "YM"
+                            :data            (zero-pad ym-data)
+                            :backgroundColor ym-color
+                            :stack           "s"
+                            :borderRadius    2
+                            :barThickness    10}])
+               chart     (Chart. canvas
+                                 #js{:type "bar"
+                                     :data #js{:labels   (clj->js labels)
+                                               :datasets datasets}
+                                     :options #js{:responsive         true
+                                                  :maintainAspectRatio false
+                                                  :plugins #js{:legend #js{:position "bottom"
+                                                                           :align    "start"
+                                                                           :labels   #js{:boxWidth 10 :boxHeight 10 :padding 14
+                                                                                         :font     base-font :color "#475569"}}
+                                                               :tooltip #js{:backgroundColor "#0f172a"
+                                                                            :titleColor      "#fff"
+                                                                            :bodyColor       "#cbd5e1"
+                                                                            :borderColor     "#334155"
+                                                                            :borderWidth     1
+                                                                            :cornerRadius    6
+                                                                            :padding         10
+                                                                            :titleFont       #js{:family "Inter" :size 11 :weight 600}
+                                                                            :bodyFont        base-font}}
+                                                  :scales #js{:x #js{:stacked true
+                                                                      :grid    #js{:display false}
+                                                                      :ticks   #js{:font base-font :color fg-muted :maxTicksLimit 10}
+                                                                      :border  #js{:color border-subtle}}
+                                                              :y #js{:stacked     true
+                                                                     :grid        #js{:color bg-subtle :drawBorder false}
+                                                                     :ticks       #js{:font base-font :color fg-muted
+                                                                                      :callback (fn [v] (fmt/format-short v))}
+                                                                     :border      #js{:display false}
+                                                                     :beginAtZero true}}}})]
+           (fn [] (.destroy chart)))))
+     [mp-filter orders-by-mp])
     ($ :canvas {:ref canvas-ref})))
 
 ;; ---------------------------------------------------------------------------
 ;; MP share donut
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private mp-donut [{:keys [mp-filter]}]
+(defui ^:private mp-donut [{:keys [mp-filter mp-share]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
        (when-let [canvas @canvas-ref]
          (let [active?  (fn [mp] (some #{mp} mp-filter))
-               wb-val   (if (active? :wb)   62 0)
-               oz-val   (if (active? :ozon) 26 0)
-               ym-val   (if (active? :ym)   12 0)
+               wb-val   (if (active? :wb)   (or (:wb mp-share) 0)   0)
+               oz-val   (if (active? :ozon) (or (:ozon mp-share) 0) 0)
+               ym-val   (if (active? :ym)   (or (:ym mp-share) 0)   0)
                base-font #js{:family "Inter" :size 11}
                chart    (Chart. canvas
                                 #js{:type "doughnut"
@@ -235,69 +246,88 @@
                                                                            :bodyFont        base-font}}
                                                  :scales #js{}}})]
            (fn [] (.destroy chart)))))
-     [mp-filter])
+     [mp-filter mp-share])
     ($ :canvas {:ref canvas-ref})))
 
 ;; ---------------------------------------------------------------------------
 ;; Plan-fact card
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private plan-fact-card [{:keys [compare? mp-filter]}]
-  (let [plan        (:month-plan  mock/forecast)
-        fact        (:month-fact  mock/forecast)
-        projection  (:projection  mock/forecast)
-        plan-pct    (js/Math.round (* 100 (/ fact plan)))
-        proj-pct    (js/Math.round (* 100 (/ projection plan)))]
+(defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark]}]
+  (let [plan       (:month-plan  forecast)
+        fact       (safe-num (:month-fact forecast))
+        projection (safe-num (:projection forecast))
+        ;; When no plan in DB, show projection only
+        plan-pct   (if (and plan (pos? plan))
+                     (js/Math.round (* 100 (/ fact plan)))
+                     nil)
+        proj-pct   (if (and plan (pos? plan))
+                     (js/Math.round (* 100 (/ projection plan)))
+                     nil)
+        ;; progress class driven by pace
+        prog-class (cond
+                     (nil? plan-pct) "progress"
+                     (< plan-pct 70)  "progress danger"
+                     (< plan-pct 95)  "progress warning"
+                     :else            "progress success")]
     ($ :section {:class "card section-card col-8"}
        ($ :div {:class "section-head"}
           ($ :div
-             ($ :h3 {:class "section-title"} "План — факт. Прибыль за май 2026")
+             ($ :h3 {:class "section-title"} "Выручка — динамика")
              ($ :div {:class "section-subtitle"}
-                (str "Pace: " plan-pct "% · прогноз достижения " proj-pct "% от цели")))
-          ($ :span {:class "badge badge-warning"} "⚠ Цель будет не достигнута"))
+                (cond
+                  (and plan-pct proj-pct)
+                  (str "Pace: " plan-pct "% · прогноз " proj-pct "% от цели")
+                  projection
+                  (str "Прогноз: " (fmt/format-rub projection))
+                  :else "текущий период")))
+          (when (and plan-pct (< plan-pct 95))
+            ($ :span {:class "badge badge-warning"} "⚠ Цель будет не достигнута")))
        ($ :div {:style {:display "flex" :align-items "baseline" :gap "16px" :margin-bottom "12px"}}
           ($ :div {:style {:font-size "32px" :font-weight 700 :letter-spacing "-.01em"}}
              (fmt/format-rub fact))
-          ($ :div {:style {:color "var(--color-fg-muted)"}}
-             (str "из " (fmt/format-rub plan) " плана"))
+          (when plan
+            ($ :div {:style {:color "var(--color-fg-muted)"}}
+               (str "из " (fmt/format-rub plan) " плана")))
           ($ :div {:class "spacer"})
-          ($ :div {:style {:font-size "14px" :font-weight 600}} (str plan-pct "%")))
-       ;; TODO Phase 8: derive class from pace
-       ;;   < 70%        → "progress danger"
-       ;;   70..95%      → "progress warning"
-       ;;   ≥ 95% & ≤100 → "progress success"
-       ;;   > 100%       → "progress" (accent)
-       ;; Hard-coded warning here matches the prototype's demo state.
-       ($ :div {:class "progress warning"}
-          ($ :div {:style {:width (str plan-pct "%")}}))
-       ($ :div {:style {:display         "flex"
-                        :justify-content "space-between"
-                        :margin-top      "8px"
-                        :font-size       "12px"
-                        :color           "var(--color-fg-muted)"}}
-          ($ :span "0")
-          ($ :span "50%")
-          ($ :span "100% цель"))
+          (when plan-pct
+            ($ :div {:style {:font-size "14px" :font-weight 600}} (str plan-pct "%"))))
+       (when plan-pct
+         ($ :<>
+            ($ :div {:class prog-class}
+               ($ :div {:style {:width (str plan-pct "%")}}))
+            ($ :div {:style {:display         "flex"
+                             :justify-content "space-between"
+                             :margin-top      "8px"
+                             :font-size       "12px"
+                             :color           "var(--color-fg-muted)"}}
+               ($ :span "0")
+               ($ :span "50%")
+               ($ :span "100% цель"))))
        ($ :div {:style {:margin-top "18px" :height "220px"}}
-          ($ revenue-chart {:compare? compare? :mp-filter mp-filter})))))
+          ($ revenue-chart {:compare?      compare?
+                            :rev-spark     rev-spark
+                            :rev-prev-spark rev-prev-spark})))))
 
 ;; ---------------------------------------------------------------------------
 ;; MP structure card (donut + legend)
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private mp-structure-card [{:keys [mp-filter]}]
-  (let [mp-rows [{:mp :wb   :label "Wildberries" :val 62 :sum 5220400}
-                 {:mp :ozon :label "Ozon"        :val 26 :sum 2189200}
-                 {:mp :ym   :label "YM"          :val 12 :sum 1010400}]]
+(defui ^:private mp-structure-card [{:keys [mp-filter mp-share]}]
+  (let [share (or mp-share {:wb 0 :ozon 0 :ym 0})
+        total (max 1 (+ (or (:wb share) 0) (or (:ozon share) 0) (or (:ym share) 0)))
+        mp-rows [{:mp :wb   :label "Wildberries" :val (or (:wb share) 0)}
+                 {:mp :ozon :label "Ozon"        :val (or (:ozon share) 0)}
+                 {:mp :ym   :label "YM"          :val (or (:ym share) 0)}]]
     ($ :section {:class "card section-card col-4"}
        ($ :div {:class "section-head"}
           ($ :div
              ($ :h3 {:class "section-title"} "Структура выручки")
              ($ :div {:class "section-subtitle"} "по маркетплейсам")))
        ($ :div {:style {:height "180px" :position "relative"}}
-          ($ mp-donut {:mp-filter mp-filter}))
+          ($ mp-donut {:mp-filter mp-filter :mp-share share}))
        ($ :div {:style {:display "flex" :flex-direction "column" :gap "6px" :margin-top "14px"}}
-          (for [{:keys [mp label val sum]} mp-rows]
+          (for [{:keys [mp label val]} mp-rows]
             ($ :div {:key  (name mp)
                      :style {:display     "flex"
                              :align-items "center"
@@ -306,102 +336,80 @@
                              :opacity     (if (some #{mp} mp-filter) "1" "0.35")}}
                ($ mp-badge {:mp mp})
                ($ :span {:style {:flex 1}} label)
-               ($ :span {:class "mono"} (fmt/format-rub sum))
-               ($ :span {:class "mono"
-                         :style {:color "var(--color-fg-muted)" :min-width "36px" :text-align "right"}}
-                  (str val "%"))))))))
+               ($ :span {:class "mono"} (str (or val 0) "%"))))))))
 
 ;; ---------------------------------------------------------------------------
-;; Top movers/fallers tab content
+;; Top movers/fallers table
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private top-table [{:keys [skus]}]
+(defui ^:private top-table [{:keys [items]}]
   ($ :div {:style {:margin-top "12px"}}
-     (for [s skus]
-       ($ :div {:key   (:id s)
-                :style {:display        "flex"
-                        :align-items    "center"
-                        :gap            "10px"
-                        :padding        "10px 4px"
-                        :border-bottom  "1px solid var(--color-border-subtle)"
-                        :cursor         "pointer"}}
-          ($ :div {:style {:display        "flex"
-                           :flex-direction "column"
-                           :gap            "2px"
-                           :min-width      0
-                           :flex           1}}
-             ($ :div {:class "row"}
-                ($ :span {:class "mono"
-                          :style {:font-size "12px" :color "var(--color-fg-muted)"}}
-                   (:id s))
-                (for [m (:mp s)]
-                  ($ mp-badge {:key (name m) :mp m})))
-             ($ :div {:style {:font-size "13px" :font-weight 500}} (:name s)))
-          ($ sparkline {:data (:spark s)})
-          ($ :div {:style {:display        "flex"
-                           :flex-direction "column"
-                           :align-items    "flex-end"
-                           :min-width      "90px"}}
-             ($ :span {:class "mono"
-                       :style {:font-size "13px" :font-weight 600}}
-                (fmt/format-rub (:revenue s)))
-             ($ delta {:pct (:delta-pct s)}))))))
+     (if (empty? items)
+       ($ :div {:style {:color "var(--color-fg-muted)" :font-size "13px" :padding "16px 4px"}}
+          "Нет данных")
+       (for [s items]
+         ($ :div {:key   (:id s)
+                  :style {:display        "flex"
+                          :align-items    "center"
+                          :gap            "10px"
+                          :padding        "10px 4px"
+                          :border-bottom  "1px solid var(--color-border-subtle)"
+                          :cursor         "pointer"}}
+            ($ :div {:style {:display        "flex"
+                             :flex-direction "column"
+                             :gap            "2px"
+                             :min-width      0
+                             :flex           1}}
+               ($ :div {:class "row"}
+                  ($ :span {:class "mono"
+                            :style {:font-size "12px" :color "var(--color-fg-muted)"}}
+                     (:id s))
+                  (for [m (:mp s)]
+                    ($ mp-badge {:key (name m) :mp m})))
+               ($ :div {:style {:font-size "13px" :font-weight 500}}
+                  (or (:name s) (:id s))))
+            ($ sparkline {:data (safe-spark (:spark s))})
+            ($ :div {:style {:display        "flex"
+                             :flex-direction "column"
+                             :align-items    "flex-end"
+                             :min-width      "90px"}}
+               ($ :span {:class "mono"
+                         :style {:font-size "13px" :font-weight 600}}
+                  (fmt/format-rub (safe-num (:revenue s))))
+               ($ delta {:pct (:delta-pct s)})))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Tabs (movers / fallers)
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private movers-tabs [{:keys [mp-filter]}]
-  (let [[active set-active!] (use-state "movers")
-        filtered-skus        (use-memo
-                              (fn []
-                                {:movers (filterv #(some (set mp-filter) (:mp %)) mock/top-movers)
-                                 :fallers (filterv #(some (set mp-filter) (:mp %)) mock/top-fallers)})
-                              [mp-filter])
-        tab-skus             (get filtered-skus (keyword active))]
+(defui ^:private movers-tabs [{:keys [movers fallers]}]
+  (let [[active set-active!] (use-state "movers")]
     ($ :section {:class "card section-card col-5"}
        ($ :div {:class "tabs"}
-          (for [{:keys [id label]} [{:id "movers" :label "Топ роста"} {:id "fallers" :label "Топ падения"}]]
+          (for [{:keys [id label items]} [{:id "movers"  :label "Топ роста"   :items movers}
+                                          {:id "fallers" :label "Топ падения" :items fallers}]]
             ($ :button {:key      id
                         :class    (str "tab" (when (= active id) " active"))
                         :on-click #(set-active! id)}
                label
                ($ :span {:class "tab-counter"}
-                  (count (get filtered-skus (keyword id)))))))
-       ($ top-table {:skus tab-skus}))))
+                  (count items)))))
+       ($ top-table {:items (if (= active "movers") movers fallers)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Critical stocks table
 ;; ---------------------------------------------------------------------------
 
-(defn- daily-speed
-  "Sales speed in units/day, with a 1 unit/day floor so a slow-moving SKU
-   never reports as instantly critical (and so we never divide by zero).
-   Used by both the days-of-cover filter and the per-row badge below — they
-   MUST agree to avoid a row passing the ≤14 days filter and then displaying
-   a different days count."
-  [orders]
-  (max 1 (js/Math.round (/ orders 30))))
-
-(defn- days-of-cover [stock orders]
-  (js/Math.round (/ stock (daily-speed orders))))
-
-(defui ^:private critical-stocks [{:keys [mp-filter]}]
-  (let [rows (use-memo
-              (fn []
-                (->> mock/skus
-                     (filterv #(some (set mp-filter) (:mp %)))
-                     (filterv (fn [{:keys [stock orders]}]
-                                (<= (days-of-cover stock orders) 14)))
-                     (sort-by :stock)
-                     (take 7)))
-              [mp-filter])]
-    ($ :section {:class "card section-card"}
-       ($ :div {:class "section-head"}
-          ($ :div
-             ($ :h3 {:class "section-title"} "Остатки — критично")
-             ($ :div {:class "section-subtitle"} "артикулы, которые кончатся за ≤ 14 дней"))
-          ($ :button {:class "btn btn-secondary btn-sm"} "Все остатки →"))
+(defui ^:private critical-stocks-table [{:keys [rows]}]
+  ($ :section {:class "card section-card"}
+     ($ :div {:class "section-head"}
+        ($ :div
+           ($ :h3 {:class "section-title"} "Остатки — критично")
+           ($ :div {:class "section-subtitle"} "артикулы, которые кончатся за ≤ 14 дней"))
+        ($ :button {:class "btn btn-secondary btn-sm"} "Все остатки →"))
+     (if (empty? rows)
+       ($ :div {:style {:color "var(--color-fg-muted)" :font-size "13px" :padding "16px 12px"}}
+          "Критичных остатков нет")
        ($ :table {:class "tbl"}
           ($ :thead
              ($ :tr
@@ -413,90 +421,87 @@
                 ($ :th "Статус")))
           ($ :tbody
              (for [s rows]
-               (let [speed  (daily-speed (:orders s))
-                     days   (days-of-cover (:stock s) (:orders s))
-                     status (cond (< days 4) "danger"
-                                  (< days 8) "warning"
-                                  :else      "success")]
+               (let [status (or (:status s)
+                                (cond (< (:days s 0) 4) "danger"
+                                      (< (:days s 0) 8) "warning"
+                                      :else             "success"))]
                  ($ :tr {:key (:id s) :style {:cursor "pointer"}}
                     ($ :td
                        ($ :span {:class "tbl-link"} (:id s))
                        " · "
-                       ($ :span {:style {:color "var(--color-fg-secondary)"}} (:name s)))
+                       ($ :span {:style {:color "var(--color-fg-secondary)"}} (or (:name s) (:id s))))
                     ($ :td
                        (for [m (:mp s)]
                          ($ mp-badge {:key (name m) :mp m})))
-                    ($ :td {:class "num mono"} (fmt/format-int (:stock s)))
-                    ($ :td {:class "num mono"} speed)
-                    ($ :td {:class "num mono"} days)
+                    ($ :td {:class "num mono"} (fmt/format-int (:stock s 0)))
+                    ($ :td {:class "num mono"} (or (:speed s) "—"))
+                    ($ :td {:class "num mono"} (:days s 0))
                     ($ :td
                        ($ :span {:class (str "badge badge-" status)}
                           (case status "danger" "Критично" "warning" "Низкий" "OK")))))))))))
 
 ;; ---------------------------------------------------------------------------
-;; KPI section
+;; KPI section — reads from API :kpis map
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private kpi-section [{:keys [compare?]}]
-  ;; Memoize the formatted KPI vector — totals + format-rub/pct/mul calls
-  ;; (8 of each) shouldn't re-run on every render. Phase 8 will inject the
-  ;; live values; the same memoization shape will hold.
-  (let [kpis (use-memo
-              (fn []
-                (let [sum     #(reduce + %)
-                      revenue (sum mock/revenue-series)
-                      profit  (sum mock/profit-series)
-                      orders  (js/Math.round (sum mock/orders-series))]
-                  [{:label    "Выручка"
-                    :value    (fmt/format-rub revenue)
-                    :delta    12.4
-                    :spark    mock/revenue-series
-                    :sub      "WoW"}
-                   {:label    "Чистая прибыль"
-                    :value    (fmt/format-rub profit)
-                    :delta    8.2
-                    :spark    mock/profit-series
-                    :sub      "WoW"}
-                   {:label    "Заказы"
-                    :value    (str (fmt/format-int orders) " шт")
-                    :delta    5.8
-                    :spark    mock/orders-series
-                    :sub      "WoW"}
-                   {:label    "Маржа"
-                    :value    (fmt/format-pct 34.2)
-                    :delta    -2.1
-                    :spark    mock/profit-series
-                    :sub      "WoW"}
-                   {:label    "Средний чек"
-                    :value    (fmt/format-rub 2840)
-                    :delta    1.4
-                    :sub      "WoW"}
-                   {:label    "Выкуп"
-                    :value    (fmt/format-pct 78.4)
-                    :delta    0.8
-                    :sub      "WoW"}
-                   {:label    "ROAS"
-                    :value    (fmt/format-mul 3.4)
-                    :delta    -0.6
-                    :sub      "WoW"}
-                   {:label    "ДРР"
-                    :value    (fmt/format-pct 11.2)
-                    :delta    1.2
-                    :sub      "WoW"
-                    :inverted? true}]))
-              [])]
+(defui ^:private kpi-section [{:keys [compare? kpis]}]
+  (let [k      (or kpis {})
+        rev    (:revenue k)
+        profit (:profit k)
+        orders (:orders k)
+        margin (:margin k)
+        check  (:avg-check k)
+        buyout (:buyout k)
+        roas   (:roas k)
+        drr    (:drr k)
+        cards  [{:label     "Выручка"
+                 :value     (fmt/format-rub (safe-num (:value rev)))
+                 :delta     (:delta-pct rev)
+                 :spark     (safe-spark (:spark rev))
+                 :sub       "WoW"}
+                {:label     "Чистая прибыль"
+                 :value     (fmt/format-rub (safe-num (:value profit)))
+                 :delta     (:delta-pct profit)
+                 :spark     (safe-spark (:spark profit))
+                 :sub       "WoW"}
+                {:label     "Заказы"
+                 :value     (str (fmt/format-int (safe-num (:value orders))) " шт")
+                 :delta     (:delta-pct orders)
+                 :spark     (safe-spark (:spark orders))
+                 :sub       "WoW"}
+                {:label     "Маржа"
+                 :value     (fmt/format-pct (safe-num (:value margin)))
+                 :delta     (:delta-pct margin)
+                 :sub       "WoW"}
+                {:label     "Средний чек"
+                 :value     (fmt/format-rub (safe-num (:value check)))
+                 :delta     (:delta-pct check)
+                 :sub       "WoW"}
+                {:label     "Выкуп"
+                 :value     (fmt/format-pct (safe-num (:value buyout)))
+                 :delta     (:delta-pct buyout)
+                 :sub       "WoW"}
+                {:label     "ROAS"
+                 :value     (or-ndash (:value roas) fmt/format-mul)
+                 :delta     (:delta-pct roas)
+                 :sub       "WoW"}
+                {:label     "ДРР"
+                 :value     (or-ndash (:value drr) fmt/format-pct)
+                 :delta     (:delta-pct drr)
+                 :sub       "WoW"
+                 :inverted? true}]]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
              ($ :h3 {:class "section-title"} "Ключевые метрики")
              (when compare?
-               ($ :div {:class "section-subtitle"} "vs предыдущий период (24.04 — 23.05)")))
+               ($ :div {:class "section-subtitle"} "vs предыдущий период")))
           ($ :div {:class "row"}
              ($ :span {:class "badge badge-success"}
                 ($ :span {:class "dot-status green"})
-                " Данные на 03.05.2026 11:24")))
+                " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted?]} kpis]
+          (for [{:keys [label value delta sub spark inverted?]} cards]
             ($ kpi-card {:key       label
                          :label     label
                          :value     value
@@ -505,6 +510,57 @@
                          :spark     spark
                          :compare?  compare?
                          :inverted? (boolean inverted?)}))))))
+
+;; ---------------------------------------------------------------------------
+;; Loading skeleton helpers
+;; ---------------------------------------------------------------------------
+
+(defui ^:private skel-row []
+  ($ :div {:class "skel" :style {:height "16px" :border-radius "4px" :margin-bottom "8px"}}))
+
+(defui ^:private skel-card [{:keys [height]}]
+  ($ :div {:class "skel card section-card"
+           :style {:height (str (or height 80) "px")
+                   :border-radius "var(--radius-lg)"}}))
+
+(defui ^:private pulse-skeleton []
+  ($ :div {:class "page-content"}
+     ;; Alert skeletons
+     ($ :div {:style {:display "flex" :flex-direction "column" :gap "10px"}}
+        ($ skel-card {:height 56})
+        ($ skel-card {:height 56})
+        ($ skel-card {:height 56}))
+     ;; KPI grid skeleton
+     ($ :section {:class "card section-card"}
+        ($ :div {:class "kpi-grid"}
+           (for [i (range 8)]
+             ($ :div {:key i :class "kpi"}
+                ($ :div {:class "skel" :style {:height "12px" :width "60%" :margin-bottom "8px" :border-radius "4px"}})
+                ($ :div {:class "skel" :style {:height "26px" :width "80%" :border-radius "4px"}})))))
+     ;; Charts skeleton
+     ($ :div {:class "grid-12"}
+        ($ skel-card {:height 320})
+        ($ skel-card {:height 320}))
+     ;; Table skeleton
+     ($ :section {:class "card section-card"}
+        (for [i (range 5)]
+          ($ skel-row {:key i})))))
+
+;; ---------------------------------------------------------------------------
+;; Error banner
+;; ---------------------------------------------------------------------------
+
+(defui ^:private error-banner [{:keys [message on-retry]}]
+  ($ :div {:class "alert alert-danger"
+           :style {:margin-bottom "12px"}}
+     ($ icon {:name :danger :class "alert-icon"})
+     ($ :div {:class "alert-body"}
+        ($ :div {:class "alert-title"} "Не удалось загрузить данные")
+        ($ :div (or message "Проверьте соединение с сервером.")))
+     ($ :button {:class    "btn btn-ghost btn-sm"
+                 :style    {:color "inherit" :border "1px solid currentColor"}
+                 :on-click on-retry}
+        "Повторить")))
 
 ;; ---------------------------------------------------------------------------
 ;; Empty state
@@ -525,45 +581,111 @@
 ;; ---------------------------------------------------------------------------
 
 (defui pulse []
-  (let [mp-filter (use-subscribe [::subs/mp-filter])
-        compare?  (use-subscribe [::subs/compare])
-        _density  (use-subscribe [::subs/density])]   ; consumed so density changes re-render
-    ($ :div {:class "page-content"}
-       ;; Alerts
-       ($ :div {:style {:display "flex" :flex-direction "column" :gap "10px"}}
-          (for [a mock/alerts]
-            ($ alert-card {:key   (:title a)
-                           :kind  (:kind a)
-                           :title (:title a)
-                           :body  (:body a)
-                           :cta   (:cta a)})))
+  (let [mp-filter  (use-subscribe [::subs/mp-filter])
+        period     (use-subscribe [::subs/period])
+        compare?   (use-subscribe [::subs/compare])
+        _density   (use-subscribe [::subs/density])
+        data       (use-subscribe [::subs/pulse-data])
+        loading?   (use-subscribe [::subs/pulse-loading?])
+        api-errors (use-subscribe [::subs/api-errors])
+        error-msg  (get-in api-errors ["/api/v1/marker/pulse-summary" :message])
 
-       (if (empty? mp-filter)
-         ($ empty-state)
-         ($ :<>
-            ;; KPI grid
-            ($ kpi-section {:compare? compare?})
+        ;; Filter state map for dispatch
+        fs {:mp-filter mp-filter :period period :compare compare?}]
 
-            ;; Plan-fact + Donut
-            ($ :div {:class "grid-12"}
-               ($ plan-fact-card {:compare? compare? :mp-filter mp-filter})
-               ($ mp-structure-card {:mp-filter mp-filter}))
+    ;; On mount — fire initial load (deps intentionally empty: we want this once)
+    ;; UIx linter wants [fs] but fs is a new map every render — use primitives below.
+    (use-effect
+     (fn []
+       (rf/dispatch [::events/load-pulse
+                     {:mp-filter mp-filter :period period :compare compare?}])
+       js/undefined)
+     ;; Intentionally [] — mount-only; filter changes handled by the effect below.
+     ;; Suppress UIx missing-deps: the on-filter effect covers subsequent changes.
+     [])
 
-            ;; Bar chart + Tabs
-            ($ :div {:class "grid-12"}
-               ($ :section {:class "card section-card col-7"}
-                  ($ :div {:class "section-head"}
-                     ($ :div
-                        ($ :h3 {:class "section-title"} "Заказы по дням")
-                        ($ :div {:class "section-subtitle"} "stack по маркетплейсам"))
-                     ($ :div {:class "row"}
-                        ($ :button {:class "icon-btn" :title "Развернуть"}
-                           ($ icon {:name :expand}))
-                        ($ :button {:class "icon-btn"}
-                           ($ icon {:name :more-h}))))
-                  ($ :div {:style {:height "240px"}}
-                     ($ orders-bar {:mp-filter mp-filter})))
-               ($ movers-tabs {:mp-filter mp-filter}))
+    ;; On filter/period/compare change — re-dispatch
+    (use-effect
+     (fn []
+       (rf/dispatch [::events/load-pulse
+                     {:mp-filter mp-filter :period period :compare compare?}])
+       js/undefined)
+     [mp-filter period compare?])
 
-            ;; Critical stocks
-            ($ critical-stocks {:mp-filter mp-filter}))))))
+    (cond
+      ;; No MP selected
+      (empty? mp-filter)
+      ($ :div {:class "page-content"} ($ empty-state))
+
+      ;; Loading skeleton (first load only — data is nil)
+      (and loading? (nil? data))
+      ($ pulse-skeleton)
+
+      ;; Error state with no previously-loaded data
+      (and error-msg (nil? data))
+      ($ :div {:class "page-content"}
+         ($ error-banner {:message error-msg
+                          :on-retry #(do (rf/dispatch [::events/clear-cache])
+                                         (rf/dispatch [::events/load-pulse fs]))}))
+
+      :else
+      (let [alerts         (or (:alerts data) [])
+            kpis           (:kpis data)
+            forecast       (or (:forecast data) {})
+            charts         (or (:charts data) {})
+            movers         (or (:top-movers data) [])
+            fallers        (or (:top-fallers data) [])
+            critical       (or (:critical-stocks data) [])
+            rev-spark      (safe-spark (:revenue-30d charts))
+            rev-prev-spark (safe-spark (:revenue-prev-30d charts))
+            orders-by-mp   (or (:orders-by-mp charts) {})]
+        ($ :div {:class "page-content"}
+
+           ;; Error banner overlay (data available but stale load failed)
+           (when error-msg
+             ($ error-banner {:message error-msg
+                              :on-retry #(do (rf/dispatch [::events/clear-cache])
+                                              (rf/dispatch [::events/load-pulse fs]))}))
+
+           ;; Alerts
+           (when (seq alerts)
+             ($ :div {:style {:display "flex" :flex-direction "column" :gap "10px"}}
+                (for [a alerts]
+                  ($ alert-card {:key   (:title a)
+                                 :kind  (:kind a)
+                                 :title (:title a)
+                                 :body  (:body a)
+                                 :cta   (or (:cta a) "Подробнее")}))))
+
+           ;; KPI grid
+           ($ kpi-section {:compare? compare? :kpis kpis})
+
+           ;; Plan-fact + Donut
+           ($ :div {:class "grid-12"}
+              ($ plan-fact-card {:compare?       compare?
+                                 :mp-filter      mp-filter
+                                 :forecast       forecast
+                                 :rev-spark      rev-spark
+                                 :rev-prev-spark rev-prev-spark})
+              ($ mp-structure-card {:mp-filter mp-filter
+                                    :mp-share  (:mp-share charts)}))
+
+           ;; Bar chart + Tabs
+           ($ :div {:class "grid-12"}
+              ($ :section {:class "card section-card col-7"}
+                 ($ :div {:class "section-head"}
+                    ($ :div
+                       ($ :h3 {:class "section-title"} "Заказы по дням")
+                       ($ :div {:class "section-subtitle"} "stack по маркетплейсам"))
+                    ($ :div {:class "row"}
+                       ($ :button {:class "icon-btn" :title "Развернуть"}
+                          ($ icon {:name :expand}))
+                       ($ :button {:class "icon-btn"}
+                          ($ icon {:name :more-h}))))
+                 ($ :div {:style {:height "240px"}}
+                    ($ orders-bar {:mp-filter    mp-filter
+                                   :orders-by-mp orders-by-mp})))
+              ($ movers-tabs {:movers movers :fallers fallers}))
+
+           ;; Critical stocks
+           ($ critical-stocks-table {:rows critical}))))))

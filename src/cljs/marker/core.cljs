@@ -7,6 +7,7 @@
             [re-frame.core         :as rf]
             [uix.re-frame          :refer [use-subscribe]]
             [marker.router         :as router]
+            [marker.api            :as api] ; registers :http-xhrio effect handler
             [marker.state.subs     :as subs]
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sidebar topbar mp-filter period-selector
@@ -114,11 +115,7 @@
                                                           (if (= theme "dark") "light" "dark")])
                         :theme             theme
                         :on-sidebar-toggle #(rf/dispatch [::events/toggle-sidebar])
-                        :on-sync           #(rf/dispatch [::events/set-sync-state
-                                                          {:kind     :running
-                                                           :section  "WB"
-                                                           :elapsed  "0s"
-                                                           :progress 30}])
+                        :on-sync           #(rf/dispatch [::events/sync-and-refresh])
                         :on-tweaks         #(rf/dispatch [::events/toggle-tweaks])})
 
              ;; Sync banner

@@ -1,9 +1,11 @@
 (ns marker.state.events
   "re-frame event handlers for the Marker SPA.
    Includes initialize-db (with localStorage merge), all setters,
-   and tweaks persistence via localStorage[\"marker/tweaks\"]."
+   tweaks persistence via localStorage[\"marker/tweaks\"],
+   and Phase 8 API load events."
   (:require [re-frame.core :as rf]
-            [marker.state.db :as db]))
+            [marker.state.db :as db]
+            [marker.api      :as api]))
 
 ;; ---------------------------------------------------------------------------
 ;; localStorage helpers
@@ -117,3 +119,256 @@
 (rf/reg-event-db ::toggle-tweaks
   (fn [db _]
     (update db :marker/tweaks-open not)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: Cache helpers
+;; ---------------------------------------------------------------------------
+
+(defn- cache-key
+  "Build a cache-key tuple from filter state."
+  [page {:keys [mp-filter period compare]}]
+  [page mp-filter period compare])
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: Error handling
+;; ---------------------------------------------------------------------------
+
+;; Write an error entry to :marker/api-errors. Payload is the clj-ajax failure response map.
+(rf/reg-event-db ::api-error
+  (fn [db [_ url failure]]
+    (let [msg (or (get-in failure [:response :error])
+                  (:status-text failure)
+                  (str "HTTP " (:status failure))
+                  "Неизвестная ошибка")]
+      (assoc-in db [:marker/api-errors url]
+                {:message msg
+                 :status  (:status failure)}))))
+
+(rf/reg-event-db ::clear-api-error
+  (fn [db [_ url]]
+    (update db :marker/api-errors dissoc url)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: Cache management
+;; ---------------------------------------------------------------------------
+
+;; Clear the entire API cache (used by Sync button).
+(rf/reg-event-db ::clear-cache
+  (fn [db _]
+    (assoc db :marker/cache {})))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: Pulse
+;; ---------------------------------------------------------------------------
+
+(def ^:private pulse-url "/api/v1/marker/pulse-summary")
+
+;; Load pulse-summary data. Checks cache first; fires http-xhrio on miss.
+(rf/reg-event-fx ::load-pulse
+  (fn [{:keys [db]} [_ filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey (cache-key :pulse fs)
+          hit  (get-in db [:marker/cache ckey])]
+      (if hit
+        {:db (assoc db :marker/pulse-data hit :marker/pulse-loading? false)}
+        {:db         (assoc db :marker/pulse-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url pulse-url (api/build-params fs))
+                       [::pulse-data-loaded ckey]
+                       [::pulse-load-failed])}))))
+
+(rf/reg-event-db ::pulse-data-loaded
+  (fn [db [_ ckey data]]
+    (-> db
+        (assoc :marker/pulse-data    data
+               :marker/pulse-loading? false)
+        (assoc-in [:marker/cache ckey] data)
+        (update :marker/api-errors dissoc pulse-url))))
+
+(rf/reg-event-fx ::pulse-load-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/pulse-loading? false)
+     :dispatch [::api-error pulse-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: P&L
+;; ---------------------------------------------------------------------------
+
+(def ^:private pnl-url "/api/v1/marker/pnl")
+
+(rf/reg-event-fx ::load-pnl
+  (fn [{:keys [db]} [_ filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey (cache-key :pnl fs)
+          hit  (get-in db [:marker/cache ckey])]
+      (if hit
+        {:db (assoc db :marker/pnl-data hit :marker/pnl-loading? false)}
+        {:db         (assoc db :marker/pnl-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url pnl-url (api/build-params fs))
+                       [::pnl-data-loaded ckey]
+                       [::pnl-load-failed])}))))
+
+(rf/reg-event-db ::pnl-data-loaded
+  (fn [db [_ ckey data]]
+    (-> db
+        (assoc :marker/pnl-data    data
+               :marker/pnl-loading? false)
+        (assoc-in [:marker/cache ckey] data)
+        (update :marker/api-errors dissoc pnl-url))))
+
+(rf/reg-event-fx ::pnl-load-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/pnl-loading? false)
+     :dispatch [::api-error pnl-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: SKU list
+;; ---------------------------------------------------------------------------
+
+(def ^:private sku-list-url "/api/v1/marker/sku-list")
+
+(rf/reg-event-fx ::load-sku-list
+  (fn [{:keys [db]} [_ filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey (cache-key :sku-list fs)
+          hit  (get-in db [:marker/cache ckey])]
+      (if hit
+        {:db (assoc db :marker/sku-list-data hit :marker/sku-list-loading? false)}
+        {:db         (assoc db :marker/sku-list-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url sku-list-url (api/build-params fs))
+                       [::sku-list-data-loaded ckey]
+                       [::sku-list-load-failed])}))))
+
+(rf/reg-event-db ::sku-list-data-loaded
+  (fn [db [_ ckey data]]
+    (-> db
+        (assoc :marker/sku-list-data    (:skus data)
+               :marker/sku-list-loading? false)
+        (assoc-in [:marker/cache ckey] (:skus data))
+        (update :marker/api-errors dissoc sku-list-url))))
+
+(rf/reg-event-fx ::sku-list-load-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/sku-list-loading? false)
+     :dispatch [::api-error sku-list-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: SKU detail (keyed by sku-id inside :marker/sku-detail-data map)
+;; ---------------------------------------------------------------------------
+
+(defn- sku-detail-url [sku-id]
+  (str "/api/v1/marker/sku-detail/" (js/encodeURIComponent sku-id)))
+
+;; Load detail for a single SKU. Cache key includes sku-id.
+(rf/reg-event-fx ::load-sku-detail
+  (fn [{:keys [db]} [_ sku-id filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey [:sku-detail sku-id (:mp-filter fs) (:period fs)]
+          hit  (get-in db [:marker/cache ckey])
+          url  (sku-detail-url sku-id)]
+      (if hit
+        {:db (-> db
+                 (assoc-in [:marker/sku-detail-data sku-id] hit)
+                 (assoc :marker/sku-detail-loading? false))}
+        {:db         (assoc db :marker/sku-detail-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url url (api/build-params fs))
+                       [::sku-detail-loaded ckey sku-id]
+                       [::sku-detail-load-failed sku-id])}))))
+
+(rf/reg-event-db ::sku-detail-loaded
+  (fn [db [_ ckey sku-id data]]
+    (-> db
+        (assoc-in [:marker/sku-detail-data sku-id] data)
+        (assoc :marker/sku-detail-loading? false)
+        (assoc-in [:marker/cache ckey] data))))
+
+(rf/reg-event-fx ::sku-detail-load-failed
+  (fn [{:keys [db]} [_ sku-id failure]]
+    {:db       (assoc db :marker/sku-detail-loading? false)
+     :dispatch [::api-error (sku-detail-url sku-id) failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: open-sheet — also triggers SKU detail fetch
+;; ---------------------------------------------------------------------------
+
+;; Open the SKU sheet and load its data from the API.
+(rf/reg-event-fx ::open-sheet-and-load
+  (fn [{:keys [db]} [_ sku-id]]
+    {:db       (assoc db :marker/sheet-sku sku-id)
+     :dispatch [::load-sku-detail sku-id]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: what-if-recalc (POST) — used by unit page for server validation
+;; ---------------------------------------------------------------------------
+
+(def ^:private what-if-url "/api/v1/marker/what-if-recalc")
+
+;; Send unit-econ params to server for validation/persistence.
+;; Does NOT replace client-side compute — client stays snappy.
+(rf/reg-event-fx ::what-if-recalc
+  (fn [_ [_ params on-success]]
+    {:http-xhrio (api/post-xhrio
+                   what-if-url
+                   {:price          (:price params)
+                    :cogs           (:cogs params)
+                    :commission-pct (:commission params)
+                    :logistics      (:logistics params)
+                    :ads            (:ads params)
+                    :returns-pct    (:returns params)}
+                   (or on-success [::what-if-recalc-ok])
+                   [::what-if-recalc-failed])}))
+
+(rf/reg-event-db ::what-if-recalc-ok
+  (fn [db [_ _result]]
+    ;; Server confirmed calculation; no UI update needed (client already shows it)
+    db))
+
+(rf/reg-event-fx ::what-if-recalc-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       db   ; silently log; UI is driven by client-side compute
+     :dispatch [::api-error what-if-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: Sync / refresh — clear cache + reload current page
+;; ---------------------------------------------------------------------------
+
+(rf/reg-event-fx ::sync-and-refresh
+  ;; Clear cache, show sync running state, reload data for the current page.
+  (fn [{:keys [db]} _]
+    (let [page (:marker/page db)
+          fs   {:mp-filter (:marker/mp-filter db)
+                :period    (:marker/period    db)
+                :compare   (:marker/compare   db)}
+          load-evt (case page
+                     :pulse    [::load-pulse    fs]
+                     :pnl      [::load-pnl      fs]
+                     :products [::load-sku-list fs]
+                     nil)]
+      (cond->
+       {:db (-> db
+                (assoc :marker/cache {})
+                (assoc :marker/sync-state
+                       {:kind     :running
+                        :section  (case page
+                                    :pulse    "Pulse"
+                                    :pnl      "P&L"
+                                    :products "Товары"
+                                    "данных")
+                        :elapsed  "0s"
+                        :progress 30}))}
+        load-evt (assoc :dispatch load-evt)))))

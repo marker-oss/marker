@@ -35,3 +35,35 @@
 
 (rf/reg-sub ::tweaks-open
   (fn [db _] (:marker/tweaks-open db)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: API data slices
+;; ---------------------------------------------------------------------------
+
+(rf/reg-sub ::pulse-data
+  (fn [db _] (:marker/pulse-data db)))
+
+(rf/reg-sub ::pulse-loading?
+  (fn [db _] (:marker/pulse-loading? db)))
+
+(rf/reg-sub ::pnl-data
+  (fn [db _] (:marker/pnl-data db)))
+
+(rf/reg-sub ::pnl-loading?
+  (fn [db _] (:marker/pnl-loading? db)))
+
+(rf/reg-sub ::sku-list-data
+  (fn [db _] (:marker/sku-list-data db)))
+
+(rf/reg-sub ::sku-list-loading?
+  (fn [db _] (:marker/sku-list-loading? db)))
+
+;; Returns a map of {sku-id detail-map}.
+(rf/reg-sub ::sku-detail-data
+  (fn [db _] (:marker/sku-detail-data db)))
+
+(rf/reg-sub ::sku-detail-loading?
+  (fn [db _] (:marker/sku-detail-loading? db)))
+
+(rf/reg-sub ::api-errors
+  (fn [db _] (:marker/api-errors db)))

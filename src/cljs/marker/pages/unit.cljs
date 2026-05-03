@@ -1,7 +1,18 @@
 (ns marker.pages.unit
-  "Unit-economics what-if calculator — Phase 6.
-   6 sliders, live recalculation, delta-vs-baseline display."
-  (:require [uix.core :refer [$ defui use-state use-memo]]
+  "Unit-economics what-if calculator — Phase 8.
+   Strategy: HYBRID (option c).
+   - Client-side compute runs instantly on every slider drag for snappy UX.
+   - Debounced POST to /what-if-recalc fires ~300ms after the slider settles;
+     this validates the computation server-side and is a hook for future
+     persistence (save-as-scenario feature).
+   - Server response is currently not used to override the client display
+     because: (a) both sides use the same formula, (b) round-trip latency
+     would make the UI feel sluggish with no benefit, (c) server confirms
+     the calculation silently in the background.
+   - compute-unit-econ stays as the pure CLJS function used by unit_test.cljs."
+  (:require [uix.core :refer [$ defui use-state use-memo use-effect use-ref]]
+            [re-frame.core :as rf]
+            [marker.state.events :as events]
             [marker.ui.chrome   :refer [delta]]
             [marker.ui.icons    :refer [icon]]
             [marker.util.format :as fmt]))
@@ -88,6 +99,24 @@
     :color "var(--chart-5)"}])
 
 ;; ---------------------------------------------------------------------------
+;; Debounce helper — returns a stable debounced fn ref
+;; ---------------------------------------------------------------------------
+
+(defn- use-debounced-fn
+  "Returns a fn that, when called, cancels any pending call and schedules a
+   new one after `delay-ms` milliseconds."
+  [f delay-ms]
+  (let [timer-ref (use-ref nil)]
+    (fn [& args]
+      (when @timer-ref (js/clearTimeout @timer-ref))
+      (reset! timer-ref
+              (js/setTimeout
+               (fn []
+                 (reset! timer-ref nil)
+                 (apply f args))
+               delay-ms)))))
+
+;; ---------------------------------------------------------------------------
 ;; Page component
 ;; ---------------------------------------------------------------------------
 
@@ -104,7 +133,21 @@
                          (js/Math.abs (:profit base)))
                       100))
         d-margin (- (:margin cur) (:margin base))
-        d-roas   (- (:roas cur) (:roas base))]
+        d-roas   (- (:roas cur) (:roas base))
+
+        ;; Debounced server validation (300ms after slider settles)
+        send-to-server! (use-debounced-fn
+                         (fn [p]
+                           (rf/dispatch [::events/what-if-recalc p]))
+                         300)]
+
+    ;; Fire server validation whenever params change (debounced).
+    ;; send-to-server! is in deps to satisfy UIx linter; it's stable in practice.
+    (use-effect
+     (fn []
+       (send-to-server! params)
+       js/undefined)
+     [params send-to-server!])
 
     ($ :div {:class "page-content"}
        ($ :div {:class "grid-12"}
@@ -152,7 +195,8 @@
                               :gap           "8px"}}
                 ($ :button {:class "btn btn-primary btn-sm"}
                    "Применить как основной")
-                ($ :button {:class "btn btn-ghost btn-sm"}
+                ($ :button {:class    "btn btn-ghost btn-sm"
+                            :on-click #(rf/dispatch [::events/what-if-recalc params])}
                    "Сохранить как сценарий")))
 
           ;; Right: 4 metric cards + cost structure below (5 columns)
@@ -173,7 +217,6 @@
                       (fmt/format-pct (:margin cur)))
                    ($ :div {:style {:margin-top "6px"}}
                       ($ delta {:pct d-margin :suffix " п.п. vs baseline"}))
-                   ;; Progress bar
                    ($ :div {:style {:margin-top   "10px"
                                     :height       "4px"
                                     :background   "var(--color-bg-muted)"
@@ -243,4 +286,3 @@
                                        (/ (* val 100.0) (:price params))
                                        0.0)]
                              (str (.toFixed pct 0) "%"))))))))))))
-

@@ -14,4 +14,20 @@
    :marker/cmdk-open         false
    :marker/sheet-sku         nil
    :marker/sync-state        nil
-   :marker/tweaks-open       false})
+   :marker/tweaks-open       false
+
+   ;; Phase 8: API data slices — nil means "not yet loaded"
+   :marker/pulse-data        nil
+   :marker/pulse-loading?    false
+   :marker/pnl-data          nil
+   :marker/pnl-loading?      false
+   :marker/sku-list-data     nil
+   :marker/sku-list-loading? false
+   :marker/sku-detail-data   nil   ; map of {sku-id data}
+   :marker/sku-detail-loading? false
+
+   ;; Phase 8: cache — {[page mp-filter period compare] data-snapshot}
+   :marker/cache             {}
+
+   ;; Phase 8: API errors — {url {:message str :status num}}
+   :marker/api-errors        {}})
