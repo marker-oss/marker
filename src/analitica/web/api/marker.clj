@@ -338,8 +338,11 @@
                         (if (<= (compare today-str to) 0)
                           (period/days-between from (if (<= (compare today-str to) 0) today-str to))
                           days-total))
+          ;; Velocity uses sales-table revenue (same source as the Pulse
+          ;; revenue KPI) so Ozon's pre-realization period still produces
+          ;; a meaningful projection.
           velocity    (if (pos? days-so-far)
-                        (/ (double (or (:revenue pnl-cur) 0.0)) days-so-far)
+                        (/ (double (or (:revenue sales-tots) 0.0)) days-so-far)
                         0.0)
           projection  (math/round2 (* velocity days-total))
 
@@ -373,10 +376,28 @@
 
           ;; Build response
           orders-cur  (long (or (:total-sales sales-tots) 0))
-          orders-prev (long (or (:total-sales (sales/totals sales-prev)) 0))]
+          orders-prev (long (or (:total-sales prev-tots) 0))
+
+          ;; Revenue/avg-check: use sales-table aggregates for the Pulse
+          ;; KPIs so they stay consistent with the sparkline (which is
+          ;; built from the same sales source). Pulse is the operational
+          ;; dashboard — it should reflect today's activity.
+          ;;
+          ;; Why not PnL?  PnL is realization-based and Ozon publishes
+          ;; /v2/finance/realization mid-next-month. Until then PnL
+          ;; revenue for Ozon is 0 even though sales rows exist via
+          ;; /v3/posting/list. Mixing PnL (single-MP) and sales (all-MP)
+          ;; was the previous bug — the all-MP KPI dropped Ozon's current
+          ;; month while the chart kept it. Sales is the right source for
+          ;; both. The canonical P&L view stays on the dedicated /pnl
+          ;; route.
+          rev-cur     (or (:revenue sales-tots) 0.0)
+          rev-prev    (or (:revenue prev-tots) 0.0)
+          ac-cur      (or (:avg-price sales-tots) 0.0)
+          ac-prev     (or (:avg-price prev-tots) 0.0)]
 
       {:alerts          alert-list
-       :kpis            {:revenue   (build-kpi (:revenue pnl-cur)   (:revenue pnl-prev)   rev-spark)
+       :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark)
                          :profit    (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
@@ -386,10 +407,8 @@
                                                   (or (:margin-net pnl-cur) 0.0)
                                                   (or (:margin-net pnl-prev) 0.0))
                                      :spark     []}
-                         :avg-check {:value     (or (:avg-check pnl-cur) 0.0)
-                                     :delta-pct (math/pct-delta
-                                                  (or (:avg-check pnl-cur) 0.0)
-                                                  (or (:avg-check pnl-prev) 0.0))
+                         :avg-check {:value     ac-cur
+                                     :delta-pct (math/pct-delta ac-cur ac-prev)
                                      :spark     []}
                          :buyout    {:value     (or (:buyout-rate pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
@@ -412,7 +431,7 @@
                                      :delta-pct nil
                                      :spark     []}}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
-                         :month-fact (math/round2 (or (:revenue pnl-cur) 0.0))
+                         :month-fact (math/round2 rev-cur)
                          :projection projection}
        :charts          (cond-> {:revenue-30d    rev-spark
                                  :orders-by-mp   (or orders-by-mp {:wb ord-spark :ozon [] :ym []})
