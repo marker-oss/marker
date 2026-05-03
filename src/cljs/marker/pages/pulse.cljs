@@ -593,18 +593,9 @@
         ;; Filter state map for dispatch
         fs {:mp-filter mp-filter :period period :compare compare?}]
 
-    ;; On mount — fire initial load (deps intentionally empty: we want this once)
-    ;; UIx linter wants [fs] but fs is a new map every render — use primitives below.
-    (use-effect
-     (fn []
-       (rf/dispatch [::events/load-pulse
-                     {:mp-filter mp-filter :period period :compare compare?}])
-       js/undefined)
-     ;; Intentionally [] — mount-only; filter changes handled by the effect below.
-     ;; Suppress UIx missing-deps: the on-filter effect covers subsequent changes.
-     [])
-
-    ;; On filter/period/compare change — re-dispatch
+    ;; On mount AND on filter/period/compare change — re-dispatch the load.
+    ;; A single effect with deps fires on first render too, so a separate
+    ;; `[]` mount effect would only cause a duplicate concurrent request.
     (use-effect
      (fn []
        (rf/dispatch [::events/load-pulse

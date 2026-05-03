@@ -318,13 +318,8 @@
         error-msg  (get-in api-errors ["/api/v1/marker/pnl" :message])
         fs         {:mp-filter mp-filter :period period :compare compare?}]
 
-    (use-effect
-     (fn []
-       (rf/dispatch [::events/load-pnl
-                     {:mp-filter mp-filter :period period :compare compare?}])
-       js/undefined)
-     [])
-
+    ;; Single effect on [mp-filter period compare?] handles both mount and
+    ;; subsequent filter changes — a separate `[]` mount effect duplicates.
     (use-effect
      (fn []
        (rf/dispatch [::events/load-pnl

@@ -161,13 +161,8 @@
         [view set-view!] (use-state :grid)
         fs          {:mp-filter mps :period period :compare compare?}]
 
-    (use-effect
-     (fn []
-       (rf/dispatch [::events/load-sku-list
-                     {:mp-filter mps :period period :compare compare?}])
-       js/undefined)
-     [])
-
+    ;; Single effect on [mps period compare?] — fires on mount + on changes.
+    ;; A separate `[]` mount effect would duplicate the request.
     (use-effect
      (fn []
        (rf/dispatch [::events/load-sku-list

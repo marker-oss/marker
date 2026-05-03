@@ -125,9 +125,12 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- cache-key
-  "Build a cache-key tuple from filter state."
+  "Build a cache-key tuple from filter state.
+   mp-filter is sorted so toggling MP chips off then back on (which appends in
+   click order) produces the same key as the original filter — without this,
+   [:wb :ozon :ym] and [:wb :ym :ozon] would be different cache buckets."
   [page {:keys [mp-filter period compare]}]
-  [page mp-filter period compare])
+  [page (vec (sort mp-filter)) period compare])
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: Error handling
