@@ -10,7 +10,8 @@
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [marker.ui.icons :refer [icon]]
             [marker.mock     :as mock]
-            [marker.api      :as api]))
+            [marker.api      :as api]
+            [marker.state.db :as db]))
 
 ;; ============= NAV constant =============
 
@@ -148,7 +149,6 @@
 ;; ============= MP Filter =============
 
 (def ^:private mp-labels {:wb "WB" :ozon "Ozon" :ym "YM"})
-(def ^:private all-mps [:wb :ozon :ym])
 
 (defui mp-filter
   "Marketplace filter chips — single-select.
@@ -162,9 +162,9 @@
     ($ :div {:style {:display "flex" :gap "6px"}}
        ($ :button
           {:class    (str "chip" (when all-selected? " is-active"))
-           :on-click #(on-change all-mps)}
+           :on-click #(on-change db/all-mps)}
           "Все")
-       (for [mp all-mps]
+       (for [mp db/all-mps]
          ($ :button
             {:key      (name mp)
              :class    (str "chip chip-mp-" (name mp)

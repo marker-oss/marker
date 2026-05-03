@@ -3,9 +3,11 @@
    All keys are namespaced under :marker/ to avoid collisions with
    re-frame internals and future library keys.")
 
+(def all-mps [:wb :ozon :ym])
+
 (def default-db
   {:marker/page              :pulse
-   :marker/mp-filter         [:wb :ozon :ym]
+   :marker/mp-filter         all-mps
    :marker/period            "Последние 30 дней"
    :marker/compare           false
    :marker/theme             "light"

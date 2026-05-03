@@ -117,7 +117,12 @@
   (testing "duplicate known keyword → deduped to 1 → stored as-is"
     (rf/dispatch-sync [::events/initialize-db])
     (rf/dispatch-sync [::events/set-mp-filter [:wb :wb]])
-    (is (= [:wb] (:marker/mp-filter (db))) "[:wb :wb] → deduped → [:wb]")))
+    (is (= [:wb] (:marker/mp-filter (db))) "[:wb :wb] → deduped → [:wb]"))
+
+  (testing "nil → snapped to all 3"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter nil])
+    (is (= [:wb :ozon :ym] (:marker/mp-filter (db))) "nil snapped to all 3")))
 
 (deftest set-period-event
   (testing "set-period updates :marker/period without disturbing other keys"
