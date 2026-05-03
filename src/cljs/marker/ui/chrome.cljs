@@ -16,11 +16,20 @@
 (def NAV
   [{:id "pulse"    :label "Главная (Pulse)" :icon :pulse}
    {:id "finance"  :label "Финансы"         :icon :finance
-    :children [{:id "pnl"     :label "P&L"}
-               {:id "unit"    :label "Юнит-экономика"}
-               {:id "returns" :label "Возвраты"}]}
-   {:id "products" :label "Товары"  :icon :products :counter "32"}
-   {:id "warehouse":label "Склады"  :icon :warehouse}
+    :children [{:id "pnl"            :label "P&L"}
+               {:id "unit"           :label "Юнит-экономика"}
+               {:id "report:finance" :label "Финансовый отчёт"}
+               {:id "report:returns" :label "Возвраты"}]}
+   {:id "products" :label "Товары"          :icon :products}
+   {:id "report:stock"  :label "Склады"     :icon :warehouse}
+   {:id "reports"  :label "Отчёты"          :icon :layers
+    :children [{:id "report:sales"   :label "Продажи"}
+               {:id "report:abc"     :label "ABC-анализ"}
+               {:id "report:buyout"  :label "Выкуп"}
+               {:id "report:geo"     :label "География"}
+               {:id "report:trends"  :label "Тренды"}
+               {:id "report:losses"  :label "Потери"}
+               {:id "report:ue"      :label "Юнит-экономика"}]}
    {:id "plan"     :label "План"    :icon :target}
    {:id "kit"      :label "UI Kit"  :icon :sparkles}])
 

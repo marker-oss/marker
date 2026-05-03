@@ -72,3 +72,15 @@
 
 (rf/reg-sub ::api-errors
   (fn [db _] (:marker/api-errors db)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 9: Generic reports — keyed by report-type keyword
+;; ---------------------------------------------------------------------------
+
+(rf/reg-sub ::report-data
+  (fn [db [_ report-type]]
+    (get-in db [:marker/reports-data report-type])))
+
+(rf/reg-sub ::report-loading?
+  (fn [db [_ report-type]]
+    (get-in db [:marker/reports-loading? report-type] false)))

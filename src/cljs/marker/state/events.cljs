@@ -349,6 +349,45 @@
      :dispatch [::api-error what-if-url failure]}))
 
 ;; ---------------------------------------------------------------------------
+;; Phase 9: Generic reports loader — keyed by report-type
+;; ---------------------------------------------------------------------------
+
+(defn- reports-url [report-type]
+  (str "/api/v1/marker/reports/" (name report-type)))
+
+(rf/reg-event-fx ::load-report
+  (fn [{:keys [db]} [_ report-type filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey [:report report-type (vec (sort (:mp-filter fs))) (:period fs) (:compare fs)]
+          hit  (get-in db [:marker/cache ckey])
+          url  (reports-url report-type)]
+      (if hit
+        {:db (-> db
+                 (assoc-in [:marker/reports-data    report-type] hit)
+                 (assoc-in [:marker/reports-loading? report-type] false))}
+        {:db         (assoc-in db [:marker/reports-loading? report-type] true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url url (api/build-params fs))
+                       [::report-loaded ckey report-type]
+                       [::report-load-failed report-type])}))))
+
+(rf/reg-event-db ::report-loaded
+  (fn [db [_ ckey report-type data]]
+    (-> db
+        (assoc-in [:marker/reports-data     report-type] data)
+        (assoc-in [:marker/reports-loading? report-type] false)
+        (assoc-in [:marker/cache ckey] data)
+        (update :marker/api-errors dissoc (reports-url report-type)))))
+
+(rf/reg-event-fx ::report-load-failed
+  (fn [{:keys [db]} [_ report-type failure]]
+    {:db       (assoc-in db [:marker/reports-loading? report-type] false)
+     :dispatch [::api-error (reports-url report-type) failure]}))
+
+;; ---------------------------------------------------------------------------
 ;; Phase 8: Sync / refresh — clear cache + reload current page
 ;; ---------------------------------------------------------------------------
 
@@ -359,21 +398,26 @@
           fs   {:mp-filter (:marker/mp-filter db)
                 :period    (:marker/period    db)
                 :compare   (:marker/compare   db)}
-          load-evt (case page
-                     :pulse    [::load-pulse    fs]
-                     :pnl      [::load-pnl      fs]
-                     :products [::load-sku-list fs]
-                     nil)]
+          ;; If on a report page, reload that report
+          report-type (when (and (vector? page) (= :report (first page)))
+                        (second page))
+          load-evt (cond
+                     report-type     [::load-report  report-type fs]
+                     (= page :pulse) [::load-pulse    fs]
+                     (= page :pnl)   [::load-pnl      fs]
+                     (= page :products) [::load-sku-list fs]
+                     :else           nil)]
       (cond->
        {:db (-> db
                 (assoc :marker/cache {})
                 (assoc :marker/sync-state
                        {:kind     :running
-                        :section  (case page
-                                    :pulse    "Pulse"
-                                    :pnl      "P&L"
-                                    :products "Товары"
-                                    "данных")
+                        :section  (cond
+                                    report-type      (str "Отчёт " (name report-type))
+                                    (= page :pulse)  "Pulse"
+                                    (= page :pnl)    "P&L"
+                                    (= page :products) "Товары"
+                                    :else            "данных")
                         :elapsed  "0s"
                         :progress 30}))}
         load-evt (assoc :dispatch load-evt)))))

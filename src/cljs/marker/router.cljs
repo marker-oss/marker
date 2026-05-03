@@ -7,6 +7,7 @@
   (:require [reitit.frontend       :as rf-router]
             [reitit.frontend.easy  :as rfe]
             [re-frame.core         :as rf]
+            [clojure.string]
             [marker.state.events   :as events]))
 
 ;; ---------------------------------------------------------------------------
@@ -20,11 +21,11 @@
    ["/pulse"     {:name :pulse}]
    ["/pnl"       {:name :pnl}]
    ["/unit"      {:name :unit}]
-   ["/returns"   {:name :returns}]
    ["/products"  {:name :products}]
-   ["/warehouse" {:name :warehouse}]
    ["/plan"      {:name :plan}]
-   ["/kit"       {:name :kit}]])
+   ["/kit"       {:name :kit}]
+   ;; Phase 9: schema-driven reports (10 sub-routes via :type path-param)
+   ["/reports/:type" {:name :report}]])
 
 (def ^:private router
   (rf-router/router routes))
@@ -34,10 +35,19 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- on-navigate [match _history]
-  (let [route-name (get-in match [:data :name])]
-    (if (= route-name :app-root)
+  (let [route-name (get-in match [:data :name])
+        path-params (:path-params match)]
+    (cond
+      (= route-name :app-root)
       ;; /app with no suffix → redirect to /app/pulse
       (rfe/replace-state :pulse)
+
+      (= route-name :report)
+      ;; /app/reports/:type → set page to [:report <type-keyword>]
+      (let [report-type (some-> (:type path-params) keyword)]
+        (rf/dispatch [::events/set-page [:report report-type]]))
+
+      :else
       (rf/dispatch [::events/set-page (or route-name :pulse)]))))
 
 ;; ---------------------------------------------------------------------------
@@ -52,8 +62,27 @@
 
 (defn nav!
   "Navigate to a named route, pushing a new history entry.
-   Accepts either a keyword (`:pnl`) or a string id (`\"pnl\"`) so callers
-   like the sidebar's NAV table — which uses string ids — work without
-   coercion at the call-site.  reitit route names are keywords."
+   Accepts:
+     - keyword (`:pnl`) or string id (`\"pnl\"`) for static routes
+     - vector `[:report :finance]` for parameterised report routes
+     - string with colon (`\"report:finance\"`) — same as the vector form.
+       Used by the sidebar which keeps a flat string id space."
   [route-name]
-  (rfe/push-state (if (keyword? route-name) route-name (keyword route-name))))
+  (cond
+    (vector? route-name)
+    (let [[k & params] route-name]
+      (case k
+        :report (rfe/push-state :report {:type (name (first params))})
+        (rfe/push-state k)))
+
+    (and (string? route-name) (clojure.string/includes? route-name ":"))
+    (let [[k v] (clojure.string/split route-name #":" 2)]
+      (case k
+        "report" (rfe/push-state :report {:type v})
+        (rfe/push-state (keyword k))))
+
+    (keyword? route-name)
+    (rfe/push-state route-name)
+
+    :else
+    (rfe/push-state (keyword route-name))))

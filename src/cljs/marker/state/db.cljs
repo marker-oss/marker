@@ -29,4 +29,10 @@
    :marker/cache             {}
 
    ;; Phase 8: API errors — {url {:message str :status num}}
-   :marker/api-errors        {}})
+   :marker/api-errors        {}
+
+   ;; Phase 9: Generic reports — keyed by report-type keyword
+   ;; {report-type {:report-type kw :columns [...] :rows [...] :totals {} :schema {} :compare {}}}
+   :marker/reports-data      {}
+   ;; {report-type bool}
+   :marker/reports-loading?  {}})

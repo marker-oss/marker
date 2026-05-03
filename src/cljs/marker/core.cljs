@@ -19,6 +19,7 @@
             [marker.pages.pnl      :as pnl]
             [marker.pages.unit     :as unit]
             [marker.pages.products :as products]
+            [marker.pages.reports  :as reports]
             [marker.pages.kit      :as kit]))
 
 ;; ---------------------------------------------------------------------------
@@ -29,17 +30,48 @@
   {:pulse     "Главная (Pulse)"
    :pnl       "P&L"
    :unit      "Юнит-экономика"
-   :returns   "Возвраты"
    :products  "Товары"
-   :warehouse "Склады"
    :plan      "План"
    :kit       "UI Kit"})
 
+(def ^:private report-titles
+  {:sales   "Продажи"
+   :finance "Финансы"
+   :ue      "Юнит-экономика"
+   :abc     "ABC-анализ"
+   :stock   "Остатки"
+   :returns "Возвраты"
+   :buyout  "Выкуп"
+   :geo     "География"
+   :trends  "Тренды"
+   :losses  "Потери"})
+
+(defn- page-key
+  "Reduce a page value (kw or [:report :finance]) to a stable lookup key."
+  [page]
+  (cond
+    (vector? page) (first page)
+    :else page))
+
+(defn- page-title-for [page]
+  (cond
+    (and (vector? page) (= :report (first page)))
+    (get report-titles (second page) (name (or (second page) "")))
+
+    :else
+    (get page-titles page (name page))))
+
 (defn- crumbs-for [page]
-  (let [finance-children #{:pnl :unit :returns}]
-    (if (contains? finance-children page)
-      ["Marker" "Финансы" (get page-titles page)]
-      ["Marker" (get page-titles page (name page))])))
+  (let [finance-children #{:pnl :unit}]
+    (cond
+      (and (vector? page) (= :report (first page)))
+      ["Marker" "Отчёты" (page-title-for page)]
+
+      (contains? finance-children page)
+      ["Marker" "Финансы" (page-title-for page)]
+
+      :else
+      ["Marker" (page-title-for page)])))
 
 ;; ---------------------------------------------------------------------------
 ;; Placeholder card (for routes not yet implemented)
@@ -102,7 +134,10 @@
     ($ :<>
        ($ :div {:class "app"}
           ;; Sidebar
-          ($ sidebar {:active    (name page)
+          ($ sidebar {:active    (let [pk (page-key page)]
+                                   (if (and (vector? page) (= :report (first page)))
+                                     (str "report:" (name (second page)))
+                                     (name pk)))
                       :on-nav    router/nav!
                       :collapsed collapsed})
 
@@ -126,8 +161,7 @@
              ;; Page header
              ($ :div {:class "page-header"}
                 ($ :div
-                   ($ :h1 {:class "page-title"}
-                      (get page-titles page (name page)))
+                   ($ :h1 {:class "page-title"} (page-title-for page))
                    ($ :p {:class "page-subtitle"}
                       "Анализ данных по всем маркетплейсам"))
                 ($ :div {:class "page-actions"}
@@ -149,14 +183,19 @@
                                        :on-compare #(rf/dispatch [::events/set-compare %])})))
 
              ;; Page content — dispatch by route
-             (case page
-               :pulse    ($ pulse/pulse {})
-               :pnl      ($ pnl/pnl {})
-               :unit     ($ unit/unit {})
-               :products ($ products/products {})
-               :kit      ($ kit/kit {})
-               ;; Placeholder for routes not yet implemented
-               ($ placeholder-page {:title (get page-titles page (name page))}))))
+             (cond
+               (and (vector? page) (= :report (first page)))
+               ($ reports/report {:type (second page)})
+
+               :else
+               (case page
+                 :pulse    ($ pulse/pulse {})
+                 :pnl      ($ pnl/pnl {})
+                 :unit     ($ unit/unit {})
+                 :products ($ products/products {})
+                 :kit      ($ kit/kit {})
+                 ;; Placeholder for routes not yet implemented
+                 ($ placeholder-page {:title (page-title-for page)})))))
 
        ;; Tweaks panel (portals out of the page flow, fixed position)
        ($ tweaks-panel {})
