@@ -141,10 +141,7 @@
                 ($ :h3 {:class "section-title"} "Каталог товаров")
                 ($ :div {:class "section-subtitle"}
                    (let [n (count visible)]
-                     (str n " "
-                          (cond (= n 1) "артикул"
-                                (<= 2 n 4) "артикула"
-                                :else "артикулов")))))
+                     (str n " " (fmt/plural-ru n "артикул" "артикула" "артикулов")))))
              ($ :div {:class "row"}
                 ;; View toggle
                 ($ :div {:style {:display       "flex"

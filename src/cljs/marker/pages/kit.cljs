@@ -2,7 +2,7 @@
   "UI Kit catalog — read-only showcase of all design-system components.
    Phase 6."
   (:require [uix.core :refer [$ defui use-state]]
-            [marker.ui.chrome   :refer [delta mp-badge sparkline]]
+            [marker.ui.chrome   :refer [delta mp-badge sparkline kpi-card]]
             [marker.ui.icons    :refer [icon]]
             [marker.util.format :as fmt]))
 
@@ -162,10 +162,11 @@
                            ["Заказы" "3 214 шт" -2.1]
                            ["Маржа" "27,5%" 1.8]
                            ["ROAS" "3,2×" 5.0]]]
-             ($ :div {:key l :class "kpi-card"}
-                ($ :div {:class "kpi-label"} l)
-                ($ :div {:class "kpi-value"} v)
-                ($ delta {:pct d})))))
+             ($ kpi-card {:key       l
+                          :label     l
+                          :value     v
+                          :delta-pct d
+                          :compare?  true}))))
 
      ;; Sparkline examples
      ($ section {:title "Sparklines"}

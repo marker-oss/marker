@@ -20,7 +20,7 @@
       ;; profit = 2500 - 2135 = 365
       (is (= 365.0 profit) "profit")
       ;; margin = 365/2500 * 100 = 14.6
-      (is (js/Math.abs (- margin 14.6)) "margin ≈ 14.6%")
+      (is (< (js/Math.abs (- margin 14.6)) 0.01) "margin ≈ 14.6%")
       ;; roas = 2500 / 220 ≈ 11.36
       (is (> roas 11) "ROAS > 11")
       (is (< roas 12) "ROAS < 12"))))
@@ -63,6 +63,18 @@
       ;; margin = profit / price * 100
       (is (< (js/Math.abs (- margin (* (/ profit (:price params)) 100))) 0.001)
           "margin consistent with profit/price"))))
+
+;; ---------------------------------------------------------------------------
+;; Break-even semantics
+;; ---------------------------------------------------------------------------
+
+(deftest break-even-profitable
+  (let [{:keys [break-even]} (compute-unit-econ baseline)]
+    (is (zero? break-even) ":break-even is 0 when baseline is profitable")))
+
+(deftest break-even-loss
+  (let [{:keys [break-even]} (compute-unit-econ (assoc baseline :price 100))]
+    (is (= js/Infinity break-even) ":break-even is Infinity when unprofitable")))
 
 ;; ---------------------------------------------------------------------------
 ;; Slider extremes

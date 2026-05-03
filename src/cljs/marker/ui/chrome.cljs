@@ -332,6 +332,29 @@
          (-> (js/Math.abs pct) (.toFixed 1) (.replace "." ","))
          "%" suffix))))
 
+;; ============= KPI Card =============
+
+(defui kpi-card
+  "KPI metric card with optional sparkline and delta indicator.
+   Props: :label (string), :value (string), :delta-pct (number, optional),
+          :sub (string, optional secondary label), :spark (vec of numbers, optional),
+          :compare? (bool, default false), :inverted? (bool, default false)."
+  [{:keys [label value delta-pct sub spark compare? inverted?]}]
+  ($ :div {:class "kpi" :style {:position "relative"}}
+     ($ :div {:class "kpi-label"} label)
+     ($ :div {:class "kpi-value"} value)
+     ($ :div {:class "kpi-foot"}
+        (when compare?
+          ($ delta {:pct delta-pct :inverted inverted?}))
+        (when compare?
+          ($ :span {:style {:color "var(--color-fg-muted)"}} sub))
+        (when-not compare?
+          ($ :span {:style {:color "var(--color-fg-muted)"}}
+             (when (= label "Выручка") "за 30 дней"))))
+     (when spark
+       ($ :div {:style {:position "absolute" :right 14 :top 14}}
+          ($ sparkline {:data spark :width 72 :height 26})))))
+
 ;; ============= MP Badge =============
 
 (defui mp-badge

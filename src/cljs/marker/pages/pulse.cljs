@@ -18,7 +18,7 @@
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [uix.re-frame :refer [use-subscribe]]
             [marker.state.subs     :as subs]
-            [marker.ui.chrome      :refer [sparkline delta mp-badge]]
+            [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
             [marker.mock           :as mock]
             [marker.util.format    :as fmt]))
@@ -53,26 +53,6 @@
        ($ :button {:class "btn btn-ghost btn-sm"
                    :style {:color "inherit" :border "1px solid currentColor"}}
           cta))))
-
-;; ---------------------------------------------------------------------------
-;; KPI card
-;; ---------------------------------------------------------------------------
-
-(defui ^:private kpi-card [{:keys [label value delta-pct sub spark compare? inverted?]}]
-  ($ :div {:class "kpi" :style {:position "relative"}}
-     ($ :div {:class "kpi-label"} label)
-     ($ :div {:class "kpi-value"} value)
-     ($ :div {:class "kpi-foot"}
-        (when compare?
-          ($ delta {:pct delta-pct :inverted inverted?}))
-        (when compare?
-          ($ :span {:style {:color "var(--color-fg-muted)"}} sub))
-        (when-not compare?
-          ($ :span {:style {:color "var(--color-fg-muted)"}}
-             (when (= label "Выручка") "за 30 дней"))))
-     (when spark
-       ($ :div {:style {:position "absolute" :right 14 :top 14}}
-          ($ sparkline {:data spark :width 72 :height 26})))))
 
 ;; ---------------------------------------------------------------------------
 ;; Revenue line chart (lives inside plan-fact card)

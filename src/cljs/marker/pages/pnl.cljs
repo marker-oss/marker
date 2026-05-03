@@ -91,6 +91,11 @@
 ;; Per-SKU detail with bulk action bar
 ;; ---------------------------------------------------------------------------
 
+;; TODO Phase 8: cost columns currently overlap — :margin in mock-data
+;; encodes total cost ratio (incl. commission/ads/returns), so showing
+;; commission/ads as separate columns counts them twice. When real
+;; per-SKU cost lines come from the backend, decompose into mutually
+;; exclusive cost lines so revenue − Σ(cost-cols) == net.
 (defui ^:private sku-table [{:keys [compare?]}]
   (let [mps          (use-subscribe [::subs/mp-filter])
         [selected set-selected!] (use-state #{})
@@ -139,12 +144,9 @@
          ($ :div {:class "bulk-bar"}
             ($ :strong
                (str "Выбрано " (count selected) " "
-                    (let [n (count selected)]
-                      (cond (= n 1) "строка"
-                            (<= 2 n 4) "строки"
-                            :else "строк"))))
+                    (fmt/plural-ru (count selected) "строка" "строки" "строк")))
             ($ :button {:class    "btn-link"
-                        :style    {:color "#cbd5e1"}
+                        :style    {:color "var(--color-fg-muted)"}
                         :on-click #(set-selected! #{})}
                "Снять")
             ($ :div {:class "spacer"})
@@ -153,7 +155,7 @@
             ($ :button {:class "btn btn-secondary btn-sm"} "Поставить на паузу")
             ($ :button {:class "btn btn-primary btn-sm"} "Экспорт")
             ($ :button {:class    "icon-btn"
-                        :style    {:color "#cbd5e1"}
+                        :style    {:color "var(--color-fg-muted)"}
                         :on-click #(set-selected! #{})}
                ($ icon {:name :x :size 14}))))
 

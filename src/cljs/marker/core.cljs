@@ -173,8 +173,7 @@
        ($ cmdk {:open?   cmdk-open?
                 :on-close #(rf/dispatch [::events/close-cmdk])
                 :on-nav  (fn [page-id]
-                           (router/nav! page-id)
-                           (rf/dispatch [::events/close-cmdk]))}))))
+                           (router/nav! page-id))}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Mount

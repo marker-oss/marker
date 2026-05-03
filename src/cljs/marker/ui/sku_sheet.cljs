@@ -8,7 +8,7 @@
             [re-frame.core :as rf]
             [marker.state.subs   :as subs]
             [marker.state.events :as events]
-            [marker.ui.chrome    :refer [delta mp-badge sparkline]]
+            [marker.ui.chrome    :refer [delta mp-badge sparkline kpi-card]]
             [marker.ui.icons     :refer [icon]]
             [marker.mock         :as mock]
             [marker.util.format  :as fmt]))
@@ -124,11 +124,11 @@
                                :grid-template-columns "repeat(2, 1fr)"
                                :gap                   "10px"}}
                  (for [{:keys [l v d]} kpis]
-                   ($ :div {:key l :class "card" :style {:padding "12px"}}
-                      ($ :div {:class "uppercase-label"} l)
-                      ($ :div {:style {:font-size "18px" :font-weight 600 :margin-top "4px"}} v)
-                      ($ :div {:style {:margin-top "4px"}}
-                         ($ delta {:pct d})))))
+                   ($ kpi-card {:key       l
+                                :label     l
+                                :value     v
+                                :delta-pct d
+                                :compare?  true})))
 
               ;; Revenue chart
               ($ :div {:class "card section-card"}

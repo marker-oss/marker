@@ -11,9 +11,21 @@
 ;; ---------------------------------------------------------------------------
 
 (defn compute-unit-econ
-  "Given a params map with keys :price :cogs :commission :logistics :returns :ads,
-   returns {:profit :margin :roas :total-cost :break-even}.
-   :margin is 0 when price is 0 (guards div-by-zero)."
+  "Pure unit-economics calculator.
+
+   Returns a map with :margin (%), :profit (₽ per unit), :roas (×) and
+   :break-even (units to break even).
+
+   :break-even semantics:
+     - 0 when profit per unit is positive (you break even at any volume)
+     - Infinity (js/Infinity) when profit per unit is non-positive
+       (no positive volume covers the per-unit loss)
+     - finite N otherwise (units = fixed-cost / contribution-margin)
+       — currently never reached because mock data has no fixed-cost
+       term; once a fixed-cost slider is added, this branch activates.
+
+   :margin is 0 when price is 0 (guards div-by-zero).
+   Given a params map with keys :price :cogs :commission :logistics :returns :ads."
   [{:keys [price cogs commission logistics returns ads]
     :or   {price 0 cogs 0 commission 0 logistics 0 returns 0 ads 0}}]
   (let [commission-amt (* price (/ commission 100))
