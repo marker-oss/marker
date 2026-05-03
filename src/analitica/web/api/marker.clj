@@ -13,18 +13,19 @@
    Every handler returns a plain Clojure map; the wrap-transit-response
    middleware (registered in server.clj) encodes it as transit-json when the
    client sends Accept: application/transit+json."
-  (:require [analitica.domain.finance  :as finance]
-            [analitica.domain.pnl      :as pnl]
-            [analitica.domain.sales    :as sales]
-            [analitica.domain.stock    :as stock]
-            [analitica.domain.buyout   :as buyout]
-            [analitica.alerts          :as alerts]
-            [analitica.util.period     :as period]
-            [analitica.util.math       :as math]
-            [analitica.db              :as db]
-            [analitica.web.api.report  :as report]
+  (:require [analitica.domain.finance     :as finance]
+            [analitica.domain.pnl         :as pnl]
+            [analitica.domain.preliminary :as prelim]
+            [analitica.domain.sales       :as sales]
+            [analitica.domain.stock       :as stock]
+            [analitica.domain.buyout      :as buyout]
+            [analitica.alerts             :as alerts]
+            [analitica.util.period        :as period]
+            [analitica.util.math          :as math]
+            [analitica.db                 :as db]
+            [analitica.web.api.report     :as report]
             [analitica.web.report-schemas :as rs]
-            [clojure.string            :as str]))
+            [clojure.string               :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Parameter parsing helpers
@@ -92,6 +93,37 @@
        {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
         :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
         :sales-qty 0 :returns-qty 0 :buyout-rate 0.0 :avg-check 0.0}))))
+
+(defn- with-prelim
+  "Apply Ozon preliminary overlay to a pnl-result.
+   - mp=:ozon  → maybe-overlay-preliminary (swaps revenue if canonical=0)
+   - mp=nil    → all-MP: when Ozon's canonical contribution is zero, ADD
+                 the Ozon preliminary revenue on top of WB+YM. Marks
+                 result with :preliminary? so the UI can show a badge.
+   - mp=:wb/:ym→ no overlay; canonical only.
+   period-map is the {:from :to} map already used for compute-pnl."
+  [pnl-result period-map mp]
+  (cond
+    (= :ozon mp)
+    (prelim/maybe-overlay-preliminary
+      pnl-result {:period period-map :marketplace :ozon})
+
+    (nil? mp)
+    (let [ozon-fin    (try (finance/fetch-finance period-map :marketplace :ozon)
+                           (catch Exception _ []))
+          ozon-pnl    (compute-pnl ozon-fin period-map :ozon)
+          ozon-canon  (or (:revenue ozon-pnl) 0.0)]
+      (if (zero? ozon-canon)
+        (if-let [p (prelim/ozon-preliminary-totals period-map)]
+          (-> pnl-result
+              (update :revenue + (:revenue p))
+              (assoc :preliminary?      true
+                     :preliminary-as-of (:as-of p)))
+          pnl-result)
+        pnl-result))
+
+    :else
+    pnl-result))
 
 ;; ---------------------------------------------------------------------------
 ;; Spark-line helpers
@@ -282,12 +314,14 @@
           ;; Current period data
           fin-cur    (load-finance period mp1)
           sales-cur  (load-sales  period mp1)
-          pnl-cur    (compute-pnl fin-cur period mp1)
+          pnl-cur    (-> (compute-pnl fin-cur period mp1)
+                         (with-prelim period mp1))
 
           ;; Previous period
           fin-prev   (load-finance prev mp1)
           sales-prev (load-sales  prev mp1)
-          pnl-prev   (compute-pnl fin-prev prev mp1)
+          pnl-prev   (-> (compute-pnl fin-prev prev mp1)
+                         (with-prelim prev mp1))
 
           ;; Sales aggregates
           cur-by-art  (sales/by-article sales-cur)
@@ -378,23 +412,24 @@
           orders-cur  (long (or (:total-sales sales-tots) 0))
           orders-prev (long (or (:total-sales prev-tots) 0))
 
-          ;; Revenue/avg-check: use sales-table aggregates for the Pulse
-          ;; KPIs so they stay consistent with the sparkline (which is
-          ;; built from the same sales source). Pulse is the operational
-          ;; dashboard — it should reflect today's activity.
-          ;;
-          ;; Why not PnL?  PnL is realization-based and Ozon publishes
-          ;; /v2/finance/realization mid-next-month. Until then PnL
-          ;; revenue for Ozon is 0 even though sales rows exist via
-          ;; /v3/posting/list. Mixing PnL (single-MP) and sales (all-MP)
-          ;; was the previous bug — the all-MP KPI dropped Ozon's current
-          ;; month while the chart kept it. Sales is the right source for
-          ;; both. The canonical P&L view stays on the dedicated /pnl
-          ;; route.
-          rev-cur     (or (:revenue sales-tots) 0.0)
-          rev-prev    (or (:revenue prev-tots) 0.0)
-          ac-cur      (or (:avg-price sales-tots) 0.0)
-          ac-prev     (or (:avg-price prev-tots) 0.0)]
+          ;; Revenue / avg-check: come from PnL with preliminary overlay
+          ;; applied via with-prelim. Canonical realization-based when
+          ;; available; cash-flow-derived (preliminary) for Ozon when
+          ;; realization is delayed. PnL :revenue is for-pay-net
+          ;; (sale − return) which matches what the seller actually
+          ;; receives; it's the right number to feature on Pulse.
+          ;; Sales-tots is kept as a last-ditch fallback when PnL is
+          ;; still 0 (e.g. brand-new MP with no finance materialised).
+          rev-cur     (let [p (or (:revenue pnl-cur) 0.0)]
+                        (if (pos? p) p (or (:revenue sales-tots) 0.0)))
+          rev-prev    (let [p (or (:revenue pnl-prev) 0.0)]
+                        (if (pos? p) p (or (:revenue prev-tots) 0.0)))
+          ac-cur      (let [p (or (:avg-check pnl-cur) 0.0)]
+                        (if (pos? p) p (or (:avg-price sales-tots) 0.0)))
+          ac-prev     (let [p (or (:avg-check pnl-prev) 0.0)]
+                        (if (pos? p) p (or (:avg-price prev-tots) 0.0)))
+          preliminary? (boolean (or (:preliminary? pnl-cur)
+                                    (:preliminary? pnl-prev)))]
 
       {:alerts          alert-list
        :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark)
@@ -442,7 +477,12 @@
        :critical-stocks (critical-stocks stocks-wt)
        :data-fresh      {:wb   (:wb fresh)
                          :ozon (:ozon fresh)
-                         :ym   (:ym fresh)}})
+                         :ym   (:ym fresh)}
+       ;; Preliminary flag — true when revenue includes Ozon cash-flow
+       ;; estimate (realization not yet published or not yet
+       ;; materialized). UI can render a "preliminary" badge.
+       :preliminary?    preliminary?
+       :preliminary-as-of (or (:preliminary-as-of pnl-cur) nil)})
     (catch Exception e
       {:error (.getMessage e)})))
 
@@ -490,6 +530,13 @@
                      (compute-pnl fin-cur period mp1 cf-adj)
                      pnl-cur)
 
+          ;; Apply preliminary overlay so Ozon shows a meaningful number
+          ;; while realization is delayed. Per-MP=:ozon swaps revenue
+          ;; with cash-flow-derived for-pay-net; all-MP adds Ozon
+          ;; preliminary on top of WB+YM canonical.
+          pnl-cur  (with-prelim pnl-cur period mp1)
+          pnl-prev (with-prelim pnl-prev prev   mp1)
+
           rows     (mapv (fn [[k label group]]
                            {:key   k
                             :label label
@@ -510,8 +557,10 @@
                             :ads        0.0       ; TODO: per-article ad spend not aggregated here
                             :net        (or (:for-pay a) 0.0)})
                          by-art)]
-      {:rows       rows
-       :sku-detail sku-det})
+      {:rows              rows
+       :sku-detail        sku-det
+       :preliminary?      (boolean (:preliminary? pnl-cur))
+       :preliminary-as-of (:preliminary-as-of pnl-cur)})
     (catch Exception e
       {:rows [] :sku-detail [] :error (.getMessage e)})))
 

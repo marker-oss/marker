@@ -833,14 +833,21 @@
     (parse-json (:payload row))))
 
 (defn get-raw-range
-  "Get all raw data rows for source/entity_type within a date range.
-   Returns seq of {:date-from :date-to :data} maps."
+  "Get all raw data rows for source/entity_type whose period overlaps [from..to].
+   Returns seq of {:date-from :date-to :data} maps.
+
+   Overlap semantics (`date_from <= to AND date_to >= from`) — not strict
+   containment — so monthly batches (e.g. Ozon realization, one row per
+   calendar month) still get materialized when the caller passes a
+   shorter window like last-7-days. Strict containment was silently
+   dropping April realization during routine syncs because the April
+   batch (Apr 1..Apr 30) didn't fit the Apr 26..May 3 window."
   [source entity-type from to]
   (->> (query ["SELECT date_from, date_to, payload FROM raw_data
                 WHERE source = ? AND entity_type = ?
-                  AND date_from >= ? AND date_to <= ?
+                  AND date_from <= ? AND date_to >= ?
                 ORDER BY date_from"
-               (name source) (name entity-type) from to])
+               (name source) (name entity-type) to from])
        (mapv (fn [row]
                {:date-from (:date-from row)
                 :date-to   (:date-to row)
