@@ -4,15 +4,16 @@
   "private": true,
   "description": "ClojureScript SPA frontend for Analitica (Marker UI). Compiled by shadow-cljs.",
   "scripts": {
-    "watch":   "shadow-cljs watch app",
+    "watch": "shadow-cljs watch app",
     "release": "shadow-cljs release app",
-    "clean":   "shadow-cljs clean"
+    "clean": "shadow-cljs clean"
   },
   "dependencies": {
-    "react":            "18.3.1",
-    "react-dom":        "18.3.1",
-    "chart.js":         "4.4.0",
-    "tabulator-tables": "6.3.0"
+    "chart.js": "4.4.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tabulator-tables": "6.3.0",
+    "use-sync-external-store": "^1.6.0"
   },
   "devDependencies": {
     "shadow-cljs": "2.28.20"

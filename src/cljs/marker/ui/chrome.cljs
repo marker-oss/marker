@@ -2,8 +2,8 @@
   "App-shell chrome components — ported from chrome.jsx.
    Provides: NAV, Sidebar, Topbar, MpFilter, PeriodSelector,
              SyncBanner, Sparkline, Delta, MpBadge.
-   Skipped (Phase 4/6): Sheet, Modal, CmdK — stubs not provided;
-   those components depend on MARKER_DATA/routing not yet wired."
+   Phase 4: :on-nav uses router/nav! for URL-driven navigation;
+            topbar gains :on-tweaks prop for the tweaks panel toggle."
   (:require [clojure.string :as str]
             [uix.core :refer [$ defui use-state use-effect use-ref]]
             [marker.ui.icons :refer [icon]]))
@@ -101,8 +101,9 @@
 (defui topbar
   "Top application bar.
    Props: :crumbs (vec of strings), :on-search (fn), :on-theme (fn),
-          :theme (\"light\"|\"dark\"), :on-sidebar-toggle (fn), :on-sync (fn)."
-  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync]}]
+          :theme (\"light\"|\"dark\"), :on-sidebar-toggle (fn), :on-sync (fn),
+          :on-tweaks (fn) — opens the tweaks panel."
+  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync on-tweaks]}]
   ($ :div {:class "topbar"}
      ($ :button {:class    "icon-btn"
                  :title    "Свернуть"
@@ -135,6 +136,10 @@
                  :title    "Тема"
                  :on-click on-theme}
         ($ icon {:name (if (= theme "dark") :sun :moon)}))
+     ($ :button {:class    "icon-btn"
+                 :title    "Настройки интерфейса"
+                 :on-click on-tweaks}
+        ($ icon {:name :sliders}))
      ($ :div {:class "avatar"} "КМ")))
 
 ;; ============= MP Filter =============
