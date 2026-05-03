@@ -9,7 +9,8 @@
   (:require [clojure.string :as str]
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [marker.ui.icons :refer [icon]]
-            [marker.mock     :as mock]))
+            [marker.mock     :as mock]
+            [marker.api      :as api]))
 
 ;; ============= NAV constant =============
 
@@ -96,19 +97,7 @@
                    ($ :span {:class "nav-label"} (:label item))
                    (when-let [counter (:counter item)]
                      ($ :span {:class "nav-counter"} counter)))))))
-       ;; Footer
-       ($ :div {:class "sidebar-foot"}
-          ($ :div {:style {:font-size       "11px"
-                           :color           "var(--color-fg-muted)"
-                           :text-transform  "uppercase"
-                           :letter-spacing  ".5px"
-                           :font-weight     500}}
-             "Период")
-          ($ :button {:class "btn btn-secondary"
-                      :style {:justify-content "space-between"
-                              :width           "100%"}}
-             ($ :span "Май 2026")
-             ($ icon {:name :chev-down :size 12}))))))
+       )))
 
 ;; ============= Topbar =============
 
@@ -193,62 +182,150 @@
   ["Сегодня" "Вчера" "Последние 7 дней" "Последние 30 дней"
    "Этот месяц" "Прошлый месяц" "Этот квартал" "Этот год"])
 
+(def ^:private custom-range-re #"^\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}$")
+
 (defui period-selector
   "Period picker with popover and compare toggle.
    Props: :value (string), :on-change (fn [string]),
           :compare (bool), :on-compare (fn [bool])."
   [{:keys [value on-change compare on-compare]}]
-  (let [[open? set-open!] (use-state false)
-        ref               (use-ref nil)]
+  (let [[open? set-open!]          (use-state false)
+        [custom-open? set-custom!] (use-state false)
+        resolved                   (api/resolve-period value)
+        [custom-from set-from!]    (use-state (or (:from resolved) ""))
+        [custom-to   set-to!]      (use-state (or (:to   resolved) ""))
+        ref                        (use-ref nil)
+        custom-range?              (boolean (and (seq value)
+                                                 (re-matches custom-range-re value)))
+        display-label              (if custom-range?
+                                     (or (api/format-period-range value) value)
+                                     value)
+        range-hint                 (when-not custom-range?
+                                     (api/format-period-range value))
+        apply-enabled?             (and (seq custom-from)
+                                        (seq custom-to)
+                                        (<= custom-from custom-to))]
     (use-effect
-     (fn []
-       (let [close (fn [e]
-                     (when (and @ref
-                                (not (.contains @ref (.-target e))))
-                       (set-open! false)))]
-         (.addEventListener js/document "mousedown" close)
-         #(.removeEventListener js/document "mousedown" close)))
-     [])
-    ($ :div {:ref   ref
-             :style {:position   "relative"
-                     :display    "flex"
-                     :gap        "6px"
-                     :align-items "center"}}
-       ($ :button {:class    "btn btn-secondary"
-                   :on-click #(set-open! (not open?))}
-          ($ icon {:name :calendar :size 14})
-          value
-          ($ icon {:name :chev-down :size 12}))
-       ($ :label {:style {:display     "flex"
-                          :align-items "center"
-                          :gap         "6px"
-                          :font-size   "12px"
-                          :color       "var(--color-fg-secondary)"
-                          :cursor      "pointer"}}
-          ($ :input {:type      "checkbox"
-                     :checked   compare
-                     :style     {:accent-color "var(--color-accent-interactive)"}
-                     :on-change #(on-compare (.. % -target -checked))})
-          "Сравнить с пред.")
-       (when open?
-         ($ :div {:class "popover"
-                  :style {:top       "100%"
-                          :margin-top "4px"
-                          :left      0
-                          :min-width "220px"}}
-            (for [p period-presets]
-              ($ :button
-                 {:key      p
-                  :class    (str "popover-item" (when (= p value) " is-active"))
-                  :on-click (fn []
-                              (on-change p)
-                              (set-open! false))}
-                 (when (= p value)
-                   ($ icon {:name :check :size 12}))
-                 ($ :span {:style {:margin-left (if (= p value) "0" "18px")}} p)))
-            ($ :div {:class "popover-divider"})
-            ($ :button {:class "popover-item"}
-               ($ :span {:style {:margin-left "18px"}} "Свой диапазон…")))))))
+      (fn []
+        (let [handler (fn [e]
+                        (when (and @ref
+                                   (not (.contains @ref (.-target e))))
+                          (set-open! false)
+                          (set-custom! false)))]
+          (.addEventListener js/document "mousedown" handler)
+          #(.removeEventListener js/document "mousedown" handler)))
+      [])
+    ($ :div
+      {:ref   ref
+       :style {:position    "relative"
+               :display     "flex"
+               :gap         "6px"
+               :align-items "center"}}
+      ;; ---- trigger button ----
+      ($ :button
+        {:class    "btn btn-secondary"
+         :on-click #(set-open! (not open?))}
+        ($ icon {:name :calendar :size 14})
+        ($ :span
+          display-label
+          (when range-hint
+            ($ :span
+              {:style {:color       "var(--color-fg-muted)"
+                       :margin-left "6px"
+                       :font-weight 400}}
+              "· " range-hint)))
+        ($ icon {:name :chev-down :size 12}))
+      ;; ---- compare checkbox ----
+      ($ :label
+        {:style {:display     "flex"
+                 :align-items "center"
+                 :gap         "6px"
+                 :font-size   "12px"
+                 :color       "var(--color-fg-secondary)"
+                 :cursor      "pointer"}}
+        ($ :input
+          {:type      "checkbox"
+           :checked   compare
+           :style     {:accent-color "var(--color-accent-interactive)"}
+           :on-change #(on-compare (.. % -target -checked))})
+        "Сравнить с пред.")
+      ;; ---- popover ----
+      (when open?
+        ($ :div
+          {:class "popover"
+           :style {:top        "100%"
+                   :margin-top "4px"
+                   :left       0
+                   :min-width  "260px"}}
+          ;; preset list
+          (for [p period-presets]
+            ($ :button
+              {:key      p
+               :class    (str "popover-item" (when (= p value) " is-active"))
+               :on-click (fn []
+                           (on-change p)
+                           (set-open! false)
+                           (set-custom! false))}
+              (when (= p value)
+                ($ icon {:name :check :size 12}))
+              ($ :span {:style {:margin-left (if (= p value) "0" "18px")}} p)))
+          ($ :div {:class "popover-divider"})
+          ;; custom range section
+          (if custom-open?
+            ;; inline form
+            ($ :div
+              {:style {:padding        "8px 12px"
+                       :display        "flex"
+                       :flex-direction "column"
+                       :gap            "8px"}}
+              ($ :div
+                {:style {:display               "grid"
+                         :grid-template-columns "32px 1fr"
+                         :align-items           "center"
+                         :gap                   "6px"}}
+                ($ :span
+                  {:style {:font-size "12px"
+                            :color     "var(--color-fg-secondary)"}}
+                  "С")
+                ($ :input
+                  {:type      "date"
+                   :class     "input"
+                   :value     custom-from
+                   :on-change #(set-from! (.. % -target -value))})
+                ($ :span
+                  {:style {:font-size "12px"
+                            :color     "var(--color-fg-secondary)"}}
+                  "По")
+                ($ :input
+                  {:type      "date"
+                   :class     "input"
+                   :value     custom-to
+                   :on-change #(set-to! (.. % -target -value))}))
+              ($ :div
+                {:style {:display "flex" :gap "6px"}}
+                ($ :button
+                  {:class    (str "btn btn-primary"
+                                  (when-not apply-enabled? " btn-disabled"))
+                   :disabled (not apply-enabled?)
+                   :on-click (fn []
+                               (when apply-enabled?
+                                 (on-change (str custom-from "," custom-to))
+                                 (set-open! false)
+                                 (set-custom! false)))}
+                  "Применить")
+                ($ :button
+                  {:class    "btn btn-secondary"
+                   :on-click #(set-custom! false)}
+                  "Отмена")))
+            ;; toggle button
+            ($ :button
+              {:class    "popover-item"
+               :on-click (fn []
+                           (let [r (api/resolve-period value)]
+                             (set-from! (or (:from r) ""))
+                             (set-to!   (or (:to   r) "")))
+                           (set-custom! true))}
+              ($ :span {:style {:margin-left "18px"}} "Свой диапазон…"))))))))
 
 ;; ============= Sync Banner =============
 

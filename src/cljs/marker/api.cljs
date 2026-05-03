@@ -57,11 +57,11 @@
             (.getMonth now)
             (- (.getDate now) n)))
 
-(defn- period->params
+(defn resolve-period
   "Map a Russian period preset label (or YYYY-MM-DD,YYYY-MM-DD custom range)
    to {:from \"YYYY-MM-DD\" :to \"YYYY-MM-DD\"} query params.
    Accepts an optional `now` js/Date for deterministic testing."
-  ([period] (period->params period (js/Date.)))
+  ([period] (resolve-period period (js/Date.)))
   ([period ^js now]
    (cond
      (nil? period) {}
@@ -110,11 +110,51 @@
 
      :else {})))
 
+;; ---------------------------------------------------------------------------
+;; Period range formatter
+;; ---------------------------------------------------------------------------
+
+(defn- fmt-display-date
+  "Format a YYYY-MM-DD string as DD.MM or DD.MM.YYYY.
+   `include-year?` forces the year suffix."
+  [date-str include-year?]
+  (when (and date-str (>= (count date-str) 10))
+    (let [y  (subs date-str 0 4)
+          m  (subs date-str 5 7)
+          d  (subs date-str 8 10)]
+      (if include-year?
+        (str d "." m "." y)
+        (str d "." m)))))
+
+(defn format-period-range
+  "Return compact \"DD.MM\" or \"DD.MM–DD.MM\" range string for the given period,
+   or nil for single-day presets where the date is obvious from the label, or
+   when the period is unknown.
+   Optional `now` for testing."
+  ([period] (format-period-range period (js/Date.)))
+  ([period now]
+   (when period
+     (cond
+       ;; Self-describing single-day labels — no extra annotation needed
+       (or (= period "Сегодня") (= period "Вчера")) nil
+
+       :else
+       (let [{:keys [from to]} (resolve-period period now)]
+         (when (and from to)
+           (let [from-year (subs from 0 4)
+                 to-year   (subs to 0 4)
+                 multi-year? (not= from-year to-year)
+                 from-str  (fmt-display-date from multi-year?)
+                 to-str    (fmt-display-date to multi-year?)]
+             (if (= from to)
+               from-str
+               (str from-str "–" to-str)))))))))
+
 (defn build-params
   "Build query params map from filter state.
    mp-filter: keyword vec, period: string, compare: bool."
   [{:keys [mp-filter period compare]}]
-  (cond-> (period->params period)
+  (cond-> (resolve-period period)
     (mp-param mp-filter) (assoc :mp (mp-param mp-filter))
     compare              (assoc :compare "true")))
 
