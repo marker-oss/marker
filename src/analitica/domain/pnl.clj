@@ -100,6 +100,80 @@
         :else
         (or (legacy-ad-spend-sum from to marketplace) 0.0)))))
 
+;; ---------------------------------------------------------------------------
+;; Per-article ad-spend lookup
+;; ---------------------------------------------------------------------------
+
+(defn- ad-cost-by-article-canonical
+  "Per-article SUM(finance.ad_cost) over the period. Same date predicate as
+   `ad-cost-sum`; returns {article → spend} for articles with positive spend."
+  [from to marketplace]
+  (try
+    (let [base "SELECT article, COALESCE(SUM(ad_cost), 0) AS spend FROM finance
+                WHERE ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
+                       OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))
+                  AND article IS NOT NULL"
+          [sql params] (if marketplace
+                         [(str base " AND marketplace = ? GROUP BY article")
+                          [from to to from (name marketplace)]]
+                         [(str base " GROUP BY article")
+                          [from to to from]])]
+      (->> (db/query (into [sql] params))
+           (reduce (fn [m {:keys [article spend]}]
+                     (if (and article (pos? (or spend 0)))
+                       (assoc m article (double spend))
+                       m))
+                   {})))
+    (catch Exception _ {})))
+
+(defn- legacy-ad-spend-by-article
+  "Legacy per-article ad-spend via ad_stats JOIN. Mirrors `legacy-ad-spend-sum`
+   but groups by article. ad_stats is WB-only, so this only returns data when
+   `marketplace` is :wb or nil; the JOIN is always restricted to WB finance
+   rows so cross-MP nm_id collisions can't double-count spend onto Ozon/YM
+   articles. Returns {} on schema drift or query error."
+  [from to marketplace]
+  (when (contains? #{nil :wb} marketplace)
+    (try
+      (->> (db/query
+             ["SELECT f.article AS article, SUM(a.spend) AS spend
+               FROM ad_stats a
+               JOIN (SELECT DISTINCT nm_id, article FROM finance
+                     WHERE nm_id IS NOT NULL AND article IS NOT NULL
+                       AND marketplace = 'wb') f
+                 ON a.nm_id = f.nm_id
+               WHERE a.date >= ? AND a.date <= ?
+               GROUP BY f.article"
+              from to])
+           (reduce (fn [m {:keys [article spend]}]
+                     (if (and article (pos? (or spend 0)))
+                       (assoc m article (double spend))
+                       m))
+                   {}))
+      (catch Exception _ {}))))
+
+(defn ad-spend-by-article
+  "{article → ad-spend (₽)} for the period, optionally marketplace-scoped.
+
+   Mirrors `ad-spend-total` semantics so per-article and aggregate paths agree:
+     1. Canonical — SUM(finance.ad_cost) GROUP BY article. Always used for
+        :ym and :ozon (their ad_cost is canonical).
+     2. Legacy fallback — ad_stats JOIN. Used ONLY when:
+          * marketplace is :wb or nil, AND
+          * the canonical per-article totals sum to 0 (US5 migration not run
+            for this period yet).
+
+   Returns {} when both paths are empty or `from`/`to` are missing."
+  [from to marketplace]
+  (if (and from to)
+    (let [canonical (ad-cost-by-article-canonical from to marketplace)
+          total     (reduce + 0.0 (vals canonical))]
+      (cond
+        (contains? #{:ym :ozon} marketplace) canonical
+        (pos? total)                          canonical
+        :else (or (legacy-ad-spend-by-article from to marketplace) {})))
+    {}))
+
 (defn calculate
   "Period-level P&L rollup.
 

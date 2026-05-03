@@ -459,7 +459,7 @@
                                                   (or (:buyout-rate pnl-cur) 0.0)
                                                   (or (:buyout-rate pnl-prev) 0.0))
                                      :spark     []}
-                         ;; ROAS: revenue / ad-spend — TODO: not computed at aggregate level; stubbed nil
+                         ;; ROAS: revenue / ad-spend (nil when no ad spend in period)
                          :roas      {:value     (let [ad (or (:ad-spend pnl-cur) 0.0)]
                                                   (if (pos? ad)
                                                     (math/round2 (/ (double (or (:revenue pnl-cur) 0.0)) ad))
@@ -556,15 +556,18 @@
 
           ;; Per-SKU breakdown via finance/by-article
           by-art   (try (finance/by-article fin-cur) (catch Exception _ []))
+          ads-by-art (try (pnl/ad-spend-by-article (:from period) (:to period) mp1)
+                          (catch Exception _ {}))
           sku-det  (mapv (fn [a]
-                           {:id         (str (:article a))
-                            :name       (or (:subject a) (:article a))
-                            :mp         [(keyword (or (:marketplace a) :wb))]
-                            :revenue    (or (:revenue a) 0.0)
-                            :cogs       (or (:total-cost a) 0.0)
-                            :commission (or (:deduction a) 0.0)
-                            :ads        0.0       ; TODO: per-article ad spend not aggregated here
-                            :net        (or (:for-pay a) 0.0)})
+                           (let [art (str (:article a))]
+                             {:id         art
+                              :name       (or (:subject a) (:article a))
+                              :mp         [(keyword (or (:marketplace a) :wb))]
+                              :revenue    (or (:revenue a) 0.0)
+                              :cogs       (or (:total-cost a) 0.0)
+                              :commission (or (:deduction a) 0.0)
+                              :ads        (or (get ads-by-art art) 0.0)
+                              :net        (or (:for-pay a) 0.0)}))
                          by-art)]
       {:rows              rows
        :sku-detail        sku-det
@@ -610,6 +613,7 @@
 
           pnl-cur   (compute-pnl fin-cur period mp1)
           ad-total  (or (:ad-spend pnl-cur) 0.0)
+          ads-by-art (try (pnl/ad-spend-by-article from to mp1) (catch Exception _ {}))
 
           skus      (mapv (fn [a]
                             (let [art       (or (:article a) "")
@@ -624,7 +628,10 @@
                                   margin    (math/percentage
                                               (- for-pay cogs)
                                               (max 1.0 for-pay))
-                                  buyout    (math/percentage orders (+ orders returns))]
+                                  buyout    (math/percentage orders (+ orders returns))
+                                  ads       (or (get ads-by-art art) 0.0)
+                                  roas      (when (pos? ads)
+                                              (math/round2 (/ (double rev) ads)))]
                               {:id        art
                                :name      (or (:subject a) art)
                                :mp        [(keyword (or (:marketplace a) :wb))]
@@ -634,8 +641,8 @@
                                :buyout    (or buyout 0.0)
                                :stock     qty-full
                                :delta-pct (math/pct-delta rev prev-r)
-                               :ads-cost  0.0    ; TODO: per-article ad cost not available without ad_stats join
-                               :roas      nil    ; TODO: depends on ads-cost
+                               :ads-cost  ads
+                               :roas      roas
                                :spark     []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
                           by-art)
           limit     (some-> (get params :limit) parse-long)
