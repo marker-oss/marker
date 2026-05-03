@@ -29,45 +29,68 @@
    Per concept-crosswalk §9.1: the `sales` table already captures region
    per-event (WB `regionName`, YM `deliveryRegion.name`); this function
    surfaces it to the Geography report without requiring a separate
-   ingest pipeline."
-  [from to marketplace]
-  (let [base-sql ["SELECT region, COUNT(*) AS qty,
-                          SUM(COALESCE(for_pay, total_price, 0)) AS sum_price,
-                          ? AS date_from, ? AS date_to,
-                          NULL AS city, NULL AS country, NULL AS fo
-                   FROM sales
-                   WHERE type = 'sale'
-                     AND region IS NOT NULL AND region <> ''
-                     AND date >= ? AND date <= ?"
-                  from to from to]
-        with-mp  (if marketplace
-                   (-> base-sql
-                       (update 0 #(str % " AND marketplace = ?"))
-                       (conj (name marketplace)))
-                   base-sql)
-        final    (update with-mp 0 #(str % " GROUP BY region"))]
-    (db/query final)))
+   ingest pipeline.
+
+   Optional :exclude-marketplaces — vector of MP keywords to skip. Used by
+   `:combined` source to avoid double-counting WB (already in region_sales)."
+  ([from to marketplace]
+   (fetch-from-sales from to marketplace nil))
+  ([from to marketplace exclude-mps]
+   (let [base-sql ["SELECT region, COUNT(*) AS qty,
+                            SUM(COALESCE(for_pay, total_price, 0)) AS sum_price,
+                            ? AS date_from, ? AS date_to,
+                            NULL AS city, NULL AS country, NULL AS fo
+                     FROM sales
+                     WHERE type = 'sale'
+                       AND region IS NOT NULL AND region <> ''
+                       AND date >= ? AND date <= ?"
+                   from to from to]
+         with-mp  (if marketplace
+                    (-> base-sql
+                        (update 0 #(str % " AND marketplace = ?"))
+                        (conj (name marketplace)))
+                    base-sql)
+         with-excl (if (seq exclude-mps)
+                     (let [placeholders (clojure.string/join ", " (repeat (count exclude-mps) "?"))]
+                       (-> with-mp
+                           (update 0 #(str % " AND marketplace NOT IN (" placeholders ")"))
+                           (into (mapv name exclude-mps))))
+                     with-mp)
+         final    (update with-excl 0 #(str % " GROUP BY region"))]
+     (db/query final))))
 
 (defn fetch-regions
   "Fetch region sales rows.
 
    Sources:
-     :db          (default) — pre-aggregated WB `region_sales` table.
-                  Overlap query because each row spans its batch window.
-     :sales       per-event aggregation from `sales` table. Closes RFC-12 —
-                  surfaces region data for MPs without a pre-aggregated
-                  endpoint (YM, partial WB). Pass `:marketplace` to scope.
-     :combined    UNION of `:db` and `:sales`. Same article appearing in
-                  both sources is summed twice — use only when sources are
-                  known not to overlap (e.g., separate marketplace scopes).
+     :db          pre-aggregated WB `region_sales` table only.
+     :sales       per-event aggregation from `sales` table — surfaces
+                  region data for any MP. Pass `:marketplace` to scope.
+     :combined    (default) — WB from `region_sales` + non-WB MPs from
+                  `sales` table. WB excluded from sales side to avoid
+                  double-counting (it's already in region_sales).
+                  This is the right source for cross-MP geography
+                  reports: covers WB / YM / Ozon when their `sales`
+                  rows carry region data.
      :api         live WB `region-sale` endpoint (legacy fallback)."
-  [period & {:keys [source marketplace] :or {source :db}}]
+  [period & {:keys [source marketplace] :or {source :combined}}]
   (let [[from to] (resolve-dates period)]
     (case source
       :db       (fetch-from-region-sales from to)
       :sales    (fetch-from-sales from to marketplace)
-      :combined (concat (fetch-from-region-sales from to)
-                        (fetch-from-sales from to marketplace))
+      :combined (cond
+                  ;; Caller wants WB only — pre-aggregated WB table is
+                  ;; canonical, sales-side would be redundant.
+                  (= :wb marketplace)
+                  (fetch-from-region-sales from to)
+                  ;; Caller wants a single non-WB MP — region_sales is
+                  ;; WB-only, skip it; sales table covers this MP.
+                  (some? marketplace)
+                  (fetch-from-sales from to marketplace)
+                  ;; All MPs — WB from region_sales + non-WB from sales.
+                  :else
+                  (concat (fetch-from-region-sales from to)
+                          (fetch-from-sales from to nil [:wb])))
       :api      (let [mp (registry/get-marketplace :wb)]
                   (wb-api/region-sales mp from to)))))
 

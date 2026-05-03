@@ -126,9 +126,12 @@
                                     :orders-by-article orders-map))
          :totals {}})
 
-      ;; Geography report
+      ;; Geography report — :combined covers WB (region_sales) + YM/Ozon
+      ;; (sales table per-event region) without double-counting WB.
       :geo
-      (let [region-data (geography/fetch-regions period :source :db)
+      (let [region-data (geography/fetch-regions period
+                                                 :source      :combined
+                                                 :marketplace marketplace)
             rows (geography/by-region region-data)]
         {:rows (vec rows) :totals {}})
 
