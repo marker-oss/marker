@@ -148,12 +148,10 @@
                         :on-click #(set-selected! #{})}
                "Снять")
             ($ :div {:class "spacer"})
-            ($ :button {:class "btn btn-secondary btn-sm"}
-               "Действие "
-               ($ icon {:name :chev-down :size 12}))
-            ($ :button {:class "btn btn-secondary btn-sm"}
-               ($ icon {:name :download :size 14})
-               "Export")
+            ;; TODO(Phase-N): wire bulk actions — rate change, pause, export
+            ($ :button {:class "btn btn-secondary btn-sm"} "Изменить ставки")
+            ($ :button {:class "btn btn-secondary btn-sm"} "Поставить на паузу")
+            ($ :button {:class "btn btn-primary btn-sm"} "Экспорт")
             ($ :button {:class    "icon-btn"
                         :style    {:color "#cbd5e1"}
                         :on-click #(set-selected! #{})}
@@ -189,12 +187,12 @@
                                     :on-change toggle-all!}))
                       ($ :th "Артикул")
                       ($ :th "МП")
-                      ($ :th {:class "num"} "Заказы")
                       ($ :th {:class "num"} "Выручка")
                       (when compare? ($ :th {:class "num"} "Δ %"))
-                      ($ :th {:class "num"} "Маржа")
-                      ($ :th {:class "num"} "ROAS")
-                      ($ :th {:class "num"} "ДРР")
+                      ($ :th {:class "num"} "Себестоимость")
+                      ($ :th {:class "num"} "Комиссия МП")
+                      ($ :th {:class "num"} "Реклама")
+                      ($ :th {:class "num"} "Чистая прибыль")
                       ($ :th)))
                 ($ :tbody
                    (for [s visible]
@@ -216,19 +214,27 @@
                         ($ :td
                            (for [m (:mp s)]
                              ($ mp-badge {:key (name m) :mp m})))
-                        ($ :td {:class "num mono"} (fmt/format-int (:orders s)))
                         ($ :td {:class "num mono"
                                 :style {:font-weight 600}}
                            (fmt/format-rub (:revenue s)))
                         (when compare?
                           ($ :td {:class "num mono"}
                              ($ delta {:pct (:delta-pct s)})))
-                        ($ :td {:class "num mono"}
-                           (fmt/format-pct (* (:margin s) 100)))
-                        ($ :td {:class "num mono"}
-                           (fmt/format-mul (:roas s)))
-                        ($ :td {:class "num mono"}
-                           (fmt/format-pct (* (/ (:ads-cost s) (:revenue s)) 100)))
+                        ($ :td {:class "num mono"
+                                :style {:color "var(--color-delta-negative)"}}
+                           (fmt/format-rub (- (* (:revenue s) (- 1 (:margin s))))))
+                        ($ :td {:class "num mono"
+                                :style {:color "var(--color-delta-negative)"}}
+                           (fmt/format-rub (- (* (:revenue s) 0.18))))
+                        ($ :td {:class "num mono"
+                                :style {:color "var(--color-delta-negative)"}}
+                           (fmt/format-rub (- (:ads-cost s))))
+                        ($ :td {:class "num mono"
+                                :style {:color (if (pos? (- (* (:revenue s) (:margin s)) (:ads-cost s)))
+                                                 "var(--color-delta-positive)"
+                                                 "var(--color-delta-negative)")
+                                        :font-weight 600}}
+                           (fmt/format-rub (- (* (:revenue s) (:margin s)) (:ads-cost s))))
                         ($ :td
                            ($ :button {:class "icon-btn"}
                               ($ icon {:name :more-v :size 14}))))))
@@ -237,18 +243,13 @@
                       ($ :td {:class "tbl-checkbox"})
                       ($ :td (str "Итого (" (count visible) ")"))
                       ($ :td)
-                      ($ :td {:class "num mono"}
-                         (fmt/format-int (reduce #(+ %1 (:orders %2)) 0 visible)))
-                      ($ :td {:class "num mono"}
+                      ($ :td {:class "num mono" :style {:font-weight 600}}
                          (fmt/format-rub (reduce #(+ %1 (:revenue %2)) 0 visible)))
                       (when compare? ($ :td))
-                      ($ :td {:class "num mono"}
-                         (let [n (count visible)]
-                           (if (zero? n)
-                             "—"
-                             (fmt/format-pct (* (/ (reduce #(+ %1 (:margin %2)) 0 visible) n)
-                                                100)))))
-                      ($ :td) ($ :td) ($ :td)))))))))
+                      ($ :td) ($ :td) ($ :td)
+                      ($ :td {:class "num mono" :style {:font-weight 600}}
+                         (fmt/format-rub (reduce #(+ %1 (- (* (:revenue %2) (:margin %2)) (:ads-cost %2))) 0 visible)))
+                      ($ :td)))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page root

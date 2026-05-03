@@ -421,7 +421,7 @@
                                            (filter #(.includes (.toLowerCase (:label %)) ql))
                                            (take 4)
                                            vec)
-                                      [])}))
+                                      (vec nav-items-flat))}))
                  [q])
 
         all-items (into (:nav-matches results) (:sku-matches results))

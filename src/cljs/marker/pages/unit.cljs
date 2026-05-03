@@ -91,7 +91,8 @@
                    (* (/ (- (:profit cur) (:profit base))
                          (js/Math.abs (:profit base)))
                       100))
-        d-margin (- (:margin cur) (:margin base))]
+        d-margin (- (:margin cur) (:margin base))
+        d-roas   (- (:roas cur) (:roas base))]
 
     ($ :div {:class "page-content"}
        ($ :div {:class "grid-12"}
@@ -142,47 +143,68 @@
                 ($ :button {:class "btn btn-ghost btn-sm"}
                    "Сохранить как сценарий")))
 
-          ;; Right: metrics (5 columns)
+          ;; Right: 4 metric cards + cost structure below (5 columns)
           ($ :section {:class "col-5"
                        :style {:display        "flex"
                                :flex-direction  "column"
                                :gap             "16px"}}
 
-             ;; Маржа card
-             ($ :div {:class "card section-card"}
-                ($ :div {:class "uppercase-label"} "Маржа")
-                ($ :div {:style {:font-size 36 :font-weight 700 :margin-top "4px"}}
-                   (fmt/format-pct (:margin cur)))
-                ($ :div {:style {:margin-top "6px"}}
-                   ($ delta {:pct d-margin :suffix " п.п. vs baseline"}))
-                ;; Progress bar
-                ($ :div {:style {:margin-top   "12px"
-                                 :height       "6px"
-                                 :background   "var(--color-bg-muted)"
-                                 :border-radius "999px"
-                                 :overflow     "hidden"}}
-                   ($ :div {:style {:height     "100%"
-                                    :width      (str (max 0 (min 100 (* (:margin cur) 2))) "%")
-                                    :background (cond (> (:margin cur) 25) "var(--color-delta-positive)"
-                                                      (> (:margin cur) 15) "var(--color-warning-fg)"
-                                                      :else                "var(--color-delta-negative)")
-                                    :transition "width 200ms"}})))
+             ;; 4 metric cards in 2×2 grid
+             ($ :div {:style {:display               "grid"
+                              :grid-template-columns "1fr 1fr"
+                              :gap                   "12px"}}
 
-             ;; Прибыль card
-             ($ :div {:class "card section-card"}
-                ($ :div {:class "uppercase-label"} "Прибыль с штуки")
-                ($ :div {:style {:font-size 28 :font-weight 700 :margin-top "4px"}}
-                   (fmt/format-rub (:profit cur)))
-                ($ :div {:style {:margin-top "6px"}}
-                   ($ delta {:pct d-profit :suffix " vs baseline"})))
+                ;; Маржа card
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "uppercase-label"} "Маржа")
+                   ($ :div {:style {:font-size 26 :font-weight 700 :margin-top "4px"}}
+                      (fmt/format-pct (:margin cur)))
+                   ($ :div {:style {:margin-top "6px"}}
+                      ($ delta {:pct d-margin :suffix " п.п. vs baseline"}))
+                   ;; Progress bar
+                   ($ :div {:style {:margin-top   "10px"
+                                    :height       "4px"
+                                    :background   "var(--color-bg-muted)"
+                                    :border-radius "999px"
+                                    :overflow     "hidden"}}
+                      ($ :div {:style {:height     "100%"
+                                       :width      (str (max 0 (min 100 (* (:margin cur) 2))) "%")
+                                       :background (cond (> (:margin cur) 25) "var(--color-delta-positive)"
+                                                         (> (:margin cur) 15) "var(--color-warning-fg)"
+                                                         :else                "var(--color-delta-negative)")
+                                       :transition "width 200ms"}})))
 
-             ;; ROAS card
-             ($ :div {:class "card section-card"}
-                ($ :div {:class "uppercase-label"} "ROAS")
-                ($ :div {:style {:font-size 28 :font-weight 700 :margin-top "4px"}}
-                   (fmt/format-mul (:roas cur))))
+                ;; Прибыль card
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "uppercase-label"} "Прибыль с штуки")
+                   ($ :div {:style {:font-size 26 :font-weight 700 :margin-top "4px"}}
+                      (fmt/format-rub (:profit cur)))
+                   ($ :div {:style {:margin-top "6px"}}
+                      ($ delta {:pct d-profit :suffix " vs baseline"})))
 
-             ;; Cost structure card
+                ;; ROAS card
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "uppercase-label"} "ROAS")
+                   ($ :div {:style {:font-size 26 :font-weight 700 :margin-top "4px"}}
+                      (fmt/format-mul (:roas cur)))
+                   ($ :div {:style {:margin-top "6px"}}
+                      ($ delta {:pct (* d-roas 10) :suffix " vs baseline"})))
+
+                ;; Точка безубыточности card
+                ($ :div {:class "card section-card"}
+                   ($ :div {:class "uppercase-label"} "Точка безубыточности")
+                   ($ :div {:style {:font-size 26 :font-weight 700 :margin-top "4px"}}
+                      (let [be (:break-even cur)]
+                        (if (= be js/Infinity)
+                          "∞ шт"
+                          (str (js/Math.round be) " шт"))))
+                   ($ :div {:style {:margin-top "6px" :font-size "11px"
+                                    :color "var(--color-fg-muted)"}}
+                      (if (pos? (:profit cur))
+                        "прибыль при любом объёме"
+                        "убыточная модель"))))
+
+             ;; Cost structure — full-width below metric cards
              ($ :div {:class "card section-card"}
                 ($ :div {:class "uppercase-label"} "Структура затрат")
                 ($ :div {:style {:margin-top     "10px"
