@@ -88,6 +88,16 @@
   (testing "empty string returns missing"
     (is (= "missing" (freshness-class "" now-fixed)))))
 
+(deftest freshness-class-boundaries
+  (testing "exactly 2.0 days old → good (boundary between good and stale)"
+    (is (= "good" (freshness-class "2026-05-02T12:00:00Z" now-fixed))))
+  (testing "exactly 3.0 days old → stale (just past good threshold)"
+    (is (= "stale" (freshness-class "2026-05-01T12:00:00Z" now-fixed))))
+  (testing "exactly 7.0 days old → stale (at upper stale boundary)"
+    (is (= "stale" (freshness-class "2026-04-27T12:00:00Z" now-fixed))))
+  (testing "just over 7 days old → old (one second past stale boundary)"
+    (is (= "old" (freshness-class "2026-04-27T11:59:59Z" now-fixed)))))
+
 ;; ---------------------------------------------------------------------------
 ;; parse-coverage-cell
 ;; ---------------------------------------------------------------------------

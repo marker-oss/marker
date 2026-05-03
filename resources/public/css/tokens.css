@@ -659,3 +659,24 @@ input[type="range"]::-moz-range-thumb {
 .cmdk-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .cmdk-item.active, .cmdk-item:hover { background: var(--color-bg-subtle); }
 .cmdk-foot { padding: 8px 12px; border-top: 1px solid var(--color-border-subtle); font-size: 11px; color: var(--color-fg-muted); display: flex; gap: 12px; }
+
+/* === Coverage matrix === */
+.coverage-tbl { width: 100%; }
+.coverage-tbl td.coverage-cell { padding: 6px 8px; font-size: 12px; vertical-align: middle; }
+.coverage-mp-label { font-weight: 600; color: var(--color-fg-secondary); }
+.coverage-range { font-family: var(--font-mono); font-size: 11px; }
+.coverage-days  { color: var(--color-fg-muted); margin-left: 4px; }
+
+.coverage-good    { background: var(--color-success-bg); color: var(--color-success-fg); }
+.coverage-stale   { background: var(--color-warning-bg); color: var(--color-warning-fg); }
+.coverage-old     { background: var(--color-danger-bg);  color: var(--color-danger-fg); }
+.coverage-missing { color: var(--color-fg-muted); }
+
+.coverage-chip-good    { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-border); }
+.coverage-chip-stale   { background: var(--color-warning-bg); color: var(--color-warning-fg); border-color: var(--color-warning-border); }
+.coverage-chip-old     { background: var(--color-danger-bg);  color: var(--color-danger-fg); border-color: var(--color-danger-border); }
+.coverage-chip-missing { background: var(--color-bg-subtle);  color: var(--color-fg-muted); border-color: var(--color-border-subtle); }
+
+.chip-label { font-weight: 600; margin-right: 4px; }
+.chip-value { font-family: var(--font-mono); font-size: 11px; }
+.chip-absent { color: var(--color-fg-muted); }

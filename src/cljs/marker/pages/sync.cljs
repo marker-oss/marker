@@ -9,7 +9,7 @@
      - Stop button (POST /api/sync/stop)
      - Recent runs table (GET /api/sync/runs/recent)
      - Expandable run rows with per-task retry (Phase 10)"
-  (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
+  (:require [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [clojure.string :as str]
             [marker.ui.icons :refer [icon]]
             [marker.ui.chrome :refer [mp-badge]]))
@@ -385,7 +385,7 @@
          "—"))))
 
 (defui ^:private coverage-matrix [{:keys [coverage error loading?]}]
-  (let [now (js/Date.)]
+  (let [now (use-memo (fn [] (js/Date.)) [coverage])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :h3 {:class "section-title"} "Покрытие данных"))
@@ -395,7 +395,7 @@
          ($ :div {:style {:padding "16px"}}
             (for [i (range 3)]
               ($ :div {:key i
-                       :class "skeleton"
+                       :class "skel"
                        :style {:height "20px" :margin-bottom "8px"
                                :border-radius "var(--radius-sm)"}})))
 
