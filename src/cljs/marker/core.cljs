@@ -1,54 +1,103 @@
 (ns marker.core
-  "Marker SPA — entry point. Phase 1: bootstrap-only smoke test.
-   Subsequent phases mount the real shell (sidebar + topbar + routed pages)."
-  (:require [uix.core :refer [$ defui]]
-            [uix.dom]))
+  "Marker SPA — Phase 3 entry point.
+   Mounts the full app shell: Sidebar + Topbar + filterbar + placeholder content.
+   Phase 4 will add re-frame app-db + reitit routing."
+  (:require [uix.core :refer [$ defui use-state]]
+            [uix.dom]
+            [marker.ui.chrome :refer [sidebar topbar mp-filter period-selector sync-banner]]
+            [marker.ui.icons  :refer [icon]]))
 
-(defui hello-marker []
-  ($ :div {:style {:padding "48px"
-                   :max-width "640px"
-                   :margin "0 auto"
-                   :font-family "Inter, system-ui, sans-serif"}}
-     ($ :div {:style {:display "flex"
-                      :align-items "center"
-                      :gap "12px"
-                      :margin-bottom "16px"}}
-        ($ :div {:style {:width "32px"
-                         :height "32px"
-                         :border-radius "8px"
-                         :background "#0f172a"
-                         :display "grid"
-                         :place-items "center"}}
-           ($ :div {:style {:width "12px"
-                            :height "12px"
-                            :border-radius "50%"
-                            :background "#4f46e5"
-                            :box-shadow "0 0 0 2px #0f172a, 0 0 0 4px #4f46e5"}}))
-        ($ :h1 {:style {:font-size "20px"
-                        :font-weight 700
-                        :margin 0
-                        :letter-spacing "-0.01em"}}
-           "Marker SPA — bootstrapped"))
-     ($ :p {:style {:color "#64748b"
-                    :font-size "14px"
-                    :line-height "20px"}}
-        "ClojureScript + UIx + shadow-cljs toolchain работает. "
-        "Следующая фаза: tokens.css + порт chrome (sidebar/topbar/filterbar).")
-     ($ :div {:style {:margin-top "24px"
-                      :padding "12px 14px"
-                      :background "#dbeafe"
-                      :border-left "3px solid #1e40af"
-                      :color "#1e40af"
-                      :border-radius "6px"
-                      :font-size "13px"}}
-        ($ :strong "Live reference: ")
-        ($ :a {:href "/marker-preview/Marker.html"
-               :target "_blank"
-               :style {:color "#1e40af"}}
-           "/marker-preview/Marker.html"))))
+;; Nav-id → human title map for breadcrumbs
+(def ^:private page-titles
+  {"pulse"    "Главная (Pulse)"
+   "pnl"      "P&L"
+   "unit"     "Юнит-экономика"
+   "returns"  "Возвраты"
+   "products" "Товары"
+   "warehouse""Склады"
+   "plan"     "План"
+   "kit"      "UI Kit"})
+
+(defn- crumbs-for [page-id]
+  (let [finance-children #{"pnl" "unit" "returns"}]
+    (if (contains? finance-children page-id)
+      ["Marker" "Финансы" (get page-titles page-id)]
+      ["Marker" (get page-titles page-id page-id)])))
+
+(defui app-shell []
+  (let [[page        set-page!]        (use-state "pulse")
+        [collapsed?  set-collapsed!]   (use-state false)
+        [mps         set-mps!]         (use-state [:wb :ozon :ym])
+        [period      set-period!]      (use-state "Последние 30 дней")
+        [compare?    set-compare!]     (use-state false)
+        [theme       set-theme!]       (use-state "light")
+        [sync-state  set-sync-state!]  (use-state nil)]
+    ($ :div {:data-theme   theme
+             :data-sidebar (when collapsed? "collapsed")}
+       ($ :div {:class "app"}
+          ;; Sidebar
+          ($ sidebar {:active     page
+                      :on-nav     set-page!
+                      :collapsed  collapsed?})
+          ;; Main column
+          ($ :div {:class "page"}
+             ;; Topbar
+             ($ topbar {:crumbs             (crumbs-for page)
+                        :on-search          #(js/console.log "search")
+                        :on-theme           #(set-theme! (if (= theme "dark") "light" "dark"))
+                        :theme              theme
+                        :on-sidebar-toggle  #(set-collapsed! (not collapsed?))
+                        :on-sync            #(set-sync-state!
+                                              {:kind     :running
+                                               :section  "WB"
+                                               :elapsed  "0s"
+                                               :progress 30})})
+             ;; Sync banner (shown when sync-state is non-nil)
+             (when sync-state
+               ($ sync-banner {:state    sync-state
+                                :on-close #(set-sync-state! nil)}))
+             ;; Page header
+             ($ :div {:class "page-header"}
+                ($ :div
+                   ($ :h1 {:class "page-title"}
+                      (get page-titles page page))
+                   ($ :p {:class "page-subtitle"}
+                      "Анализ данных по всем маркетплейсам"))
+                ($ :div {:class "page-actions"}
+                   ($ :button {:class "btn btn-secondary"}
+                      ($ icon {:name :download :size 14})
+                      "Экспорт")))
+             ;; Filterbar
+             ($ :div {:class "filterbar"}
+                ($ :div {:class "filterbar-group"}
+                   ($ :span {:class "filterbar-label"} "МП")
+                   ($ mp-filter {:value     mps
+                                  :on-change set-mps!}))
+                ($ :div {:class "filterbar-group"}
+                   ($ :span {:class "filterbar-label"} "Период")
+                   ($ period-selector {:value      period
+                                        :on-change  set-period!
+                                        :compare    compare?
+                                        :on-compare set-compare!})))
+             ;; Content placeholder
+             ($ :div {:class "page-content"}
+                ($ :div {:class "card section-card"
+                          :style {:text-align  "center"
+                                  :padding     "64px 32px"
+                                  :color       "var(--color-fg-muted)"}}
+                   ($ :div {:style {:font-size   "32px"
+                                    :margin-bottom "12px"}}
+                      "📊")
+                   ($ :p {:style {:font-size  "15px"
+                                  :font-weight 600
+                                  :margin     "0 0 6px"
+                                  :color      "var(--color-fg-primary)"}}
+                      (str "Страница «" (get page-titles page page) "»"))
+                   ($ :p {:style {:font-size "13px" :margin 0}}
+                      "Phase 4: routing comes next."))))))))
 
 (defonce root
   (uix.dom/create-root (js/document.getElementById "root")))
 
 (defn ^:export init []
-  (uix.dom/render-root ($ hello-marker) root))
+  (uix.dom/render-root ($ app-shell) root))

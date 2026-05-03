@@ -1,0 +1,332 @@
+(ns marker.ui.chrome
+  "App-shell chrome components — ported from chrome.jsx.
+   Provides: NAV, Sidebar, Topbar, MpFilter, PeriodSelector,
+             SyncBanner, Sparkline, Delta, MpBadge.
+   Skipped (Phase 4/6): Sheet, Modal, CmdK — stubs not provided;
+   those components depend on MARKER_DATA/routing not yet wired."
+  (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
+            [marker.ui.icons :refer [icon]]))
+
+;; ============= NAV constant =============
+
+(def NAV
+  [{:id "pulse"    :label "Главная (Pulse)" :icon :pulse}
+   {:id "finance"  :label "Финансы"         :icon :finance
+    :children [{:id "pnl"     :label "P&L"}
+               {:id "unit"    :label "Юнит-экономика"}
+               {:id "returns" :label "Возвраты"}]}
+   {:id "products" :label "Товары"  :icon :products :counter "32"}
+   {:id "warehouse":label "Склады"  :icon :warehouse}
+   {:id "plan"     :label "План"    :icon :target}
+   {:id "kit"      :label "UI Kit"  :icon :sparkles}])
+
+;; ============= Sidebar =============
+
+(defui sidebar
+  "App sidebar with collapsible nav groups.
+   Props: :active (string id), :on-nav (fn [id]), :collapsed (bool)."
+  [{:keys [active on-nav collapsed]}]
+  (let [[open-groups set-open-groups!] (use-state #{"finance"})
+        toggle-group! (fn [id]
+                        (set-open-groups!
+                         (fn [s]
+                           (if (contains? s id)
+                             (disj s id)
+                             (conj s id)))))]
+    ($ :aside {:class "sidebar"}
+       ;; Brand
+       ($ :div {:class "sidebar-brand"}
+          ($ :div {:class "brand-mark"})
+          ($ :div {:class "brand-name"}
+             "Marker"
+             ($ :span {:class "dot"} ".")))
+       ;; Nav
+       ($ :nav {:class "sidebar-nav"}
+          (for [item NAV]
+            (let [item-id  (:id item)
+                  children (:children item)
+                  is-active (or (= active item-id)
+                                (and children
+                                     (some #(= active (:id %)) children)))]
+              (if children
+                ;; Group item
+                (let [open? (contains? open-groups item-id)]
+                  ($ :div {:key item-id}
+                     ($ :button
+                        {:class    (str "nav-item" (when is-active " active"))
+                         :on-click #(toggle-group! item-id)}
+                        ($ icon {:name (:icon item) :class "nav-icon"})
+                        ($ :span {:class "nav-label"} (:label item))
+                        ($ icon {:name  :chev-down
+                                 :size  12
+                                 :style {:margin-left "auto"
+                                         :transform   (if open? "none" "rotate(-90deg)")
+                                         :transition  "transform 150ms"}}))
+                     (when open?
+                       ($ :div {:class "nav-children"}
+                          (for [child children]
+                            ($ :button
+                               {:key      (:id child)
+                                :class    (str "nav-item"
+                                               (when (= active (:id child)) " active"))
+                                :on-click #(on-nav (:id child))}
+                               ($ :span {:class "nav-label"} (:label child))))))))
+                ;; Leaf item
+                ($ :button
+                   {:key      item-id
+                    :class    (str "nav-item" (when (= active item-id) " active"))
+                    :on-click #(on-nav item-id)}
+                   ($ icon {:name (:icon item) :class "nav-icon"})
+                   ($ :span {:class "nav-label"} (:label item))
+                   (when-let [counter (:counter item)]
+                     ($ :span {:class "nav-counter"} counter)))))))
+       ;; Footer
+       ($ :div {:class "sidebar-foot"}
+          ($ :div {:style {:font-size       "11px"
+                           :color           "var(--color-fg-muted)"
+                           :text-transform  "uppercase"
+                           :letter-spacing  ".5px"
+                           :font-weight     500}}
+             "Период")
+          ($ :button {:class "btn btn-secondary"
+                      :style {:justify-content "space-between"
+                              :width           "100%"}}
+             ($ :span "Май 2026")
+             ($ icon {:name :chev-down :size 12}))))))
+
+;; ============= Topbar =============
+
+(defui topbar
+  "Top application bar.
+   Props: :crumbs (vec of strings), :on-search (fn), :on-theme (fn),
+          :theme (\"light\"|\"dark\"), :on-sidebar-toggle (fn), :on-sync (fn)."
+  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync]}]
+  ($ :div {:class "topbar"}
+     ($ :button {:class    "icon-btn"
+                 :title    "Свернуть"
+                 :on-click on-sidebar-toggle}
+        ($ icon {:name :panel}))
+     ($ :div {:class "crumbs"}
+        (map-indexed
+         (fn [i c]
+           ($ :span {:key i :style {:display "contents"}}
+              (when (pos? i)
+                ($ :span {:class "sep"} "/"))
+              (if (= i (dec (count crumbs)))
+                ($ :span {:class "current"} c)
+                ($ :a {:href "#"} c))))
+         crumbs))
+     ($ :div {:class "spacer"})
+     ($ :button {:class    "search-trigger"
+                 :on-click on-search}
+        ($ icon {:name :search :size 14})
+        ($ :span "Поиск артикула или раздела…")
+        ($ :kbd "⌘K"))
+     ($ :button {:class    "icon-btn"
+                 :title    "Запустить sync"
+                 :on-click on-sync}
+        ($ icon {:name :refresh}))
+     ($ :button {:class "icon-btn"
+                 :title "Уведомления"}
+        ($ icon {:name :bell}))
+     ($ :button {:class    "icon-btn"
+                 :title    "Тема"
+                 :on-click on-theme}
+        ($ icon {:name (if (= theme "dark") :sun :moon)}))
+     ($ :div {:class "avatar"} "КМ")))
+
+;; ============= MP Filter =============
+
+(def ^:private mp-labels {:wb "WB" :ozon "Ozon" :ym "YM"})
+(def ^:private all-mps [:wb :ozon :ym])
+
+(defui mp-filter
+  "Marketplace filter chips.
+   Props: :value (vec of mp keywords [:wb :ozon :ym]),
+          :on-change (fn [new-vec])."
+  [{:keys [value on-change]}]
+  (let [all-selected? (= (count value) 3)
+        toggle!       (fn [mp]
+                        (if (some #{mp} value)
+                          (on-change (filterv #(not= % mp) value))
+                          (on-change (conj value mp))))]
+    ($ :div {:style {:display "flex" :gap "6px"}}
+       ($ :button
+          {:class    (str "chip" (when all-selected? " is-active"))
+           :on-click #(on-change (if all-selected? [] all-mps))}
+          "Все")
+       (for [mp all-mps]
+         ($ :button
+            {:key      (name mp)
+             :class    (str "chip chip-mp-" (name mp)
+                            (when-not (some #{mp} value) " off"))
+             :on-click #(toggle! mp)}
+            ($ :span {:class (str "mp-dot " (name mp))
+                      :style {:width "14px" :height "14px" :font-size "8px"}}
+               (-> mp name first str .toUpperCase))
+            (get mp-labels mp))))))
+
+;; ============= Period Selector =============
+
+(def ^:private period-presets
+  ["Сегодня" "Вчера" "Последние 7 дней" "Последние 30 дней"
+   "Этот месяц" "Прошлый месяц" "Этот квартал" "Этот год"])
+
+(defui period-selector
+  "Period picker with popover and compare toggle.
+   Props: :value (string), :on-change (fn [string]),
+          :compare (bool), :on-compare (fn [bool])."
+  [{:keys [value on-change compare on-compare]}]
+  (let [[open? set-open!] (use-state false)
+        ref               (use-ref nil)]
+    (use-effect
+     (fn []
+       (let [close (fn [e]
+                     (when (and @ref
+                                (not (.contains @ref (.-target e))))
+                       (set-open! false)))]
+         (.addEventListener js/document "mousedown" close)
+         #(.removeEventListener js/document "mousedown" close)))
+     [])
+    ($ :div {:ref   ref
+             :style {:position   "relative"
+                     :display    "flex"
+                     :gap        "6px"
+                     :align-items "center"}}
+       ($ :button {:class    "btn btn-secondary"
+                   :on-click #(set-open! (not open?))}
+          ($ icon {:name :calendar :size 14})
+          value
+          ($ icon {:name :chev-down :size 12}))
+       ($ :label {:style {:display     "flex"
+                          :align-items "center"
+                          :gap         "6px"
+                          :font-size   "12px"
+                          :color       "var(--color-fg-secondary)"
+                          :cursor      "pointer"}}
+          ($ :input {:type      "checkbox"
+                     :checked   compare
+                     :style     {:accent-color "var(--color-accent-interactive)"}
+                     :on-change #(on-compare (.. % -target -checked))})
+          "Сравнить с пред.")
+       (when open?
+         ($ :div {:class "popover"
+                  :style {:top       "100%"
+                          :margin-top "4px"
+                          :left      0
+                          :min-width "220px"}}
+            (for [p period-presets]
+              ($ :button
+                 {:key      p
+                  :class    (str "popover-item" (when (= p value) " is-active"))
+                  :on-click (fn []
+                              (on-change p)
+                              (set-open! false))}
+                 (when (= p value)
+                   ($ icon {:name :check :size 12}))
+                 ($ :span {:style {:margin-left (if (= p value) "0" "18px")}} p)))
+            ($ :div {:class "popover-divider"})
+            ($ :button {:class "popover-item"}
+               ($ :span {:style {:margin-left "18px"}} "Свой диапазон…")))))))
+
+;; ============= Sync Banner =============
+
+(defui sync-banner
+  "Banner showing sync progress or success.
+   Props: :state (nil | {:kind :running :section str :elapsed str :progress num}
+                       | {:kind :success :time str}),
+          :on-close (fn)."
+  [{:keys [state on-close]}]
+  (when state
+    (if (= (:kind state) :success)
+      ($ :div {:class "sync-banner success"}
+         ($ icon {:name :check :size 16})
+         ($ :span
+            ($ :strong "Готово.")
+            " Данные обновлены " (:time state))
+         ($ :div {:class "spacer"})
+         ($ :button {:class    "icon-btn"
+                     :style    {:color "inherit"}
+                     :on-click on-close}
+            ($ icon {:name :x :size 14})))
+      ($ :div {:class "sync-banner"}
+         ($ :div {:class "sync-spin"})
+         ($ :span
+            ($ :strong (str "Синхронизация " (:section state)))
+            " — " (:elapsed state))
+         ($ :div {:class "sync-progress"}
+            ($ :div {:style {:width (str (:progress state) "%")}}))
+         ($ :span {:class "mono"
+                   :style {:min-width  "36px"
+                           :text-align "right"}}
+            (str (:progress state) "%"))))))
+
+;; ============= Sparkline =============
+
+(defui sparkline
+  "Inline SVG sparkline with last-point dot.
+   Props: :data (vec of numbers), :width (default 80), :height (default 28),
+          :color (optional CSS color string)."
+  [{:keys [data width height color]
+    :or   {width 80 height 28}}]
+  (when (seq data)
+    (let [mx    (apply max data)
+          mn    (apply min data)
+          range (if (= mx mn) 1 (- mx mn))
+          trend (>= (last data) (first data))
+          c     (or color
+                    (if trend
+                      "var(--color-delta-positive)"
+                      "var(--color-delta-negative)"))
+          n     (count data)
+          pts   (map-indexed
+                 (fn [i v]
+                   (let [x (+ 2 (* (/ i (dec n)) (- width 4)))
+                         y (- height 2 (* (/ (- v mn) range) (- height 4)))]
+                     (str x "," y)))
+                 data)
+          [lx ly] (-> pts last (clojure.string/split #","))]
+      ($ :svg {:width  width
+               :height height
+               :style  {:display "block"}}
+         ($ :polyline {:points         (clojure.string/join " " pts)
+                       :fill           "none"
+                       :stroke         c
+                       :stroke-width   "1.5"
+                       :stroke-linecap "round"
+                       :stroke-linejoin "round"})
+         ($ :circle {:cx   lx
+                     :cy   ly
+                     :r    "2.5"
+                     :fill c})))))
+
+;; ============= Delta =============
+
+(defui delta
+  "Colored arrow + percentage delta.
+   Props: :pct (number, e.g. 5.2 for +5.2%), :inverted (bool),
+          :suffix (string appended after %)."
+  [{:keys [pct inverted suffix]
+    :or   {inverted false suffix ""}}]
+  (if (or (nil? pct) (js/isNaN pct))
+    ($ :span {:class "delta flat"} "—")
+    (let [up?   (> pct 0.05)
+          down? (< pct -0.05)
+          dir   (cond up? "up" down? "down" :else "flat")
+          cls   (if inverted
+                  (cond up? "down" down? "up" :else "flat")
+                  dir)
+          arrow (cond up? "↑" down? "↓" :else "→")]
+      ($ :span {:class (str "delta " cls)}
+         arrow " "
+         (-> (js/Math.abs pct) (.toFixed 1) (.replace "." ","))
+         "%" suffix))))
+
+;; ============= MP Badge =============
+
+(defui mp-badge
+  "Inline marketplace badge dot.
+   Props: :mp (keyword :wb | :ozon | :ym)."
+  [{:keys [mp]}]
+  ($ :span {:class (str "mp-dot " (name mp))}
+     (case mp :wb "W" :ozon "O" :ym "Y" "?")))
