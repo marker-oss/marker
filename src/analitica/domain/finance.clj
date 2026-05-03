@@ -54,7 +54,14 @@
     (db-finance-event-date from to " AND marketplace = ?" [(name marketplace)])
 
     :else
-    (db-finance-event-date from to "" [])))
+    ;; All-MP: WB + YM via event-date (their event_date is per-day),
+    ;; PLUS Ozon via overlap (Ozon stamps event_date = start-of-month
+    ;; for realization, so an event-date BETWEEN filter would drop the
+    ;; whole month). Concat then let redistribute-realization split the
+    ;; Ozon rows daily and the in-window filter trim them.
+    (concat
+      (db-finance-event-date from to " AND marketplace != 'ozon'" [])
+      (db-finance-ozon-overlap from to))))
 
 (defn- in-window? [from to row]
   (when-let [d (or (:event-date row) (:event_date row))]
@@ -76,11 +83,16 @@
       (or (nil? marketplace) (= :ozon marketplace))
       (ozon-distribute/redistribute-realization)
 
-      ;; After spread, drop any row whose (post-spread) event_date falls
-      ;; outside the requested window. Only Ozon goes through overlap
-      ;; fetch, so this filter is a no-op for other marketplaces.
+      ;; After spread, drop any Ozon row whose (post-spread) event_date
+      ;; falls outside the requested window. Single-MP=:ozon: filter
+      ;; everything. All-MP (nil): filter ONLY Ozon rows — WB/YM came
+      ;; via event-date query so they're already in-window.
       (= :ozon marketplace)
-      (filterv #(in-window? from to %)))))
+      (filterv #(in-window? from to %))
+
+      (nil? marketplace)
+      (filterv #(or (not= "ozon" (:marketplace %))
+                    (in-window? from to %))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Aggregation
