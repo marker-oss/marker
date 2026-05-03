@@ -51,7 +51,10 @@
                        :border        "1px solid var(--color-border-subtle)"
                        :border-radius "10px"
                        :box-shadow    "var(--shadow-lg)"
-                       :z-index       100
+                       ;; Above tokens.css z-stack (modal=50, popover=60,
+                       ;; tooltip=70, toast=80) so the panel is reachable
+                       ;; even when a Phase 6 sheet/modal is open.
+                       :z-index       9000
                        :padding       "14px"
                        :display       "flex"
                        :flex-direction "column"

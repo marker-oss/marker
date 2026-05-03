@@ -30,6 +30,14 @@
       nil)))
 
 ;; ---------------------------------------------------------------------------
+;; Effect: persist tweaks to localStorage.
+;; Used as an :fx entry by reg-event-fx handlers that mutate persisted keys,
+;; so the reg-event-db handlers themselves stay pure (data-in / data-out).
+;; ---------------------------------------------------------------------------
+
+(rf/reg-fx ::persist-tweaks persist-tweaks!)
+
+;; ---------------------------------------------------------------------------
 ;; initialize-db
 ;; ---------------------------------------------------------------------------
 
@@ -67,23 +75,24 @@
   (fn [db [_ v]]
     (assoc db :marker/compare v)))
 
-(rf/reg-event-db ::set-theme
-  (fn [db [_ theme]]
+;; Persisted setters use reg-event-fx so the db update stays pure and the
+;; localStorage side-effect goes through a registered effect handler.
+;; This keeps re-frame's interceptor / replay / 10x-devtools model sound.
+
+(rf/reg-event-fx ::set-theme
+  (fn [{:keys [db]} [_ theme]]
     (let [db' (assoc db :marker/theme theme)]
-      (persist-tweaks! db')
-      db')))
+      {:db db' ::persist-tweaks db'})))
 
-(rf/reg-event-db ::set-density
-  (fn [db [_ density]]
+(rf/reg-event-fx ::set-density
+  (fn [{:keys [db]} [_ density]]
     (let [db' (assoc db :marker/density density)]
-      (persist-tweaks! db')
-      db')))
+      {:db db' ::persist-tweaks db'})))
 
-(rf/reg-event-db ::toggle-sidebar
-  (fn [db _]
+(rf/reg-event-fx ::toggle-sidebar
+  (fn [{:keys [db]} _]
     (let [db' (update db :marker/sidebar-collapsed not)]
-      (persist-tweaks! db')
-      db')))
+      {:db db' ::persist-tweaks db'})))
 
 (rf/reg-event-db ::open-cmdk
   (fn [db _]

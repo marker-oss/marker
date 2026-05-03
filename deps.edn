@@ -43,6 +43,9 @@
                        com.pitch/uix.core             {:mvn/version "1.4.0"}
                        com.pitch/uix.dom              {:mvn/version "1.4.0"}
                        re-frame/re-frame              {:mvn/version "1.4.3"}
+                       ;; reagent is required by uix.re-frame/use-subscribe
+                       ;; (uses reagent.ratom + reagent.impl.component internally).
+                       ;; Do NOT remove even though no namespace requires it directly.
                        reagent/reagent                {:mvn/version "1.2.0"}
                        day8.re-frame/http-fx          {:mvn/version "0.2.4"}
                        metosin/reitit-frontend        {:mvn/version "0.7.2"}
