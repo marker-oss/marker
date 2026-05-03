@@ -63,7 +63,7 @@
 ;; P&L summary table — reads from API :rows
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private pnl-summary [{:keys [compare? rows]}]
+(defui ^:private rows-table [{:keys [compare? rows]}]
   (let [revenue (safe-num (-> rows first :cur))]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
@@ -135,7 +135,7 @@
                                  " ₽"))))
                     ($ :td {:class "num mono"
                             :style {:color "var(--color-fg-muted)"}}
-                       (fmt/format-pct pct-rev)))))))))
+                       (fmt/format-pct pct-rev))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Per-SKU detail table — reads from API :sku-detail
@@ -352,5 +352,5 @@
                 {:message  error-msg
                  :on-retry #(do (rf/dispatch [::events/clear-cache])
                                 (rf/dispatch [::events/load-pnl fs]))}))
-           ($ pnl-summary {:compare? compare? :rows rows})
-           ($ sku-table   {:compare? compare? :sku-rows sku-rows})))))))
+           ($ rows-table {:compare? compare? :rows rows})
+           ($ sku-table   {:compare? compare? :sku-rows sku-rows}))))))
