@@ -140,14 +140,17 @@
                                                    :datasets datasets}
                                          :options common-opts})]
            (fn [] (.destroy chart)))))
-     [compare? mp-filter])
+     ;; mp-filter not yet read by this chart (Phase 8 will derive per-MP
+     ;; revenue series). Excluding it here avoids a full Chart.js teardown
+     ;; on every MP-chip click.
+     [compare?])
     ($ :canvas {:ref canvas-ref})))
 
 ;; ---------------------------------------------------------------------------
 ;; Stacked bar — orders by MP
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private orders-bar [{:keys [mp-filter compare?]}]
+(defui ^:private orders-bar [{:keys [mp-filter]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -209,7 +212,8 @@
                                                                          :border      #js{:display false}
                                                                          :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     [mp-filter compare?])
+     ;; compare? unused — bar chart has no compare variant per prototype.
+     [mp-filter])
     ($ :canvas {:ref canvas-ref})))
 
 ;; ---------------------------------------------------------------------------
@@ -278,6 +282,12 @@
              (str "из " (fmt/format-rub plan) " плана"))
           ($ :div {:class "spacer"})
           ($ :div {:style {:font-size "14px" :font-weight 600}} (str plan-pct "%")))
+       ;; TODO Phase 8: derive class from pace
+       ;;   < 70%        → "progress danger"
+       ;;   70..95%      → "progress warning"
+       ;;   ≥ 95% & ≤100 → "progress success"
+       ;;   > 100%       → "progress" (accent)
+       ;; Hard-coded warning here matches the prototype's demo state.
        ($ :div {:class "progress warning"}
           ($ :div {:style {:width (str plan-pct "%")}}))
        ($ :div {:style {:display         "flex"
@@ -384,17 +394,25 @@
 ;; Critical stocks table
 ;; ---------------------------------------------------------------------------
 
+(defn- daily-speed
+  "Sales speed in units/day, with a 1 unit/day floor so a slow-moving SKU
+   never reports as instantly critical (and so we never divide by zero).
+   Used by both the days-of-cover filter and the per-row badge below — they
+   MUST agree to avoid a row passing the ≤14 days filter and then displaying
+   a different days count."
+  [orders]
+  (max 1 (js/Math.round (/ orders 30))))
+
+(defn- days-of-cover [stock orders]
+  (js/Math.round (/ stock (daily-speed orders))))
+
 (defui ^:private critical-stocks [{:keys [mp-filter]}]
-  ;; Filter by days-of-cover (days-to-zero) ≤ 14, mirroring the section
-  ;; subtitle. Days-of-cover = stock / (orders/30); guard against zero
-  ;; sales velocity so a SKU with 0 orders never shows as critical.
   (let [rows (use-memo
               (fn []
                 (->> mock/skus
                      (filterv #(some (set mp-filter) (:mp %)))
                      (filterv (fn [{:keys [stock orders]}]
-                                (let [speed (max 1 (/ orders 30))]
-                                  (<= (/ stock speed) 14))))
+                                (<= (days-of-cover stock orders) 14)))
                      (sort-by :stock)
                      (take 7)))
               [mp-filter])]
@@ -415,8 +433,8 @@
                 ($ :th "Статус")))
           ($ :tbody
              (for [s rows]
-               (let [speed  (max 2 (js/Math.round (/ (:orders s) 30)))
-                     days   (js/Math.round (/ (:stock s) speed))
+               (let [speed  (daily-speed (:orders s))
+                     days   (days-of-cover (:stock s) (:orders s))
                      status (cond (< days 4) "danger"
                                   (< days 8) "warning"
                                   :else      "success")]
@@ -440,51 +458,53 @@
 ;; ---------------------------------------------------------------------------
 
 (defui ^:private kpi-section [{:keys [compare?]}]
-  (let [totals (use-memo
-                (fn []
-                  (let [sum #(reduce + %)]
-                    {:revenue (sum mock/revenue-series)
-                     :profit  (sum mock/profit-series)
-                     :orders  (js/Math.round (sum mock/orders-series))
-                     :ads     (sum mock/ads-series)}))
-                [])
-        kpis   [{:label    "Выручка"
-                 :value    (fmt/format-rub (:revenue totals))
-                 :delta    12.4
-                 :spark    mock/revenue-series
-                 :sub      "WoW"}
-                {:label    "Чистая прибыль"
-                 :value    (fmt/format-rub (:profit totals))
-                 :delta    8.2
-                 :spark    mock/profit-series
-                 :sub      "WoW"}
-                {:label    "Заказы"
-                 :value    (str (fmt/format-int (:orders totals)) " шт")
-                 :delta    5.8
-                 :spark    mock/orders-series
-                 :sub      "WoW"}
-                {:label    "Маржа"
-                 :value    (fmt/format-pct 34.2)
-                 :delta    -2.1
-                 :spark    mock/profit-series
-                 :sub      "WoW"}
-                {:label    "Средний чек"
-                 :value    (fmt/format-rub 2840)
-                 :delta    1.4
-                 :sub      "WoW"}
-                {:label    "Выкуп"
-                 :value    (fmt/format-pct 78.4)
-                 :delta    0.8
-                 :sub      "WoW"}
-                {:label    "ROAS"
-                 :value    (fmt/format-mul 3.4)
-                 :delta    -0.6
-                 :sub      "WoW"}
-                {:label    "ДРР"
-                 :value    (fmt/format-pct 11.2)
-                 :delta    1.2
-                 :sub      "WoW"
-                 :inverted? true}]]
+  ;; Memoize the formatted KPI vector — totals + format-rub/pct/mul calls
+  ;; (8 of each) shouldn't re-run on every render. Phase 8 will inject the
+  ;; live values; the same memoization shape will hold.
+  (let [kpis (use-memo
+              (fn []
+                (let [sum     #(reduce + %)
+                      revenue (sum mock/revenue-series)
+                      profit  (sum mock/profit-series)
+                      orders  (js/Math.round (sum mock/orders-series))]
+                  [{:label    "Выручка"
+                    :value    (fmt/format-rub revenue)
+                    :delta    12.4
+                    :spark    mock/revenue-series
+                    :sub      "WoW"}
+                   {:label    "Чистая прибыль"
+                    :value    (fmt/format-rub profit)
+                    :delta    8.2
+                    :spark    mock/profit-series
+                    :sub      "WoW"}
+                   {:label    "Заказы"
+                    :value    (str (fmt/format-int orders) " шт")
+                    :delta    5.8
+                    :spark    mock/orders-series
+                    :sub      "WoW"}
+                   {:label    "Маржа"
+                    :value    (fmt/format-pct 34.2)
+                    :delta    -2.1
+                    :spark    mock/profit-series
+                    :sub      "WoW"}
+                   {:label    "Средний чек"
+                    :value    (fmt/format-rub 2840)
+                    :delta    1.4
+                    :sub      "WoW"}
+                   {:label    "Выкуп"
+                    :value    (fmt/format-pct 78.4)
+                    :delta    0.8
+                    :sub      "WoW"}
+                   {:label    "ROAS"
+                    :value    (fmt/format-mul 3.4)
+                    :delta    -0.6
+                    :sub      "WoW"}
+                   {:label    "ДРР"
+                    :value    (fmt/format-pct 11.2)
+                    :delta    1.2
+                    :sub      "WoW"
+                    :inverted? true}]))
+              [])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
@@ -562,7 +582,7 @@
                         ($ :button {:class "icon-btn"}
                            ($ icon {:name :more-h}))))
                   ($ :div {:style {:height "240px"}}
-                     ($ orders-bar {:mp-filter mp-filter :compare? compare?})))
+                     ($ orders-bar {:mp-filter mp-filter})))
                ($ movers-tabs {:mp-filter mp-filter}))
 
             ;; Critical stocks

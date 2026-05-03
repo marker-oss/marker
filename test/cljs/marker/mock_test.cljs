@@ -92,4 +92,21 @@
   (testing "forecast has :month-plan :month-fact :projection > 0"
     (is (pos? (:month-plan mock/forecast)))
     (is (pos? (:month-fact mock/forecast)))
-    (is (pos? (:projection mock/forecast)))))
+    (is (pos? (:projection mock/forecast)))
+    (is (pos? (:month-pace mock/forecast)))))
+
+(deftest pnl-rows-shape
+  (testing "pnl-rows has 11 entries with :key :label :cur :prev :group"
+    (is (= 11 (count mock/pnl-rows)))
+    (doseq [r mock/pnl-rows]
+      (is (string? (:key r))   (str "row " (:key r) " :key"))
+      (is (string? (:label r)) (str "row " (:key r) " :label"))
+      (is (number? (:cur r))   (str "row " (:key r) " :cur"))
+      (is (number? (:prev r))  (str "row " (:key r) " :prev"))
+      (is (#{"income" "cost" "subtotal" "total"} (:group r))
+          (str "row " (:key r) " :group must be income/cost/subtotal/total"))))
+  (testing "subtotals + totals match the canonical numbers from the prototype"
+    (let [by-key (into {} (map (juxt :key identity) mock/pnl-rows))]
+      (is (= 5040000 (:cur (get by-key "gross"))))
+      (is (= 1470000 (:cur (get by-key "ebitda"))))
+      (is (= 1160000 (:cur (get by-key "net")))))))

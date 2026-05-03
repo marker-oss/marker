@@ -138,8 +138,12 @@
 ;; ---------------------------------------------------------------------------
 
 (def forecast
-  {:month-plan  12000000
-   :month-fact   8420000
+  {:month-plan   12000000
+   :month-fact    8420000
+   ;; Projected month-end revenue at current pace (matches data.js dummy:
+   ;; fact / day-of-month-fraction). Kept for shape parity with the JS
+   ;; prototype's monthPace field even though no UI reads it yet.
+   :month-pace   (* (/ 8420000 (+ (/ 3 30) (/ 22 30))) (/ 30 22))
    :projection  11480000})
 
 ;; ---------------------------------------------------------------------------
