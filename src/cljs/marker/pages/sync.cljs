@@ -1,5 +1,5 @@
 (ns marker.pages.sync
-  "Sync UI — Phase 9.4 MVP.
+  "Sync UI — Phase 9.4 MVP + Phase 10 per-task retry.
    Replaces the legacy /sync Hiccup page with a re-frame-free, hooks-only
    page that uses fetch + EventSource against the existing JSON sync API.
 
@@ -8,13 +8,10 @@
      - Live SSE feed of progress messages
      - Stop button (POST /api/sync/stop)
      - Recent runs table (GET /api/sync/runs/recent)
-
-   Out of scope for MVP (defer to Phase 10):
-     - Schedule editor (cron-style)
-     - Coverage matrix
-     - Per-task retry"
+     - Expandable run rows with per-task retry (Phase 10)"
   (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
-            [marker.ui.icons :refer [icon]]))
+            [marker.ui.icons :refer [icon]]
+            [marker.ui.chrome :refer [mp-badge]]))
 
 ;; ---------------------------------------------------------------------------
 ;; HTTP helpers (plain fetch + JSON; sync API is JSON-only)
@@ -81,6 +78,31 @@
     "running"   "tag-info"
     "pending"   "tag-neutral"
     "tag-neutral"))
+
+;; ---------------------------------------------------------------------------
+;; Task helpers (pure — also used in tests)
+;; ---------------------------------------------------------------------------
+
+(defn task-display-id
+  "Return the last two slash-separated segments of a task-id string.
+   e.g. 'abc-123/wb/sales/extract' → 'sales/extract'."
+  [id]
+  (when id
+    (let [parts (clojure.string/split id #"/")]
+      (if (>= (count parts) 2)
+        (clojure.string/join "/" (take-last 2 parts))
+        id))))
+
+(defn task-row-data
+  "Pick the display fields from a raw task map.
+   Returns {:display-id :marketplace :entity-type :phase :status :items}."
+  [task]
+  {:display-id  (task-display-id (:id task))
+   :marketplace (some-> task :marketplace keyword)
+   :entity-type (:entity-type task)
+   :phase       (:phase task)
+   :status      (some-> task :status name)
+   :items       (:items task)})
 
 ;; ---------------------------------------------------------------------------
 ;; Status banner
@@ -152,10 +174,98 @@
                (:text ev)))))))
 
 ;; ---------------------------------------------------------------------------
-;; Recent runs table
+;; Recent runs table — expandable rows with per-task retry
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private runs-table [{:keys [runs]}]
+(defui ^:private task-rows
+  "Expanded task sub-table for one run. Handles per-task retry."
+  [{:keys [tasks load-runs!]}]
+  (let [[retry-loading set-retry-loading!] (use-state {})
+        [retry-err     set-retry-err!]     (use-state nil)
+        retry!
+        (fn [task-id]
+          (set-retry-err! nil)
+          (set-retry-loading! (fn [m] (assoc m task-id true)))
+          (post-json! (str "/api/sync/tasks/" task-id "/retry")
+                      nil
+                      (fn [_]
+                        (set-retry-loading! (fn [m] (dissoc m task-id)))
+                        (load-runs!))
+                      (fn [msg]
+                        (set-retry-loading! (fn [m] (dissoc m task-id)))
+                        (set-retry-err! msg))))]
+    ($ :tr {:class "run-tasks-row"}
+       ($ :td {:col-span 6 :style {:padding "0 0 8px 32px"}}
+          (when retry-err
+            ($ :div {:class "alert alert-danger"
+                     :style {:margin "6px 8px 6px 0" :padding "6px 10px"}}
+               ($ icon {:name :danger :class "alert-icon"})
+               ($ :div {:class "alert-body"} retry-err)))
+          ($ :table {:class "tbl" :style {:font-size "12px" :margin-top "4px"}}
+             ($ :thead
+                ($ :tr
+                   ($ :th "Задача")
+                   ($ :th "МП")
+                   ($ :th "Тип")
+                   ($ :th "Фаза")
+                   ($ :th {:class "num"} "Записей")
+                   ($ :th "Статус")
+                   ($ :th "")))
+             ($ :tbody
+                (for [task tasks
+                      :let [{:keys [display-id marketplace entity-type
+                                    phase status items]} (task-row-data task)
+                            loading? (get retry-loading (:id task))]]
+                  ($ :tr {:key (:id task)}
+                     ($ :td {:class "mono" :style {:font-size "11px"}} (or display-id "—"))
+                     ($ :td
+                        (if marketplace
+                          ($ mp-badge {:mp marketplace})
+                          "—"))
+                     ($ :td (or entity-type "—"))
+                     ($ :td (or phase "—"))
+                     ($ :td {:class "num mono"} (or items "—"))
+                     ($ :td
+                        ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
+                           (or status "—")))
+                     ($ :td
+                        (when (= status "failed")
+                          ($ :button
+                             {:class    (str "btn btn-ghost" (when loading? " btn-disabled"))
+                              :disabled loading?
+                              :style    {:font-size "11px" :padding "2px 8px"}
+                              :on-click #(retry! (:id task))}
+                             (if loading? "Запуск…" "Повтор"))))))))))))
+
+(defui ^:private run-row
+  "Single row in the recent-runs table. Manages its own expanded? state."
+  [{:keys [run load-runs!]}]
+  (let [[expanded? set-expanded!] (use-state false)
+        started  (:started-at run)
+        finished (:finished-at run)
+        secs     (duration-s started finished)
+        status   (some-> run :status name)
+        tasks    (:tasks run)]
+    ($ :<>
+       ($ :tr {:style    {:cursor "pointer"}
+               :on-click #(set-expanded! not)}
+          ($ :td {:style {:padding-left "8px"}}
+             ($ icon {:name  (if expanded? :arrow-down :arrow-right)
+                      :size  12
+                      :style {:margin-right "4px" :opacity "0.6"}})
+             ($ :span {:class "mono" :style {:font-size "11px"}}
+                (subs (or (:run-id run) "") 0 (min 8 (count (or (:run-id run) ""))))))
+          ($ :td {:class "mono"} (format-iso started))
+          ($ :td {:class "mono"} (if finished (format-iso finished) "—"))
+          ($ :td {:class "num mono"} (if secs (str secs " с") "—"))
+          ($ :td {:class "num mono"} (or (:total run) "—"))
+          ($ :td
+             ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
+                (or status "—"))))
+       (when (and expanded? (seq tasks))
+         ($ task-rows {:tasks tasks :load-runs! load-runs!})))))
+
+(defui ^:private runs-table [{:keys [runs load-runs!]}]
   ($ :section {:class "card section-card"}
      ($ :div {:class "section-head"}
         ($ :h3 {:class "section-title"} "Последние запуски")
@@ -175,22 +285,10 @@
                    ($ :th {:class "num"} "Задач")
                    ($ :th "Статус")))
              ($ :tbody
-                (for [r runs
-                      :let [started  (:started-at r)
-                            finished (:finished-at r)
-                            secs     (duration-s started finished)
-                            status   (some-> r :status name)]]
-                  ($ :tr {:key (:run-id r)}
-                     ($ :td {:class "mono" :style {:font-size "11px"}}
-                        (subs (or (:run-id r) "") 0 (min 8 (count (or (:run-id r) "")))))
-                     ($ :td {:class "mono"} (format-iso started))
-                     ($ :td {:class "mono"} (if finished (format-iso finished) "—"))
-                     ($ :td {:class "num mono"}
-                        (if secs (str secs " с") "—"))
-                     ($ :td {:class "num mono"} (or (:total r) "—"))
-                     ($ :td
-                        ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
-                           (or status "—")))))))))))
+                (for [r runs]
+                  ($ run-row {:key      (:run-id r)
+                               :run      r
+                               :load-runs! load-runs!}))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page root
@@ -335,4 +433,5 @@
                 "Обновить список")))
 
        ($ live-log  {:events events})
-       ($ runs-table {:runs   runs}))))
+       ($ runs-table {:runs       runs
+                      :load-runs! load-runs!}))))
