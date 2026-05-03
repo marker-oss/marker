@@ -106,6 +106,45 @@
    :items       (:items task)})
 
 ;; ---------------------------------------------------------------------------
+;; Coverage helpers (pure — also tested)
+;; ---------------------------------------------------------------------------
+
+(defn freshness-class
+  "Given an ISO date string `to-iso` and a js/Date `now`, return a CSS
+   modifier class reflecting how stale the data is:
+     \"good\"    → to-iso is within the last 2 days
+     \"stale\"   → 3-7 days old
+     \"old\"     → more than 7 days old
+     \"missing\" → to-iso is nil or not a valid date string"
+  [to-iso now]
+  (if (or (nil? to-iso) (= "" to-iso))
+    "missing"
+    (try
+      (let [to-ms  (.getTime (js/Date. to-iso))
+            now-ms (.getTime now)
+            days   (/ (- now-ms to-ms) 86400000)]
+        (cond
+          (< days 3)  "good"
+          (<= days 7) "stale"
+          :else        "old"))
+      (catch :default _ "missing"))))
+
+(defn parse-coverage-cell
+  "Normalise a raw coverage cell from the JSON response.
+   Returns {:from string :to string :days int} or nil.
+   Accepts a map (good), nil (no data), or a sentinel string like \"—\"."
+  [cell]
+  (cond
+    (nil? cell)    nil
+    (string? cell) nil                  ; sentinel "—" or any string → absent
+    (map? cell)    (let [f (:from cell)
+                         t (:to   cell)
+                         d (:days cell)]
+                     (when (and f t)
+                       {:from f :to t :days (or d 0)}))
+    :else          nil))
+
+;; ---------------------------------------------------------------------------
 ;; Status banner
 ;; ---------------------------------------------------------------------------
 
@@ -316,6 +355,102 @@
                                :load-runs! load-runs!}))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Coverage matrix
+;; ---------------------------------------------------------------------------
+
+(def ^:private mp-keys   [:wb :ozon :ym])
+(def ^:private mp-labels {:wb "Wildberries" :ozon "Ozon" :ym "Яндекс Маркет"})
+(def ^:private dtype-keys   [:sales :orders :finance :storage :stocks])
+(def ^:private dtype-labels {:sales   "Продажи"
+                              :orders  "Заказы"
+                              :finance "Финансы"
+                              :storage "Хранение"
+                              :stocks  "Остатки"})
+(def ^:private cross-mp-keys   [:stats :regions :1c :prices])
+(def ^:private cross-mp-labels {:stats   "Статистика"
+                                 :regions "Регионы"
+                                 :1c      "1С цены"
+                                 :prices  "Цены"})
+
+(defui ^:private coverage-cell [{:keys [cell now]}]
+  (let [parsed (parse-coverage-cell cell)
+        cls    (freshness-class (:to parsed) now)]
+    ($ :td {:class (str "coverage-cell coverage-" cls)}
+       (if parsed
+         ($ :span
+            ($ :span {:class "coverage-range"}
+               (:from parsed) "–" (:to parsed))
+            ($ :span {:class "coverage-days"}
+               " · " (:days parsed) " дн"))
+         "—"))))
+
+(defui ^:private coverage-matrix [{:keys [coverage error loading?]}]
+  (let [now (js/Date.)]
+    ($ :section {:class "card section-card"}
+       ($ :div {:class "section-head"}
+          ($ :h3 {:class "section-title"} "Покрытие данных"))
+
+       (cond
+         loading?
+         ($ :div {:style {:padding "16px"}}
+            (for [i (range 3)]
+              ($ :div {:key i
+                       :class "skeleton"
+                       :style {:height "20px" :margin-bottom "8px"
+                               :border-radius "var(--radius-sm)"}})))
+
+         error
+         ($ :div {:class "alert alert-danger" :style {:margin "12px"}}
+            ($ icon {:name :danger :class "alert-icon"})
+            ($ :div {:class "alert-body"} error))
+
+         (nil? coverage)
+         ($ :div {:style {:padding "16px"
+                          :color "var(--color-fg-muted)"
+                          :font-size "13px"}}
+            "Нет данных о покрытии.")
+
+         :else
+         ($ :<>
+            ;; Per-MP table
+            ($ :div {:style {:overflow-x "auto" :margin-bottom "16px"}}
+               ($ :table {:class "tbl coverage-tbl"}
+                  ($ :thead
+                     ($ :tr
+                        ($ :th "МП")
+                        (for [dk dtype-keys]
+                          ($ :th {:key dk} (get dtype-labels dk)))))
+                  ($ :tbody
+                     (for [mp mp-keys
+                           :let [mp-data (get coverage mp)]]
+                       ($ :tr {:key mp}
+                          ($ :td {:class "coverage-mp-label"}
+                             (get mp-labels mp))
+                          (for [dk dtype-keys
+                                :let [raw (get mp-data dk)]]
+                            ($ coverage-cell {:key dk :cell raw :now now})))))))
+
+            ;; Cross-MP chips
+            ($ :div {:class "section-head"
+                     :style {:padding-bottom "8px"}}
+               ($ :div {:class "section-subtitle"} "Общие данные (без привязки к МП)"))
+            ($ :div {:style {:display "flex" :flex-wrap "wrap" :gap "8px"
+                             :padding "0 16px 16px"}}
+               (for [k cross-mp-keys
+                     ;; 1c may come through as string key "1c" from JSON
+                     :let [raw (or (get coverage k)
+                                   (get coverage (name k)))
+                           parsed (parse-coverage-cell raw)
+                           cls    (freshness-class (:to parsed) now)]]
+                 ($ :div {:key k :class (str "chip coverage-chip-" cls)}
+                    ($ :span {:class "chip-label"} (get cross-mp-labels k))
+                    (if parsed
+                      ($ :span {:class "chip-value"}
+                         (:from parsed) "–" (:to parsed)
+                         " · " (:days parsed) " дн")
+                      ($ :span {:class "chip-value chip-absent"} "—"))))))))))
+
+;; ---------------------------------------------------------------------------
 ;; Page root
 ;; ---------------------------------------------------------------------------
 
@@ -326,8 +461,23 @@
         [last-msg  set-last-msg!] (use-state nil)
         [start-err set-start-err!] (use-state nil)
         [last-status set-last-status!] (use-state nil)
+        [coverage  set-coverage!]  (use-state nil)
+        [coverage-error  set-coverage-error!]  (use-state nil)
+        [coverage-loading? set-coverage-loading!] (use-state false)
         es-ref                    (use-ref nil)
         runs-timer-ref            (use-ref nil)
+
+        load-coverage!
+        (fn []
+          (set-coverage-loading! true)
+          (fetch-json! "/api/sync/coverage"
+                       (fn [body]
+                         (set-coverage-error! nil)
+                         (set-coverage! body)
+                         (set-coverage-loading! false))
+                       (fn [msg]
+                         (set-coverage-error! msg)
+                         (set-coverage-loading! false))))
 
         load-runs!
         (fn []
@@ -360,7 +510,8 @@
                                (fn [_]
                                  (push-event! {:type :done :text "✓ Синхронизация завершена"})
                                  (set-running! false)
-                                 (load-runs!)))
+                                 (load-runs!)
+                                 (load-coverage!)))
             (.addEventListener es "error"
                                (fn [e]
                                  (push-event! {:type :error
@@ -398,7 +549,7 @@
                       (fn [msg]
                         (set-start-err! msg))))]
 
-    ;; Mount: load runs once, plus refresh every 8s while running.
+    ;; Mount: load runs + coverage once, plus refresh runs every 8s while running.
     (use-effect
      (fn []
        (fetch-json! "/api/sync/runs/recent"
@@ -408,6 +559,7 @@
                         (when-let [first-run (first rs)]
                           (set-last-status! (some-> first-run :status name)))))
                     nil)
+       (load-coverage!)
        (when running?
          (let [t (js/setInterval
                   #(fetch-json! "/api/sync/runs/recent"
@@ -453,10 +605,13 @@
                 ($ icon {:name :x :size 14})
                 "Остановить")
              ($ :button {:class    "btn btn-ghost"
-                         :on-click load-runs!}
+                         :on-click (fn [] (load-runs!) (load-coverage!))}
                 ($ icon {:name :refresh :size 14})
                 "Обновить список")))
 
        ($ live-log  {:events events})
+       ($ coverage-matrix {:coverage  coverage
+                           :error     coverage-error
+                           :loading?  coverage-loading?})
        ($ runs-table {:runs       runs
                       :load-runs! load-runs!}))))

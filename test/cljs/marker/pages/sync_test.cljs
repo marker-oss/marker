@@ -1,7 +1,8 @@
 (ns marker.pages.sync-test
   "Tests for pure helpers in marker.pages.sync."
   (:require [cljs.test :refer [deftest is testing]]
-            [marker.pages.sync :refer [task-display-id task-row-data]]))
+            [marker.pages.sync :refer [task-display-id task-row-data
+                                       freshness-class parse-coverage-cell]]))
 
 ;; ---------------------------------------------------------------------------
 ;; task-display-id
@@ -53,6 +54,65 @@
   (testing "failed task has status 'failed'"
     (let [row (task-row-data (assoc sample-task :status "failed"))]
       (is (= "failed" (:status row))))))
+
+;; ---------------------------------------------------------------------------
+;; freshness-class
+;; ---------------------------------------------------------------------------
+
+;; Fixed reference point: 2026-05-04 12:00 UTC
+(def ^:private now-fixed (js/Date. "2026-05-04T12:00:00Z"))
+
+(deftest freshness-class-good
+  (testing "same day is good"
+    (is (= "good" (freshness-class "2026-05-04" now-fixed))))
+  (testing "1 day old is good"
+    (is (= "good" (freshness-class "2026-05-03" now-fixed))))
+  (testing "2 days old is good (boundary)"
+    (is (= "good" (freshness-class "2026-05-02" now-fixed)))))
+
+(deftest freshness-class-stale
+  (testing "4 days old is stale"
+    (is (= "stale" (freshness-class "2026-04-30" now-fixed))))  ; 4d before May 4 UTC noon
+  (testing "6 days old is stale"
+    (is (= "stale" (freshness-class "2026-04-28" now-fixed)))))  ; 6d before May 4
+
+(deftest freshness-class-old
+  (testing "8 days old is old"
+    (is (= "old" (freshness-class "2026-04-26" now-fixed))))
+  (testing "30 days old is old"
+    (is (= "old" (freshness-class "2026-04-04" now-fixed)))))
+
+(deftest freshness-class-missing
+  (testing "nil returns missing"
+    (is (= "missing" (freshness-class nil now-fixed))))
+  (testing "empty string returns missing"
+    (is (= "missing" (freshness-class "" now-fixed)))))
+
+;; ---------------------------------------------------------------------------
+;; parse-coverage-cell
+;; ---------------------------------------------------------------------------
+
+(deftest parse-coverage-cell-map
+  (testing "valid map returns normalised map"
+    (let [result (parse-coverage-cell {:from "2026-04-01" :to "2026-04-30" :days 30})]
+      (is (= "2026-04-01" (:from result)))
+      (is (= "2026-04-30" (:to result)))
+      (is (= 30           (:days result)))))
+  (testing "map without days defaults days to 0"
+    (let [result (parse-coverage-cell {:from "2026-04-01" :to "2026-04-30"})]
+      (is (= 0 (:days result))))))
+
+(deftest parse-coverage-cell-absent
+  (testing "nil returns nil"
+    (is (nil? (parse-coverage-cell nil))))
+  (testing "sentinel string \"—\" returns nil"
+    (is (nil? (parse-coverage-cell "—"))))
+  (testing "any string returns nil"
+    (is (nil? (parse-coverage-cell "n/a"))))
+  (testing "map with missing :from returns nil"
+    (is (nil? (parse-coverage-cell {:to "2026-04-30" :days 30}))))
+  (testing "map with missing :to returns nil"
+    (is (nil? (parse-coverage-cell {:from "2026-04-01" :days 30})))))
 
 ;; ---------------------------------------------------------------------------
 ;; format-iso / duration-s are private defn- so not directly importable.
