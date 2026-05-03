@@ -15,11 +15,13 @@
             [marker.ui.icons       :refer [icon]]
             [marker.ui.tweaks      :refer [tweaks-panel]]
             [marker.ui.sku-sheet   :refer [sku-sheet-content]]
+            [marker.ui.error       :as err]
             [marker.pages.pulse    :as pulse]
             [marker.pages.pnl      :as pnl]
             [marker.pages.unit     :as unit]
             [marker.pages.products :as products]
             [marker.pages.reports  :as reports]
+            [marker.pages.cost-prices :as cost-prices]
             [marker.pages.kit      :as kit]))
 
 ;; ---------------------------------------------------------------------------
@@ -27,12 +29,13 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private page-titles
-  {:pulse     "Главная (Pulse)"
-   :pnl       "P&L"
-   :unit      "Юнит-экономика"
-   :products  "Товары"
-   :plan      "План"
-   :kit       "UI Kit"})
+  {:pulse        "Главная (Pulse)"
+   :pnl          "P&L"
+   :unit         "Юнит-экономика"
+   :products     "Товары"
+   :cost-prices  "Себестоимость"
+   :plan         "План"
+   :kit          "UI Kit"})
 
 (def ^:private report-titles
   {:sales   "Продажи"
@@ -189,11 +192,12 @@
 
                :else
                (case page
-                 :pulse    ($ pulse/pulse {})
-                 :pnl      ($ pnl/pnl {})
-                 :unit     ($ unit/unit {})
-                 :products ($ products/products {})
-                 :kit      ($ kit/kit {})
+                 :pulse        ($ pulse/pulse {})
+                 :pnl          ($ pnl/pnl {})
+                 :unit         ($ unit/unit {})
+                 :products     ($ products/products {})
+                 :cost-prices  ($ cost-prices/cost-prices {})
+                 :kit          ($ kit/kit {})
                  ;; Placeholder for routes not yet implemented
                  ($ placeholder-page {:title (page-title-for page)})))))
 
@@ -221,4 +225,4 @@
 (defn ^:export init []
   (rf/dispatch-sync [::events/initialize-db])
   (router/init!)
-  (uix.dom/render-root ($ app-shell) root))
+  (uix.dom/render-root (err/boundary {} ($ app-shell)) root))

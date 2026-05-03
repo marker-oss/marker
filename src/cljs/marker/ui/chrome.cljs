@@ -21,6 +21,7 @@
                {:id "report:finance" :label "Финансовый отчёт"}
                {:id "report:returns" :label "Возвраты"}]}
    {:id "products" :label "Товары"          :icon :products}
+   {:id "cost-prices" :label "Себестоимость" :icon :archive}
    {:id "report:stock"  :label "Склады"     :icon :warehouse}
    {:id "reports"  :label "Отчёты"          :icon :layers
     :children [{:id "report:sales"   :label "Продажи"}

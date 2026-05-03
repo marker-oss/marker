@@ -22,6 +22,7 @@
    ["/pnl"       {:name :pnl}]
    ["/unit"      {:name :unit}]
    ["/products"  {:name :products}]
+   ["/cost-prices" {:name :cost-prices}]
    ["/plan"      {:name :plan}]
    ["/kit"       {:name :kit}]
    ;; Phase 9: schema-driven reports (10 sub-routes via :type path-param)
