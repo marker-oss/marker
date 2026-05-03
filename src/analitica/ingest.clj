@@ -159,19 +159,21 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- ingest-ozon-postings!
-  "Fetch FBO + FBS postings, chunking by week to defend against Ozon's
-   cursor-pagination quirks: in the wild we've observed `last_id` returning
-   `\"\"` on a full page (the cursor-stall safety net in fbo-orders/fbs-orders
-   then bails out at 200–300 items even when the store has thousands). Splitting
-   by 7-day windows means each window's pagination loop is bounded by the
-   real per-week posting count, so even if the cursor stalls we lose at most
-   one week's overflow rather than the entire range.
+  "Fetch FBO + FBS postings, chunking by 3-day windows to defend against
+   Ozon's cursor-pagination quirks: in the wild we've observed `last_id`
+   returning `\"\"` on a full page (the cursor-stall safety net in
+   fbo-orders/fbs-orders then bails at 200–300 items even when the store
+   has thousands). With 3-day chunks each window typically holds <100
+   postings — fits in a single page request and avoids the stall path
+   entirely. Earlier 7-day chunks left 175/353 articles missing in
+   downstream materialize for active stores; 3-day shrinks the loss
+   surface roughly 2.5× without saturating Ozon rate limits.
 
    Concatenates results across all chunks before persisting one raw_data row
    for the full [from..to] range — keeps the materialize layer's load-raw
    semantics unchanged."
   [client from to]
-  (let [chunks (t/date-chunks from to 7)
+  (let [chunks (t/date-chunks from to 3)
         fbo    (vec (mapcat (fn [[cf ct]] (ozon-api/fbo-orders client cf ct)) chunks))
         fbs    (vec (mapcat (fn [[cf ct]] (ozon-api/fbs-orders client cf ct)) chunks))
         data   (into fbo fbs)]
