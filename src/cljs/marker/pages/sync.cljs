@@ -10,6 +10,7 @@
      - Recent runs table (GET /api/sync/runs/recent)
      - Expandable run rows with per-task retry (Phase 10)"
   (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
+            [clojure.string :as str]
             [marker.ui.icons :refer [icon]]
             [marker.ui.chrome :refer [mp-badge]]))
 
@@ -88,9 +89,9 @@
    e.g. 'abc-123/wb/sales/extract' → 'sales/extract'."
   [id]
   (when id
-    (let [parts (clojure.string/split id #"/")]
+    (let [parts (str/split id #"/")]
       (if (>= (count parts) 2)
-        (clojure.string/join "/" (take-last 2 parts))
+        (str/join "/" (take-last 2 parts))
         id))))
 
 (defn task-row-data
@@ -181,26 +182,32 @@
   "Expanded task sub-table for one run. Handles per-task retry."
   [{:keys [tasks load-runs!]}]
   (let [[retry-loading set-retry-loading!] (use-state {})
-        [retry-err     set-retry-err!]     (use-state nil)
+        ;; Per-task error map: {task-id error-string}. Multiple concurrent
+        ;; retries each maintain their own error without clobbering siblings.
+        [retry-err     set-retry-err!]     (use-state {})
+        ;; mounted-ref prevents setState after row collapse (stale-closure guard).
+        mounted-ref (use-ref true)
         retry!
         (fn [task-id]
-          (set-retry-err! nil)
+          (set-retry-err! (fn [m] (dissoc m task-id)))
           (set-retry-loading! (fn [m] (assoc m task-id true)))
           (post-json! (str "/api/sync/tasks/" task-id "/retry")
                       nil
                       (fn [_]
-                        (set-retry-loading! (fn [m] (dissoc m task-id)))
-                        (load-runs!))
+                        (when @mounted-ref
+                          (set-retry-loading! (fn [m] (dissoc m task-id)))
+                          (load-runs!)))
                       (fn [msg]
-                        (set-retry-loading! (fn [m] (dissoc m task-id)))
-                        (set-retry-err! msg))))]
+                        (when @mounted-ref
+                          (set-retry-loading! (fn [m] (dissoc m task-id)))
+                          (set-retry-err! (fn [m] (assoc m task-id msg)))))))]
+    (use-effect
+     (fn [] (fn [] (reset! mounted-ref false)))
+     [])
+    ;; :col-span is correct UIx kebab-case; uix.compiler.attributes/camel-case-dom
+    ;; converts it to colSpan at compile time (same as :on-click → onClick).
     ($ :tr {:class "run-tasks-row"}
        ($ :td {:col-span 6 :style {:padding "0 0 8px 32px"}}
-          (when retry-err
-            ($ :div {:class "alert alert-danger"
-                     :style {:margin "6px 8px 6px 0" :padding "6px 10px"}}
-               ($ icon {:name :danger :class "alert-icon"})
-               ($ :div {:class "alert-body"} retry-err)))
           ($ :table {:class "tbl" :style {:font-size "12px" :margin-top "4px"}}
              ($ :thead
                 ($ :tr
@@ -215,27 +222,38 @@
                 (for [task tasks
                       :let [{:keys [display-id marketplace entity-type
                                     phase status items]} (task-row-data task)
-                            loading? (get retry-loading (:id task))]]
-                  ($ :tr {:key (:id task)}
-                     ($ :td {:class "mono" :style {:font-size "11px"}} (or display-id "—"))
-                     ($ :td
-                        (if marketplace
-                          ($ mp-badge {:mp marketplace})
-                          "—"))
-                     ($ :td (or entity-type "—"))
-                     ($ :td (or phase "—"))
-                     ($ :td {:class "num mono"} (or items "—"))
-                     ($ :td
-                        ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
-                           (or status "—")))
-                     ($ :td
-                        (when (= status "failed")
-                          ($ :button
-                             {:class    (str "btn btn-ghost" (when loading? " btn-disabled"))
-                              :disabled loading?
-                              :style    {:font-size "11px" :padding "2px 8px"}
-                              :on-click #(retry! (:id task))}
-                             (if loading? "Запуск…" "Повтор"))))))))))))
+                            task-id  (:id task)
+                            loading? (get retry-loading task-id)
+                            err      (get retry-err task-id)]]
+                  ($ :<> {:key task-id}
+                     ($ :tr
+                        ($ :td {:class "mono" :style {:font-size "11px"}} (or display-id "—"))
+                        ($ :td
+                           (if marketplace
+                             ($ mp-badge {:mp marketplace})
+                             "—"))
+                        ($ :td (or entity-type "—"))
+                        ($ :td (or phase "—"))
+                        ($ :td {:class "num mono"} (or items "—"))
+                        ($ :td
+                           ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
+                              (or status "—")))
+                        ($ :td
+                           (when (= status "failed")
+                             ($ :button
+                                {:class    (str "btn btn-ghost" (when loading? " btn-disabled"))
+                                 :disabled loading?
+                                 :style    {:font-size "11px" :padding "2px 8px"}
+                                 :on-click #(retry! task-id)}
+                                (if loading? "Запуск…" "Повтор")))))
+                     (when err
+                       ($ :tr
+                          ($ :td {:col-span 7
+                                  :style    {:padding "0 0 4px 0"}}
+                             ($ :div {:class "alert alert-danger"
+                                      :style {:margin "2px 0" :padding "4px 10px"}}
+                                ($ icon {:name :danger :class "alert-icon"})
+                                ($ :div {:class "alert-body"} err)))))))))))))
 
 (defui ^:private run-row
   "Single row in the recent-runs table. Manages its own expanded? state."
@@ -247,8 +265,15 @@
         status   (some-> run :status name)
         tasks    (:tasks run)]
     ($ :<>
-       ($ :tr {:style    {:cursor "pointer"}
-               :on-click #(set-expanded! not)}
+       ($ :tr {:style         {:cursor "pointer"}
+               :tab-index     "0"
+               :role          "button"
+               :aria-expanded (str expanded?)
+               :on-click      #(set-expanded! not)
+               :on-key-down   (fn [e]
+                                (when (#{" " "Enter"} (.-key e))
+                                  (.preventDefault e)
+                                  (set-expanded! not)))}
           ($ :td {:style {:padding-left "8px"}}
              ($ icon {:name  (if expanded? :arrow-down :arrow-right)
                       :size  12
