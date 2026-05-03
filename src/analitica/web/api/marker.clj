@@ -688,10 +688,28 @@
                                     :stock qty
                                     :days  days}))))
 
-          ;; P&L for this article
-          pnl-cur  (if (seq fin-art)
-                     (compute-pnl fin-art period mp1)
-                     {:revenue 0.0 :net-profit 0.0 :margin-net 0.0 :ad-spend 0.0})
+          ;; P&L for this article. Preliminary overlay can't be applied
+          ;; per-article (cash_flow_periods is per-MP, not per-SKU), so
+          ;; we only fall back to sales-derived revenue when canonical
+          ;; is empty for an Ozon SKU in the current month — keeps the
+          ;; tile from going to 0 right after a month rolls over.
+          sales-art-rev (reduce + 0.0
+                                (map (fn [s]
+                                       (or (:for-pay s)
+                                           (:price-with-disc s)
+                                           (:finished-price s)
+                                           (:total-price s) 0))
+                                     (filter #(= :sale (:type %)) art-sales)))
+          pnl-cur  (let [base (if (seq fin-art)
+                                (compute-pnl fin-art period mp1)
+                                {:revenue 0.0 :net-profit 0.0 :margin-net 0.0 :ad-spend 0.0})]
+                     (if (and (zero? (or (:revenue base) 0.0))
+                              (pos? sales-art-rev))
+                       (assoc base
+                              :revenue           sales-art-rev
+                              :preliminary?      true
+                              :revenue-source    :sales-table)
+                       base))
           pnl-prev (if (seq fin-art-p)
                      (compute-pnl fin-art-p prev mp1)
                      {:revenue 0.0 :net-profit 0.0 :margin-net 0.0 :ad-spend 0.0})
@@ -730,7 +748,8 @@
        :plan-fact    {:plan       nil
                       :fact       (math/round2 (or (:revenue pnl-cur) 0.0))
                       :projection proj}
-       :stocks-by-mp (if (seq stk-by-mp) stk-by-mp [])})
+       :stocks-by-mp (if (seq stk-by-mp) stk-by-mp [])
+       :preliminary? (boolean (:preliminary? pnl-cur))})
     (catch Exception e
       {:id    (get-in request [:params :sku-id] "")
        :error (.getMessage e)})))
