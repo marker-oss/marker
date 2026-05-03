@@ -4,7 +4,8 @@
              SyncBanner, Sparkline, Delta, MpBadge.
    Skipped (Phase 4/6): Sheet, Modal, CmdK — stubs not provided;
    those components depend on MARKER_DATA/routing not yet wired."
-  (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
+  (:require [clojure.string :as str]
+            [uix.core :refer [$ defui use-state use-effect use-ref]]
             [marker.ui.icons :refer [icon]]))
 
 ;; ============= NAV constant =============
@@ -24,8 +25,9 @@
 
 (defui sidebar
   "App sidebar with collapsible nav groups.
-   Props: :active (string id), :on-nav (fn [id]), :collapsed (bool)."
-  [{:keys [active on-nav collapsed]}]
+   Props: :active (string id), :on-nav (fn [id]).
+   Collapse state is applied externally via data-sidebar on the wrapper."
+  [{:keys [active on-nav]}]
   (let [[open-groups set-open-groups!] (use-state #{"finance"})
         toggle-group! (fn [id]
                         (set-open-groups!
@@ -285,11 +287,11 @@
                          y (- height 2 (* (/ (- v mn) range) (- height 4)))]
                      (str x "," y)))
                  data)
-          [lx ly] (-> pts last (clojure.string/split #","))]
+          [lx ly] (-> pts last (str/split #","))]
       ($ :svg {:width  width
                :height height
                :style  {:display "block"}}
-         ($ :polyline {:points         (clojure.string/join " " pts)
+         ($ :polyline {:points         (str/join " " pts)
                        :fill           "none"
                        :stroke         c
                        :stroke-width   "1.5"

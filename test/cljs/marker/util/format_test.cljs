@@ -1,11 +1,6 @@
 (ns marker.util.format-test
   "Unit tests for marker.util.format — pure function coverage.
-   Run via shadow-cljs test build or inline node verification.
-   NOTE: DONE_WITH_CONCERNS — a :test shadow-cljs build target is not yet
-   configured in shadow-cljs.edn. The tests are correct ClojureScript and
-   will pass once a test runner is wired. For Phase 3 verification we rely
-   on the Playwright visual smoke test for chrome components, and on manual
-   review of the pure formatter logic."
+   Run via: shadow-cljs compile test  (target :node-test, autorun true)"
   (:require [cljs.test :refer [deftest is testing run-tests]]
             [marker.util.format :as fmt]))
 
@@ -85,6 +80,20 @@
     (is (= (str "1 000") (fmt/format-int 1000))))
   (testing "nil"
     (is (= "—" (fmt/format-int nil)))))
+
+(deftest format-int-negatives
+  (testing "regression: -500 must not insert NBSP between sign and digits"
+    (is (= "-500" (fmt/format-int -500))))
+  (testing "negative with thousands separator"
+    (is (= (str "-1 234") (fmt/format-int -1234))))
+  (testing "NaN returns em-dash"
+    (is (= "—" (fmt/format-int js/NaN)))))
+
+;; ---- format-date ----
+
+(deftest format-date-basic
+  (testing "formats date as DD.MM.YYYY"
+    (is (= "03.05.2026" (fmt/format-date (js/Date. 2026 4 3))))))
 
 ;; ---- format-short ----
 

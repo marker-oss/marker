@@ -1,6 +1,7 @@
 (ns marker.util.format
   "Russian-locale formatters — byte-identical behavior to format.js.
-   NBSP = \\u00A0, minus = \\u2212 (−), decimal separator = comma.")
+   NBSP = \\u00A0, minus = \\u2212 (−), decimal separator = comma."
+  (:require [clojure.string :as str]))
 
 (def ^:private NBSP " ")
 (def ^:private MINUS "−")
@@ -11,7 +12,7 @@
   (let [len (count s)]
     (loop [pos len parts []]
       (if (<= pos 0)
-        (clojure.string/join NBSP parts)
+        (str/join NBSP parts)
         (let [start (max 0 (- pos 3))]
           (recur start (cons (subs s start pos) parts)))))))
 
@@ -33,11 +34,15 @@
        (str sign s NBSP "₽")))))
 
 (defn format-int
-  "Format integer with NBSP thousands separator. No sign, no unit."
+  "Format integer with NBSP thousands separator. No sign, no unit.
+   Negative numbers are prefixed with hyphen-minus (-)."
   [n]
   (if (or (nil? n) (js/isNaN n))
     "—"
-    (add-thousands (.toString (js/Math.round n)))))
+    (let [rounded (js/Math.round n)
+          sign    (if (neg? rounded) "-" "")
+          abs-str (.toString (js/Math.abs rounded))]
+      (str sign (add-thousands abs-str)))))
 
 (defn format-short
   "Compact number: 1,2M / 3,4K / 567."
