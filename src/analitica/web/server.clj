@@ -34,6 +34,8 @@
             [analitica.web.api.coverage :as coverage]
             [analitica.web.api.sku :as sku-api]
             [analitica.web.api.search :as search-api]
+            [analitica.web.api.marker :as marker-api]
+            [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
             [jsonista.core :as json])
@@ -1261,6 +1263,18 @@
           {:status 200 :body updated}))))
 
   ;; ---------------------------------------------------------------------------
+  ;; Marker SPA Transit API  (/api/v1/marker/*)
+  ;; Encode with transit-json when client sends Accept: application/transit+json.
+  ;; Existing JSON endpoints (no Accept header) continue to work via
+  ;; wrap-json-response which runs AFTER wrap-transit-response.
+  ;; ---------------------------------------------------------------------------
+  (GET  "/api/v1/marker/pulse-summary"     req {:status 200 :body (marker-api/pulse-summary req)})
+  (GET  "/api/v1/marker/pnl"               req {:status 200 :body (marker-api/pnl-handler req)})
+  (GET  "/api/v1/marker/sku-list"          req {:status 200 :body (marker-api/sku-list-handler req)})
+  (GET  "/api/v1/marker/sku-detail/:sku-id" req {:status 200 :body (marker-api/sku-detail-handler req)})
+  (POST "/api/v1/marker/what-if-recalc"    req {:status 200 :body (marker-api/what-if-handler req)})
+
+  ;; ---------------------------------------------------------------------------
   ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).
   ;; Both /app and /app/<anything> serve the same tiny shell — reitit-frontend
   ;; handles routing client-side once the bundle loads.
@@ -1290,12 +1304,26 @@
         response))))
 
 (defn app []
+  ;; Middleware application order in the -> thread is innermost-first.
+  ;; Execution order on a request is outermost-first (last in thread).
+  ;; For a request  : cors → json-response → transit-response → transit-body → params → handler
+  ;; For a response : handler → params → transit-body → transit-response → json-response → cors
+  ;;
+  ;; wrap-transit-response must be INNER (applied before wrap-json-response)
+  ;; so it sees the raw Clojure map in the response before wrap-json-response
+  ;; encodes it to a JSON string.  When a transit+json Accept header is
+  ;; present, transit-response encodes and sets Content-Type; wrap-json-response
+  ;; then sees a String body and passes through unchanged.  When there is no
+  ;; transit Accept header, transit-response passes through; wrap-json-response
+  ;; serialises the map to JSON as before — no legacy behaviour change.
   (-> app-routes
       (resource/wrap-resource "public")
       (wrap-multipart-params)
       (wrap-keyword-params)
       (wrap-params)
-      (wrap-json-response)
+      (transit-mw/wrap-transit-body)     ; decode incoming transit+json POST bodies
+      (transit-mw/wrap-transit-response) ; encode outgoing maps to transit when requested
+      (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
       (wrap-cors :access-control-allow-origin [#".*"]
                  :access-control-allow-methods [:get :post :options])))
 

@@ -1,0 +1,429 @@
+(ns analitica.web.api.marker-test
+  "Integration tests for the Marker SPA Transit API endpoints.
+
+   Constructs minimal Ring request maps directly (no ring.mock dep).
+   Tests boot the full Ring app, make requests, decode Transit responses,
+   and assert on *shape* (key presence + types) rather than specific values —
+   the backend data is real and may shift."
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [analitica.db :as db]
+            [analitica.web.server :as server]
+            [analitica.web.middleware.transit :as transit-mw]
+            [analitica.web.api.marker :as marker-api])
+  (:import (java.io ByteArrayInputStream)))
+
+;; ---------------------------------------------------------------------------
+;; Fixtures
+;; ---------------------------------------------------------------------------
+
+(defn init-test-db [f]
+  (db/init!)
+  (f))
+
+(use-fixtures :once init-test-db)
+
+;; ---------------------------------------------------------------------------
+;; Minimal Ring request builders (no ring/ring-mock dependency)
+;; ---------------------------------------------------------------------------
+
+(defn- make-get
+  "Build a minimal Ring GET request map."
+  [uri & {:keys [accept headers params query-string]
+          :or   {accept "application/transit+json"
+                 headers {}
+                 params {}
+                 query-string nil}}]
+  {:server-port    3001
+   :server-name    "localhost"
+   :remote-addr    "127.0.0.1"
+   :uri            uri
+   :query-string   query-string
+   :scheme         :http
+   :request-method :get
+   :headers        (merge {"accept" accept} headers)
+   :params         params})
+
+(defn- make-post
+  "Build a minimal Ring POST request with a transit body."
+  [uri data]
+  (let [encoded (transit-mw/encode-transit-json data)
+        body-bytes (.getBytes ^String encoded "UTF-8")]
+    {:server-port    3001
+     :server-name    "localhost"
+     :remote-addr    "127.0.0.1"
+     :uri            uri
+     :query-string   nil
+     :scheme         :http
+     :request-method :post
+     :headers        {"content-type" "application/transit+json"
+                      "accept"       "application/transit+json"}
+     :params         {}
+     :body           (ByteArrayInputStream. body-bytes)}))
+
+;; ---------------------------------------------------------------------------
+;; Response helpers
+;; ---------------------------------------------------------------------------
+
+(defn- decode-body
+  "Decode a response body string as transit-json."
+  [resp]
+  (let [b (:body resp)]
+    (when (string? b)
+      (try
+        (transit-mw/decode-transit-json (.getBytes ^String b "UTF-8"))
+        (catch Exception e
+          {:decode-error (.getMessage e) :raw b})))))
+
+(defn- do-get
+  "Run a GET through the app and return {:status <int> :body <decoded>}."
+  [uri & {:keys [accept params query-string]
+          :or   {accept "application/transit+json"
+                 params {}
+                 query-string nil}}]
+  (let [app  (server/app)
+        req  (make-get uri :accept accept :params params :query-string query-string)
+        resp (app req)]
+    {:status (:status resp)
+     :body   (decode-body resp)
+     :raw    (:body resp)
+     :headers (:headers resp)}))
+
+(defn- do-post
+  "Run a POST with transit body through the app."
+  [uri data]
+  (let [app  (server/app)
+        req  (make-post uri data)
+        resp (app req)]
+    {:status (:status resp)
+     :body   (decode-body resp)
+     :raw    (:body resp)
+     :headers (:headers resp)}))
+
+;; ---------------------------------------------------------------------------
+;; A. Transit middleware unit tests (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+(deftest transit-encode-decode-roundtrip
+  (testing "encode then decode preserves a map"
+    (let [data    {:foo "bar" :n 42 :vec [1 2 3]}
+          encoded (transit-mw/encode-transit-json data)
+          decoded (transit-mw/decode-transit-json (.getBytes ^String encoded "UTF-8"))]
+      (is (string? encoded))
+      (is (= "bar" (:foo decoded)))
+      (is (= 42    (:n decoded)))
+      (is (= 3     (count (:vec decoded))))))
+
+  (testing "encode then decode preserves a nested map"
+    (let [data    {:kpis {:revenue {:value 1000.0 :delta-pct -5.2}}}
+          encoded (transit-mw/encode-transit-json data)
+          decoded (transit-mw/decode-transit-json (.getBytes ^String encoded "UTF-8"))]
+      (is (= 1000.0 (get-in decoded [:kpis :revenue :value]))))))
+
+(deftest transit-response-middleware-unit
+  (testing "wrap-transit-response encodes map when Accept: transit+json"
+    (let [handler (fn [_] {:status 200 :body {:hello "world"}})
+          wrapped (transit-mw/wrap-transit-response handler)
+          req     {:headers {"accept" "application/transit+json"}}
+          resp    (wrapped req)]
+      (is (= 200 (:status resp)))
+      (is (string? (:body resp)))
+      (is (re-find #"transit" (get-in resp [:headers "Content-Type"] "")))))
+
+  (testing "wrap-transit-response passes map through when no transit Accept"
+    (let [handler (fn [_] {:status 200 :body {:hello "world"}})
+          wrapped (transit-mw/wrap-transit-response handler)
+          req     {:headers {"accept" "application/json"}}
+          resp    (wrapped req)]
+      ;; body stays as map — wrap-json-response (outer) will encode it
+      (is (map? (:body resp)))))
+
+  (testing "wrap-transit-response does not encode string body"
+    (let [handler (fn [_] {:status 200 :body "<html/>"})
+          wrapped (transit-mw/wrap-transit-response handler)
+          req     {:headers {"accept" "application/transit+json"}}
+          resp    (wrapped req)]
+      (is (= "<html/>" (:body resp))))))
+
+(deftest transit-body-middleware-unit
+  (testing "wrap-transit-body decodes incoming transit body"
+    (let [data    {:price 2500 :cogs 1200}
+          encoded (transit-mw/encode-transit-json data)
+          handler (fn [req] {:status 200 :body (:body req)})
+          wrapped (transit-mw/wrap-transit-body handler)
+          req     {:headers {"content-type" "application/transit+json"}
+                   :body    (ByteArrayInputStream.
+                              (.getBytes ^String encoded "UTF-8"))}
+          resp    (wrapped req)]
+      (is (map? (:body resp)))
+      (is (= 2500 (:price (:body resp)))))))
+
+;; ---------------------------------------------------------------------------
+;; B5. what-if-recalc — pinned numeric outputs (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+(deftest what-if-recalc-pure
+  (testing "known inputs produce expected margin range"
+    ;; price=2500, cogs=1200, commission-pct=17, logistics=90, ads=220, returns-pct=8
+    ;; effective-rev = 2500 * (1 - 0.08)        = 2300
+    ;; commission    = 2300 * 0.17               = 391
+    ;; total-costs   = 1200 + 391 + 90 + 220     = 1901
+    ;; profit        = 2300 - 1901               = 399
+    ;; margin-pct    = 399 / 2300 * 100          ≈ 17.35%
+    (let [result (marker-api/what-if-recalc
+                   {:price 2500 :cogs 1200 :commission-pct 17
+                    :logistics 90 :ads 220 :returns-pct 8})]
+      (is (map? result))
+      (is (contains? result :margin-pct))
+      (is (contains? result :profit))
+      (is (contains? result :roas))
+      (is (contains? result :break-even))
+      (is (< 17.0 (:margin-pct result) 18.0)  "margin ≈ 17.35%")
+      (is (< 398.0 (:profit result) 400.0)     "profit ≈ 399")
+      (is (some? (:roas result)))
+      (is (< 10.0 (:roas result) 11.0)         "roas = 2300/220 ≈ 10.45")))
+
+  (testing "zero ads → nil roas"
+    (let [result (marker-api/what-if-recalc
+                   {:price 2500 :cogs 1200 :commission-pct 17
+                    :logistics 90 :ads 0 :returns-pct 8})]
+      (is (nil? (:roas result)))))
+
+  (testing "zero price → zero margin"
+    (let [result (marker-api/what-if-recalc
+                   {:price 0 :cogs 0 :commission-pct 0
+                    :logistics 0 :ads 0 :returns-pct 0})]
+      (is (= 0.0 (:margin-pct result)))))
+
+  (testing "break-even is positive for positive costs"
+    (let [result (marker-api/what-if-recalc
+                   {:price 1000 :cogs 500 :commission-pct 10
+                    :logistics 50 :ads 0 :returns-pct 0})]
+      (is (pos? (:break-even result)))))
+
+  (testing "margin is negative when costs exceed revenue"
+    (let [result (marker-api/what-if-recalc
+                   {:price 100 :cogs 200 :commission-pct 10
+                    :logistics 50 :ads 0 :returns-pct 0})]
+      (is (neg? (:margin-pct result)))))
+
+  (testing "what-if-recalc never throws on empty input"
+    (is (map? (marker-api/what-if-recalc {})))))
+
+;; ---------------------------------------------------------------------------
+;; B5. what-if-recalc HTTP endpoint
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration what-if-http-test
+  (testing "POST /api/v1/marker/what-if-recalc returns 200 with transit"
+    (let [{:keys [status body]} (do-post "/api/v1/marker/what-if-recalc"
+                                          {:price 2500 :cogs 1200
+                                           :commission-pct 17 :logistics 90
+                                           :ads 220 :returns-pct 8})]
+      (is (= 200 status))
+      (is (map? body))
+      (is (contains? body :margin-pct))
+      (is (contains? body :profit))
+      (is (< 17.0 (:margin-pct body) 18.0)))))
+
+;; ---------------------------------------------------------------------------
+;; B1. pulse-summary — shape tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration pulse-summary-shape-test
+  (testing "returns 200"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/pulse-summary")]
+      (is (= 200 status))
+      (is (map? body))))
+
+  (testing "has all required top-level keys"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+      (doseq [k [:alerts :kpis :forecast :charts :top-movers :top-fallers
+                 :critical-stocks :data-fresh]]
+        (is (contains? body k) (str "missing key: " k)))))
+
+  (testing ":alerts is a vector"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+      (is (vector? (:alerts body)))))
+
+  (testing ":kpis contains revenue/profit/orders/margin"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis (:kpis body)]
+      (is (map? kpis))
+      (doseq [k [:revenue :profit :orders :margin]]
+        (is (contains? kpis k) (str "kpis missing: " k)))))
+
+  (testing ":kpis :revenue has value/delta-pct/spark"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          rev (get-in body [:kpis :revenue])]
+      (is (map? rev))
+      (is (contains? rev :value))
+      (is (contains? rev :delta-pct))
+      (is (vector? (:spark rev)))))
+
+  (testing ":forecast has month-fact and projection"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          fc (:forecast body)]
+      (is (map? fc))
+      (is (contains? fc :month-fact))
+      (is (contains? fc :projection))))
+
+  (testing ":charts has revenue-30d vector"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          ch (:charts body)]
+      (is (map? ch))
+      (is (vector? (:revenue-30d ch)))))
+
+  (testing ":data-fresh has wb/ozon/ym keys"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          fresh (:data-fresh body)]
+      (is (map? fresh))
+      (is (contains? fresh :wb))
+      (is (contains? fresh :ozon))
+      (is (contains? fresh :ym))))
+
+  (testing "?compare=true adds revenue-prev-30d"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary"
+                                  :params {:compare "true"})
+          ch (:charts body)]
+      (is (contains? ch :revenue-prev-30d))))
+
+  (testing "Content-Type is transit+json"
+    (let [{:keys [headers]} (do-get "/api/v1/marker/pulse-summary")]
+      (is (re-find #"transit" (get headers "Content-Type" ""))))))
+
+;; ---------------------------------------------------------------------------
+;; B2. pnl — shape tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration pnl-shape-test
+  (testing "returns 200"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/pnl")]
+      (is (= 200 status))
+      (is (map? body))))
+
+  (testing "has :rows and :sku-detail vectors"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pnl")]
+      (is (vector? (:rows body)))
+      (is (vector? (:sku-detail body)))))
+
+  (testing ":rows entries have required shape"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pnl")
+          rows (:rows body)]
+      (is (= (count marker-api/pnl-row-defs) (count rows))
+          "row count matches definition")
+      (when (seq rows)
+        (let [r (first rows)]
+          (doseq [k [:key :label :cur :prev :group]]
+            (is (contains? r k) (str "row missing: " k)))))))
+
+  (testing ":sku-detail entries (when present) have required shape"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pnl")
+          det (:sku-detail body)]
+      (when (seq det)
+        (let [d (first det)]
+          (doseq [k [:id :name :revenue :net]]
+            (is (contains? d k) (str "sku-detail missing: " k))))))))
+
+;; ---------------------------------------------------------------------------
+;; B3. sku-list — shape tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration sku-list-shape-test
+  (testing "returns 200"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/sku-list")]
+      (is (= 200 status))
+      (is (map? body))))
+
+  (testing "has :skus vector"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")]
+      (is (vector? (:skus body)))))
+
+  (testing ":skus entries have required fields"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")
+          skus (:skus body)]
+      (when (seq skus)
+        (let [s (first skus)]
+          (doseq [k [:id :name :revenue :orders :margin :stock :delta-pct]]
+            (is (contains? s k) (str "sku missing: " k)))))))
+
+  (testing "accepts limit/offset params without error"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/sku-list"
+                                         :params {:limit "3" :offset "0"})]
+      (is (= 200 status))
+      (is (contains? body :skus)))))
+
+;; ---------------------------------------------------------------------------
+;; B4. sku-detail — shape tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration sku-detail-shape-test
+  (testing "unknown SKU returns 200 (no crash)"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/sku-detail/NONEXISTENT-SKU-999")]
+      (is (= 200 status))
+      (is (map? body))))
+
+  (testing "response has required top-level keys"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
+      (doseq [k [:id :name :kpis :revenue-30d :plan-fact :stocks-by-mp]]
+        (is (contains? body k) (str "sku-detail missing: " k)))))
+
+  (testing ":kpis has revenue/orders/margin/ads"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")
+          kpis (:kpis body)]
+      (is (map? kpis))
+      (doseq [k [:revenue :orders :margin :ads]]
+        (is (contains? kpis k) (str "kpis missing: " k)))))
+
+  (testing ":revenue-30d is a vector"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
+      (is (vector? (:revenue-30d body)))))
+
+  (testing ":plan-fact has fact and projection"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")
+          pf (:plan-fact body)]
+      (is (map? pf))
+      (is (contains? pf :fact))
+      (is (contains? pf :projection)))))
+
+;; ---------------------------------------------------------------------------
+;; C. Transit vs JSON content negotiation
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration content-negotiation-test
+  (testing "pulse-summary with transit Accept → transit content-type"
+    (let [{:keys [headers]} (do-get "/api/v1/marker/pulse-summary")]
+      (is (re-find #"transit" (get headers "Content-Type" "")))))
+
+  (testing "pulse-summary without transit Accept → JSON string body"
+    (let [{:keys [raw headers]} (do-get "/api/v1/marker/pulse-summary"
+                                         :accept "application/json")]
+      ;; wrap-json-response encoded to JSON string
+      (is (string? raw))
+      (is (re-find #"application/json" (get headers "Content-Type" ""))))))
+
+;; ---------------------------------------------------------------------------
+;; D. Existing endpoints must not be broken by transit middleware
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration existing-endpoints-unbroken-test
+  (testing "GET /api/metrics still returns JSON without transit"
+    (let [app  (server/app)
+          req  {:server-port 3001 :server-name "localhost" :remote-addr "127.0.0.1"
+                :uri "/api/metrics" :query-string "period=last-30-days"
+                :scheme :http :request-method :get
+                :headers {} :params {:period "last-30-days"}}
+          resp (app req)]
+      (is (= 200 (:status resp)))
+      (is (string? (:body resp)))
+      (is (re-find #"application/json" (get-in resp [:headers "Content-Type"] "")))))
+
+  (testing "GET /app still returns HTML shell"
+    (let [app  (server/app)
+          req  {:server-port 3001 :server-name "localhost" :remote-addr "127.0.0.1"
+                :uri "/app" :query-string nil
+                :scheme :http :request-method :get
+                :headers {} :params {}}
+          resp (app req)]
+      (is (= 200 (:status resp)))
+      (is (string? (:body resp)))
+      (is (re-find #"text/html" (get-in resp [:headers "Content-Type"] ""))))))
