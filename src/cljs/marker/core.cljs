@@ -13,7 +13,8 @@
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sidebar topbar mp-filter period-selector sync-banner]]
             [marker.ui.icons       :refer [icon]]
-            [marker.ui.tweaks      :refer [tweaks-panel]]))
+            [marker.ui.tweaks      :refer [tweaks-panel]]
+            [marker.pages.pulse    :as pulse]))
 
 ;; ---------------------------------------------------------------------------
 ;; Page metadata
@@ -113,22 +114,24 @@
                                      :compare    compare?
                                      :on-compare #(rf/dispatch [::events/set-compare %])})))
 
-          ;; Content placeholder
-          ($ :div {:class "page-content"}
-             ($ :div {:class "card section-card"
-                       :style {:text-align    "center"
-                               :padding       "64px 32px"
-                               :color         "var(--color-fg-muted)"}}
-                ($ :div {:style {:font-size     "32px"
-                                  :margin-bottom "12px"}}
-                   "📊")
-                ($ :p {:style {:font-size   "15px"
-                                :font-weight 600
-                                :margin      "0 0 6px"
-                                :color       "var(--color-fg-primary)"}}
-                   (str "Страница «" (get page-titles page (name page)) "»"))
-                ($ :p {:style {:font-size "13px" :margin 0}}
-                   "Phase 5: страничный контент приходит следующим.")))))
+          ;; Page content — dispatch by route
+          (if (= page :pulse)
+            ($ pulse/pulse {})
+            ($ :div {:class "page-content"}
+               ($ :div {:class "card section-card"
+                         :style {:text-align    "center"
+                                 :padding       "64px 32px"
+                                 :color         "var(--color-fg-muted)"}}
+                  ($ :div {:style {:font-size     "32px"
+                                    :margin-bottom "12px"}}
+                     "📊")
+                  ($ :p {:style {:font-size   "15px"
+                                  :font-weight 600
+                                  :margin      "0 0 6px"
+                                  :color       "var(--color-fg-primary)"}}
+                     (str "Страница «" (get page-titles page (name page)) "»"))
+                  ($ :p {:style {:font-size "13px" :margin 0}}
+                     "Phase 6: страничный контент приходит следующим."))))))
 
        ;; Tweaks panel (portals out of the page flow, fixed position)
        ($ tweaks-panel {}))))
