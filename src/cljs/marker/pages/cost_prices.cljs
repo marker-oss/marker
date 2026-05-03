@@ -8,14 +8,27 @@
   (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
             [marker.ui.icons :refer [icon]]))
 
+(defn parse-imports-payload
+  "Pure helper: takes a parsed JS response object from /api/cost-prices/imports
+   and returns a Clojure vector of maps (one per import row).
+   Returns [] when the payload has no :imports array."
+  [body]
+  (let [arr (or (.-imports body) #js [])]
+    (mapv #(js->clj % :keywordize-keys true) arr)))
+
 (defn- fetch-imports!
-  "Fetch recent imports list. on-result is called with the parsed JSON."
-  [on-result]
+  "Fetch recent imports list.
+   on-result is called with the parsed JSON on success.
+   on-error  is called with a string message on HTTP error or network failure."
+  [on-result on-error]
   (-> (js/fetch "/api/cost-prices/imports?limit=10"
                 #js {:method "GET" :headers #js {"Accept" "application/json"}})
-      (.then (fn [r] (.json r)))
+      (.then (fn [r]
+               (if (.-ok r)
+                 (.json r)
+                 (throw (js/Error. (str "HTTP " (.-status r) " " (.-statusText r)))))))
       (.then on-result)
-      (.catch (fn [_] (on-result #js {:imports #js []})))))
+      (.catch (fn [e] (on-error (.-message e))))))
 
 (defn- upload-file!
   "POST a single file as multipart/form-data. Resolves with parsed JSON."
@@ -38,16 +51,26 @@
 ;; Imports history table
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private imports-table [{:keys [imports]}]
+(defui ^:private imports-table [{:keys [imports error]}]
   ($ :section {:class "card section-card"}
      ($ :div {:class "section-head"}
         ($ :h3 {:class "section-title"} "История загрузок")
         ($ :div {:class "section-subtitle"}
            "Последние 10 импортов"))
-     (if (zero? (count imports))
+     (cond
+       error
+       ($ :div {:class "alert alert-danger" :style {:margin "12px"}}
+          ($ icon {:name :danger :class "alert-icon"})
+          ($ :div {:class "alert-body"}
+             ($ :div {:class "alert-title"} "Не удалось загрузить историю")
+             ($ :div error)))
+
+       (zero? (count imports))
        ($ :div {:style {:padding "24px" :text-align "center"
                         :color "var(--color-fg-muted)"}}
           "Импортов пока не было.")
+
+       :else
        ($ :div {:style {:overflow-x "auto"}}
           ($ :table {:class "tbl"}
              ($ :thead
@@ -60,8 +83,7 @@
                    ($ :th "Файл")
                    ($ :th "Примечание")))
              ($ :tbody
-                (for [r imports
-                      :let [r (js->clj r :keywordize-keys true)]]
+                (for [r imports]
                   ($ :tr {:key (:id r)}
                      ($ :td {:class "mono"} (:id r))
                      ($ :td {:class "mono" :style {:font-size "12px"}}
@@ -77,24 +99,29 @@
 ;; ---------------------------------------------------------------------------
 
 (defui cost-prices []
-  (let [[file       set-file!]   (use-state nil)
-        [status     set-status!] (use-state :idle)   ; :idle :sending :ok :err
-        [last-result set-result!] (use-state nil)
-        [error      set-error!]  (use-state nil)
-        [imports    set-imports!] (use-state [])
-        input-ref                 (use-ref nil)
-        reload-imports!           (fn []
-                                    (fetch-imports!
-                                     (fn [body]
-                                       (let [arr (or (.-imports body) #js [])]
-                                         (set-imports! (vec arr))))))]
+  (let [[file          set-file!]          (use-state nil)
+        [status        set-status!]        (use-state :idle)   ; :idle :sending :ok :err
+        [last-result   set-result!]        (use-state nil)
+        [error         set-error!]         (use-state nil)
+        [imports       set-imports!]       (use-state [])
+        [imports-error set-imports-error!] (use-state nil)
+        input-ref                          (use-ref nil)
+        reload-imports!                    (fn []
+                                             (fetch-imports!
+                                              (fn [body]
+                                                (set-imports-error! nil)
+                                                (set-imports! (parse-imports-payload body)))
+                                              (fn [msg]
+                                                (set-imports-error! msg))))]
 
     (use-effect
      (fn []
        (fetch-imports!
         (fn [body]
-          (let [arr (or (.-imports body) #js [])]
-            (set-imports! (vec arr)))))
+          (set-imports-error! nil)
+          (set-imports! (parse-imports-payload body)))
+        (fn [msg]
+          (set-imports-error! msg)))
        js/undefined)
      [])
 
@@ -174,4 +201,4 @@
              "После загрузки себестоимости обновятся немедленно — перезапуск не требуется."))
 
        ;; Imports history
-       ($ imports-table {:imports imports}))))
+       ($ imports-table {:imports imports :error imports-error}))))
