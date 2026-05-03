@@ -512,7 +512,29 @@
        ;; estimate (realization not yet published or not yet
        ;; materialized). UI can render a "preliminary" badge.
        :preliminary?    preliminary?
-       :preliminary-as-of (or (:preliminary-as-of pnl-cur) nil)})
+       :preliminary-as-of (or (:preliminary-as-of pnl-cur) nil)
+       ;; Cost-price coverage warning. cost_prices table is sparse
+       ;; (~9% of articles have a registered cost). For any sale row
+       ;; without cost-price, line-cost defaults to 0 → cogs = 0 → P&L
+       ;; profit is an upper bound, not actual. UI shows a warning when
+       ;; coverage is below the threshold.
+       :cost-coverage   (let [fin-arts     (try (finance/by-article fin-cur)
+                                                 (catch Exception _ []))
+                              ;; Only count articles that actually had sales
+                              ;; in this period — orphan service-only rows
+                              ;; without sales naturally have no cost.
+                              with-sales   (filter #(pos? (or (:sales-qty %) 0))
+                                                   fin-arts)
+                              arts-total   (count with-sales)
+                              arts-with    (count (filter #(pos? (or (:total-cost %) 0))
+                                                          with-sales))
+                              pct          (if (pos? arts-total)
+                                             (math/round2 (* 100.0 (/ arts-with arts-total)))
+                                             100.0)]
+                          {:articles-with-cost arts-with
+                           :articles-total     arts-total
+                           :coverage-pct       pct
+                           :complete?          (>= pct 90.0)})})
     (catch Exception e
       {:error (.getMessage e)})))
 

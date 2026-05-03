@@ -680,6 +680,27 @@
                       (when prelim-as-of (str " (последняя точка: " prelim-as-of ")"))
                       "."))))
 
+           ;; Cost-coverage warning — when registered cost-prices cover
+           ;; less than 90% of articles with sales, profit / margin are
+           ;; an upper bound. Prompt user to load the latest 1С CSV.
+           (let [cc (:cost-coverage data)]
+             (when (and cc (not (:complete? cc)))
+               ($ :div {:class "alert alert-warning"
+                        :style {:margin-bottom "10px"}}
+                  ($ icon {:name :warning :class "alert-icon"})
+                  ($ :div {:class "alert-body"}
+                     ($ :div {:class "alert-title"}
+                        "Себестоимость задана для "
+                        (:articles-with-cost cc) " из "
+                        (:articles-total cc) " артикулов "
+                        "(" (.toFixed (or (:coverage-pct cc) 0.0) 1) "%)")
+                     ($ :div
+                        "Чистая прибыль и маржа — верхняя граница. Загрузите свежий "
+                        ($ :a {:href "/app/cost-prices"
+                               :style {:font-weight 600}}
+                           "1С-экспорт себестоимости")
+                        " чтобы получить точные цифры.")))))
+
            ;; KPI grid
            ($ kpi-section {:compare? compare? :kpis kpis :preliminary? preliminary?})
 
