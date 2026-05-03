@@ -47,7 +47,7 @@
        (or (map? v) (vector? v) (seq? v) (set? v) (list? v))))
 
 (defn encode-transit-json
-  "Encode `data` to a transit-json byte array, return as String."
+  "Encode `data` to a transit-json String."
   ^String [data]
   (let [out    (ByteArrayOutputStream.)
         writer (transit/writer out :json)]

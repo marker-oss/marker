@@ -70,16 +70,24 @@
     (sales/fetch-sales period-map :marketplace marketplace)
     (catch Exception _ [])))
 
-(defn- compute-pnl [fin-data period-map marketplace]
-  (try
-    (pnl/calculate fin-data
-                   :marketplace marketplace
-                   :from (:from period-map)
-                   :to   (:to  period-map))
-    (catch Exception _
-      {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
-       :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
-       :sales-qty 0 :returns-qty 0 :buyout-rate 0.0 :avg-check 0.0})))
+(defn- compute-pnl
+  "Compute P&L for fin-data over period-map.
+   Accepts an optional cf-adjustments map (from pnl/load-cf-adjustments);
+   when supplied, pnl/calculate adds the P&L.6 cf-* / adjusted-* fields."
+  ([fin-data period-map marketplace]
+   (compute-pnl fin-data period-map marketplace nil))
+  ([fin-data period-map marketplace cf-adjustments]
+   (try
+     (apply pnl/calculate
+            fin-data
+            (cond-> [:marketplace marketplace
+                     :from        (:from period-map)
+                     :to          (:to  period-map)]
+              cf-adjustments (conj :cf-adjustments cf-adjustments)))
+     (catch Exception _
+       {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
+        :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
+        :sales-qty 0 :returns-qty 0 :buyout-rate 0.0 :avg-check 0.0}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Spark-line helpers
@@ -212,7 +220,6 @@
   (let [prev-map  (->> prev-by-art
                        (map (fn [r] [(or (:group r) (:article r)) (:revenue r)]))
                        (into {}))
-        by-day-map (sales-by-day-map sales-data)
         dates      (date-range-seq period-from period-to)
         spark-fn   (fn [art]
                      ;; Per-article daily revenue spark
@@ -301,8 +308,10 @@
           d3-to       (period/format-date today-d)
           sales-3d    (load-sales {:from d3-from :to d3-to} mp1)
 
-          ;; Top-10 by revenue for ZERO_SALES alert
+          ;; Top-10 by revenue for ZERO_SALES alert — sorted descending so the
+          ;; highest-revenue SKUs are checked first (sales/by-article order is unspecified).
           top-10      (->> cur-by-art
+                           (sort-by :revenue >)
                            (take 10)
                            (map-indexed (fn [i r] (assoc r :rank (inc i))))
                            vec)
@@ -330,26 +339,27 @@
                         0.0)
           projection  (math/round2 (* velocity days-total))
 
+          ;; Fetch all-MP sales once; reused by both mp-share and orders-by-mp below.
+          all-sales-mp (when-not mp1 (load-sales period nil))
+
           ;; MP share (orders by marketplace when no MP filter)
           mp-share    (when-not mp1
-                        (let [all-sales (load-sales period nil)]
-                          (let [by-mp (->> all-sales
-                                           (filter #(= :sale (:type %)))
-                                           (group-by :marketplace)
-                                           (into {} (map (fn [[mp rows]]
-                                                           [(keyword (or mp "wb"))
-                                                            (count rows)]))))]
-                            (let [total (max 1 (reduce + 0 (vals by-mp)))]
-                              {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
-                               :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
-                               :ym   (math/round2 (* 100.0 (/ (double (get by-mp :ym 0)) total)))}))))
+                        (let [by-mp (->> all-sales-mp
+                                         (filter #(= :sale (:type %)))
+                                         (group-by :marketplace)
+                                         (into {} (map (fn [[mp rows]]
+                                                         [(keyword (or mp "wb"))
+                                                          (count rows)]))))]
+                          (let [total (max 1 (reduce + 0 (vals by-mp)))]
+                            {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
+                             :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
+                             :ym   (math/round2 (* 100.0 (/ (double (get by-mp :ym 0)) total)))})))
 
-          ;; Orders by MP spark
+          ;; Orders by MP spark — reuse all-sales-mp, no second DB call
           orders-by-mp (when-not mp1
-                         (let [all-sales (load-sales period nil)]
-                           {:wb   (orders-spark (filter #(= :wb (:marketplace %)) all-sales) from to)
-                            :ozon (orders-spark (filter #(= :ozon (:marketplace %)) all-sales) from to)
-                            :ym   (orders-spark (filter #(= :ym (:marketplace %)) all-sales) from to)}))
+                         {:wb   (orders-spark (filter #(= :wb (:marketplace %)) all-sales-mp) from to)
+                          :ozon (orders-spark (filter #(= :ozon (:marketplace %)) all-sales-mp) from to)
+                          :ym   (orders-spark (filter #(= :ym (:marketplace %)) all-sales-mp) from to)})
 
           ;; Revenue previous (compare mode)
           rev-prev-spark (when do-compare (revenue-spark sales-prev (:from prev) (:to prev)))
@@ -451,8 +461,10 @@
 
           cf-adj   (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
                         (catch Exception _ nil))
+          ;; Recompute with CF adjustments when available (adds P&L.6 cf-*/adjusted-* fields).
+          ;; pnl/calculate accepts :cf-adjustments; compute-pnl 4-arity passes it through.
           pnl-cur  (if cf-adj
-                     (compute-pnl fin-cur period mp1)
+                     (compute-pnl fin-cur period mp1 cf-adj)
                      pnl-cur)
 
           rows     (mapv (fn [[k label group]]
@@ -716,7 +728,7 @@
       (if (seq missing)
         {:status 400
          :body   {:error (str "Required numeric fields missing or invalid: "
-                              (clojure.string/join ", " (sort (map name missing))))}}
+                              (str/join ", " (sort (map name missing))))}}
         {:status 200
          :body   (what-if-recalc body)}))
     (catch Exception e

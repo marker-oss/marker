@@ -147,7 +147,7 @@ curl -s -H "Accept: application/transit+json" \
 
 ### B3. GET /api/v1/marker/sku-list
 
-Full SKU list with key metrics. Accepts `?limit=N&offset=N` (accepted but not enforced — returns full list in Phase 7; Phase 8 may add server-side pagination).
+Full SKU list with key metrics. Accepts `?limit=N&offset=N` for server-side pagination. Without limit, returns all SKUs.
 
 **Backed by:** `analitica.domain.finance/by-article`, `analitica.domain.stock/by-article`,
 `analitica.domain.sales/by-article`
