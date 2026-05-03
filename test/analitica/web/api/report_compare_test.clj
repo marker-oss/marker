@@ -103,6 +103,40 @@
         (is (nil? (:revenue_delta c)))
         (is (nil? (:revenue_delta_pct c)))))))
 
+;; Bug #12: docstring promises `100 × delta / |prev|`, but the impl divided
+;; by raw `prev`. With negative prev (e.g. profit improving from -1000 to
+;; -500) the sign flipped and the user saw "-50%" instead of "+50%". These
+;; tests pin the abs-of-prev semantics across both signs.
+
+(deftest enrich-with-compare-negative-prev-improvement
+  (testing "Loss shrinking (prev=-1000 → curr=-500) shows positive delta_pct"
+    (let [current [{:article "A" :profit -500.0}]
+          prev    [{:article "A" :profit -1000.0}]
+          result  (report/enrich-with-compare current prev :article [:profit])
+          row     (first result)]
+      (is (= 500.0 (:profit_delta row)))
+      (is (= 50.0  (:profit_delta_pct row))
+          "Improvement of 500 over a loss of 1000 = +50%, not -50%"))))
+
+(deftest enrich-with-compare-negative-prev-deterioration
+  (testing "Loss growing (prev=-500 → curr=-1000) shows negative delta_pct"
+    (let [current [{:article "A" :profit -1000.0}]
+          prev    [{:article "A" :profit -500.0}]
+          result  (report/enrich-with-compare current prev :article [:profit])
+          row     (first result)]
+      (is (= -500.0 (:profit_delta row)))
+      (is (= -100.0 (:profit_delta_pct row))
+          "Loss doubled (worsened by another 500 over a 500 base) = -100%"))))
+
+(deftest enrich-with-compare-negative-prev-crossing-zero
+  (testing "Sign flip (prev=-200 → curr=300) — improvement of 500 over base 200 = +250%"
+    (let [current [{:article "A" :profit 300.0}]
+          prev    [{:article "A" :profit -200.0}]
+          result  (report/enrich-with-compare current prev :article [:profit])
+          row     (first result)]
+      (is (= 500.0 (:profit_delta row)))
+      (is (= 250.0 (:profit_delta_pct row))))))
+
 (deftest enrich-with-compare-zero-prev-test
   (testing "enrich-with-compare: delta_pct is nil when prev value is zero"
     (let [current [{:article "X" :revenue 100.0}]

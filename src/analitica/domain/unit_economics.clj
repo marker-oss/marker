@@ -183,7 +183,11 @@
         total-spp        (sum :spp-compensation)
         sales-qty        (reduce + 0 (map :sales-qty ue-data))
         returns-qty      (reduce + 0 (map :returns-qty ue-data))
-        net-qty          (- sales-qty returns-qty)]
+        ;; Match per-row clamp (UE.6): when returns ≥ sales the kept-unit
+        ;; denominator is meaningless. Without the (max 1 …) guard a
+        ;; negative net-qty divided into a negative total-profit produced
+        ;; a *positive* profit-per-sale that masked the loss.
+        net-qty          (max 1 (- sales-qty returns-qty))]
     {:total-revenue    (math/round2 total-revenue)
      :total-wb-reward  (math/round2 total-wb-reward)
      :total-logistics  (math/round2 total-logistics)

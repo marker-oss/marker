@@ -178,8 +178,13 @@
                               delta    (when (and (number? cur-val) (number? prev-val))
                                          (let [d (- cur-val prev-val)]
                                            (/ (Math/round (* d 100.0)) 100.0)))
+                              ;; |prev| denominator so a loss shrinking from
+                              ;; -1000 to -500 reports +50% (improvement),
+                              ;; not -50% (which is what raw `prev` produced
+                              ;; — a sign flip on every negative-prev row).
                               delta-pct (when (and delta prev-val (not (zero? prev-val)))
-                                          (/ (Math/round (* 100.0 (/ delta prev-val) 100.0)) 100.0))
+                                          (let [abs-prev (Math/abs (double prev-val))]
+                                            (/ (Math/round (* 100.0 (/ delta abs-prev) 100.0)) 100.0)))
                               pk (keyword (str (name col) "_prev"))
                               dk (keyword (str (name col) "_delta"))
                               dpk (keyword (str (name col) "_delta_pct"))]

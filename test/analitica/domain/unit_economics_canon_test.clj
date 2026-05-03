@@ -207,6 +207,28 @@
 ;; Cross-check — UE.4 reconciliation against P&L
 ;; ---------------------------------------------------------------------------
 
+;; Bug #11 — totals.profit-per-sale used a raw `net-qty = sales - returns`
+;; denominator. When returns > sales (rare but real: a refund-heavy week or
+;; SKU), net-qty went negative and a negative total-profit / negative net-qty
+;; rendered as a *positive* "profit per sale" — making losses look like
+;; gains. Per-row UE.6 already uses (max 1 net-qty); totals must too.
+
+(deftest totals-profit-per-sale-no-sign-flip-when-returns-exceed-sales
+  (testing "Returns > sales: profit-per-sale must not flip a loss into a positive number"
+    (let [ue-data [{:sales-qty 1 :returns-qty 5 :profit -800.0
+                    :revenue 100.0 :for-pay 100.0 :total-cost 0.0}]
+          s (ue/totals ue-data)]
+      (is (not (pos? (:profit-per-sale s)))
+          "Total profit was -800 RUB; profit-per-sale must NOT be positive"))))
+
+(deftest totals-profit-per-sale-positive-when-sales-exceed-returns
+  (testing "Normal case: positive net-qty, positive profit → positive profit-per-sale"
+    (let [ue-data [{:sales-qty 10 :returns-qty 2 :profit 1600.0
+                    :revenue 5000.0 :for-pay 4500.0 :total-cost 0.0}]
+          s (ue/totals ue-data)]
+      (is (= 200.0 (:profit-per-sale s))
+          "1600 RUB profit / 8 net units = 200 RUB per kept unit"))))
+
 (deftest profit-matches-pnl-reconcile
   (testing "UE total-profit matches hand-computed P&L gross-profit from same finance rows"
     ;; pnl/calculate queries the DB for ad-spend, which makes it non-hermetic in
