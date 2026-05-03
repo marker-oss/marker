@@ -51,6 +51,9 @@
   (rfe/start! router on-navigate {:use-fragment false}))
 
 (defn nav!
-  "Navigate to a named route, pushing a new history entry."
+  "Navigate to a named route, pushing a new history entry.
+   Accepts either a keyword (`:pnl`) or a string id (`\"pnl\"`) so callers
+   like the sidebar's NAV table — which uses string ids — work without
+   coercion at the call-site.  reitit route names are keywords."
   [route-name]
-  (rfe/push-state route-name))
+  (rfe/push-state (if (keyword? route-name) route-name (keyword route-name))))
