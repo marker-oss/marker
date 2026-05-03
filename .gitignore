@@ -26,10 +26,13 @@ reports/
 .superpowers/
 .playwright-mcp/
 
-# --- Node (only used by ad-hoc Playwright scripts) ---
+# --- Node / npm (used by shadow-cljs for the Marker SPA) ---
 node_modules/
-package.json
-package-lock.json
+# package.json + package-lock.json ARE tracked (needed for the SPA build)
+
+# --- shadow-cljs build artifacts ---
+.shadow-cljs/
+resources/public/js/cljs-out/
 
 # --- AI session / scratch files ---
 CLAUDE.md

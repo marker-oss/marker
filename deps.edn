@@ -32,4 +32,19 @@
                      "--middleware" "[cider.nrepl/cider-middleware]"]}
   ;; E-6 (2026-04-28): scheduled audit runner. Wraps `audit.core/run-reconcile!`
   ;; with a CLI for cron / CI use. Usage: clojure -M:audit --period 2026-04
-  :audit {:main-opts ["-m" "analitica.audit.cli"]}}}
+  :audit {:main-opts ["-m" "analitica.audit.cli"]}
+
+  ;; ClojureScript SPA frontend (Marker UI). Built by shadow-cljs.
+  ;; Read by shadow-cljs.edn via :deps {:aliases [:cljs]}.
+  ;; Run with: npm run watch  (or: npx shadow-cljs watch app)
+  :cljs {:extra-paths ["src/cljs"]
+         :extra-deps  {org.clojure/clojurescript      {:mvn/version "1.11.132"}
+                       thheller/shadow-cljs           {:mvn/version "2.28.20"}
+                       com.pitch/uix.core             {:mvn/version "1.4.0"}
+                       com.pitch/uix.dom              {:mvn/version "1.4.0"}
+                       re-frame/re-frame              {:mvn/version "1.4.3"}
+                       day8.re-frame/http-fx          {:mvn/version "0.2.4"}
+                       metosin/reitit-frontend        {:mvn/version "0.7.2"}
+                       com.cognitect/transit-cljs     {:mvn/version "0.8.280"}
+                       binaryage/devtools             {:mvn/version "1.0.7"}}}}}
+

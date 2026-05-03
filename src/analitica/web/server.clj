@@ -142,6 +142,33 @@
       (select-keys (period/default-state) [:from :to]))))
 
 ;; ---------------------------------------------------------------------------
+;; Marker SPA shell
+;; ---------------------------------------------------------------------------
+
+(defn- marker-spa-shell
+  "Static HTML shell for the ClojureScript SPA. The client bundle is built by
+   shadow-cljs into resources/public/js/cljs-out/marker.js (served by the
+   wrap-resource middleware). All client-side routing happens after mount."
+  []
+  {:status 200
+   :headers {"Content-Type" "text/html; charset=utf-8"}
+   :body (str "<!doctype html>\n"
+              (hiccup.core/html
+                [:html {:lang "ru"}
+                 [:head
+                  [:meta {:charset "utf-8"}]
+                  [:title "Marker · Аналитика маркетплейсов"]
+                  [:meta {:name "viewport" :content "width=1920"}]
+                  [:link {:rel "preconnect" :href "https://fonts.googleapis.com"}]
+                  [:link {:rel "preconnect" :href "https://fonts.gstatic.com" :crossorigin true}]
+                  [:link {:rel "stylesheet"
+                          :href "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"}]
+                  [:link {:rel "stylesheet" :href "/css/tokens.css"}]]
+                 [:body
+                  [:div#root]
+                  [:script {:src "/js/cljs-out/marker.js"}]]]))})
+
+;; ---------------------------------------------------------------------------
 ;; Routes
 ;; ---------------------------------------------------------------------------
 
@@ -1232,6 +1259,14 @@
                         :marketplace (or mp-str "all")
                         :period      (or period-str "last-7-days")})]
           {:status 200 :body updated}))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).
+  ;; Both /app and /app/<anything> serve the same tiny shell — reitit-frontend
+  ;; handles routing client-side once the bundle loads.
+  ;; ---------------------------------------------------------------------------
+  (GET "/app" _ (marker-spa-shell))
+  (GET ["/app/:path" :path #".*"] _ (marker-spa-shell))
 
   ;; 404
   (route/not-found {:status 404 :body "Not Found"}))
