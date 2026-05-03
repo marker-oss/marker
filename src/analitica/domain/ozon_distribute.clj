@@ -61,30 +61,66 @@
 
 (defn- daily-sales-weights
   "Return {iso-day → weight} for an Ozon (article, sku?) between
-   [from..to] using the `sales` table. Weights normalise to 1.0.
-   Tries (article, sku) first, falls back to (article) only when
-   sku is nil or yields no rows. Returns nil if the article has no
-   sales coverage in the window at all."
+   [from..to]. Weights normalise to 1.0.
+
+   Source priority — first one that yields rows wins:
+     1. `sales` (article, sku)         — finest grain, post-delivery.
+     2. `sales` (article)              — fallback when sku missing.
+     3. `orders` (article, sku)        — broader coverage; orders are
+                                         logged earlier than sales (sales
+                                         only appear after delivery, so
+                                         late-month days often have
+                                         orders but no sales yet).
+     4. `orders` (article)             — fallback when sku missing.
+
+   Returns nil if neither table has any matching rows in the window —
+   in that case `redistribute-realization` keeps the original month-
+   stamped row so its money isn't lost."
   [article sku from to]
-  (let [base-sql "SELECT substr(date, 1, 10) AS day,
-                          SUM(COALESCE(NULLIF(total_price, 0),
-                                       price_with_disc, 0)) AS rev
-                   FROM sales
+  ;; Each entry: [base-select-with-WHERE, having-clause]. The body
+  ;; appends optional SKU filter and the GROUP-BY/HAVING tail.
+  (let [sales-q "SELECT substr(date, 1, 10) AS day,
+                        SUM(COALESCE(NULLIF(total_price, 0),
+                                     price_with_disc, 0)) AS rev
+                  FROM sales
+                  WHERE marketplace = 'ozon'
+                    AND article = ?
+                    AND substr(date, 1, 10) BETWEEN ? AND ?"
+        sales-h " GROUP BY substr(date, 1, 10)
+                   HAVING SUM(COALESCE(NULLIF(total_price, 0),
+                                       price_with_disc, 0)) > 0"
+        ;; `orders` covers more days than `sales` because orders are
+        ;; logged at order time (T+0) while sales need delivery (T+5+).
+        ;; Per-day proportions are all we use, so the gross/net column
+        ;; choice doesn't affect the output weights.
+        orders-q "SELECT substr(date, 1, 10) AS day,
+                         SUM(COALESCE(NULLIF(price_with_disc, 0),
+                                      price, 0)) AS rev
+                   FROM orders
                    WHERE marketplace = 'ozon'
                      AND article = ?
                      AND substr(date, 1, 10) BETWEEN ? AND ?"
-        run     (fn [extra params]
+        orders-h " GROUP BY substr(date, 1, 10)
+                    HAVING SUM(COALESCE(NULLIF(price_with_disc, 0),
+                                        price, 0)) > 0"
+        run-q   (fn [base having extra params]
                   (try
-                    (db/query (into [(str base-sql extra
-                                          " GROUP BY substr(date, 1, 10)
-                                            HAVING SUM(COALESCE(NULLIF(total_price, 0),
-                                                                price_with_disc, 0)) > 0")]
-                                    params))
+                    (db/query (into [(str base extra having)] params))
                     (catch Throwable _ nil)))
-        rows    (or (when sku
-                      (let [r (run " AND nm_id = ?" [article from to sku])]
-                        (when (seq r) r)))
-                    (run "" [article from to]))]
+        ;; Source priority: sales first (canonical, post-delivery),
+        ;; orders as fallback when sales window is sparse. Within each
+        ;; source, try (article, sku) first then (article).
+        rows    (some (fn [[base h sku?]]
+                        (let [r (if sku?
+                                  (when sku
+                                    (run-q base h " AND nm_id = ?"
+                                           [article from to sku]))
+                                  (run-q base h "" [article from to]))]
+                          (when (seq r) r)))
+                      [[sales-q  sales-h  true]
+                       [sales-q  sales-h  false]
+                       [orders-q orders-h true]
+                       [orders-q orders-h false]])]
     (when (seq rows)
       (let [total (reduce + 0.0 (map :rev rows))]
         (when (pos? total)
