@@ -417,9 +417,27 @@
           ;; Data freshness
           fresh       (alerts/freshness-data)
 
-          ;; Build response
-          orders-cur  (long (or (:total-sales sales-tots) 0))
-          orders-prev (long (or (:total-sales prev-tots) 0))
+          ;; Order vs purchase counts:
+          ;;   :orders     = all orders created in window (incl. cancelled / in-flight)
+          ;;   :purchases  = orders that completed (sales / delivered)
+          ;; Conversion = purchases / orders.
+          mp-name-clause (cond
+                           (= :ozon mp1) " AND marketplace = 'ozon'"
+                           (= :wb   mp1) " AND marketplace = 'wb'"
+                           (= :ym   mp1) " AND marketplace = 'ym'"
+                           :else         "")
+          orders-total-q (str "SELECT COUNT(*) AS n FROM orders
+                               WHERE substr(date,1,10) BETWEEN ? AND ?"
+                              mp-name-clause)
+          orders-cur  (long (or (:n (first (try (db/query [orders-total-q from to])
+                                                (catch Exception _ [{:n 0}]))))
+                                0))
+          orders-prev (long (or (:n (first (try (db/query [orders-total-q
+                                                           (:from prev) (:to prev)])
+                                                (catch Exception _ [{:n 0}]))))
+                                0))
+          purchases-cur  (long (or (:total-sales sales-tots) 0))
+          purchases-prev (long (or (:total-sales prev-tots) 0))
 
           ;; Revenue / avg-check: come from PnL with preliminary overlay
           ;; applied via with-prelim. Canonical realization-based when
@@ -445,6 +463,9 @@
                          :profit    (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
+                                     :spark     ord-spark}
+                         :purchases {:value     purchases-cur
+                                     :delta-pct (math/pct-delta purchases-cur purchases-prev)
                                      :spark     ord-spark}
                          :margin    {:value     (or (:margin-net pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta

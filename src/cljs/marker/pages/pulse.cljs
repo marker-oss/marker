@@ -446,14 +446,21 @@
 
 (defui ^:private kpi-section [{:keys [compare? kpis preliminary?]}]
   (let [k      (or kpis {})
-        rev    (:revenue k)
-        profit (:profit k)
-        orders (:orders k)
-        margin (:margin k)
-        check  (:avg-check k)
-        buyout (:buyout k)
-        roas   (:roas k)
-        drr    (:drr k)
+        rev       (:revenue k)
+        profit    (:profit k)
+        orders    (:orders k)
+        purchases (:purchases k)
+        margin    (:margin k)
+        check     (:avg-check k)
+        buyout    (:buyout k)
+        roas      (:roas k)
+        drr       (:drr k)
+        ;; Conversion = purchases/orders × 100. Shown as sub-text on the
+        ;; orders card. Hidden when orders=0 (would divide by zero).
+        order-cnt (safe-num (:value orders))
+        purch-cnt (safe-num (:value purchases))
+        conv-pct  (when (pos? order-cnt)
+                    (* 100.0 (/ purch-cnt order-cnt)))
         cards  [{:label     "Выручка"
                  :value     (fmt/format-rub (safe-num (:value rev)))
                  :delta     (:delta-pct rev)
@@ -466,10 +473,17 @@
                  :spark     (safe-spark (:spark profit))
                  :sub       "WoW"}
                 {:label     "Заказы"
-                 :value     (str (fmt/format-int (safe-num (:value orders))) " шт")
+                 :value     (str (fmt/format-int order-cnt) " шт")
                  :delta     (:delta-pct orders)
                  :spark     (safe-spark (:spark orders))
-                 :sub       "WoW"}
+                 :sub       (if conv-pct
+                              (str "конв. " (fmt/format-pct conv-pct))
+                              "WoW")}
+                {:label     "Продажи"
+                 :value     (str (fmt/format-int purch-cnt) " шт")
+                 :delta     (:delta-pct purchases)
+                 :spark     (safe-spark (:spark purchases))
+                 :sub       "выкуплено"}
                 {:label     "Маржа"
                  :value     (fmt/format-pct (safe-num (:value margin)))
                  :delta     (:delta-pct margin)

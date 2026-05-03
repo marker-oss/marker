@@ -296,12 +296,23 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
       (is (vector? (:alerts body)))))
 
-  (testing ":kpis contains all 8 KPI keys"
+  (testing ":kpis contains all 9 KPI keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (is (map? kpis))
-      (doseq [k [:revenue :profit :orders :margin :avg-check :buyout :roas :drr]]
+      (doseq [k [:revenue :profit :orders :purchases :margin
+                 :avg-check :buyout :roas :drr]]
         (is (contains? kpis k) (str "kpis missing: " k)))))
+
+  (testing ":orders is total orders (incl. cancelled), :purchases is delivered sales — orders >= purchases"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          orders     (get-in body [:kpis :orders :value])
+          purchases  (get-in body [:kpis :purchases :value])]
+      (is (number? orders))
+      (is (number? purchases))
+      (is (>= orders purchases)
+          (str "Expected orders ≥ purchases (orders include cancelled+in-flight). "
+               "Got orders=" orders " purchases=" purchases))))
 
   (testing ":kpis :revenue has value/delta-pct/spark"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
