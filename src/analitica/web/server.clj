@@ -1272,7 +1272,7 @@
   (GET  "/api/v1/marker/pnl"               req {:status 200 :body (marker-api/pnl-handler req)})
   (GET  "/api/v1/marker/sku-list"          req {:status 200 :body (marker-api/sku-list-handler req)})
   (GET  "/api/v1/marker/sku-detail/:sku-id" req {:status 200 :body (marker-api/sku-detail-handler req)})
-  (POST "/api/v1/marker/what-if-recalc"    req {:status 200 :body (marker-api/what-if-handler req)})
+  (POST "/api/v1/marker/what-if-recalc"    req (marker-api/what-if-handler req))
 
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).

@@ -210,6 +210,44 @@
     (is (map? (marker-api/what-if-recalc {})))))
 
 ;; ---------------------------------------------------------------------------
+;; B1 (fix). sku-list pagination logic — pure, no DB required
+;; ---------------------------------------------------------------------------
+
+(deftest sku-list-pagination-logic
+  (testing "cond->> drop/take mirrors spec pagination semantics"
+    ;; Verify the exact pagination idiom used in sku-list-handler is correct.
+    (let [items  (vec (range 10))
+          paginate (fn [xs limit offset]
+                     (let [off (or offset 0)]
+                       (cond->> xs
+                         true          (drop off)
+                         (some? limit) (take limit)
+                         true          vec)))]
+      (is (= [0 1 2]     (paginate items 3 nil))  "limit=3, no offset")
+      (is (= [3 4 5]     (paginate items 3 3))    "limit=3, offset=3")
+      (is (= [5 6 7 8 9] (paginate items nil 5))  "no limit, offset=5")
+      (is (= []          (paginate items 3 10))   "offset beyond end → empty"))))
+
+;; ---------------------------------------------------------------------------
+;; B2 (fix). what-if-handler validation — pure, no DB required
+;; ---------------------------------------------------------------------------
+
+(deftest what-if-handler-validation
+  (testing "returns 400 with :error when body is empty (all required fields missing)"
+    (let [result (marker-api/what-if-handler {:request-method :post :body {} :headers {}})]
+      (is (= 400 (:status result)))
+      (is (contains? (:body result) :error))))
+
+  (testing "returns 400 with :error when a required field is non-numeric"
+    (let [result (marker-api/what-if-handler
+                   {:request-method :post
+                    :body           {:price "abc" :cogs 1200 :commission-pct 17
+                                     :logistics 90 :ads 220 :returns-pct 8}
+                    :headers        {}})]
+      (is (= 400 (:status result)))
+      (is (contains? (:body result) :error)))))
+
+;; ---------------------------------------------------------------------------
 ;; B5. what-if-recalc HTTP endpoint
 ;; ---------------------------------------------------------------------------
 
@@ -223,7 +261,20 @@
       (is (map? body))
       (is (contains? body :margin-pct))
       (is (contains? body :profit))
-      (is (< 17.0 (:margin-pct body) 18.0)))))
+      (is (< 17.0 (:margin-pct body) 18.0))))
+
+  (testing "POST with empty body returns 400"
+    (let [{:keys [status body]} (do-post "/api/v1/marker/what-if-recalc" {})]
+      (is (= 400 status))
+      (is (contains? body :error))))
+
+  (testing "POST with non-numeric field returns 400"
+    (let [{:keys [status body]} (do-post "/api/v1/marker/what-if-recalc"
+                                          {:price "abc" :cogs 1200
+                                           :commission-pct 17 :logistics 90
+                                           :ads 220 :returns-pct 8})]
+      (is (= 400 status))
+      (is (contains? body :error)))))
 
 ;; ---------------------------------------------------------------------------
 ;; B1. pulse-summary — shape tests
@@ -245,11 +296,11 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
       (is (vector? (:alerts body)))))
 
-  (testing ":kpis contains revenue/profit/orders/margin"
+  (testing ":kpis contains all 8 KPI keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (is (map? kpis))
-      (doseq [k [:revenue :profit :orders :margin]]
+      (doseq [k [:revenue :profit :orders :margin :avg-check :buyout :roas :drr]]
         (is (contains? kpis k) (str "kpis missing: " k)))))
 
   (testing ":kpis :revenue has value/delta-pct/spark"
@@ -321,7 +372,7 @@
           det (:sku-detail body)]
       (when (seq det)
         (let [d (first det)]
-          (doseq [k [:id :name :revenue :net]]
+          (doseq [k [:id :name :mp :revenue :cogs :commission :ads :net]]
             (is (contains? d k) (str "sku-detail missing: " k))))))))
 
 ;; ---------------------------------------------------------------------------
@@ -346,11 +397,12 @@
           (doseq [k [:id :name :revenue :orders :margin :stock :delta-pct]]
             (is (contains? s k) (str "sku missing: " k)))))))
 
-  (testing "accepts limit/offset params without error"
+  (testing "?limit=3 returns at most 3 SKUs (pagination)"
     (let [{:keys [status body]} (do-get "/api/v1/marker/sku-list"
                                          :params {:limit "3" :offset "0"})]
       (is (= 200 status))
-      (is (contains? body :skus)))))
+      (is (contains? body :skus))
+      (is (<= (count (:skus body)) 3) "limit=3 must return ≤3 entries"))))
 
 ;; ---------------------------------------------------------------------------
 ;; B4. sku-detail — shape tests

@@ -167,15 +167,21 @@
                  :current-buyout           cur-buyout
                  :sales-last-3-days        sales-last-3d
                  :top-10-by-revenue        top-10})]
-      (mapv (fn [a]
-              {:kind  (case (:severity a)
-                        :red    "danger"
-                        :yellow "warning"
-                        "info")
-               :title (:title a)
-               :body  (:body a)
-               :cta   (:action-label a)})
-            raw))
+      ;; TODO upstream: analitica.alerts/detect-alerts emits "null" literals
+      ;; when an article's :name and :article are both nil. Filter here until
+      ;; the source is fixed.
+      (->> raw
+           (remove (fn [a]
+                     (or (re-find #"\bnull\b" (str (:title a)))
+                         (re-find #"\bnull\b" (str (:body a))))))
+           (mapv (fn [a]
+                   {:kind  (case (:severity a)
+                              :red    "danger"
+                              :yellow "warning"
+                              "info")
+                    :title (:title a)
+                    :body  (:body a)
+                    :cta   (:action-label a)}))))
     (catch Exception _ [])))
 
 (defn- critical-stocks
@@ -538,8 +544,14 @@
                                :ads-cost  0.0    ; TODO: per-article ad cost not available without ad_stats join
                                :roas      nil    ; TODO: depends on ads-cost
                                :spark     []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
-                          by-art)]
-      {:skus skus})
+                          by-art)
+          limit     (some-> (get params :limit) parse-long)
+          offset    (or (some-> (get params :offset) parse-long) 0)
+          skus-paged (cond->> skus
+                       true   (drop offset)
+                       limit  (take limit)
+                       true   vec)]
+      {:skus skus-paged})
     (catch Exception e
       {:skus [] :error (.getMessage e)})))
 
@@ -614,7 +626,9 @@
 
           nm-id    (some :nm-id by-art)
           subject  (or (:subject agg) sku-id)
-          mps-list (or (seq (distinct (map :marketplace fin-art))) [mp1 :wb])]
+          mps-list (or (seq (distinct (map :marketplace fin-art)))
+                       (filterv some? [mp1 :wb])
+                       [:wb])]
 
       {:id       sku-id
        :name     subject
@@ -696,7 +710,15 @@
   "Handler for POST /api/v1/marker/what-if-recalc"
   [request]
   (try
-    (let [body (or (:body request) {})]
-      (what-if-recalc (if (map? body) body {})))
+    (let [body     (if (map? (:body request)) (:body request) {})
+          required #{:price :cogs :commission-pct :logistics :ads :returns-pct}
+          missing  (remove #(number? (get body %)) required)]
+      (if (seq missing)
+        {:status 400
+         :body   {:error (str "Required numeric fields missing or invalid: "
+                              (clojure.string/join ", " (sort (map name missing))))}}
+        {:status 200
+         :body   (what-if-recalc body)}))
     (catch Exception e
-      {:error (.getMessage e)})))
+      {:status 500
+       :body   {:error (.getMessage e)}})))
