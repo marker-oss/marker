@@ -31,6 +31,7 @@
                {:id "report:trends"  :label "Тренды"}
                {:id "report:losses"  :label "Потери"}
                {:id "report:ue"      :label "Юнит-экономика"}]}
+   {:id "sync"     :label "Синхронизация" :icon :refresh}
    {:id "plan"     :label "План"    :icon :target}
    {:id "kit"      :label "UI Kit"  :icon :sparkles}])
 

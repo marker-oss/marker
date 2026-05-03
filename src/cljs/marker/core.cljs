@@ -22,6 +22,7 @@
             [marker.pages.products :as products]
             [marker.pages.reports  :as reports]
             [marker.pages.cost-prices :as cost-prices]
+            [marker.pages.sync     :as sync-page]
             [marker.pages.kit      :as kit]))
 
 ;; ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@
    :unit         "Юнит-экономика"
    :products     "Товары"
    :cost-prices  "Себестоимость"
+   :sync         "Синхронизация"
    :plan         "План"
    :kit          "UI Kit"})
 
@@ -197,6 +199,7 @@
                  :unit         ($ unit/unit {})
                  :products     ($ products/products {})
                  :cost-prices  ($ cost-prices/cost-prices {})
+                 :sync         ($ sync-page/sync-page {})
                  :kit          ($ kit/kit {})
                  ;; Placeholder for routes not yet implemented
                  ($ placeholder-page {:title (page-title-for page)})))))
