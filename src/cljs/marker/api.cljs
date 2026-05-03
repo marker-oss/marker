@@ -35,16 +35,76 @@
   (when (and (seq mp-filter) (< (count mp-filter) 3))
     (clojure.string/join "," (map name mp-filter))))
 
+;; ---------------------------------------------------------------------------
+;; Period resolver
+;; ---------------------------------------------------------------------------
+
+(defn- fmt-date
+  "Format a js/Date as \"YYYY-MM-DD\"."
+  [^js d]
+  (let [y  (.getFullYear d)
+        m  (inc (.getMonth d))   ; getMonth is 0-indexed
+        dy (.getDate d)]
+    (str y "-"
+         (if (< m 10) (str "0" m) m) "-"
+         (if (< dy 10) (str "0" dy) dy))))
+
+(defn- days-ago
+  "Return a js/Date that is `n` days before `now`."
+  [^js now n]
+  (js/Date. (- (.getTime now) (* n 86400000))))
+
 (defn- period->params
-  "Map a human-readable period string to ISO from/to query params.
-   For Phase 8 we send the period label as-is and let the backend resolve it.
-   The backend already has parse-period-params fallback to last-30-days."
-  [period]
-  ;; We don't attempt to resolve preset labels client-side here.
-  ;; The backend's parse-period-params falls back to last-30-days when
-  ;; :from/:to are absent — which is fine for non-custom ranges.
-  ;; TODO: send explicit from/to once a client-side period resolver is added.
-  {})
+  "Map a Russian period preset label (or YYYY-MM-DD,YYYY-MM-DD custom range)
+   to {:from \"YYYY-MM-DD\" :to \"YYYY-MM-DD\"} query params.
+   Accepts an optional `now` js/Date for deterministic testing."
+  ([period] (period->params period (js/Date.)))
+  ([period ^js now]
+   (cond
+     ;; Custom range: \"YYYY-MM-DD,YYYY-MM-DD\"
+     (and (string? period)
+          (re-matches #"^\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}$" period))
+     (let [[from to] (clojure.string/split period #",")]
+       {:from from :to to})
+
+     (= period "Сегодня")
+     (let [t (fmt-date now)]
+       {:from t :to t})
+
+     (= period "Вчера")
+     (let [t (fmt-date (days-ago now 1))]
+       {:from t :to t})
+
+     (= period "Последние 7 дней")
+     {:from (fmt-date (days-ago now 7)) :to (fmt-date now)}
+
+     (= period "Последние 30 дней")
+     {:from (fmt-date (days-ago now 30)) :to (fmt-date now)}
+
+     (= period "Этот месяц")
+     {:from (fmt-date (js/Date. (.getFullYear now) (.getMonth now) 1))
+      :to   (fmt-date now)}
+
+     (= period "Прошлый месяц")
+     (let [y  (.getFullYear now)
+           m  (.getMonth now)    ; 0-indexed; JS Date handles m=0 → Dec of y-1
+           ;; day 1 of previous month (JS handles negative-month rollback)
+           first-prev (js/Date. y (- m 1) 1)
+           ;; day 0 of current month = last day of previous month
+           last-prev  (js/Date. y m 0)]
+       {:from (fmt-date first-prev) :to (fmt-date last-prev)})
+
+     (= period "Этот квартал")
+     (let [m            (.getMonth now)  ; 0-indexed
+           q-start-month (- m (mod m 3)) ; 0-indexed month of quarter start
+           q-start       (js/Date. (.getFullYear now) q-start-month 1)]
+       {:from (fmt-date q-start) :to (fmt-date now)})
+
+     (= period "Этот год")
+     {:from (fmt-date (js/Date. (.getFullYear now) 0 1))
+      :to   (fmt-date now)}
+
+     :else {})))
 
 (defn build-params
   "Build query params map from filter state.

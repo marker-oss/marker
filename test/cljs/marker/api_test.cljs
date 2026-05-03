@@ -72,3 +72,72 @@
   (testing "compare false → :compare key absent"
     (let [p (api/build-params {:mp-filter [:wb :ozon :ym] :period "Последние 30 дней" :compare false})]
       (is (nil? (:compare p))))))
+
+;; ---------------------------------------------------------------------------
+;; period->params resolver  (private fn accessed via #')
+;; Fixed "now" = 2026-05-15  (js/Date. 2026 4 15)  — month is 0-indexed so 4 = May
+;; ---------------------------------------------------------------------------
+
+(def ^:private may-15 (js/Date. 2026 4 15))
+
+(deftest period-today
+  (testing "Сегодня → same date for from and to"
+    (let [p (#'api/period->params "Сегодня" may-15)]
+      (is (= {:from "2026-05-15" :to "2026-05-15"} p)))))
+
+(deftest period-yesterday
+  (testing "Вчера → day before now"
+    (let [p (#'api/period->params "Вчера" may-15)]
+      (is (= {:from "2026-05-14" :to "2026-05-14"} p)))))
+
+(deftest period-last-7-days
+  (testing "Последние 7 дней → today-7 to today (mirrors backend last-7-days)"
+    (let [p (#'api/period->params "Последние 7 дней" may-15)]
+      (is (= {:from "2026-05-08" :to "2026-05-15"} p)))))
+
+(deftest period-last-30-days
+  (testing "Последние 30 дней → today-30 to today (mirrors backend last-30-days)"
+    (let [p (#'api/period->params "Последние 30 дней" may-15)]
+      (is (= {:from "2026-04-15" :to "2026-05-15"} p)))))
+
+(deftest period-this-month
+  (testing "Этот месяц → first of month to today"
+    (let [p (#'api/period->params "Этот месяц" may-15)]
+      (is (= {:from "2026-05-01" :to "2026-05-15"} p)))))
+
+(deftest period-last-month
+  (testing "Прошлый месяц → Apr 1 to Apr 30 when now is May 15"
+    (let [p (#'api/period->params "Прошлый месяц" may-15)]
+      (is (= {:from "2026-04-01" :to "2026-04-30"} p)))))
+
+(deftest period-this-quarter
+  (testing "Этот квартал → Q2 starts Apr 1 when now is May 15"
+    (let [p (#'api/period->params "Этот квартал" may-15)]
+      (is (= {:from "2026-04-01" :to "2026-05-15"} p)))))
+
+(deftest period-this-year
+  (testing "Этот год → Jan 1 of current year to today"
+    (let [p (#'api/period->params "Этот год" may-15)]
+      (is (= {:from "2026-01-01" :to "2026-05-15"} p)))))
+
+(deftest period-custom-range-passthrough
+  (testing "Custom YYYY-MM-DD,YYYY-MM-DD → parsed verbatim"
+    (let [p (#'api/period->params "2026-01-15,2026-02-20" may-15)]
+      (is (= {:from "2026-01-15" :to "2026-02-20"} p)))))
+
+(deftest period-unknown-label
+  (testing "Unknown label → empty map (backend default)"
+    (let [p (#'api/period->params "Какой-то текст" may-15)]
+      (is (= {} p)))))
+
+(deftest period-nil
+  (testing "nil → empty map"
+    (let [p (#'api/period->params nil may-15)]
+      (is (= {} p)))))
+
+;; Edge case: January → previous month should roll back to December of prior year
+(deftest period-last-month-january-rollback
+  (testing "Прошлый месяц when now is Jan 10, 2026 → Dec 1–31, 2025"
+    (let [jan-10 (js/Date. 2026 0 10)   ; month 0 = January
+          p (#'api/period->params "Прошлый месяц" jan-10)]
+      (is (= {:from "2025-12-01" :to "2025-12-31"} p)))))
