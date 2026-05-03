@@ -151,26 +151,25 @@
 (def ^:private all-mps [:wb :ozon :ym])
 
 (defui mp-filter
-  "Marketplace filter chips.
-   Props: :value (vec of mp keywords [:wb :ozon :ym]),
+  "Marketplace filter chips — single-select.
+   Either all 3 marketplaces are active (\"Все\") or exactly one is.
+   Subsets are not selectable from the UI to prevent mixed-aggregate views.
+   Props: :value (vec of mp keywords; either all-mps or one-element vec),
           :on-change (fn [new-vec])."
   [{:keys [value on-change]}]
-  (let [all-selected? (= (count value) 3)
-        toggle!       (fn [mp]
-                        (if (some #{mp} value)
-                          (on-change (filterv #(not= % mp) value))
-                          (on-change (conj value mp))))]
+  (let [all-selected? (or (zero? (count value)) (= (count value) 3))
+        active-mp     (when (= (count value) 1) (first value))]
     ($ :div {:style {:display "flex" :gap "6px"}}
        ($ :button
           {:class    (str "chip" (when all-selected? " is-active"))
-           :on-click #(on-change (if all-selected? [] all-mps))}
+           :on-click #(on-change all-mps)}
           "Все")
        (for [mp all-mps]
          ($ :button
             {:key      (name mp)
              :class    (str "chip chip-mp-" (name mp)
-                            (when-not (some #{mp} value) " off"))
-             :on-click #(toggle! mp)}
+                            (when-not (= active-mp mp) " off"))
+             :on-click #(on-change [mp])}
             ($ :span {:class (str "mp-dot " (name mp))
                       :style {:width "14px" :height "14px" :font-size "8px"}}
                (-> mp name first str .toUpperCase))
