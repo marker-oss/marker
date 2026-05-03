@@ -479,3 +479,53 @@
       (is (= 200 (:status resp)))
       (is (string? (:body resp)))
       (is (re-find #"text/html" (get-in resp [:headers "Content-Type"] ""))))))
+
+;; ---------------------------------------------------------------------------
+;; E. Phase 9 — generic /reports/:type endpoint
+;; ---------------------------------------------------------------------------
+
+(deftest reports-handler-validation
+  (testing "unknown report type returns 400 with :error"
+    (let [resp (marker-api/reports-handler
+                 {:request-method :get :params {:type "nonsense"} :headers {}})]
+      (is (= 400 (:status resp)))
+      (is (contains? (:body resp) :error))
+      (is (vector? (:known (:body resp))))))
+
+  (testing "missing :type returns 400"
+    (let [resp (marker-api/reports-handler
+                 {:request-method :get :params {} :headers {}})]
+      (is (= 400 (:status resp))))))
+
+(deftest ^:integration reports-shape-test
+  (testing "GET /api/v1/marker/reports/finance returns 200 + columns/rows/totals"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/reports/finance"
+                                         :params {:type "finance"})]
+      (is (= 200 status))
+      (is (= :finance (:report-type body)))
+      (is (vector? (:columns body)))
+      (is (pos? (count (:columns body))))
+      (is (vector? (:rows body)))
+      (is (map?    (:totals body)))
+      (is (map?    (:schema body)))))
+
+  (testing "GET reports/ue + ?compare=true attaches :compare block"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/reports/ue"
+                                         :params {:type "ue" :compare "true"}
+                                         :query-string "compare=true")]
+      (is (= 200 status))
+      (is (contains? body :compare))
+      (is (map? (:compare body)))))
+
+  (testing "GET reports/abc with mp filter (single MP) does not crash"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/reports/abc"
+                                         :params {:type "abc" :mp "wb"}
+                                         :query-string "mp=wb")]
+      (is (= 200 status))
+      (is (vector? (:rows body)))))
+
+  (testing "drill-down route returns rows for one article"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/reports/ue/article/SOMETHING"
+                                         :params {:type "ue" :article "SOMETHING"})]
+      (is (= 200 status))
+      (is (vector? (:rows body))))))

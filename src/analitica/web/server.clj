@@ -1274,6 +1274,13 @@
   (GET  "/api/v1/marker/sku-detail/:sku-id" req {:status 200 :body (marker-api/sku-detail-handler req)})
   (POST "/api/v1/marker/what-if-recalc"    req (marker-api/what-if-handler req))
 
+  ;; Phase 9 — generic schema-driven reports endpoint.
+  ;; Article drill-down route MUST be listed before the /:type catch-all.
+  (GET "/api/v1/marker/reports/:type/article/:article" req
+    (marker-api/report-article-handler req))
+  (GET "/api/v1/marker/reports/:type" req
+    (marker-api/reports-handler req))
+
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).
   ;; Both /app and /app/<anything> serve the same tiny shell — reitit-frontend

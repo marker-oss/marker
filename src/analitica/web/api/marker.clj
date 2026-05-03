@@ -1,12 +1,14 @@
 (ns analitica.web.api.marker
   "Marker SPA — Transit-JSON backend endpoints.
 
-   All 5 endpoints under /api/v1/marker/*:
-     GET  pulse-summary    — dashboard KPIs, alerts, top-movers, critical-stocks
-     GET  pnl              — P&L rows + per-SKU breakdown
-     GET  sku-list         — paginated SKU list with metrics
-     GET  sku-detail/:id   — per-SKU detail
-     POST what-if-recalc   — pure unit-econ what-if calculation
+   Endpoints under /api/v1/marker/*:
+     GET  pulse-summary       — dashboard KPIs, alerts, top-movers, critical-stocks
+     GET  pnl                 — P&L rows + per-SKU breakdown
+     GET  sku-list            — paginated SKU list with metrics
+     GET  sku-detail/:id      — per-SKU detail
+     POST what-if-recalc      — pure unit-econ what-if calculation
+     GET  reports/:type       — generic schema-driven report data (Phase 9)
+     GET  reports/:type/article/:article — drill-down for one article
 
    Every handler returns a plain Clojure map; the wrap-transit-response
    middleware (registered in server.clj) encodes it as transit-json when the
@@ -20,6 +22,8 @@
             [analitica.util.period     :as period]
             [analitica.util.math       :as math]
             [analitica.db              :as db]
+            [analitica.web.api.report  :as report]
+            [analitica.web.report-schemas :as rs]
             [clojure.string            :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -734,3 +738,91 @@
     (catch Exception e
       {:status 500
        :body   {:error (.getMessage e)}})))
+
+;; ---------------------------------------------------------------------------
+;; B6. reports — generic schema-driven report endpoint (Phase 9)
+;; ---------------------------------------------------------------------------
+
+(def ^:private known-report-types
+  "Pre-computed set of valid report-type keywords from the schema registry."
+  (set (rs/all-report-types)))
+
+(defn- ->report-type
+  "Coerce a string path-param to a known report-type keyword, or nil."
+  [s]
+  (when (string? s)
+    (let [k (keyword (str/lower-case s))]
+      (when (contains? known-report-types k) k))))
+
+(defn- ->trend-type [s]
+  (when (string? s)
+    (let [k (keyword (str/lower-case s))]
+      (when (#{:wow :mom :daily} k) k))))
+
+(defn- compare-flag [params]
+  (if (compare? params) :prev :none))
+
+(defn reports-handler
+  "Handler for GET /api/v1/marker/reports/:type
+   Query params: ?from&to (or omitted → last-30-days), ?mp=wb,ozon,ym,
+                 ?compare=true, ?article=<sku>, ?trend-type=wow|mom|daily.
+
+   Returns: {:report-type kw
+             :columns     [col-meta...]   ; from schema (UI rendering)
+             :rows        [row-map...]
+             :totals      {kw -> num}
+             :compare     {:rows [...] :totals {...}} (only if compare=true)
+             :schema      {:rows-mode kw :tabs ... :presets ... :kpi ...}}
+
+   On unknown :type returns 400; on internal failure returns 500."
+  [request]
+  (try
+    (let [params      (:params request)
+          rtype-raw   (or (:type params) (get-in request [:path-params :type]))
+          rtype       (->report-type rtype-raw)]
+      (if-not rtype
+        {:status 400
+         :body   {:error (str "Unknown report type: " (pr-str rtype-raw))
+                  :known (mapv name (rs/all-report-types))}}
+        (let [period      (parse-period-params params)
+              mps         (parse-mp-param params)
+              ;; compute-report supports a single :marketplace keyword (or nil = all)
+              mp1         (cond
+                            (nil? mps)              nil
+                            (= 1 (count mps))       (first mps)
+                            :else                   nil)
+              article     (let [a (:article params)] (when (seq a) a))
+              trend-type  (->trend-type (:trend-type params))
+              data        (report/report-data rtype period
+                                              :marketplace mp1
+                                              :trend-type  trend-type
+                                              :article     article
+                                              :compare     (compare-flag params))
+              schema      (rs/get-schema rtype)
+              compare-blk (:compare data)]
+          {:status 200
+           :body   (cond-> {:report-type rtype
+                            :columns     (vec (:columns schema))
+                            :rows        (vec (:rows data))
+                            :totals      (or (:totals data) {})
+                            :schema      (select-keys schema
+                                                      [:id :title :rows-mode
+                                                       :supports-compare?
+                                                       :supports-period?
+                                                       :supports-marketplace?
+                                                       :tabs :presets :kpi
+                                                       :drill-down :chart])}
+                     compare-blk (assoc :compare {:rows   (vec (:rows compare-blk))
+                                                  :totals (or (:totals compare-blk) {})}))})))
+    (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))
+
+(defn report-article-handler
+  "Handler for GET /api/v1/marker/reports/:type/article/:article
+   Returns the same shape as reports-handler but filtered to one article."
+  [request]
+  (let [params  (:params request)
+        article (or (:article params) (get-in request [:path-params :article]))
+        request' (assoc-in request [:params :article] article)]
+    (reports-handler request')))
