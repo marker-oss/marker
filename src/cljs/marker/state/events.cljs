@@ -77,9 +77,23 @@
   (fn [db [_ page]]
     (assoc db :marker/page page)))
 
+;; invariant: all 3 or exactly 1 — matches the single-select UI rule in chrome.cljs
+(def ^:private all-mps [:wb :ozon :ym])
+(def ^:private known-mps #{:wb :ozon :ym})
+
+(defn- normalize-mp-filter
+  "Enforce all-or-one invariant.
+   - Filter to known keywords, deduplicate.
+   - Count 1 → store as-is; any other count → snap to all 3."
+  [mps]
+  (let [clean (vec (distinct (filter known-mps mps)))]
+    (if (= 1 (count clean))
+      clean
+      all-mps)))
+
 (rf/reg-event-db ::set-mp-filter
   (fn [db [_ mps]]
-    (assoc db :marker/mp-filter mps)))
+    (assoc db :marker/mp-filter (normalize-mp-filter mps))))
 
 (rf/reg-event-db ::set-period
   (fn [db [_ period]]

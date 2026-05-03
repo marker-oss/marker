@@ -88,6 +88,37 @@
     (is (= [:wb]   (:marker/mp-filter (db))) "mp-filter updated to [:wb]")
     (is (= :pulse  (:marker/page (db)))      "page undisturbed")))
 
+(deftest set-mp-filter-normalization
+  (testing "all 3 marketplaces → stored as all 3 (canonical order)"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter [:wb :ozon :ym]])
+    (is (= [:wb :ozon :ym] (:marker/mp-filter (db))) "all 3 stored as-is"))
+
+  (testing "exactly 1 marketplace → stored as-is"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter [:ozon]])
+    (is (= [:ozon] (:marker/mp-filter (db))) "single :ozon preserved"))
+
+  (testing "2-element vector → snapped to all 3"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter [:wb :ozon]])
+    (is (= [:wb :ozon :ym] (:marker/mp-filter (db))) "[:wb :ozon] snapped to all 3"))
+
+  (testing "empty vector → snapped to all 3"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter []])
+    (is (= [:wb :ozon :ym] (:marker/mp-filter (db))) "[] snapped to all 3"))
+
+  (testing "unknown keyword filtered out, leaving 1 known → stored as-is"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter [:wb :foo]])
+    (is (= [:wb] (:marker/mp-filter (db))) "[:wb :foo] → :foo stripped → [:wb]"))
+
+  (testing "duplicate known keyword → deduped to 1 → stored as-is"
+    (rf/dispatch-sync [::events/initialize-db])
+    (rf/dispatch-sync [::events/set-mp-filter [:wb :wb]])
+    (is (= [:wb] (:marker/mp-filter (db))) "[:wb :wb] → deduped → [:wb]")))
+
 (deftest set-period-event
   (testing "set-period updates :marker/period without disturbing other keys"
     (rf/dispatch-sync [::events/initialize-db])
