@@ -78,7 +78,7 @@
 ;; Fixed "now" = 2026-05-15  (js/Date. 2026 4 15)  — month is 0-indexed so 4 = May
 ;; ---------------------------------------------------------------------------
 
-(def ^:private may-15 (js/Date. 2026 4 15))
+(def may-15 (js/Date. 2026 4 15))
 
 (deftest period-today
   (testing "Сегодня → same date for from and to"
@@ -114,6 +114,12 @@
   (testing "Этот квартал → Q2 starts Apr 1 when now is May 15"
     (let [p (#'api/period->params "Этот квартал" may-15)]
       (is (= {:from "2026-04-01" :to "2026-05-15"} p)))))
+
+(deftest period->params-this-quarter-q1
+  (testing "Этот квартал — January falls in Q1 starting Jan 1"
+    (let [jan-15 (js/Date. 2026 0 15)]
+      (is (= {:from "2026-01-01" :to "2026-01-15"}
+             (#'api/period->params "Этот квартал" jan-15))))))
 
 (deftest period-this-year
   (testing "Этот год → Jan 1 of current year to today"

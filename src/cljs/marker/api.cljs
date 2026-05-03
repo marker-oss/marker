@@ -50,9 +50,12 @@
          (if (< dy 10) (str "0" dy) dy))))
 
 (defn- days-ago
-  "Return a js/Date that is `n` days before `now`."
-  [^js now n]
-  (js/Date. (- (.getTime now) (* n 86400000))))
+  "Return a js/Date `n` calendar days before `now`. DST-safe — uses the Date
+   constructor's day-arithmetic, which works in calendar days, not milliseconds."
+  [^js/Date now n]
+  (js/Date. (.getFullYear now)
+            (.getMonth now)
+            (- (.getDate now) n)))
 
 (defn- period->params
   "Map a Russian period preset label (or YYYY-MM-DD,YYYY-MM-DD custom range)
@@ -61,11 +64,7 @@
   ([period] (period->params period (js/Date.)))
   ([period ^js now]
    (cond
-     ;; Custom range: \"YYYY-MM-DD,YYYY-MM-DD\"
-     (and (string? period)
-          (re-matches #"^\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}$" period))
-     (let [[from to] (clojure.string/split period #",")]
-       {:from from :to to})
+     (nil? period) {}
 
      (= period "Сегодня")
      (let [t (fmt-date now)]
@@ -103,6 +102,11 @@
      (= period "Этот год")
      {:from (fmt-date (js/Date. (.getFullYear now) 0 1))
       :to   (fmt-date now)}
+
+     ;; Custom range: "YYYY-MM-DD,YYYY-MM-DD" — checked last (regex is expensive)
+     (re-matches #"^\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}$" period)
+     (let [[from to] (clojure.string/split period #",")]
+       {:from from :to to})
 
      :else {})))
 
