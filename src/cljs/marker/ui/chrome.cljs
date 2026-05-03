@@ -1,12 +1,15 @@
 (ns marker.ui.chrome
   "App-shell chrome components — ported from chrome.jsx.
    Provides: NAV, Sidebar, Topbar, MpFilter, PeriodSelector,
-             SyncBanner, Sparkline, Delta, MpBadge.
+             SyncBanner, Sparkline, Delta, MpBadge,
+             Sheet, Modal, CmdK.
    Phase 4: :on-nav uses router/nav! for URL-driven navigation;
-            topbar gains :on-tweaks prop for the tweaks panel toggle."
+            topbar gains :on-tweaks prop for the tweaks panel toggle.
+   Phase 6: adds Sheet, Modal, CmdK global overlays."
   (:require [clojure.string :as str]
-            [uix.core :refer [$ defui use-state use-effect use-ref]]
-            [marker.ui.icons :refer [icon]]))
+            [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
+            [marker.ui.icons :refer [icon]]
+            [marker.mock     :as mock]))
 
 ;; ============= NAV constant =============
 
@@ -337,3 +340,181 @@
   [{:keys [mp]}]
   ($ :span {:class (str "mp-dot " (name mp))}
      (case mp :wb "W" :ozon "O" :ym "Y" "?")))
+
+;; ============= Sheet =============
+
+(defui sheet
+  "Fixed-position right slide-in panel.
+   Props: :open? (bool), :on-close (fn), :children (ReactNode).
+   Escape key calls on-close."
+  [{:keys [open? on-close children]}]
+  (use-effect
+   (fn []
+     (when open?
+       (let [on-key (fn [e]
+                      (when (= (.-key e) "Escape")
+                        (on-close)))]
+         (.addEventListener js/document "keydown" on-key)
+         #(.removeEventListener js/document "keydown" on-key))))
+   [open? on-close])
+  ($ :<>
+     ($ :div {:class    (str "sheet-backdrop" (when open? " open"))
+              :on-click on-close})
+     ($ :div {:class (str "sheet" (when open? " open"))}
+        (when open? children))))
+
+;; ============= Modal =============
+
+(defui modal
+  "Centered dialog overlay.
+   Props: :open? (bool), :on-close (fn), :children (ReactNode).
+   Escape key calls on-close; click on backdrop calls on-close."
+  [{:keys [open? on-close children]}]
+  (use-effect
+   (fn []
+     (when open?
+       (let [on-key (fn [e]
+                      (when (= (.-key e) "Escape")
+                        (on-close)))]
+         (.addEventListener js/document "keydown" on-key)
+         #(.removeEventListener js/document "keydown" on-key))))
+   [open? on-close])
+  ($ :div {:class    (str "modal-backdrop" (when open? " open"))
+           :on-click on-close}
+     ($ :div {:class    "modal"
+              :on-click #(.stopPropagation %)}
+        (when open? children))))
+
+;; ============= CmdK =============
+
+(def ^:private nav-items-flat
+  "Flattened NAV for search — parent items + children."
+  (into []
+        (mapcat (fn [n]
+                  (if (:children n)
+                    (cons n (:children n))
+                    [n])))
+        NAV))
+
+(defui cmdk
+  "Cmd+K command palette.
+   Props: :open? (bool), :on-close (fn), :on-nav (fn [page-id]).
+   Searches SKUs by id/name and nav items by label.
+   Arrow keys navigate, Enter selects, Escape closes."
+  [{:keys [open? on-close on-nav]}]
+  (let [input-ref            (use-ref nil)
+        [q set-q!]           (use-state "")
+        [sel-idx set-sel-idx!] (use-state 0)
+
+        results (use-memo
+                 (fn []
+                   (let [ql (.toLowerCase q)]
+                     {:sku-matches  (if (seq ql)
+                                      (->> mock/skus
+                                           (filter #(or (.includes (.toLowerCase (:id %)) ql)
+                                                        (.includes (.toLowerCase (:name %)) ql)))
+                                           (take 6)
+                                           vec)
+                                      (vec (take 6 mock/skus)))
+                      :nav-matches  (if (seq ql)
+                                      (->> nav-items-flat
+                                           (filter #(.includes (.toLowerCase (:label %)) ql))
+                                           (take 4)
+                                           vec)
+                                      [])}))
+                 [q])
+
+        all-items (into (:nav-matches results) (:sku-matches results))
+
+        ;; Focus input when opened; reset query on close
+        _ (use-effect
+           (fn []
+             (if open?
+               (js/setTimeout #(when @input-ref (.focus @input-ref)) 50)
+               (do (set-q! "") (set-sel-idx! 0)))
+             js/undefined)
+           [open?])
+
+        on-key-down (fn [e]
+                      (let [k (.-key e)]
+                        (cond
+                          (= k "ArrowDown")
+                          (do (.preventDefault e)
+                              (set-sel-idx! #(mod (inc %) (max 1 (count all-items)))))
+
+                          (= k "ArrowUp")
+                          (do (.preventDefault e)
+                              (set-sel-idx! #(mod (dec %) (max 1 (count all-items)))))
+
+                          (= k "Enter")
+                          (when-let [item (nth all-items sel-idx nil)]
+                            (.preventDefault e)
+                            ;; nav items have :id, sku items have :id too — disambiguate by :mp
+                            (if (:mp item)
+                              (do (on-nav "products") (on-close))
+                              (do (on-nav (:id item)) (on-close))))
+
+                          :else nil)))]
+
+    ($ modal {:open? open? :on-close on-close}
+       ($ :div {:class "cmdk"}
+          ;; Search row
+          ($ :div {:style {:display      "flex"
+                           :align-items  "center"
+                           :gap          "10px"
+                           :padding      "0 12px"
+                           :border-bottom "1px solid var(--color-border-subtle)"}}
+             ($ icon {:name :search :size 16
+                      :style {:color "var(--color-fg-muted)"}})
+             ($ :input {:ref          input-ref
+                        :class        "cmdk-input"
+                        :placeholder  "Поиск артикула, страницы, действия…"
+                        :value        q
+                        :on-change    #(do (set-q! (.. % -target -value))
+                                           (set-sel-idx! 0))
+                        :on-key-down  on-key-down})
+             ($ :kbd {:class "kbd"} "esc"))
+
+          ;; Results
+          ($ :div {:class "cmdk-results"}
+             ;; Nav section
+             (when (seq (:nav-matches results))
+               ($ :<>
+                  ($ :div {:class "cmdk-section-title"} "Навигация")
+                  (map-indexed
+                   (fn [i n]
+                     ($ :div {:key      (:id n)
+                              :class    (str "cmdk-item" (when (= i sel-idx) " is-selected"))
+                              :on-click (fn [] (on-nav (:id n)) (on-close))}
+                        ($ icon {:name  (or (:icon n) :arrow-right)
+                                 :size  14
+                                 :style {:color "var(--color-fg-muted)"}})
+                        (:label n)))
+                   (:nav-matches results))))
+
+             ;; SKUs section
+             ($ :div {:class "cmdk-section-title"} "Артикулы")
+             (map-indexed
+              (fn [i s]
+                (let [abs-i (+ (count (:nav-matches results)) i)]
+                  ($ :div {:key      (:id s)
+                           :class    (str "cmdk-item" (when (= abs-i sel-idx) " is-selected"))
+                           :on-click (fn [] (on-nav "products") (on-close))}
+                     ($ :span {:class "mono"
+                               :style {:color     "var(--color-fg-muted)"
+                                       :min-width "70px"}}
+                        (:id s))
+                     ($ :span {:style {:flex 1}} (:name s))
+                     ($ :div {:style {:display "flex" :gap "4px"}}
+                        (for [m (:mp s)]
+                          ($ :span {:key   (name m)
+                                    :class (str "mp-dot " (name m))}
+                             (-> m name first str .toUpperCase)))))))
+              (:sku-matches results)))
+
+          ;; Footer hints
+          ($ :div {:class "cmdk-foot"}
+             ($ :span ($ :kbd {:class "kbd"} "↑↓") " навигация")
+             ($ :span ($ :kbd {:class "kbd"} "↵") " открыть")
+             ($ :span ($ :kbd {:class "kbd"} "esc") " закрыть"))))))
+
