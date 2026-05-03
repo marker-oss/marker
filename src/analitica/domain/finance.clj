@@ -127,8 +127,13 @@
   [article lines storage-by-article]
   (let [sales-lines  (filter sale-row? lines)
         return-lines (filter return-row? lines)
+        ;; Linear in quantity: cost-per-unit × units. The previous
+        ;; `(max 1 (or quantity 1))` clamp silently overstated cogs by
+        ;; 30× for spread rows (quantity = 1/30 → floored to 1). It also
+        ;; charged a unit cost for service rows where quantity = 0/nil.
+        ;; See finance-cogs-test for regression coverage.
         total-cost   (reduce + 0.0
-                       (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
+                       (map #(* (line-cost %) (or (:quantity %) 0))
                             sales-lines))
         ;; First non-nil :marketplace wins; cross-MP article collisions
         ;; (rare but possible per Sales.7.3) collapse to whichever MP
