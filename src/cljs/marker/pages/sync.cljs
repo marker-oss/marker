@@ -451,6 +451,136 @@
                       ($ :span {:class "chip-value chip-absent"} "—"))))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Schedule helpers (pure, testable)
+;; ---------------------------------------------------------------------------
+
+(def ^:private valid-what-values
+  #{"sales" "orders" "finance" "storage" "stocks" "stats" "prices" "regions" "cashflow" "all"})
+
+(def ^:private valid-mp-values    #{"all" "wb" "ozon" "ym"})
+(def ^:private valid-period-values #{"last-week" "last-7-days" "last-30-days" "this-month"})
+
+(defn parse-schedule-payload
+  "Normalise a GET /api/sync/schedule response body.
+   Converts snake_case :next_run_at → :next-run-at and coerces types."
+  [body]
+  (when body
+    {:enabled     (boolean (:enabled body))
+     :hour        (or (:hour body) 6)
+     :minute      (or (:minute body) 0)
+     :what        (or (:what body) "all")
+     :marketplace (or (:marketplace body) "all")
+     :period      (or (:period body) "last-7-days")
+     :next-run-at (or (:next_run_at body) (:next-run-at body))}))
+
+(defn schedule-form->body
+  "Extract only the keys the POST /api/sync/schedule endpoint expects."
+  [form]
+  (select-keys form [:enabled :hour :minute :what :marketplace :period]))
+
+(defn validate-schedule-form
+  "Returns nil if valid; returns an error string describing the first problem."
+  [form]
+  (let [h (:hour form)
+        m (:minute form)]
+    (cond
+      (not (and (int? h) (<= 0 h 23)))  (str "Час должен быть от 0 до 23 (получено: " h ")")
+      (not (and (int? m) (<= 0 m 59)))  (str "Минута должна быть от 0 до 59 (получено: " m ")")
+      (not (valid-what-values    (:what form)))        "Недопустимое значение «что синкать»"
+      (not (valid-mp-values      (:marketplace form))) "Недопустимый маркетплейс"
+      (not (valid-period-values  (:period form)))      "Недопустимый период"
+      :else nil)))
+
+;; ---------------------------------------------------------------------------
+;; Schedule editor component
+;; ---------------------------------------------------------------------------
+
+(defui ^:private schedule-editor
+  [{:keys [schedule on-save loading? saving? save-error save-status]}]
+  (let [defaults {:enabled false :hour 6 :minute 0
+                  :what "all" :marketplace "all" :period "last-7-days"}
+        [form set-form!] (use-state (merge defaults (dissoc schedule :next-run-at)))
+        next-run        (:next-run-at schedule)
+        on-field        (fn [k v] (set-form! #(assoc % k v)))]
+    ($ :section {:class "card section-card"}
+       ($ :div {:class "section-head"}
+          ($ :h3 {:class "section-title"} "Расписание")
+          ($ :div {:class "section-subtitle"}
+             "Ежедневный автоматический sync."))
+
+       (when loading?
+         ($ :div {:style {:padding "16px"}}
+            (for [i (range 3)]
+              ($ :div {:key i :class "skel"
+                       :style {:height "20px" :margin-bottom "8px"
+                               :border-radius "var(--radius-sm)"}}))))
+
+       (when-not loading?
+         ($ :div {:style {:padding "0 16px 16px" :display "flex" :flex-direction "column" :gap "12px"}}
+
+            ;; Enabled toggle
+            ($ :label {:style {:display "flex" :align-items "center" :gap "8px"
+                                :font-size "14px" :cursor "pointer"}}
+               ($ :input {:type      "checkbox"
+                           :checked   (boolean (:enabled form))
+                           :on-change #(on-field :enabled (.. % -target -checked))})
+               "Включено")
+
+            ;; Time
+            ($ :div {:style {:display "flex" :align-items "center" :gap "6px"
+                              :font-size "14px"}}
+               ($ :span {:style {:color "var(--color-fg-muted)"}} "Время")
+               ($ :input {:type      "number" :min 0 :max 23 :value (:hour form)
+                           :style     {:width "56px" :text-align "center"}
+                           :on-change #(on-field :hour (js/parseInt (.. % -target -value) 10))})
+               ($ :span ":")
+               ($ :input {:type      "number" :min 0 :max 59 :value (:minute form)
+                           :style     {:width "56px" :text-align "center"}
+                           :on-change #(on-field :minute (js/parseInt (.. % -target -value) 10))}))
+
+            ;; What
+            ($ :div {:style {:display "flex" :align-items "center" :gap "8px" :font-size "14px"}}
+               ($ :span {:style {:color "var(--color-fg-muted)" :min-width "110px"}} "Что синкать")
+               ($ :select {:value (:what form) :on-change #(on-field :what (.. % -target -value))}
+                  (for [v ["all" "sales" "orders" "finance" "storage" "stocks"
+                            "stats" "prices" "regions" "cashflow"]]
+                    ($ :option {:key v :value v} v))))
+
+            ;; Marketplace
+            ($ :div {:style {:display "flex" :align-items "center" :gap "8px" :font-size "14px"}}
+               ($ :span {:style {:color "var(--color-fg-muted)" :min-width "110px"}} "Маркетплейс")
+               ($ :select {:value (:marketplace form) :on-change #(on-field :marketplace (.. % -target -value))}
+                  (for [v ["all" "wb" "ozon" "ym"]]
+                    ($ :option {:key v :value v} v))))
+
+            ;; Period
+            ($ :div {:style {:display "flex" :align-items "center" :gap "8px" :font-size "14px"}}
+               ($ :span {:style {:color "var(--color-fg-muted)" :min-width "110px"}} "Период")
+               ($ :select {:value (:period form) :on-change #(on-field :period (.. % -target -value))}
+                  (for [v ["last-week" "last-7-days" "last-30-days" "this-month"]]
+                    ($ :option {:key v :value v} v))))
+
+            ;; Next-run hint
+            (when (and (:enabled form) next-run)
+              ($ :div {:style {:font-size "13px" :color "var(--color-fg-muted)"}}
+                 "Следующий запуск: " next-run))
+
+            ;; Status / error feedback
+            (when (= save-status :saved)
+              ($ :div {:class "alert alert-success"}
+                 ($ :div {:class "alert-body"} "Расписание сохранено")))
+            (when save-error
+              ($ :div {:class "alert alert-danger"}
+                 ($ icon {:name :danger :class "alert-icon"})
+                 ($ :div {:class "alert-body"} save-error)))
+
+            ;; Save button
+            ($ :button {:class    (str "btn btn-primary" (when saving? " btn-disabled"))
+                        :disabled saving?
+                        :on-click #(on-save form)}
+               (if saving? "Сохраняем…" "Сохранить")))))))
+
+;; ---------------------------------------------------------------------------
 ;; Page root
 ;; ---------------------------------------------------------------------------
 
@@ -464,8 +594,48 @@
         [coverage  set-coverage!]  (use-state nil)
         [coverage-error  set-coverage-error!]  (use-state nil)
         [coverage-loading? set-coverage-loading!] (use-state false)
+        [schedule        set-schedule!]          (use-state nil)
+        [schedule-loading? set-schedule-loading!] (use-state false)
+        [schedule-saving?  set-schedule-saving!]  (use-state false)
+        [schedule-error    set-schedule-error!]   (use-state nil)
+        [schedule-status   set-schedule-status!]  (use-state nil)
         es-ref                    (use-ref nil)
         runs-timer-ref            (use-ref nil)
+
+        load-schedule!
+        (fn []
+          (set-schedule-loading! true)
+          (set-schedule-error! nil)
+          (fetch-json! "/api/sync/schedule"
+                       (fn [body]
+                         (set-schedule! (parse-schedule-payload body))
+                         (set-schedule-loading! false))
+                       (fn [msg]
+                         ;; 404 "schedule not initialized" → show form with defaults
+                         (set-schedule! (parse-schedule-payload nil))
+                         (set-schedule-loading! false)
+                         (when-not (str/includes? (or msg "") "not initialized")
+                           (set-schedule-error! msg)))))
+
+        save-schedule!
+        (fn [form]
+          (let [err (validate-schedule-form form)]
+            (if err
+              (set-schedule-error! err)
+              (do
+                (set-schedule-saving! true)
+                (set-schedule-error! nil)
+                (set-schedule-status! nil)
+                (post-json! "/api/sync/schedule"
+                            (schedule-form->body form)
+                            (fn [body]
+                              (set-schedule! (parse-schedule-payload body))
+                              (set-schedule-saving! false)
+                              (set-schedule-status! :saved)
+                              (js/setTimeout #(set-schedule-status! nil) 3000))
+                            (fn [msg]
+                              (set-schedule-saving! false)
+                              (set-schedule-error! msg)))))))
 
         load-coverage!
         (fn []
@@ -560,6 +730,7 @@
                           (set-last-status! (some-> first-run :status name)))))
                     nil)
        (load-coverage!)
+       (load-schedule!)
        (when running?
          (let [t (js/setInterval
                   #(fetch-json! "/api/sync/runs/recent"
@@ -587,6 +758,13 @@
             ($ :div {:class "alert-body"}
                ($ :div {:class "alert-title"} "Не удалось запустить sync")
                ($ :div start-err))))
+
+       ($ schedule-editor {:schedule      schedule
+                           :on-save        save-schedule!
+                           :loading?       schedule-loading?
+                           :saving?        schedule-saving?
+                           :save-error     schedule-error
+                           :save-status    schedule-status})
 
        ($ :section {:class "card section-card"}
           ($ :div {:class "section-head"}
