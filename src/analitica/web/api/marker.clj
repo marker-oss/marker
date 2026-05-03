@@ -312,16 +312,24 @@
           ;; single MP or nil (all)
           mp1        (when (and mps (= 1 (count mps))) (first mps))
 
-          ;; Current period data
+          ;; Current period data — same cf-adjustments treatment as
+          ;; pnl-handler so subscription, warehouse-movement, fines and
+          ;; the rest of the Ozon cash-flow service costs land on Pulse
+          ;; net-profit too. Without this Pulse silently overstated
+          ;; Ozon profit vs the canonical P&L tile.
           fin-cur    (load-finance period mp1)
           sales-cur  (load-sales  period mp1)
-          pnl-cur    (-> (compute-pnl fin-cur period mp1)
+          cf-adj-cur (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
+                          (catch Exception _ nil))
+          pnl-cur    (-> (compute-pnl fin-cur period mp1 cf-adj-cur)
                          (with-prelim period mp1))
 
           ;; Previous period
           fin-prev   (load-finance prev mp1)
           sales-prev (load-sales  prev mp1)
-          pnl-prev   (-> (compute-pnl fin-prev prev mp1)
+          cf-adj-prev (try (pnl/load-cf-adjustments (:from prev) (:to prev) mp1)
+                           (catch Exception _ nil))
+          pnl-prev   (-> (compute-pnl fin-prev prev mp1 cf-adj-prev)
                          (with-prelim prev mp1))
 
           ;; Sales aggregates
