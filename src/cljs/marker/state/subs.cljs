@@ -58,12 +58,17 @@
 (rf/reg-sub ::sku-list-loading?
   (fn [db _] (:marker/sku-list-loading? db)))
 
-;; Returns a map of {sku-id detail-map}.
-(rf/reg-sub ::sku-detail-data
-  (fn [db _] (:marker/sku-detail-data db)))
-
+;; Parameterized per-SKU subs — subscribe with [::sku-detail-loading? sku-id]
+;; and [::sku-detail-data sku-id].  This avoids the race condition where
+;; SKU A's response could clear a global loading flag while SKU B is still
+;; in-flight.
 (rf/reg-sub ::sku-detail-loading?
-  (fn [db _] (:marker/sku-detail-loading? db)))
+  (fn [db [_ sku-id]]
+    (get-in db [:marker/sku-detail-data sku-id :loading?] false)))
+
+(rf/reg-sub ::sku-detail-data
+  (fn [db [_ sku-id]]
+    (get-in db [:marker/sku-detail-data sku-id :data])))
 
 (rf/reg-sub ::api-errors
   (fn [db _] (:marker/api-errors db)))

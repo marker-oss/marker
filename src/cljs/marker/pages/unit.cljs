@@ -10,7 +10,7 @@
      would make the UI feel sluggish with no benefit, (c) server confirms
      the calculation silently in the background.
    - compute-unit-econ stays as the pure CLJS function used by unit_test.cljs."
-  (:require [uix.core :refer [$ defui use-state use-memo use-effect use-ref]]
+  (:require [uix.core :refer [$ defui use-state use-memo use-effect]]
             [re-frame.core :as rf]
             [marker.state.events :as events]
             [marker.ui.chrome   :refer [delta]]
@@ -98,23 +98,6 @@
     :val   (:ads params)
     :color "var(--chart-5)"}])
 
-;; ---------------------------------------------------------------------------
-;; Debounce helper — returns a stable debounced fn ref
-;; ---------------------------------------------------------------------------
-
-(defn- use-debounced-fn
-  "Returns a fn that, when called, cancels any pending call and schedules a
-   new one after `delay-ms` milliseconds."
-  [f delay-ms]
-  (let [timer-ref (use-ref nil)]
-    (fn [& args]
-      (when @timer-ref (js/clearTimeout @timer-ref))
-      (reset! timer-ref
-              (js/setTimeout
-               (fn []
-                 (reset! timer-ref nil)
-                 (apply f args))
-               delay-ms)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page component
@@ -135,19 +118,21 @@
         d-margin (- (:margin cur) (:margin base))
         d-roas   (- (:roas cur) (:roas base))
 
-        ;; Debounced server validation (300ms after slider settles)
-        send-to-server! (use-debounced-fn
-                         (fn [p]
-                           (rf/dispatch [::events/what-if-recalc p]))
-                         300)]
+]
 
-    ;; Fire server validation whenever params change (debounced).
-    ;; send-to-server! is in deps to satisfy UIx linter; it's stable in practice.
+    ;; Q1 + Q2: inline debounce — React-idiomatic shape.
+    ;; deps: only [params] — the timeout is created/cleared entirely inside this
+    ;; effect; there is no external fn ref to include.
+    ;; The cleanup fn (returned from the effect body) cancels the pending timer
+    ;; on every params change AND on component unmount, preventing spurious POSTs
+    ;; after the user navigates away from /app/unit.
     (use-effect
      (fn []
-       (send-to-server! params)
-       js/undefined)
-     [params send-to-server!])
+       (let [t (js/setTimeout
+                #(rf/dispatch [::events/what-if-recalc params])
+                300)]
+         (fn [] (js/clearTimeout t))))
+     [params])
 
     ($ :div {:class "page-content"}
        ($ :div {:class "grid-12"}

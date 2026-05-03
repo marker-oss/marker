@@ -274,6 +274,9 @@
   (str "/api/v1/marker/sku-detail/" (js/encodeURIComponent sku-id)))
 
 ;; Load detail for a single SKU. Cache key includes sku-id.
+;; Loading state is stored per-SKU inside :marker/sku-detail-data to avoid the
+;; race condition where SKU A's response clears a global flag while SKU B's
+;; request is still in-flight.
 (rf/reg-event-fx ::load-sku-detail
   (fn [{:keys [db]} [_ sku-id filter-state]]
     (let [fs   (or filter-state
@@ -284,10 +287,8 @@
           hit  (get-in db [:marker/cache ckey])
           url  (sku-detail-url sku-id)]
       (if hit
-        {:db (-> db
-                 (assoc-in [:marker/sku-detail-data sku-id] hit)
-                 (assoc :marker/sku-detail-loading? false))}
-        {:db         (assoc db :marker/sku-detail-loading? true)
+        {:db (assoc-in db [:marker/sku-detail-data sku-id] {:data hit :loading? false})}
+        {:db         (assoc-in db [:marker/sku-detail-data sku-id :loading?] true)
          :http-xhrio (api/get-xhrio
                        (api/build-url url (api/build-params fs))
                        [::sku-detail-loaded ckey sku-id]
@@ -296,13 +297,14 @@
 (rf/reg-event-db ::sku-detail-loaded
   (fn [db [_ ckey sku-id data]]
     (-> db
-        (assoc-in [:marker/sku-detail-data sku-id] data)
-        (assoc :marker/sku-detail-loading? false)
-        (assoc-in [:marker/cache ckey] data))))
+        (assoc-in [:marker/sku-detail-data sku-id] {:data data :loading? false})
+        (assoc-in [:marker/cache ckey] data)
+        ;; Q4: dissoc stale error entry so a successful retry clears the banner
+        (update :marker/api-errors dissoc (sku-detail-url sku-id)))))
 
 (rf/reg-event-fx ::sku-detail-load-failed
   (fn [{:keys [db]} [_ sku-id failure]]
-    {:db       (assoc db :marker/sku-detail-loading? false)
+    {:db       (assoc-in db [:marker/sku-detail-data sku-id :loading?] false)
      :dispatch [::api-error (sku-detail-url sku-id) failure]}))
 
 ;; ---------------------------------------------------------------------------

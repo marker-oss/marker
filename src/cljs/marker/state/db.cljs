@@ -23,8 +23,7 @@
    :marker/pnl-loading?      false
    :marker/sku-list-data     nil
    :marker/sku-list-loading? false
-   :marker/sku-detail-data   nil   ; map of {sku-id data}
-   :marker/sku-detail-loading? false
+   :marker/sku-detail-data   {}    ; map of {sku-id {:data <map> :loading? <bool>}}
 
    ;; Phase 8: cache — {[page mp-filter period compare] data-snapshot}
    :marker/cache             {}

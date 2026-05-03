@@ -23,6 +23,9 @@
   (let [ref  (use-ref nil)]
     (use-effect
      (fn []
+       ;; Q10: return the cleanup fn directly (no trailing js/undefined) so
+       ;; Chart.js is destroyed on unmount or when spark deps change, preventing
+       ;; "Canvas is already in use" warnings when the sheet is re-opened.
        (when @ref
          (let [data   (if (seq spark) spark [])
                labels (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05")
@@ -52,8 +55,8 @@
                                                                        :color "#94a3b8"
                                                                        :callback (fn [v] (fmt/format-short v))}
                                                            :beginAtZero true}}}})]
-           #(do (.destroy c))))
-       js/undefined)
+           ;; return cleanup fn — destroyed on unmount or deps change
+           #(.destroy c))))
      [spark])
     ($ :div {:style {:height "160px"}}
        ($ :canvas {:ref ref}))))
@@ -80,9 +83,10 @@
 
 (defui sku-sheet-content []
   (let [sheet-sku-id  (use-subscribe [::subs/sheet-sku])
-        all-detail    (use-subscribe [::subs/sku-detail-data])
-        loading?      (use-subscribe [::subs/sku-detail-loading?])
-        sku           (when sheet-sku-id (get all-detail sheet-sku-id))]
+        ;; Q3: parameterized per-SKU subs — loading? and sku-data are scoped to
+        ;; sheet-sku-id so SKU A's in-flight response never affects SKU B's state.
+        loading?      (use-subscribe [::subs/sku-detail-loading? sheet-sku-id])
+        sku           (use-subscribe [::subs/sku-detail-data sheet-sku-id])]
 
     (when sheet-sku-id
       (cond

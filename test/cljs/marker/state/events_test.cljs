@@ -250,5 +250,55 @@
     (is (false? (:marker/pnl-loading? (db)))         "pnl-loading? starts false")
     (is (nil?   (:marker/sku-list-data (db)))         "sku-list-data starts nil")
     (is (false? (:marker/sku-list-loading? (db)))     "sku-list-loading? starts false")
+    (is (= {}   (:marker/sku-detail-data (db)))       "sku-detail-data starts as empty map")
     (is (= {}   (:marker/cache (db)))                "cache starts as empty map")
     (is (= {}   (:marker/api-errors (db)))            "api-errors starts as empty map")))
+
+;; ---------------------------------------------------------------------------
+;; Phase 8: per-SKU loading state (Q3 shape)
+;; ---------------------------------------------------------------------------
+
+(deftest sku-detail-loaded-event
+  (testing "sku-detail-loaded writes per-SKU {:data ... :loading? false} shape and clears error"
+    (rf/dispatch-sync [::events/initialize-db])
+    ;; Seed a stale error entry (simulates a previous failure)
+    (swap! rf-db/app-db assoc-in
+           [:marker/api-errors "/api/v1/marker/sku-detail/ART-001"]
+           {:message "timeout" :status 0})
+    ;; Simulate the per-SKU loading flag being set
+    (swap! rf-db/app-db assoc-in [:marker/sku-detail-data "ART-001" :loading?] true)
+    (let [fake-data {:id "ART-001" :name "Товар 1" :kpis {} :revenue-30d []}
+          ckey      [:sku-detail "ART-001" [:wb :ozon :ym] "Последние 30 дней"]]
+      (rf/dispatch-sync [::events/sku-detail-loaded ckey "ART-001" fake-data])
+      ;; Q3: data stored under per-SKU key, not a global flag
+      (is (= fake-data (get-in (db) [:marker/sku-detail-data "ART-001" :data]))
+          "data written under per-SKU :data key")
+      (is (false? (get-in (db) [:marker/sku-detail-data "ART-001" :loading?]))
+          "per-SKU :loading? cleared to false")
+      (is (nil? (get-in (db) [:marker/api-errors "/api/v1/marker/sku-detail/ART-001"]))
+          "Q4: stale error entry dissoc'd on successful load"))))
+
+(deftest sku-detail-load-failed-event
+  (testing "sku-detail-load-failed sets per-SKU :loading? false"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc-in [:marker/sku-detail-data "ART-002" :loading?] true)
+    (let [failure {:status 503 :status-text "Service Unavailable" :response nil}]
+      (rf/dispatch-sync [::events/sku-detail-load-failed "ART-002" failure])
+      (is (false? (get-in (db) [:marker/sku-detail-data "ART-002" :loading?]))
+          "per-SKU :loading? cleared on failure"))))
+
+(deftest sku-detail-race-isolation
+  (testing "SKU A's loaded response does not affect SKU B's loading state"
+    (rf/dispatch-sync [::events/initialize-db])
+    ;; Simulate both A and B in-flight
+    (swap! rf-db/app-db assoc-in [:marker/sku-detail-data "ART-A" :loading?] true)
+    (swap! rf-db/app-db assoc-in [:marker/sku-detail-data "ART-B" :loading?] true)
+    ;; A's response arrives
+    (let [data-a {:id "ART-A" :name "Товар A"}
+          ckey   [:sku-detail "ART-A" [:wb :ozon :ym] "Последние 30 дней"]]
+      (rf/dispatch-sync [::events/sku-detail-loaded ckey "ART-A" data-a])
+      ;; A should be loaded, B should still be loading
+      (is (false? (get-in (db) [:marker/sku-detail-data "ART-A" :loading?]))
+          "ART-A :loading? cleared")
+      (is (true? (get-in (db) [:marker/sku-detail-data "ART-B" :loading?]))
+          "ART-B :loading? unaffected by ART-A response"))))
