@@ -46,7 +46,7 @@
                     :filename "f.csv" :notes ""}
           body #js {:imports #js [row]}
           m    (first (parse-imports-payload body))]
-      (is (keyword? (first (keys m))) "first key is a keyword")
+      (is (every? keyword? (keys m)) "all keys are keywords")
       (is (contains? m :id)           ":id key present")
       (is (contains? m :source)       ":source key present")
       (is (contains? m :loaded)       ":loaded key present"))))

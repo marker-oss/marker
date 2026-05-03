@@ -116,12 +116,7 @@
 
     (use-effect
      (fn []
-       (fetch-imports!
-        (fn [body]
-          (set-imports-error! nil)
-          (set-imports! (parse-imports-payload body)))
-        (fn [msg]
-          (set-imports-error! msg)))
+       (reload-imports!)
        js/undefined)
      [])
 
