@@ -39,6 +39,11 @@
    ;; {report-type bool}
    :marker/reports-loading?  {}
 
+   ;; Phase 3 (UI restructure): Chart.js datasets per report-type.
+   ;; {report-type {:labels [...] :datasets [...]}}
+   :marker/report-chart-data     {}
+   :marker/report-chart-loading? {}
+
    ;; Phase 2 (UI restructure): Stocks
    :marker/stocks-overview          nil
    :marker/stocks-overview-loading? false

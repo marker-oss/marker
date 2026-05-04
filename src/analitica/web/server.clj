@@ -1288,6 +1288,10 @@
   (GET "/api/v1/marker/stocks/article/:article" req
     (marker-api/stock-article-handler req))
 
+  ;; Phase 3 (UI restructure) — Chart.js data for Trends/Returns/Geo/ABC/etc.
+  (GET "/api/v1/marker/chart/:type" req
+    (marker-api/report-chart-handler req))
+
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).
   ;; Both /app and /app/<anything> serve the same tiny shell — reitit-frontend

@@ -23,6 +23,7 @@
             [analitica.util.period        :as period]
             [analitica.util.math          :as math]
             [analitica.db                 :as db]
+            [analitica.web.api.charts     :as charts]
             [analitica.web.api.report     :as report]
             [analitica.web.report-schemas :as rs]
             [clojure.string               :as str]))
@@ -1203,3 +1204,37 @@
         article (or (:article params) (get-in request [:path-params :article]))
         request' (assoc-in request [:params :article] article)]
     (reports-handler request')))
+
+(defn report-chart-handler
+  "Handler for GET /api/v1/marker/chart/:type
+   Query params: ?from=&to= (or omitted → last-30-days), ?mp=, ?compare=true.
+
+   Wraps `analitica.web.api.charts/report-chart-data` for the SPA so the
+   Динамика / Товары tabs can render Chart.js charts instead of (or
+   alongside) the schema-driven tables. The backend already produces
+   Chart.js-shaped {:labels [...] :datasets [...]} payloads."
+  [request]
+  (try
+    (let [params      (:params request)
+          type-str    (or (get-in request [:path-params :type])
+                          (:type params))
+          report-type (->report-type type-str)
+          period      (parse-period-params params)
+          mps         (parse-mp-param params)
+          mp1         (when (and mps (= 1 (count mps))) (first mps))
+          compare-kw  (if (compare? params) :prev :none)]
+      (cond
+        (nil? report-type)
+        {:status 400
+         :body   {:error (str "Unknown report type: "
+                              (or type-str "(missing)"))
+                  :known (mapv name (rs/all-report-types))}}
+
+        :else
+        {:status 200
+         :body   (charts/report-chart-data report-type period
+                                           :marketplace mp1
+                                           :compare     compare-kw)}))
+    (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))

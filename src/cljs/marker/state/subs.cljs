@@ -100,6 +100,15 @@
   (fn [db [_ report-type]]
     (get-in db [:marker/reports-loading? report-type] false)))
 
+;; Phase 3: chart datasets per report-type
+(rf/reg-sub ::report-chart-data
+  (fn [db [_ report-type]]
+    (get-in db [:marker/report-chart-data report-type])))
+
+(rf/reg-sub ::report-chart-loading?
+  (fn [db [_ report-type]]
+    (get-in db [:marker/report-chart-loading? report-type] false)))
+
 ;; ---------------------------------------------------------------------------
 ;; Phase 2: Stocks
 ;; ---------------------------------------------------------------------------

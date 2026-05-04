@@ -511,6 +511,48 @@
           [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
+;; Phase 3 (UI restructure): Chart.js dataset loader, keyed by report-type.
+;; Mirrors ::load-report shape so cache-keys, error-routing, and
+;; refresh-finished signalling stay consistent.
+;; ---------------------------------------------------------------------------
+
+(defn- chart-url [report-type]
+  (str "/api/v1/marker/chart/" (name report-type)))
+
+(rf/reg-event-fx ::load-report-chart
+  (fn [{:keys [db]} [_ report-type filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey [:report-chart report-type (vec (sort (:mp-filter fs)))
+                (:period fs) (:compare fs)]
+          hit  (get-in db [:marker/cache ckey])
+          url  (chart-url report-type)]
+      (if hit
+        {:db (-> db
+                 (assoc-in [:marker/report-chart-data    report-type] hit)
+                 (assoc-in [:marker/report-chart-loading? report-type] false))}
+        {:db         (assoc-in db [:marker/report-chart-loading? report-type] true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url url (api/build-params fs))
+                       [::report-chart-loaded ckey report-type]
+                       [::report-chart-failed report-type])}))))
+
+(rf/reg-event-db ::report-chart-loaded
+  (fn [db [_ ckey report-type data]]
+    (-> db
+        (assoc-in [:marker/report-chart-data     report-type] data)
+        (assoc-in [:marker/report-chart-loading? report-type] false)
+        (assoc-in [:marker/cache ckey] data)
+        (update :marker/api-errors dissoc (chart-url report-type)))))
+
+(rf/reg-event-fx ::report-chart-failed
+  (fn [{:keys [db]} [_ report-type failure]]
+    {:db       (assoc-in db [:marker/report-chart-loading? report-type] false)
+     :dispatch [::api-error (chart-url report-type) failure]}))
+
+;; ---------------------------------------------------------------------------
 ;; Phase 8: Sync / refresh — clear cache + reload current page
 ;; ---------------------------------------------------------------------------
 

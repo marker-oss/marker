@@ -6,7 +6,8 @@
 
    Pure UI: it knows nothing about the specifics of each report — all
    structure comes from the backend schema."
-  (:require [uix.core :refer [$ defui use-state use-memo use-effect]]
+  (:require ["chart.js/auto" :refer [Chart]]
+            [uix.core :refer [$ defui use-state use-memo use-effect use-ref]]
             [uix.re-frame :refer [use-subscribe]]
             [re-frame.core :as rf]
             [clojure.string :as str]
@@ -27,6 +28,23 @@
    :geo     "География"
    :trends  "Тренды"
    :losses  "Потери"})
+
+;; Phase 3: charts.clj/compute-report-chart implements these types.
+;; Other types (:geo, :losses) silently fall back to :table.
+(def ^:private chart-supported
+  #{:sales :finance :ue :pnl :abc :stock :returns :buyout :trends})
+
+;; Default chart kind per report-type — drives the Chart.js :type field.
+(def ^:private chart-kind
+  {:sales   "line"
+   :returns "line"
+   :buyout  "bar"
+   :abc     "bar"
+   :trends  "bar"
+   :ue      "bar"
+   :stock   "bar"
+   :finance "bar"
+   :pnl     "bar"})
 
 ;; ---------------------------------------------------------------------------
 ;; Cell formatting — schema column → rendered string
@@ -228,6 +246,61 @@
         ($ :div {:style {:font-size "13px"}}
            "Попробуйте изменить период или выбрать другой маркетплейс."))))
 
+;; ---------------------------------------------------------------------------
+;; Chart canvas — renders Chart.js from {:labels [...] :datasets [...]}
+;; ---------------------------------------------------------------------------
+
+(defui ^:private chart-canvas
+  "Render Chart.js bar/line for a {:labels :datasets} payload.
+   Destroys the chart on unmount or when data/kind change so re-renders
+   don't trigger «Canvas is already in use» warnings."
+  [{:keys [data kind]}]
+  (let [ref (use-ref nil)]
+    (use-effect
+     (fn []
+       (when (and @ref (seq (:datasets data)))
+         (let [c (Chart.
+                   @ref
+                   #js {:type    (or kind "bar")
+                        :data    (clj->js data)
+                        :options #js {:responsive          true
+                                       :maintainAspectRatio false
+                                       :plugins #js {:legend  #js {:display true
+                                                                   :position "top"
+                                                                   :labels #js {:font #js {:size 11 :family "Inter"}}}
+                                                     :tooltip #js {:backgroundColor "#0f172a"}}
+                                       :scales #js {:x #js {:grid  #js {:display false}
+                                                             :ticks #js {:font #js {:size 10 :family "Inter"}
+                                                                         :color "#94a3b8"
+                                                                         :maxTicksLimit 12}}
+                                                     :y #js {:grid  #js {:color "#f1f5f9"}
+                                                             :ticks #js {:font #js {:size 10 :family "Inter"}
+                                                                         :color "#94a3b8"}
+                                                             :beginAtZero true}}}})]
+           #(.destroy c))))
+     [data kind])
+    ($ :div {:style {:height "360px"}}
+       ($ :canvas {:ref ref}))))
+
+(defui ^:private view-toggle [{:keys [view on-change]}]
+  ($ :div {:class "row"
+           :style {:gap "4px"
+                   :padding "2px"
+                   :border "1px solid var(--color-border-subtle)"
+                   :border-radius "6px"}}
+     ($ :button {:class    (str "btn btn-sm "
+                                (if (= view :chart) "btn-secondary" "btn-ghost"))
+                 :on-click #(when (not= view :chart) (on-change :chart))
+                 :style    {:height "26px"}}
+        ($ icon {:name :pulse :size 14})
+        "График")
+     ($ :button {:class    (str "btn btn-sm "
+                                (if (= view :table) "btn-secondary" "btn-ghost"))
+                 :on-click #(when (not= view :table) (on-change :table))
+                 :style    {:height "26px"}}
+        ($ icon {:name :layout :size 14})
+        "Таблица")))
+
 (defui report
   "Generic report page. Pass :type as a keyword (e.g. :finance, :ue, :abc)."
   [{:keys [type]}]
@@ -238,12 +311,23 @@
         compare?    (use-subscribe [::subs/compare])
         data        (use-subscribe [::subs/report-data report-type])
         loading?    (use-subscribe [::subs/report-loading? report-type])
+        chart-data  (use-subscribe [::subs/report-chart-data report-type])
+        chart-loading? (use-subscribe [::subs/report-chart-loading? report-type])
         api-errors  (use-subscribe [::subs/api-errors])
         url         (str "/api/v1/marker/reports/" (name report-type))
         error-msg   (get-in api-errors [url :message])
         fs          {:mp-filter mps :period period :compare compare?}
+
+        ;; Phase 3: dual-mode view. Default :chart for chart-supported
+        ;; types; types that don't have a chart-builder go straight to
+        ;; :table and the toggle is hidden.
+        chart?         (contains? chart-supported report-type)
+        [view set-view!] (use-state (if chart? :chart :table))
         retry!      #(do (rf/dispatch [::events/clear-cache])
-                         (rf/dispatch [::events/load-report report-type fs]))
+                         (rf/dispatch [::events/load-report report-type fs])
+                         (when chart?
+                           (rf/dispatch [::events/load-report-chart
+                                         report-type fs])))
         article-click! (fn [art]
                          (when art
                            (rf/dispatch [::events/open-sheet-and-load (str art)])))]
@@ -252,8 +336,19 @@
      (fn []
        (rf/dispatch [::events/load-report report-type
                      {:mp-filter mps :period period :compare compare?}])
+       (when chart?
+         (rf/dispatch [::events/load-report-chart report-type
+                       {:mp-filter mps :period period :compare compare?}]))
        js/undefined)
-     [report-type mps period compare?])
+     [report-type mps period compare? chart?])
+
+    ;; If user switched away from a chart-supported type, snap view back to a sane default.
+    (use-effect
+     (fn []
+       (when (and (not chart?) (= view :chart))
+         (set-view! :table))
+       js/undefined)
+     [report-type chart?])
 
     (cond
       (and loading? (nil? data))
@@ -300,8 +395,29 @@
                       ($ :h3 {:class "section-title"} title)
                       ($ :div {:class "section-subtitle"}
                          (let [n (count rows)]
-                           (str n " " (fmt/plural-ru n "строка" "строки" "строк"))))))
-                ($ report-table {:columns          columns
-                                 :rows             rows
-                                 :compare-rows     compare-rows
-                                 :on-article-click article-click!}))))))))
+                           (str n " " (fmt/plural-ru n "строка" "строки" "строк")))))
+                   (when chart?
+                     ($ view-toggle {:view view :on-change set-view!})))
+                (cond
+                  ;; Chart view — only available for chart-supported types.
+                  (and chart? (= view :chart))
+                  (cond
+                    (and chart-loading? (nil? chart-data))
+                    ($ :div {:class "skel" :style {:height "360px"}})
+
+                    (or (nil? chart-data) (empty? (:datasets chart-data)))
+                    ($ :div {:style {:padding "32px" :text-align "center"
+                                      :color "var(--color-fg-muted)"
+                                      :font-size "13px"}}
+                       "Нет данных для графика. Переключитесь на «Таблицу» или измените период.")
+
+                    :else
+                    ($ chart-canvas {:data chart-data
+                                     :kind (get chart-kind report-type "bar")}))
+
+                  ;; Table view (default for unsupported types)
+                  :else
+                  ($ report-table {:columns          columns
+                                   :rows             rows
+                                   :compare-rows     compare-rows
+                                   :on-article-click article-click!})))))))))
