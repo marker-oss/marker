@@ -25,6 +25,7 @@
             [analitica.domain.preliminary :as prelim]
             [analitica.domain.sales    :as sales]
             [analitica.domain.stock    :as stock]
+            [analitica.util.math       :as math]
             [analitica.util.period     :as period]
             [analitica.web.components.pulse.ads-traffic     :as p-at]
             [analitica.web.components.pulse.custom          :as p-cust]
@@ -846,8 +847,7 @@
                               :clicks      (:clicks      ads-traffic-curr)
                               :ctr-pct     (:ctr-pct     ads-traffic-curr)
                               :cpc-rub     (:cpc-rub     ads-traffic-curr)
-                              :romi        (when (and (number? rev-curr) (number? ad-curr) (pos? ad-curr))
-                                             (/ rev-curr ad-curr))
+                              :romi        (math/romi rev-curr ad-curr)
                               :drr-pct     drr-curr}
            :custom           nil}]
     {:kpi     {:revenue          rev-curr

@@ -161,7 +161,9 @@
     (mapv #(double (get by-day % 0.0)) dates)))
 
 (defn- orders-spark
-  "30-element daily order count list for the period."
+  "30-element daily count of `sale`-type rows from the sales-data list.
+   Despite the historical name, this counts settled purchases (delivered
+   sales), not orders-placed. Use `orders-count-spark` for the latter."
   [sales-data from to]
   (let [by-day (->> sales-data
                     (filter #(= :sale (:type %)))
@@ -170,6 +172,29 @@
                                   (if (>= (count d) 10) (subs d 0 10) d))))
                     (into {} (map (fn [[d rows]] [d (count rows)]))))
         dates  (date-range-seq from to)]
+    (mapv #(long (get by-day % 0)) dates)))
+
+(defn- orders-count-spark
+  "30-element daily count of orders (from the `orders` table) for the
+   period. Distinct from `orders-spark` which counts settled sales rows.
+
+   `mp1` is the resolved single MP keyword (:wb / :ozon / :ym) when the
+   user filter narrowed to one, nil for all-MPs."
+  [from to mp1]
+  (let [mp-clause (cond
+                    (= :ozon mp1) " AND marketplace = 'ozon'"
+                    (= :wb   mp1) " AND marketplace = 'wb'"
+                    (= :ym   mp1) " AND marketplace = 'ym'"
+                    :else         "")
+        sql       (str "SELECT substr(date,1,10) AS day, COUNT(*) AS n
+                        FROM orders
+                        WHERE substr(date,1,10) BETWEEN ? AND ?"
+                       mp-clause
+                       " GROUP BY substr(date,1,10)")
+        rows      (try (db/query [sql from to])
+                       (catch Exception _ []))
+        by-day    (into {} (map (juxt :day :n) rows))
+        dates     (date-range-seq from to)]
     (mapv #(long (get by-day % 0)) dates)))
 
 ;; ---------------------------------------------------------------------------
@@ -298,15 +323,10 @@
     [movers fallers]))
 
 ;; ---------------------------------------------------------------------------
-;; Pure helpers for pulse-summary KPIs and charts
-;; (extracted so they're directly testable; see marker_test.clj)
+;; Pure helpers for pulse-summary charts (directly testable; see marker_test.clj)
+;; ROAS/ДРР/ROMI helpers live in analitica.util.math so they're shared with
+;; sku-list, what-if, and digest (they all need the same noise-floor).
 ;; ---------------------------------------------------------------------------
-
-(def ^:private ad-spend-threshold-rub
-  "Below this absolute ad-spend (₽) ROAS and ДРР become meaningless
-   (one stray ad-stats row of a few kopecks balloons ROAS into 7-digit
-   territory). Treat as «no ad data» and return nil so the UI shows «—»."
-  100.0)
 
 (defn- compute-mp-share
   "Build {:wb % :ozon % :ym %} percentages from a list of all-MP sales
@@ -352,22 +372,6 @@
   (if (and (pos? days-so-far) (pos? days-total))
     (math/round2 (* (/ (double revenue) days-so-far) days-total))
     0.0))
-
-(defn- compute-roas
-  "ROAS (revenue / ad-spend) as a float, or nil if ad-spend is below
-   the noise threshold. Display layer renders nil as «—»."
-  [revenue ad-spend]
-  (when (and (number? ad-spend) (>= ad-spend ad-spend-threshold-rub))
-    (math/round2 (/ (double (or revenue 0.0)) ad-spend))))
-
-(defn- compute-drr
-  "ДРР (ad-spend / revenue × 100) as a float, or nil when either side
-   is below threshold. Mirrors compute-roas so both KPIs vanish
-   together when ad data is meaningless."
-  [revenue ad-spend]
-  (when (and (number? ad-spend) (>= ad-spend ad-spend-threshold-rub)
-             (number? revenue) (pos? revenue))
-    (math/round2 (* 100.0 (/ ad-spend revenue)))))
 
 (defn pulse-summary
   "Handler for GET /api/v1/marker/pulse-summary"
@@ -436,8 +440,15 @@
                            vec)
 
           ;; Sparks
+          ;;   rev-spark    — daily revenue from sales (currency)
+          ;;   purch-spark  — daily settled-purchase count (sales rows of type :sale)
+          ;;   ord-spark    — daily orders count from the orders table
+          ;; The :orders and :purchases KPI cards each get their own spark
+          ;; — they are different counters and previously both received
+          ;; purch-spark, hiding the order-vs-purchase delta visually.
           rev-spark   (revenue-spark sales-cur from to)
-          ord-spark   (orders-spark  sales-cur from to)
+          purch-spark (orders-spark  sales-cur from to)
+          ord-spark   (orders-count-spark from to mp1)
 
           ;; Movers/fallers
           [movers fallers] (top-movers-fallers cur-by-art prev-by-art from to sales-cur)
@@ -531,7 +542,7 @@
                                      :spark     ord-spark}
                          :purchases {:value     purchases-cur
                                      :delta-pct (math/pct-delta purchases-cur purchases-prev)
-                                     :spark     ord-spark}
+                                     :spark     purch-spark}
                          :margin    {:value     (or (:margin-net pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
                                                   (or (:margin-net pnl-cur) 0.0)
@@ -545,10 +556,10 @@
                                                   (or (:buyout-rate pnl-cur) 0.0)
                                                   (or (:buyout-rate pnl-prev) 0.0))
                                      :spark     []}
-                         :roas      {:value     (compute-roas rev-cur ad-cur)
+                         :roas      {:value     (math/roas rev-cur ad-cur)
                                      :delta-pct nil
                                      :spark     []}
-                         :drr       {:value     (compute-drr rev-cur ad-cur)
+                         :drr       {:value     (math/drr rev-cur ad-cur)
                                      :delta-pct nil
                                      :spark     []}}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
@@ -743,8 +754,7 @@
                                               (max 1.0 for-pay))
                                   buyout    (math/percentage orders (+ orders returns))
                                   ads       (or (get ads-by-art art) 0.0)
-                                  roas      (when (pos? ads)
-                                              (math/round2 (/ (double rev) ads)))]
+                                  roas      (math/roas rev ads)]
                               {:id        art
                                :name      (or (:subject a) art)
                                :mp        [(keyword (or (:marketplace a) :wb))]
@@ -925,10 +935,9 @@
                          (math/round2 (* 100.0 (/ profit effective-rev)))
                          0.0)
 
-        ;; ROAS: revenue / ads spend
-        roas           (if (pos? ads)
-                         (math/round2 (/ effective-rev ads))
-                         nil)
+        ;; ROAS: revenue / ads spend (returns nil below noise threshold so
+        ;; calculator stays consistent with Pulse / sku-list display)
+        roas           (math/roas effective-rev ads)
 
         ;; Break-even price: solve effective-rev = total-costs when price = break-even
         ;; break-even = (cogs + logistics + ads) / (1 - commission_pct/100 - returns_pct/100)

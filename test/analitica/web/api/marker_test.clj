@@ -7,6 +7,7 @@
    the backend data is real and may shift."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.db :as db]
+            [analitica.util.math]
             [analitica.web.server :as server]
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.api.marker :as marker-api])
@@ -164,8 +165,10 @@
 (def ^:private compute-mp-share     #'marker-api/compute-mp-share)
 (def ^:private compute-orders-by-mp #'marker-api/compute-orders-by-mp)
 (def ^:private compute-projection   #'marker-api/compute-projection)
-(def ^:private compute-roas         #'marker-api/compute-roas)
-(def ^:private compute-drr          #'marker-api/compute-drr)
+;; ROAS / ДРР now live in analitica.util.math (shared with sku-list,
+;; what-if, and digest). Test the canonical implementation directly.
+(def ^:private compute-roas analitica.util.math/roas)
+(def ^:private compute-drr  analitica.util.math/drr)
 
 (deftest compute-mp-share-pure
   (testing "balanced 3-MP distribution"
