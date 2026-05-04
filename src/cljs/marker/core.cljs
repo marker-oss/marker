@@ -82,14 +82,37 @@
     :else
     ["Marker" (page-title-for page)]))
 
-(defn- page-subtitle-for [page]
+(def ^:private mp-display-names
+  {:wb   "Wildberries"
+   :ozon "Ozon"
+   :ym   "Yandex Market"})
+
+(defn- mp-subtitle
+  "Render MP filter as a human-readable phrase. Used by the Pulse
+   subtitle to make «который маркетплейс смотрим» обвязочным."
+  [mp-filter]
+  (cond
+    (or (nil? mp-filter)
+        (and (coll? mp-filter) (>= (count mp-filter) 3)))
+    "по всем маркетплейсам"
+
+    (and (coll? mp-filter) (= 1 (count mp-filter)))
+    (str "— " (get mp-display-names (first mp-filter) (name (first mp-filter))))
+
+    (keyword? mp-filter)
+    (str "— " (get mp-display-names mp-filter (name mp-filter)))
+
+    :else
+    "по всем маркетплейсам"))
+
+(defn- page-subtitle-for [page mp-filter]
   (case (page-section page)
     :finance  "Финансовая отчётность и юнит-экономика"
     :products "Товарный каталог, остатки и себестоимость"
     :dynamics "Динамика продаж, география и тренды"
-    :pulse    "Анализ данных по всем маркетплейсам"
+    :pulse    (str "Анализ данных " (mp-subtitle mp-filter))
     :sync     "Синхронизация с маркетплейсами"
-    "Анализ данных по всем маркетплейсам"))
+    (str "Анализ данных " (mp-subtitle mp-filter))))
 
 ;; ---------------------------------------------------------------------------
 ;; Root component
@@ -165,7 +188,7 @@
              ($ :div {:class "page-header"}
                 ($ :div
                    ($ :h1 {:class "page-title"} (page-title-for page))
-                   ($ :p {:class "page-subtitle"} (page-subtitle-for page)))
+                   ($ :p {:class "page-subtitle"} (page-subtitle-for page mps)))
                 ($ :div {:class "page-actions"}
                    ($ :button {:class "btn btn-secondary"}
                       ($ icon {:name :download :size 14})
