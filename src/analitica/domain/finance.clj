@@ -223,8 +223,14 @@
        (map (fn [[[article barcode] lines]]
               (let [sales-lines  (filter sale-row? lines)
                     return-lines (filter return-row? lines)
+                    ;; Linear in quantity: cost-per-unit × units. The previous
+                    ;; `(max 1 (or quantity 1))` clamp silently overstated cogs
+                    ;; by 30× for Ozon spread rows (quantity = 1/30 → floored
+                    ;; to 1) and fabricated cogs for service rows where
+                    ;; quantity = 0/nil. Mirrors the by-article fix in commit
+                    ;; 2f8bd50; see by-sku-cogs-* tests in finance-cogs-test.
                     total-cost   (reduce + 0.0
-                                   (map #(* (line-cost %) (max 1 (or (:quantity %) 1)))
+                                   (map #(* (line-cost %) (or (:quantity %) 0))
                                         sales-lines))]
                 {:article     article
                  :barcode     barcode
