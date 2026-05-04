@@ -88,12 +88,57 @@
          (is (< (Math/abs (- 200.0  (reduce + (map :mp-commission out)))) 0.01))
          (is (< (Math/abs (- 10.0   (reduce + (map :quantity out)))) 0.01))))))
 
-(deftest no-sales-coverage-keeps-original
-  (testing "If sales table has no rows for the SKU, the realization row
-            passes through unchanged (degraded behaviour, not a crash)"
+(deftest no-sales-coverage-spreads-flat
+  ;; D1 Phase D (was: no-sales-coverage-keeps-original).
+  ;; Previously a row with zero sales/orders coverage stayed month-stamped
+  ;; (event_date = date_from). That made every weekly UI slice except the
+  ;; first week of the month show 0 for these articles. Now we fall back
+  ;; to flat distribution so revenue at least shows up proportionally
+  ;; across the period — tagged event_date_source = 'flat' so audits can
+  ;; tell guess-distributed rows from real-coverage ones.
+  (testing "no coverage → flat spread across all days in [date-from..date-to]"
     (with-sales-rows []
-      #(let [out (od/redistribute-realization [realization-row])]
-         (is (= [realization-row] out))))))
+      (fn []
+        (let [out  (od/redistribute-realization [realization-row])
+              n    30 ;; April has 30 days
+              by-d (into {} (map (juxt :event-date identity) out))]
+          (testing "one child per day in the period"
+            (is (= n (count out))))
+          (testing "all tagged event_date_source = 'flat'"
+            (is (= #{"flat"} (set (map :event-date-source out)))))
+          (testing "sums preserved exactly"
+            (is (< (Math/abs (- 1000.0 (reduce + (map :retail-amount out)))) 0.01))
+            (is (< (Math/abs (- 800.0  (reduce + (map :for-pay out)))) 0.01))
+            (is (< (Math/abs (- 10.0   (reduce + (map :quantity out)))) 0.01)))
+          (testing "even distribution: each day ≈ total/N"
+            (let [d (by-d "2026-04-15")]
+              (is (some? d))
+              (is (< (Math/abs (- (/ 1000.0 n) (:retail-amount d))) 0.01))))
+          (testing "first and last day present"
+            (is (contains? by-d "2026-04-01"))
+            (is (contains? by-d "2026-04-30"))))))))
+
+(deftest sales-source-tagged-spread
+  ;; Sanity: real-coverage children keep the 'spread' tag (not 'flat').
+  (testing "sales-weight children tagged event_date_source = 'spread'"
+    (with-sales-rows
+      [{:day "2026-04-05" :rev 600.0}
+       {:day "2026-04-20" :rev 400.0}]
+      (fn []
+        (let [out (od/redistribute-realization [realization-row])]
+          (is (= #{"spread"} (set (map :event-date-source out)))))))))
+
+(deftest idempotency-skips-flat-tagged-rows
+  ;; If a row was previously flat-spread and re-fed through the spreader
+  ;; (e.g. rerun materialize-finance), it must NOT be re-spread.
+  (testing "row tagged event_date_source = 'flat' passes through untouched"
+    (with-sales-rows []
+      (fn []
+        (let [pre-flat (assoc realization-row
+                              :event-date-source "flat"
+                              :event-date "2026-04-12")
+              out      (od/redistribute-realization [pre-flat])]
+          (is (= [pre-flat] out)))))))
 
 (deftest unique-rrd-ids
   (testing "Each daily child gets a distinct rrd_id so PK collisions

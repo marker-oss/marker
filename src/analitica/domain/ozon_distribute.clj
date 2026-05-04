@@ -41,17 +41,23 @@
       (= "service" (:operation-kind row))
       (= :service  (:operation-kind row))))
 
+(defn- already-spread? [row]
+  ;; D1: 'spread' (real coverage) or 'flat' (no coverage, even-distributed)
+  ;; mean the row is already a daily child. Re-spreading it would explode
+  ;; rrd_ids and double-count.
+  (#{"spread" "flat"} (:event-date-source row)))
+
 (defn- spreadable-row?
   "An Ozon finance row whose event_date is artificially stamped at the
    start of the report month. Two flavours:
      - realization rows (sale/return) from /v2/finance/realization
      - orphan service rows from materialize-ozon-orphan-services!
 
-   Idempotency: rows already daily-spread (event_date_source = 'spread')
-   are skipped so respread-ozon-finance! can be re-run safely."
+   Idempotency: rows already daily-spread (event_date_source = 'spread'
+   or 'flat') are skipped so respread-ozon-finance! can be re-run safely."
   [row]
   (and (ozon? (:marketplace row))
-       (not= "spread" (:event-date-source row))
+       (not (already-spread? row))
        (or (realization? (:operation-subtype row))
            (service-op? row))))
 
@@ -62,6 +68,30 @@
    article-only weights query."
   [row]
   [(:article row) (:nm-id row) (:date-from row) (:date-to row)])
+
+(defn- enum-days
+  "Inclusive seq of YYYY-MM-DD strings from `from` to `to`.
+   Returns nil for degenerate input (unparseable date, from > to)."
+  [from to]
+  (try
+    (let [f    (java.time.LocalDate/parse from)
+          t    (java.time.LocalDate/parse to)
+          n    (.until f t java.time.temporal.ChronoUnit/DAYS)]
+      (when (>= n 0)
+        (mapv #(str (.plusDays f %)) (range (inc n)))))
+    (catch Throwable _ nil)))
+
+(defn- flat-weights
+  "Last-resort weights when the article has no posting/order coverage
+   in the window: distribute revenue evenly across every day in
+   [from..to]. Sums are still preserved (Σ weights = 1.0). Returns nil
+   for a degenerate period."
+  [from to]
+  (when-let [days (enum-days from to)]
+    (when (seq days)
+      (let [n (count days)
+            w (/ 1.0 n)]
+        (into {} (map (fn [d] [d w]) days))))))
 
 (defn- daily-sales-weights
   "Return {iso-day → weight} for an Ozon (article, sku?) between
@@ -78,8 +108,7 @@
      4. `orders` (article)             — fallback when sku missing.
 
    Returns nil if neither table has any matching rows in the window —
-   in that case `redistribute-realization` keeps the original month-
-   stamped row so its money isn't lost."
+   the caller (`daily-weights`) then falls back to flat distribution."
   [article sku from to]
   ;; Each entry: [base-select-with-WHERE, having-clause]. The body
   ;; appends optional SKU filter and the GROUP-BY/HAVING tail.
@@ -139,11 +168,24 @@
    :additional-payment :penalty :deduction :wb-reward
    :ad-cost])
 
+(defn- daily-weights
+  "Return [source weights] tuple where source ∈ {:sales :orders :flat},
+   distinguishing real coverage from last-resort flat distribution.
+   Returns nil only on a degenerate window (unparseable dates).
+
+   We don't preserve per-row source granularity (sales-by-sku vs
+   sales-by-article vs orders-by-*) — the audit only needs to tell
+   real coverage from synthesised."
+  [article sku from to]
+  (or (when-let [w (daily-sales-weights article sku from to)] [:spread w])
+      (when-let [w (flat-weights from to)]                    [:flat   w])))
+
 (defn- spread-row
   "Return seq of daily children for one realization row, scaled by
    `weights` ({day → factor}). Each child gets a unique rrd_id derived
-   from the original."
-  [row weights]
+   from the original. `tag` is the canonical event_date_source string
+   ('spread' for real coverage, 'flat' for even-distributed fallback)."
+  [row weights tag]
   (mapv (fn [[day factor]]
           (let [scale-num (fn [v]
                             (when (number? v) (* (double v) factor)))]
@@ -156,44 +198,49 @@
                 (assoc :event-date day
                        ;; Make rrd_id unique per child to avoid PK
                        ;; collisions if these rows are ever round-tripped
-                       ;; through the DB. The hash inputs match the
-                       ;; ingest convention plus the day.
+                       ;; through the DB. Tag goes into the hash so that
+                       ;; spread-vs-flat children of the same source row
+                       ;; never collide either.
                        :rrd-id (hash [:ozon-real-spread
-                                      (:rrd-id row) day])
+                                      (:rrd-id row) day tag])
                        ;; D1: tag children so the next pass through
                        ;; spreadable-row? skips them (idempotency) and
                        ;; downstream audits can distinguish raw event
-                       ;; dates from synthesised ones.
-                       :event-date-source "spread"))))
+                       ;; dates from synthesised ones — and within
+                       ;; synthesised, real coverage from flat guess.
+                       :event-date-source tag))))
         weights))
 
 (defn redistribute-realization
   "Pass `finance-data` through the spreader: replace each Ozon
-   realization or orphan-service row with N daily children weighted by
-   `sales` table coverage. Non-spreadable rows pass through unchanged.
+   realization or orphan-service row with N daily children. Children
+   are weighted by sales/orders coverage when available (tag = 'spread')
+   and even-distributed across the period otherwise (tag = 'flat').
+   Non-spreadable rows pass through unchanged.
 
-   Pure on the input vector; performs DB queries via
-   `daily-sales-weights` for (article, sku) lookups (cached per group).
-   The function name is kept for backward compatibility — semantics
-   widened in 2026-05 to cover orphan service rows too (Bug F)."
+   Pure on the input vector; performs DB queries via daily-weights
+   for (article, sku) lookups (cached per group). The function name is
+   kept for back-compat — semantics widened over time to cover orphan
+   services (Bug F) and flat fallback (D1 Phase D)."
   [finance-data]
   (let [cache (atom {})]
     (reduce
       (fn [acc row]
         (if-not (spreadable-row? row)
           (conj acc row)
-          (let [k (group-key row)
-                weights (or (get @cache k)
-                            (let [w (daily-sales-weights
-                                      (:article row)
-                                      (:nm-id row)
-                                      (:date-from row)
-                                      (:date-to row))]
-                              (swap! cache assoc k w)
-                              w))]
-            (if (seq weights)
-              (into acc (spread-row row weights))
-              ;; No sales coverage — keep original row
+          (let [k     (group-key row)
+                tw    (or (get @cache k)
+                          (let [pair (daily-weights
+                                       (:article row)
+                                       (:nm-id row)
+                                       (:date-from row)
+                                       (:date-to row))]
+                            (swap! cache assoc k pair)
+                            pair))
+                [tag weights] tw]
+            (if (and tag (seq weights))
+              (into acc (spread-row row weights (name tag)))
+              ;; Truly degenerate (unparseable period etc.) — keep as-is.
               (conj acc row)))))
       []
       finance-data)))

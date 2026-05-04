@@ -312,19 +312,24 @@
             (str "Sum preserved? got " sum-for-pay))))))
 
 (deftest materialize-ozon-finance-no-coverage-fallback
-  (testing "article without any sales/orders coverage stays month-stamped 'api'"
-    ;; No sales seeded for ART-NOCOVER.
+  ;; D1 Phase D semantics: no sales/orders coverage → flat distribution
+  ;; across all days in the realization period (was: keep month-stamped).
+  ;; Sums are still preserved; the 'flat' tag distinguishes guess-
+  ;; distributed rows from real-coverage 'spread' rows in audits.
+  (testing "article without sales/orders coverage flat-spreads across the period"
     (seed-realization-raw! "ART-NOCOVER" 99 "2026-04-01" "2026-04-30")
 
     (mat/materialize-finance! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
 
     (let [rows (ozon-finance-rows)]
-      (testing "single row preserved (fallback: no weights → keep month row)"
-        (is (= 1 (count rows))))
-      (testing "event_date stays at month-start"
-        (is (= "2026-04-01" (-> rows first :event-date))))
-      (testing "event_date_source = 'api' (raw, not spread)"
-        (is (= "api" (-> rows first :event-date-source)))))))
+      (testing "30 children, one per day"
+        (is (= 30 (count rows))))
+      (testing "event_date_source = 'flat' on every child"
+        (is (= #{"flat"} (set (map :event-date-source rows)))))
+      (testing "first and last day present"
+        (let [dates (set (map :event-date rows))]
+          (is (contains? dates "2026-04-01"))
+          (is (contains? dates "2026-04-30")))))))
 
 (deftest materialize-ozon-finance-respread-is-idempotent
   (testing "running materialize-finance twice produces the same row count"
@@ -341,3 +346,69 @@
         (testing "second run does not multiply rows"
           (is (= count-1 count-2)
               (str "First run: " count-1 " rows; second run: " count-2)))))))
+
+;; ---------------------------------------------------------------------------
+;; Ozon postings overlap dedup
+;;
+;; Production hit: 6 weekly Ozon raw postings batches with overlapping
+;; date ranges → mapcat over batches multiplies the same posting_number
+;; → ozon/->sales emits N copies of the same sale-id → INSERT OR REPLACE
+;; silently collapses N duplicates into 1 → 28% of postings vanish
+;; from the sales table. Fix: dedupe by posting_number before transform,
+;; keeping the latest-ingested copy.
+;; ---------------------------------------------------------------------------
+
+(defn- seed-postings-raw!
+  "Seed a raw_data postings batch with N postings."
+  [date-from date-to postings]
+  (db/insert-raw! :ozon :postings date-from date-to postings))
+
+(deftest materialize-ozon-sales-dedupes-overlapping-batches
+  (testing "same posting_number across overlapping batches counts ONCE"
+    (let [;; A delivered posting present in both batches.
+          shared {:posting_number "P-001"
+                  :status         "delivered"
+                  :in_process_at  "2026-04-10T10:00:00Z"
+                  :products       [{:offer_id "ART-A"
+                                    :sku      10
+                                    :quantity 1
+                                    :price    "100"}]
+                  :financial_data {:products [{:product_id 10
+                                               :payout 80}]}
+                  :analytics_data {:warehouse "WH" :region "RU"}}
+          batch-1-only {:posting_number "P-002"
+                        :status         "delivered"
+                        :in_process_at  "2026-04-12T10:00:00Z"
+                        :products       [{:offer_id "ART-B"
+                                          :sku      11
+                                          :quantity 1
+                                          :price    "200"}]
+                        :financial_data {:products [{:product_id 11
+                                                     :payout 160}]}
+                        :analytics_data {:warehouse "WH" :region "RU"}}
+          batch-2-only {:posting_number "P-003"
+                        :status         "delivered"
+                        :in_process_at  "2026-04-15T10:00:00Z"
+                        :products       [{:offer_id "ART-C"
+                                          :sku      12
+                                          :quantity 1
+                                          :price    "300"}]
+                        :financial_data {:products [{:product_id 12
+                                                     :payout 240}]}
+                        :analytics_data {:warehouse "WH" :region "RU"}}]
+      (seed-postings-raw! "2026-04-01" "2026-04-30" [shared batch-1-only])
+      (seed-postings-raw! "2026-04-13" "2026-04-30" [shared batch-2-only]))
+
+    (mat/materialize-sales! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+
+    (let [rows (db/query
+                 ["SELECT article, COUNT(*) AS n
+                   FROM sales WHERE marketplace = 'ozon'
+                   GROUP BY article ORDER BY article"])
+          total (reduce + 0 (map :n rows))]
+      (testing "shared posting written once, two batch-only postings each once"
+        (is (= 3 total)
+            (str "Expected 3 sales rows (1 shared + 2 unique). Got: " rows)))
+      (testing "all 3 articles present"
+        (is (= #{"ART-A" "ART-B" "ART-C"}
+               (set (map :article rows))))))))
