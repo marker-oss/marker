@@ -11,6 +11,37 @@
             [analitica.util.math :as math]))
 
 ;; ---------------------------------------------------------------------------
+;; H2 / Sales.3 hardening: revenue must NOT fall back to gross when for-pay
+;; is nil. Live data has for_pay 100% populated on WB/Ozon/YM, so the
+;; legacy coalesce chain (for-pay → price-with-disc → finished-price →
+;; total-price → 0) is dead code that would silently inflate revenue if a
+;; future API change ever drops the seller-payout field. Pin the strict
+;; behaviour: missing for-pay contributes 0 to revenue, not a gross
+;; surrogate.
+;; ---------------------------------------------------------------------------
+
+(deftest revenue-does-not-fall-back-to-gross-when-for-pay-nil
+  (let [rows [{:type :sale :article "X" :for-pay nil
+               :total-price 1000.0 :finished-price 950.0 :price-with-disc 920.0}]]
+    (testing "by-article: revenue = 0 when for-pay is nil (no gross fallback)"
+      (let [row (first (sales/by-article rows))]
+        (is (= 0.0 (:revenue row))
+            (str "Expected 0, got " (:revenue row)
+                 " — gross fallback resurfaced. Per canon Sales.3, "
+                 "missing for-pay is missing data, not a hidden 1000."))))
+    (testing "totals: total-revenue = 0 when for-pay is nil"
+      (let [t (sales/totals rows)]
+        (is (= 0.0 (:total-revenue t)))
+        (is (= 0.0 (:revenue t)))))))
+
+(deftest revenue-uses-for-pay-when-present
+  ;; Sanity: the strict path must still pick for-pay when populated.
+  (let [rows [{:type :sale :article "X" :for-pay 800.0 :total-price 1000.0}
+              {:type :sale :article "X" :for-pay 700.0 :total-price 900.0}]]
+    (let [row (first (sales/by-article rows))]
+      (is (= 1500.0 (:revenue row))))))
+
+;; ---------------------------------------------------------------------------
 ;; Shared fixture: 3 articles / 2 brands / 2 warehouses / 2 regions / 2+ days.
 ;;
 ;; Article A — 3 sales + 1 return  — "shirts", brand B1, warehouse Koledino,  region RU-MOW

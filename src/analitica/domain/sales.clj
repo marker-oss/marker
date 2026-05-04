@@ -72,19 +72,13 @@
                 {:group         k
                  :sales-count   (count sales)
                  :returns-count (count returns)
-                 ;; Coalesce revenue: WB fills :for-pay, Ozon fills only
-                 ;; :total-price (postings API doesn't return per-item payout),
-                 ;; YM may also be partial. Falling back keeps the column
-                 ;; meaningful across all 3 marketplaces.
-                 :revenue       (reduce +
-                                        0.0
-                                        (map (fn [s]
-                                               (or (:for-pay s)
-                                                   (:price-with-disc s)
-                                                   (:finished-price s)
-                                                   (:total-price s)
-                                                   0))
-                                             sales))
+                 ;; Canon Sales.3: revenue := SUM(for-pay) on sale rows.
+                 ;; Live data has for_pay 100% populated on WB / Ozon /
+                 ;; YM (Ozon postings transform writes the seller payout
+                 ;; from financial_data.products[].payout). Missing
+                 ;; for-pay is missing data, not a license to substitute
+                 ;; a gross figure — surfacing 0 makes the gap visible.
+                 :revenue       (reduce + 0.0 (map #(or (:for-pay %) 0) sales))
                  :avg-price     (math/round2
                                  (math/safe-div
                                   (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
@@ -131,17 +125,12 @@
 (defn totals
   "Period rollup. See docs/canonical-formulas.md §Sales.4 for the canonical formulas.
 
-   Revenue uses the same coalesce chain as `by-day` so Ozon (which fills only
-   :total-price in sales rows, not :for-pay) reports a non-zero gross figure."
+   Revenue is canonical Sales.3: SUM(for-pay) on sale rows. No gross
+   fallback — see by-article comment for the rationale."
   [sales-data]
-  (let [sales   (filter #(= :sale (:type %)) sales-data)
-        returns (filter #(= :return (:type %)) sales-data)
-        revenue-of (fn [s]
-                     (or (:for-pay s)
-                         (:price-with-disc s)
-                         (:finished-price s)
-                         (:total-price s)
-                         0))]
+  (let [sales      (filter #(= :sale (:type %)) sales-data)
+        returns    (filter #(= :return (:type %)) sales-data)
+        revenue-of (fn [s] (or (:for-pay s) 0))]
     {:total-sales    (count sales)
      :total-returns  (count returns)
      :sales-count    (count sales)
