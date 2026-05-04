@@ -158,6 +158,96 @@
       (is (= 2500 (:price (:body resp)))))))
 
 ;; ---------------------------------------------------------------------------
+;; B4. pulse-summary — pure helpers (no DB)
+;; ---------------------------------------------------------------------------
+
+(def ^:private compute-mp-share     #'marker-api/compute-mp-share)
+(def ^:private compute-orders-by-mp #'marker-api/compute-orders-by-mp)
+(def ^:private compute-projection   #'marker-api/compute-projection)
+(def ^:private compute-roas         #'marker-api/compute-roas)
+(def ^:private compute-drr          #'marker-api/compute-drr)
+
+(deftest compute-mp-share-pure
+  (testing "balanced 3-MP distribution"
+    (let [sales [{:type :sale :marketplace "wb"}
+                 {:type :sale :marketplace "wb"}
+                 {:type :sale :marketplace "ozon"}
+                 {:type :sale :marketplace "ym"}]
+          r     (compute-mp-share sales)]
+      (is (= 50.0 (:wb r)))
+      (is (= 25.0 (:ozon r)))
+      (is (= 25.0 (:ym r)))))
+  (testing "single-MP dataset always returns three keys"
+    (let [r (compute-mp-share [{:type :sale :marketplace "ozon"}
+                                {:type :sale :marketplace "ozon"}])]
+      (is (= 0.0   (:wb r)))
+      (is (= 100.0 (:ozon r)))
+      (is (= 0.0   (:ym r)))))
+  (testing "non-:sale rows ignored"
+    (let [r (compute-mp-share [{:type :sale   :marketplace "wb"}
+                                {:type :return :marketplace "wb"}
+                                {:type :return :marketplace "ozon"}])]
+      (is (= 100.0 (:wb r)))
+      (is (= 0.0   (:ozon r)))))
+  (testing "empty sales — all zeros (no NaN)"
+    (let [r (compute-mp-share [])]
+      (is (= 0.0 (:wb r)))
+      (is (= 0.0 (:ozon r)))
+      (is (= 0.0 (:ym r))))))
+
+(deftest compute-orders-by-mp-pure
+  (testing "always returns three keys with vector values"
+    (let [r (compute-orders-by-mp
+              [{:type :sale :marketplace :wb   :date "2026-04-01"}]
+              "2026-04-01" "2026-04-02")]
+      (is (vector? (:wb   r)))
+      (is (vector? (:ozon r)))
+      (is (vector? (:ym   r)))))
+  (testing "wb-only data populates :wb, leaves others empty (zero-valued vectors)"
+    (let [r (compute-orders-by-mp
+              [{:type :sale :marketplace :wb :date "2026-04-01"}
+               {:type :sale :marketplace :wb :date "2026-04-02"}]
+              "2026-04-01" "2026-04-02")]
+      (is (every? zero? (:ozon r)))
+      (is (every? zero? (:ym   r))))))
+
+(deftest compute-projection-pure
+  (testing "closed period (days-so-far = days-total) — projection equals revenue"
+    (is (= 1000.0 (compute-projection 1000.0 30 30))))
+  (testing "mid-period — pace × full-period"
+    ;; revenue 500 over 10 days → pace 50/day → projection = 50 × 30 = 1500
+    (is (= 1500.0 (compute-projection 500.0 10 30))))
+  (testing "zero days-so-far returns 0 (no division by zero)"
+    (is (= 0.0 (compute-projection 1000.0 0 30))))
+  (testing "zero days-total returns 0"
+    (is (= 0.0 (compute-projection 1000.0 10 0)))))
+
+(deftest compute-roas-threshold
+  (testing "above threshold returns ratio"
+    (is (= 5.0  (compute-roas 1000.0 200.0)))
+    (is (= 10.0 (compute-roas 5000.0 500.0))))
+  (testing "below threshold returns nil (avoids 0.25₽ overflow)"
+    (is (nil? (compute-roas 456397.0 0.25)))
+    (is (nil? (compute-roas 1000.0   0.0)))
+    (is (nil? (compute-roas 1000.0   50.0))))   ;; 50 < 100 threshold
+  (testing "exactly at threshold counts as valid"
+    (is (some? (compute-roas 1000.0 100.0))))
+  (testing "nil ad-spend returns nil"
+    (is (nil? (compute-roas 1000.0 nil)))))
+
+(deftest compute-drr-threshold
+  (testing "above threshold returns percent"
+    (is (= 20.0 (compute-drr 1000.0 200.0)))
+    (is (= 10.0 (compute-drr 5000.0 500.0))))
+  (testing "below threshold returns nil (avoids 0.0% rounding from 0.25₽)"
+    (is (nil? (compute-drr 456397.0 0.25)))
+    (is (nil? (compute-drr 1000.0   50.0))))
+  (testing "zero revenue returns nil"
+    (is (nil? (compute-drr 0.0   200.0))))
+  (testing "nil ad-spend returns nil"
+    (is (nil? (compute-drr 1000.0 nil)))))
+
+;; ---------------------------------------------------------------------------
 ;; B5. what-if-recalc — pinned numeric outputs (pure, no DB)
 ;; ---------------------------------------------------------------------------
 

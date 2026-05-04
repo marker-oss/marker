@@ -297,6 +297,78 @@
                         vec)]
     [movers fallers]))
 
+;; ---------------------------------------------------------------------------
+;; Pure helpers for pulse-summary KPIs and charts
+;; (extracted so they're directly testable; see marker_test.clj)
+;; ---------------------------------------------------------------------------
+
+(def ^:private ad-spend-threshold-rub
+  "Below this absolute ad-spend (₽) ROAS and ДРР become meaningless
+   (one stray ad-stats row of a few kopecks balloons ROAS into 7-digit
+   territory). Treat as «no ad data» and return nil so the UI shows «—»."
+  100.0)
+
+(defn- compute-mp-share
+  "Build {:wb % :ozon % :ym %} percentages from a list of all-MP sales
+   rows (regardless of any user-side MP filter). Always returns the
+   three keys; missing MPs read as 0.
+
+   This widget is structural — the donut shows where the seller's
+   revenue comes from across MPs. Independent of MP filter so the user
+   can see the full picture even when they've narrowed the rest of the
+   page to a single MP."
+  [all-sales-mp]
+  (let [by-mp (->> all-sales-mp
+                   (filter #(= :sale (:type %)))
+                   (group-by :marketplace)
+                   (into {} (map (fn [[mp rows]]
+                                   [(keyword (or mp "wb"))
+                                    (count rows)]))))
+        total (max 1 (reduce + 0 (vals by-mp)))]
+    {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
+     :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
+     :ym   (math/round2 (* 100.0 (/ (double (get by-mp :ym 0)) total)))}))
+
+(defn- compute-orders-by-mp
+  "Build {:wb [...] :ozon [...] :ym [...]} sparklines of daily order
+   counts per MP, computed on all-MP sales. Like compute-mp-share, this
+   chart is structural and independent of the user's MP filter."
+  [all-sales-mp from to]
+  {:wb   (orders-spark (filter #(= :wb   (:marketplace %)) all-sales-mp) from to)
+   :ozon (orders-spark (filter #(= :ozon (:marketplace %)) all-sales-mp) from to)
+   :ym   (orders-spark (filter #(= :ym   (:marketplace %)) all-sales-mp) from to)})
+
+(defn- compute-projection
+  "Forward-projection of revenue at current pace.
+
+     velocity   = revenue / days-so-far
+     projection = velocity * days-total
+
+   For closed periods (days-so-far == days-total) projection equals
+   revenue. Caller is responsible for choosing a revenue source that
+   matches the displayed Pulse KPI (otherwise projection drifts away
+   from the headline figure)."
+  [revenue days-so-far days-total]
+  (if (and (pos? days-so-far) (pos? days-total))
+    (math/round2 (* (/ (double revenue) days-so-far) days-total))
+    0.0))
+
+(defn- compute-roas
+  "ROAS (revenue / ad-spend) as a float, or nil if ad-spend is below
+   the noise threshold. Display layer renders nil as «—»."
+  [revenue ad-spend]
+  (when (and (number? ad-spend) (>= ad-spend ad-spend-threshold-rub))
+    (math/round2 (/ (double (or revenue 0.0)) ad-spend))))
+
+(defn- compute-drr
+  "ДРР (ad-spend / revenue × 100) as a float, or nil when either side
+   is below threshold. Mirrors compute-roas so both KPIs vanish
+   together when ad data is meaningless."
+  [revenue ad-spend]
+  (when (and (number? ad-spend) (>= ad-spend ad-spend-threshold-rub)
+             (number? revenue) (pos? revenue))
+    (math/round2 (* 100.0 (/ ad-spend revenue)))))
+
 (defn pulse-summary
   "Handler for GET /api/v1/marker/pulse-summary"
   [request]
@@ -374,42 +446,25 @@
           alert-list  (build-alerts stocks-wt cur-by-art prev-by-art pnl-cur pnl-prev
                                     buyout-cur sales-3d top-10)
 
-          ;; Forecast — use plan domain if available, else simple run-rate
-          ;; TODO: wire to domain.plan/run-rate once monthly plans exist in DB
+          ;; Forecast — use plan domain if available, else simple run-rate.
+          ;; TODO: wire to domain.plan/run-rate once monthly plans exist in DB.
+          ;; Velocity must use the SAME revenue source as the displayed
+          ;; Pulse KPI (rev-cur, defined below) so projection doesn't
+          ;; silently diverge from the headline figure. Computed after
+          ;; rev-cur is bound — see :forecast key in the response map.
           days-total  (period/days-between from to)
           days-so-far (let [today-str (period/format-date today-d)]
                         (if (<= (compare today-str to) 0)
-                          (period/days-between from (if (<= (compare today-str to) 0) today-str to))
+                          (period/days-between from today-str)
                           days-total))
-          ;; Velocity uses sales-table revenue (same source as the Pulse
-          ;; revenue KPI) so Ozon's pre-realization period still produces
-          ;; a meaningful projection.
-          velocity    (if (pos? days-so-far)
-                        (/ (double (or (:revenue sales-tots) 0.0)) days-so-far)
-                        0.0)
-          projection  (math/round2 (* velocity days-total))
 
-          ;; Fetch all-MP sales once; reused by both mp-share and orders-by-mp below.
-          all-sales-mp (when-not mp1 (load-sales period nil))
-
-          ;; MP share (orders by marketplace when no MP filter)
-          mp-share    (when-not mp1
-                        (let [by-mp (->> all-sales-mp
-                                         (filter #(= :sale (:type %)))
-                                         (group-by :marketplace)
-                                         (into {} (map (fn [[mp rows]]
-                                                         [(keyword (or mp "wb"))
-                                                          (count rows)]))))]
-                          (let [total (max 1 (reduce + 0 (vals by-mp)))]
-                            {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
-                             :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
-                             :ym   (math/round2 (* 100.0 (/ (double (get by-mp :ym 0)) total)))})))
-
-          ;; Orders by MP spark — reuse all-sales-mp, no second DB call
-          orders-by-mp (when-not mp1
-                         {:wb   (orders-spark (filter #(= :wb (:marketplace %)) all-sales-mp) from to)
-                          :ozon (orders-spark (filter #(= :ozon (:marketplace %)) all-sales-mp) from to)
-                          :ym   (orders-spark (filter #(= :ym (:marketplace %)) all-sales-mp) from to)})
+          ;; Fetch all-MP sales (no filter) once. Reused by mp-share and
+          ;; orders-by-mp — these widgets are structural ("where does my
+          ;; revenue come from across MPs") so they intentionally ignore
+          ;; the user-side MP filter and always show the full mix.
+          all-sales-mp (load-sales period nil)
+          mp-share     (compute-mp-share all-sales-mp)
+          orders-by-mp (compute-orders-by-mp all-sales-mp from to)
 
           ;; Revenue previous (compare mode)
           rev-prev-spark (when do-compare (revenue-spark sales-prev (:from prev) (:to prev)))
@@ -456,7 +511,17 @@
           ac-prev     (let [p (or (:avg-check pnl-prev) 0.0)]
                         (if (pos? p) p (or (:avg-price prev-tots) 0.0)))
           preliminary? (boolean (or (:preliminary? pnl-cur)
-                                    (:preliminary? pnl-prev)))]
+                                    (:preliminary? pnl-prev)))
+
+          ;; Projection uses the SAME revenue source as the KPI tile —
+          ;; otherwise the «Прогноз» line under the chart drifts away
+          ;; from the headline outage. Fixes Bug #3.
+          projection  (compute-projection rev-cur days-so-far days-total)
+
+          ;; Pulse ad-spend (canonical PnL). Below the noise threshold,
+          ;; ROAS/ДРР return nil → UI renders «—» (avoids 7-digit ROAS
+          ;; from 0.25 ₽ ad-stats artefacts; fixes Bugs #4+#5).
+          ad-cur      (or (:ad-spend pnl-cur) 0.0)]
 
       {:alerts          alert-list
        :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark)
@@ -480,27 +545,18 @@
                                                   (or (:buyout-rate pnl-cur) 0.0)
                                                   (or (:buyout-rate pnl-prev) 0.0))
                                      :spark     []}
-                         ;; ROAS: revenue / ad-spend (nil when no ad spend in period)
-                         :roas      {:value     (let [ad (or (:ad-spend pnl-cur) 0.0)]
-                                                  (if (pos? ad)
-                                                    (math/round2 (/ (double (or (:revenue pnl-cur) 0.0)) ad))
-                                                    nil))
+                         :roas      {:value     (compute-roas rev-cur ad-cur)
                                      :delta-pct nil
                                      :spark     []}
-                         ;; DRR: ad-spend / revenue * 100
-                         :drr       {:value     (let [rev (or (:revenue pnl-cur) 0.0)
-                                                       ad  (or (:ad-spend pnl-cur) 0.0)]
-                                                   (if (pos? rev)
-                                                     (math/round2 (* 100.0 (/ ad rev)))
-                                                     nil))
+                         :drr       {:value     (compute-drr rev-cur ad-cur)
                                      :delta-pct nil
                                      :spark     []}}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
                          :month-fact (math/round2 rev-cur)
                          :projection projection}
-       :charts          (cond-> {:revenue-30d    rev-spark
-                                 :orders-by-mp   (or orders-by-mp {:wb ord-spark :ozon [] :ym []})
-                                 :mp-share       (or mp-share {:wb 100.0 :ozon 0.0 :ym 0.0})}
+       :charts          (cond-> {:revenue-30d  rev-spark
+                                 :orders-by-mp orders-by-mp
+                                 :mp-share     mp-share}
                           do-compare (assoc :revenue-prev-30d (or rev-prev-spark [])))
        :top-movers      movers
        :top-fallers     fallers
