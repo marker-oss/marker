@@ -1,24 +1,27 @@
 (ns analitica.domain.sku
   "Per-SKU / per-article drill-down aggregator.
 
-  sku-summary pulls from sales + finance + cost_prices for a single
-  article over [from to]. Uses direct parameterised DB queries so only
-  one article's rows are loaded.
+  sku-summary derives quantitative + cogs/revenue/margin metrics from
+  the canonical finance table via finance/by-article (one article at a
+  time). The sales table is only used for the sparkline (daily revenue
+  by day) and recent-ops (operation log) — it has no quantity column
+  and would mis-count multi-unit Ozon postings.
 
   Returns:
     {:article        string
      :nm-id          integer-or-nil
-     :sales-count    int
-     :returns-count  int
-     :revenue        double   ; sum of for_pay on sale rows
-     :cogs           double   ; cost_price * sales-count
-     :margin-pct     double   ; (revenue - cogs) / revenue * 100, 0 if no revenue
-     :roi            double   ; revenue / cogs, 0 if no cogs
-     :daily-revenue  [{:date str :revenue double}]  ; one row per day
+     :sales-count    int       ; unit count, sum of finance.quantity on sale rows
+     :returns-count  int       ; unit count, sum of finance.quantity on return rows
+     :revenue        double    ; sum of finance.retail_amount on sale rows (gross retail)
+     :cogs           double    ; sum of cost_price × quantity on sale rows (linear)
+     :margin-pct     double    ; (revenue - cogs) / revenue * 100, 0 if no revenue
+     :roi            double    ; revenue / cogs, 0 if no cogs
+     :daily-revenue  [{:date str :revenue double}]  ; one row per day, sales-derived
      :recent-ops     [{:date str :type str :marketplace str :amount double}]}"
   (:require [analitica.db :as db]
             [clojure.string :as str]
-            [analitica.util.period :as period]))
+            [analitica.util.period :as period]
+            [analitica.domain.finance :as finance]))
 
 ;; ---------------------------------------------------------------------------
 ;; Helpers
@@ -54,13 +57,6 @@
                  " ORDER BY date DESC")]
            params))))
 
-(defn- fetch-cost-price
-  "Most recent cost_price for article. Returns nil if not found."
-  [article]
-  (first
-   (db/query ["SELECT cost_price FROM cost_prices WHERE article = ? LIMIT 1"
-               article])))
-
 (defn- fetch-daily-revenue
   "Daily revenue (sum of for_pay on sale rows) for article."
   [article from to marketplace]
@@ -88,23 +84,27 @@
    :recent-ops is sorted DESC by date (newest first, for the operations table)."
   [article from to & {:keys [marketplace]}]
   (let [[from' to']   (resolve-dates from to)
-        rows          (fetch-sales-rows article from' to' marketplace)
-        sales-rows    (filter #(= "sale"   (name (or (:type %) ""))) rows)
-        return-rows   (filter #(= "return" (name (or (:type %) ""))) rows)
-        sales-count   (count sales-rows)
-        returns-count (count return-rows)
-        revenue       (reduce + 0.0 (map #(or (:for-pay %) 0.0) sales-rows))
-        nm-id         (some :nm-id rows)
-        cp-row        (fetch-cost-price article)
-        cogs          (if cp-row
-                        (* (or (:cost-price cp-row) 0.0) sales-count)
-                        0.0)
+        ;; Finance-derived: cogs, revenue, qty.
+        ;; finance/by-article applies the canonical formulas (linear
+        ;; cogs scaling, gross retail revenue) and handles Ozon's
+        ;; daily-spread reconstruction transparently.
+        fin-rows      (->> (finance/fetch-finance {:from from' :to to'}
+                                                  :marketplace marketplace)
+                           (filterv #(= article (or (:article %) ""))))
+        agg           (first (finance/by-article fin-rows))
+        sales-count   (long (or (:sales-qty   agg) 0))
+        returns-count (long (or (:returns-qty agg) 0))
+        revenue       (or (:revenue    agg) 0.0)
+        cogs          (or (:total-cost agg) 0.0)
         margin-pct    (if (pos? revenue)
                         (* 100.0 (/ (- revenue cogs) revenue))
                         0.0)
         roi           (if (pos? cogs)
                         (/ revenue cogs)
                         0.0)
+        ;; Sales-derived: nm-id, sparkline, recent operation log.
+        rows          (fetch-sales-rows article from' to' marketplace)
+        nm-id         (some :nm-id rows)
         daily-raw     (fetch-daily-revenue article from' to' marketplace)
         daily-revenue (mapv (fn [r] {:date    (:day r)
                                      :revenue (or (:revenue r) 0.0)})
