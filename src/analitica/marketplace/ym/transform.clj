@@ -267,8 +267,8 @@
       :warehouse          (str (get wh :warehouseId))
       :quantity           qty
       :quantity-full      (fit-count stocks)
-      :in-way-to-client   nil
-      :in-way-from-client nil})))
+      :in-way-to          nil
+      :in-way-from        nil})))
 
 ;; ---------------------------------------------------------------------------
 ;; Finance from order-stats (primary source for YM commissions)

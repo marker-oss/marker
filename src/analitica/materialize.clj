@@ -3,6 +3,7 @@
    Works entirely offline — no API calls needed."
   (:require [analitica.db :as db]
             [analitica.domain.finance-row :as frow]
+            [analitica.schema.normalized.stocks :as stocks-schema]
             [analitica.sync :as sync]
             [analitica.marketplace.wb.transform :as wb-t]
             [analitica.marketplace.ozon.transform :as ozon-t]
@@ -24,6 +25,17 @@
       (println (str "  [finance-row validation] " source ": "
                     (count bad) "/" (count rows) " rows failed canonical contract"))
       (println (frow/summarize-bad bad)))
+    rows))
+
+(defn- log-bad-stocks-rows!
+  "Side-effecting: log any stocks rows that didn't match the canonical
+   StocksRow contract. Same persist-anyway policy as finance — raw_data
+   is the source of truth. Returns `rows` unchanged."
+  [rows source]
+  (let [{:keys [bad]} (stocks-schema/validate-rows rows)]
+    (when (seq bad)
+      (println (str "  [stocks-row validation] " source ": "
+                    (count bad) "/" (count rows) " rows failed canonical contract")))
     rows))
 
 ;; ---------------------------------------------------------------------------
@@ -575,7 +587,8 @@
                       (t/format-date (t/today)))]
     (when-let [raw-items (load-raw-exact source :stocks date)]
       (db/clear-marketplace-rows! :stocks marketplace)
-      (let [data (transform-stocks source raw-items)
+      (let [data (-> (transform-stocks source raw-items)
+                     (log-bad-stocks-rows! source))
             rows (mapv sync/stock->row data)
             cnt  (db/insert-batch! :stocks sync/stocks-columns rows)]
         (println (str "Materialized stocks: " cnt))

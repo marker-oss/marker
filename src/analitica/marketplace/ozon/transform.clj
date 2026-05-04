@@ -133,8 +133,8 @@
    :quantity-full      (some-> (get raw :free_to_sell_amount)
                                (+ (or (get raw :reserved_amount) 0)
                                   (or (get raw :promised_amount) 0)))
-   :in-way-to-client   nil
-   :in-way-from-client nil})
+   :in-way-to          nil
+   :in-way-from        nil})
 
 (defn ->stocks [raw-list]
   (mapv ->stock raw-list))

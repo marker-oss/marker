@@ -84,8 +84,8 @@
 (defn stock->row [s]
   [(:article s) (:nm-id s) (:barcode s) (:tech-size s)
    (:subject s) (:category s) (:brand s) (:warehouse s)
-   (:quantity s) (:quantity-full s) (:in-way-to-client s)
-   (:in-way-from-client s) (name (or (:marketplace s) :wb)) (now-str)])
+   (:quantity s) (:quantity-full s) (:in-way-to s)
+   (:in-way-from s) (name (or (:marketplace s) :wb)) (now-str)])
 
 (def stocks-columns
   [:article :nm_id :barcode :tech_size :subject :category :brand
