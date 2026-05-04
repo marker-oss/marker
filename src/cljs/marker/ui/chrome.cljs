@@ -11,7 +11,8 @@
             [marker.ui.icons :refer [icon]]
             [marker.mock     :as mock]
             [marker.api      :as api]
-            [marker.state.db :as db]))
+            [marker.state.db :as db]
+            [marker.util.nav :as nav]))
 
 ;; ============= NAV constant =============
 
@@ -487,12 +488,25 @@
 ;; ============= CmdK =============
 
 (def ^:private nav-items-flat
-  "Flattened NAV for search — parent items + children."
+  "Flattened NAV for cmdk search — each section expanded into the
+   parent entry plus one item per internal tab. Tab ids use the
+   sidebar/router convention `\"<section>/<tab>\"`."
   (into []
-        (mapcat (fn [n]
-                  (if (:children n)
-                    (cons n (:children n))
-                    [n])))
+        (mapcat
+         (fn [n]
+           (let [section-kw (keyword (:id n))
+                 tabs       (nav/section-tabs section-kw)
+                 base       {:id    (:id n)
+                             :label (:label n)
+                             :icon  (:icon n)}]
+             (if (seq tabs)
+               (cons base
+                     (mapv (fn [t]
+                             {:id    (str (:id n) "/" (name (:id t)))
+                              :label (str (:label n) " · " (:label t))
+                              :icon  (:icon n)})
+                           tabs))
+               [base]))))
         NAV))
 
 (defui cmdk
