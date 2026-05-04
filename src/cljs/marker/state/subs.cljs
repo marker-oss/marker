@@ -6,6 +6,21 @@
 (rf/reg-sub ::page
   (fn [db _] (:marker/page db)))
 
+;; Derived from ::page: section keyword (e.g. :finance) for any page
+;; shape; active-tab is non-nil only for [:section :tab] sectioned pages.
+(rf/reg-sub ::active-section
+  :<- [::page]
+  (fn [page _]
+    (cond
+      (vector? page) (first page)
+      :else          page)))
+
+(rf/reg-sub ::active-tab
+  :<- [::page]
+  (fn [page _]
+    (when (and (vector? page) (= 2 (count page)))
+      (second page))))
+
 (rf/reg-sub ::mp-filter
   (fn [db _] (:marker/mp-filter db)))
 
