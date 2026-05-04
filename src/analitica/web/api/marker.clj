@@ -606,6 +606,153 @@
       {:error (.getMessage e)})))
 
 ;; ---------------------------------------------------------------------------
+;; B1c. stocks-overview — by-warehouse + by-article + drilldown
+;; ---------------------------------------------------------------------------
+
+(defn- days->status
+  "Map days-of-cover to a status badge keyword consistent with the
+   critical-stocks alert thresholds."
+  [days]
+  (cond
+    (nil? days)  "ok"
+    (< days 7)   "danger"
+    (< days 14)  "warning"
+    :else        "success"))
+
+(defn- by-warehouse-rich
+  "Like stock/by-warehouse but also carries :in-way-to and :in-way-from
+   which the «Склады» page needs to surface transit pipeline."
+  [stocks]
+  (->> stocks
+       (group-by :warehouse)
+       (map (fn [[wh items]]
+              {:warehouse     (or wh "—")
+               :articles      (count (distinct (map :article items)))
+               :quantity      (reduce + 0 (map #(or (:quantity %) 0) items))
+               :quantity-full (reduce + 0 (map #(or (:quantity-full %) 0) items))
+               :in-way-to     (reduce + 0
+                                      (map #(or (:in-way-to %)
+                                                (:in-way-to-client %) 0)
+                                           items))
+               :in-way-from   (reduce + 0
+                                      (map #(or (:in-way-from %)
+                                                (:in-way-from-client %) 0)
+                                           items))}))
+       (sort-by (fn [r] (- (or (:quantity-full r) 0))))))
+
+(defn stocks-overview-handler
+  "Handler for GET /api/v1/marker/stocks/overview
+   Query params: ?mp=wb|ozon|ym|all, ?category=, ?brand=
+   Returns {:totals       {:quantity :quantity-full :in-way-to :in-way-from
+                            :warehouses :articles}
+            :by-warehouse [{:warehouse :articles :quantity :quantity-full
+                            :in-way-to :in-way-from}]
+            :by-article   [{:article :subject :quantity :quantity-full
+                            :in-way-to :in-way-from :warehouses
+                            :daily-rate :days :status}]}"
+  [{:keys [params]}]
+  (try
+    (let [mp-param (:mp params)
+          mps      (cond (or (nil? mp-param) (= mp-param "all")) nil
+                         :else (keyword mp-param))
+          category (:category params)
+          brand    (:brand params)
+          stocks-raw (stock/fetch-stocks :marketplace mps)
+          stocks    (cond->> stocks-raw
+                      category (filter #(= category (:category %)))
+                      brand    (filter #(= brand (:brand %))))
+
+          by-art  (stock/by-article stocks)
+          by-wh   (by-warehouse-rich stocks)
+
+          today    (java.time.LocalDate/now)
+          from-d   (.minusDays today 30)
+          sales    (try (sales/fetch-sales
+                          {:from (str from-d) :to (str today)}
+                          :marketplace mps)
+                        (catch Exception _ []))
+          enriched (try (stock/with-turnover by-art sales 30)
+                        (catch Exception _ by-art))
+          by-art*  (mapv (fn [r]
+                           (let [d (:days-left r)]
+                             {:article       (:article r)
+                              :subject       (:subject r)
+                              :quantity      (or (:quantity r) 0)
+                              :quantity-full (or (:quantity-full r) 0)
+                              :in-way-to     (or (:in-way-to r) 0)
+                              :in-way-from   (or (:in-way-from r) 0)
+                              :warehouses    (or (:warehouses r) 0)
+                              :daily-rate    (or (:daily-rate r) 0.0)
+                              :days          d
+                              :status        (days->status d)}))
+                         enriched)
+
+          totals  {:quantity      (reduce + 0 (map :quantity by-wh))
+                   :quantity-full (reduce + 0 (map :quantity-full by-wh))
+                   :in-way-to     (reduce + 0 (map :in-way-to by-wh))
+                   :in-way-from   (reduce + 0 (map :in-way-from by-wh))
+                   :warehouses    (count by-wh)
+                   :articles      (count by-art)}]
+      {:status 200
+       :body   {:totals       totals
+                :by-warehouse (vec by-wh)
+                :by-article   by-art*}})
+    (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))
+
+(defn stock-article-handler
+  "Handler for GET /api/v1/marker/stocks/article/:article
+   Query params: ?mp=wb|ozon|ym|all, ?from=, ?to=
+   Returns {:per-warehouse [{:warehouse :marketplace :quantity :quantity-full
+                              :in-way-to :in-way-from}]
+            :history       [{:date :quantity :in-way-to}]}"
+  [{:keys [params path-params]}]
+  (try
+    (let [article  (or (:article path-params) (:article params))
+          mp-param (:mp params)
+          mps      (cond (or (nil? mp-param) (= mp-param "all")) nil
+                         :else (keyword mp-param))
+          today    (java.time.LocalDate/now)
+          from-d   (.minusDays today 30)
+          from     (or (:from params) (str from-d))
+          to       (or (:to   params) (str today))
+
+          stocks   (->> (stock/fetch-stocks :marketplace mps)
+                        (filter #(= article (:article %))))
+          per-wh   (mapv (fn [s]
+                           {:warehouse     (:warehouse s)
+                            :marketplace   (:marketplace s)
+                            :quantity      (or (:quantity s) 0)
+                            :quantity-full (or (:quantity-full s) 0)
+                            :in-way-to     (or (:in-way-to s)
+                                              (:in-way-to-client s) 0)
+                            :in-way-from   (or (:in-way-from s)
+                                              (:in-way-from-client s) 0)})
+                         stocks)
+
+          history-raw (try (stock/fetch-history from to
+                                                :marketplace mps
+                                                :article article)
+                           (catch Exception _ []))
+          history (->> history-raw
+                       (group-by :snapshot-date)
+                       (mapv (fn [[d rows]]
+                               {:date      d
+                                :quantity  (reduce + 0 (map #(or (:quantity %) 0) rows))
+                                :in-way-to (reduce + 0 (map #(or (:in-way-to %)
+                                                                 (:in-way-to-client %) 0)
+                                                            rows))}))
+                       (sort-by :date)
+                       vec)]
+      {:status 200
+       :body   {:per-warehouse per-wh
+                :history       history}})
+    (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))
+
+;; ---------------------------------------------------------------------------
 ;; B2. pnl
 ;; ---------------------------------------------------------------------------
 

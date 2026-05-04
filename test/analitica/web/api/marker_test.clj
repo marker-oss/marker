@@ -251,6 +251,106 @@
     (is (nil? (compute-drr 1000.0 nil)))))
 
 ;; ---------------------------------------------------------------------------
+;; B4b. stocks-overview — pure shape via with-redefs (no live DB)
+;; ---------------------------------------------------------------------------
+
+(def ^:private fixture-stocks
+  [{:article "A1" :marketplace :wb   :warehouse "Коледино"
+    :quantity 10 :quantity-full 12 :in-way-to 0 :in-way-from 1
+    :subject "Кружка" :category "Дом" :brand "Acme"}
+   {:article "A1" :marketplace :wb   :warehouse "Электросталь"
+    :quantity 5  :quantity-full 5  :in-way-to 2 :in-way-from 0
+    :subject "Кружка" :category "Дом" :brand "Acme"}
+   {:article "A2" :marketplace :ozon :warehouse "Хоругвино"
+    :quantity 0  :quantity-full 0  :in-way-to 8 :in-way-from 0
+    :subject "Тарелка" :category "Дом" :brand "Acme"}])
+
+(deftest stocks-overview-shape
+  (with-redefs [analitica.domain.stock/fetch-stocks
+                (fn [& _] fixture-stocks)
+                analitica.domain.sales/fetch-sales (fn [& _] [])]
+    (let [resp (marker-api/stocks-overview-handler {:params {:mp "all"}})
+          body (:body resp)]
+      (testing "200 OK + canonical shape"
+        (is (= 200 (:status resp)))
+        (is (contains? body :totals))
+        (is (contains? body :by-warehouse))
+        (is (contains? body :by-article)))
+      (testing ":totals sums across warehouses"
+        (is (= 15 (get-in body [:totals :quantity])))
+        (is (= 17 (get-in body [:totals :quantity-full])))
+        (is (= 10 (get-in body [:totals :in-way-to])))
+        (is (= 1  (get-in body [:totals :in-way-from])))
+        (is (= 3  (get-in body [:totals :warehouses])))
+        (is (= 2  (get-in body [:totals :articles]))))
+      (testing ":by-warehouse rows carry the in-way columns Pulse needs"
+        (let [koledino (->> body :by-warehouse
+                             (filter #(= "Коледино" (:warehouse %)))
+                             first)]
+          (is (= 10 (:quantity koledino)))
+          (is (= 1  (:articles koledino)))
+          (is (= 0  (:in-way-to koledino)))
+          (is (= 1  (:in-way-from koledino)))))
+      (testing ":by-article carries status keyword string"
+        (let [a2 (->> body :by-article
+                       (filter #(= "A2" (:article %)))
+                       first)]
+          (is (contains? a2 :status))
+          (is (#{"ok" "danger" "warning" "success"} (:status a2))))))))
+
+(deftest stocks-overview-mp-filter
+  (testing ":mp=wb passes :marketplace :wb to fetch-stocks"
+    (let [calls (atom [])]
+      (with-redefs [analitica.domain.stock/fetch-stocks
+                    (fn [& kvs]
+                      (swap! calls conj (apply hash-map kvs))
+                      (filter #(= :wb (:marketplace %)) fixture-stocks))
+                    analitica.domain.sales/fetch-sales (fn [& _] [])]
+        (marker-api/stocks-overview-handler {:params {:mp "wb"}})
+        (is (= :wb (:marketplace (first @calls))))))))
+
+(deftest stock-article-detail-shape
+  (testing "per-article detail returns per-warehouse + history vectors"
+    (with-redefs [analitica.domain.stock/fetch-stocks
+                  (fn [& _] (filter #(= "A1" (:article %)) fixture-stocks))
+                  analitica.domain.stock/fetch-history
+                  (fn [_ _ & _]
+                    [{:snapshot-date "2026-04-01" :quantity 12 :in-way-to 0}
+                     {:snapshot-date "2026-04-15" :quantity 10 :in-way-to 2}
+                     {:snapshot-date "2026-04-15" :quantity 5  :in-way-to 0}])]
+      (let [resp (marker-api/stock-article-handler
+                   {:path-params {:article "A1"}
+                    :params      {:mp "wb"}})
+            body (:body resp)]
+        (is (= 200 (:status resp)))
+        (is (vector? (:per-warehouse body)))
+        (is (= 2 (count (:per-warehouse body))))
+        (let [koledino (->> body :per-warehouse
+                             (filter #(= "Коледино" (:warehouse %)))
+                             first)]
+          (is (= 10 (:quantity koledino)))
+          (is (= 0  (:in-way-to koledino))))
+        (testing ":history aggregates daily snapshots across warehouses"
+          (is (vector? (:history body)))
+          (is (= 2 (count (:history body))))
+          (let [d2 (->> body :history
+                         (filter #(= "2026-04-15" (:date %)))
+                         first)]
+            (is (= 15 (:quantity d2)))
+            (is (= 2  (:in-way-to d2)))))))))
+
+(deftest stock-article-handler-empty
+  (testing "unknown article returns empty arrays not 500"
+    (with-redefs [analitica.domain.stock/fetch-stocks (fn [& _] [])
+                  analitica.domain.stock/fetch-history (fn [_ _ & _] [])]
+      (let [resp (marker-api/stock-article-handler
+                   {:path-params {:article "ZZZ"}})
+            body (:body resp)]
+        (is (= 200 (:status resp)))
+        (is (= [] (:per-warehouse body)))
+        (is (= [] (:history body)))))))
+
+;; ---------------------------------------------------------------------------
 ;; B5. what-if-recalc — pinned numeric outputs (pure, no DB)
 ;; ---------------------------------------------------------------------------
 

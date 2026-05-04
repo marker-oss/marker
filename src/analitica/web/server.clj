@@ -1282,6 +1282,12 @@
   (GET "/api/v1/marker/reports/:type" req
     (marker-api/reports-handler req))
 
+  ;; Phase 2 (UI restructure) — Складs by-warehouse + per-article drilldown.
+  (GET "/api/v1/marker/stocks/overview" req
+    (marker-api/stocks-overview-handler req))
+  (GET "/api/v1/marker/stocks/article/:article" req
+    (marker-api/stock-article-handler req))
+
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA (ClojureScript). Compiled by shadow-cljs (npm run watch).
   ;; Both /app and /app/<anything> serve the same tiny shell — reitit-frontend
