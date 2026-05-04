@@ -87,7 +87,7 @@
                                      :articles articles
                                      :sort-key (if (= basis :article) :article :for-pay))
         rows     (->> by-art
-                      (map (fn [{:keys [sales-qty returns-qty revenue wb-reward wb-commission
+                      (map (fn [{:keys [sales-qty returns-qty revenue wb-reward
                                         acquiring logistics storage acceptance penalties
                                         deduction additional
                                         for-pay total-cost spp-amount] :as row}]
