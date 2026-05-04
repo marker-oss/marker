@@ -75,18 +75,18 @@
                     :db  (db-finance from to marketplace)
                     :api (proto/fetch-finance-report (get-mp marketplace) from to))]
     (cond->> rows
-      ;; Ozon's /v2/finance/realization is a month-level aggregate — every
-      ;; row carries event_date = start-of-month. Spread realization rows
-      ;; into daily children weighted by `sales` coverage so weekly slicing
-      ;; reflects the actual day-level revenue distribution. Sums are
-      ;; preserved exactly. See domain.ozon-distribute.
+      ;; Ozon spread has moved to write-time (D1, materialize.clj/
+      ;; respread-ozon-finance!) so daily children are already persisted
+      ;; with event_date_source = 'spread'. The read-side call below
+      ;; remains as a safety net for any month-stamped row that hasn't
+      ;; been re-materialized yet — spreadable-row? skips already-spread
+      ;; rows so it's a no-op for D1-migrated data.
       (or (nil? marketplace) (= :ozon marketplace))
       (ozon-distribute/redistribute-realization)
 
-      ;; After spread, drop any Ozon row whose (post-spread) event_date
-      ;; falls outside the requested window. Single-MP=:ozon: filter
-      ;; everything. All-MP (nil): filter ONLY Ozon rows — WB/YM came
-      ;; via event-date query so they're already in-window.
+      ;; Ozon overlap query can return rows whose event_date falls
+      ;; outside [from..to] (date_from..date_to is wider). Trim post-fetch
+      ;; so callers get exactly the requested window.
       (= :ozon marketplace)
       (filterv #(in-window? from to %))
 

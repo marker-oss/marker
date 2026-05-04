@@ -45,9 +45,13 @@
   "An Ozon finance row whose event_date is artificially stamped at the
    start of the report month. Two flavours:
      - realization rows (sale/return) from /v2/finance/realization
-     - orphan service rows from materialize-ozon-orphan-services!"
+     - orphan service rows from materialize-ozon-orphan-services!
+
+   Idempotency: rows already daily-spread (event_date_source = 'spread')
+   are skipped so respread-ozon-finance! can be re-run safely."
   [row]
   (and (ozon? (:marketplace row))
+       (not= "spread" (:event-date-source row))
        (or (realization? (:operation-subtype row))
            (service-op? row))))
 
@@ -155,7 +159,12 @@
                        ;; through the DB. The hash inputs match the
                        ;; ingest convention plus the day.
                        :rrd-id (hash [:ozon-real-spread
-                                      (:rrd-id row) day])))))
+                                      (:rrd-id row) day])
+                       ;; D1: tag children so the next pass through
+                       ;; spreadable-row? skips them (idempotency) and
+                       ;; downstream audits can distinguish raw event
+                       ;; dates from synthesised ones.
+                       :event-date-source "spread"))))
         weights))
 
 (defn redistribute-realization

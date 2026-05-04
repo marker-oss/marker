@@ -248,3 +248,96 @@
                          first :cnt)]
       (is (zero? count-rows)
           "orphan posting (no target finance-row) → no INSERT"))))
+
+;; ---------------------------------------------------------------------------
+;; D1 — write-time daily spread for Ozon realization rows.
+;;
+;; Before D1, materialize-ozon-finance-from-realization! wrote each
+;; realization row as a single month-stamped finance row. ozon-distribute
+;; spread it to days at READ time only (in fetch-finance). Any direct SQL
+;; — audit, future report, ad-hoc admin query — saw month-stamped data
+;; and silently undercounted weekly slices. After D1 the spread runs at
+;; write time as the final step of materialize-finance Ozon pipeline.
+;; ---------------------------------------------------------------------------
+
+(defn- seed-sale-row!
+  "Insert one row into the sales table at a specific day. Used to seed
+   spread weights for the Ozon spreader."
+  [{:keys [article sku date marketplace total-price]
+    :or   {marketplace :ozon
+           total-price 100.0}}]
+  (next.jdbc/execute!
+    (db/ds)
+    [(str "INSERT INTO sales (sale_id, date, article, nm_id, type, "
+          "total_price, marketplace) VALUES (?,?,?,?,?,?,?)")
+     (str (java.util.UUID/randomUUID)) date article sku "sale"
+     total-price (name marketplace)]))
+
+(defn- ozon-finance-rows []
+  (db/query
+    ["SELECT rrd_id, event_date, event_date_source, retail_amount,
+             for_pay, quantity, operation_subtype
+      FROM finance
+      WHERE marketplace = 'ozon'
+      ORDER BY event_date, rrd_id"]))
+
+(deftest materialize-ozon-finance-spreads-realization-on-write
+  (testing "month-stamped realization rows are spread to daily children at write time"
+    ;; Three days of sales activity for ART-A in April → spread weights.
+    (seed-sale-row! {:article "ART-A" :sku 10 :date "2026-04-05T10:00:00"
+                     :total-price 100.0})
+    (seed-sale-row! {:article "ART-A" :sku 10 :date "2026-04-15T10:00:00"
+                     :total-price 200.0})
+    (seed-sale-row! {:article "ART-A" :sku 10 :date "2026-04-25T10:00:00"
+                     :total-price 300.0})
+    ;; One realization batch covering the month.
+    (seed-realization-raw! "ART-A" 10 "2026-04-01" "2026-04-30")
+
+    (mat/materialize-finance! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+
+    (let [rows         (ozon-finance-rows)
+          dates        (set (map :event-date rows))
+          sources      (set (map :event-date-source rows))
+          sum-for-pay  (reduce + 0.0 (keep :for-pay rows))]
+      (testing "spread to 3 daily children (one per sales-day)"
+        (is (= 3 (count rows))
+            (str "Expected 3 rows, got " (count rows) ": "
+                 (mapv (juxt :event-date :event-date-source :for-pay) rows))))
+      (testing "event_date matches sales days, not month-start"
+        (is (= #{"2026-04-05" "2026-04-15" "2026-04-25"} dates)))
+      (testing "all daily children tagged event_date_source = 'spread'"
+        (is (= #{"spread"} sources)))
+      (testing "for_pay sum preserved (within rounding) — original was 500"
+        (is (< (Math/abs (- 500.0 sum-for-pay)) 1.0)
+            (str "Sum preserved? got " sum-for-pay))))))
+
+(deftest materialize-ozon-finance-no-coverage-fallback
+  (testing "article without any sales/orders coverage stays month-stamped 'api'"
+    ;; No sales seeded for ART-NOCOVER.
+    (seed-realization-raw! "ART-NOCOVER" 99 "2026-04-01" "2026-04-30")
+
+    (mat/materialize-finance! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+
+    (let [rows (ozon-finance-rows)]
+      (testing "single row preserved (fallback: no weights → keep month row)"
+        (is (= 1 (count rows))))
+      (testing "event_date stays at month-start"
+        (is (= "2026-04-01" (-> rows first :event-date))))
+      (testing "event_date_source = 'api' (raw, not spread)"
+        (is (= "api" (-> rows first :event-date-source)))))))
+
+(deftest materialize-ozon-finance-respread-is-idempotent
+  (testing "running materialize-finance twice produces the same row count"
+    (seed-sale-row! {:article "ART-IDEM" :sku 11 :date "2026-04-10T10:00:00"
+                     :total-price 100.0})
+    (seed-sale-row! {:article "ART-IDEM" :sku 11 :date "2026-04-20T10:00:00"
+                     :total-price 200.0})
+    (seed-realization-raw! "ART-IDEM" 11 "2026-04-01" "2026-04-30")
+
+    (mat/materialize-finance! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+    (let [count-1 (count (ozon-finance-rows))]
+      (mat/materialize-finance! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+      (let [count-2 (count (ozon-finance-rows))]
+        (testing "second run does not multiply rows"
+          (is (= count-1 count-2)
+              (str "First run: " count-1 " rows; second run: " count-2)))))))

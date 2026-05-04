@@ -3,6 +3,7 @@
    Works entirely offline — no API calls needed."
   (:require [analitica.db :as db]
             [analitica.domain.finance-row :as frow]
+            [analitica.domain.ozon-distribute :as ozon-distribute]
             [analitica.schema.normalized.stocks :as stocks-schema]
             [analitica.sync :as sync]
             [analitica.marketplace.wb.transform :as wb-t]
@@ -175,12 +176,67 @@
 (declare materialize-wb-ad-stats!)
 (declare materialize-wb-ad-cost!)
 
+(defn respread-ozon-finance!
+  "D1 step 4: read all currently-stored Ozon finance rows that overlap
+   [from..to], pass them through ozon-distribute/redistribute-realization,
+   and replace the originals with their daily children where spread fired.
+
+   Runs as the final step of the Ozon `materialize-finance!` pipeline so
+   that service-cost merges (step 2) and orphan-service inserts (step 3)
+   are also distributed across days, not concentrated on the single
+   pre-spread row. Idempotent: rows already tagged event_date_source =
+   'spread' are skipped by spreadable-row?, and pass through unchanged.
+
+   Returns the post-spread row count for the period."
+  [from to]
+  (let [;; Read every Ozon row whose period intersects the requested window.
+        ;; Deliberately wide (substring on date-from/date-to) so that month-
+        ;; aggregate realization rows show up regardless of day alignment.
+        rows         (db/query
+                       ["SELECT * FROM finance
+                         WHERE marketplace = 'ozon'
+                           AND substr(date_from, 1, 10) <= ?
+                           AND substr(date_to,   1, 10) >= ?"
+                        to from])
+        ;; DB uses snake_case, transform layer uses kebab — re-normalise
+        ;; here so spreadable-row? sees the canonical shape.
+        kebab-rows   (mapv (fn [r]
+                             (-> r
+                                 (assoc :event-date-source (:event-date-source r))
+                                 (assoc :date-from (:date-from r))
+                                 (assoc :date-to (:date-to r))
+                                 (assoc :rrd-id (:rrd-id r))
+                                 (assoc :marketplace (some-> (:marketplace r) keyword))
+                                 (assoc :operation-subtype (:operation-subtype r))
+                                 (assoc :nm-id (:nm-id r))))
+                           rows)
+        spread       (ozon-distribute/redistribute-realization kebab-rows)
+        ;; Was anything actually spread? If output count == input count
+        ;; AND every row is unchanged, we can skip the DELETE+INSERT.
+        any-changed? (or (not= (count spread) (count rows))
+                         (some #(= "spread" (:event-date-source %)) spread))]
+    (if-not any-changed?
+      0
+      ;; SQLite doesn't support nested transactions and `insert-batch!`
+      ;; opens its own with-transaction inside. Run DELETE then INSERT
+      ;; sequentially without an outer wrapper. A process crash between
+      ;; the two leaves the period empty for the next run, but raw_data
+      ;; is the source of truth — re-running materialize fully recovers.
+      (do
+        (db/execute! ["DELETE FROM finance
+                       WHERE marketplace = 'ozon'
+                         AND substr(date_from, 1, 10) <= ?
+                         AND substr(date_to,   1, 10) >= ?"
+                      to from])
+        (let [out-rows (mapv sync/finance->row spread)]
+          (db/insert-batch! :finance sync/finance-columns out-rows))))))
+
 (defn materialize-finance!
   [period & {:keys [marketplace] :or {marketplace :wb}}]
   (let [[from to] (resolve-period period)]
     (case marketplace
       :ozon
-      ;; Three-step Ozon pipeline (spec 003 US3B + T047 B-009 fix):
+      ;; Four-step Ozon pipeline (spec 003 US3B + T047 B-009 fix + D1):
       ;;   1. realization → finance rows (for-pay, retail, commission).
       ;;   2. transaction/list services[] merge → cost fields per article
       ;;      (UPDATE existing rows).
@@ -188,12 +244,18 @@
       ;;      without a sale-row in the realization window — closes SC-003
       ;;      reconciliation gap. Reuses :orphan-aggregates from step 2 to
       ;;      avoid recomputing.
+      ;;   4. respread-ozon-finance! (D1): replace month-stamped rows with
+      ;;      daily children using sales/orders coverage as weights so any
+      ;;      direct SQL on finance gets the daily breakdown, not the
+      ;;      monthly aggregate. Idempotent — re-runs are no-ops once rows
+      ;;      are tagged event_date_source = 'spread'.
       ;; Steps 2–3 are optional and silently no-op when no :transactions
       ;; raw_data exists for the period.
       (let [cnt (materialize-ozon-finance-from-realization! from to)]
         (when (seq (db/get-raw-range "ozon" :transactions from to))
           (let [{:keys [orphan-aggregates]} (materialize-ozon-services! [from to])]
             (materialize-ozon-orphan-services! [from to] orphan-aggregates)))
+        (respread-ozon-finance! from to)
         cnt)
 
       :wb

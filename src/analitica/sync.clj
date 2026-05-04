@@ -56,6 +56,10 @@
    ;; :operation-kind is a keyword in transform output; persist as string.
    (when-let [k (:operation-kind f)] (name k))
    (:operation-subtype f)
+   ;; D1: 'api' (raw event_date from API) or 'spread' (synthesised by
+   ;; ozon-distribute write-time daily spread). Defaults to 'api' so
+   ;; non-Ozon and pre-spread Ozon rows are correctly tagged.
+   (or (:event-date-source f) "api")
    (name (or (:marketplace f) :wb)) (now-str)])
 
 (def finance-columns
@@ -70,6 +74,7 @@
    :additional_payment :deduction :acquiring_fee
    :ad_cost
    :operation_kind :operation_subtype
+   :event_date_source
    :marketplace :synced_at])
 
 (defn storage->row [s]

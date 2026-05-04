@@ -587,6 +587,20 @@
         (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_finance_event_date
                             ON finance(marketplace, event_date)"])
         (println "Migration: finance.event_date column + index added")))
+    ;; D1 (2026-05-04): event_date_source distinguishes raw API event_date
+    ;; from one synthesised by ozon-distribute write-time spread. 'api' for
+    ;; values that came from the raw payload (or trivially from a daily
+    ;; transaction-list row); 'spread' for daily children produced by
+    ;; redistributing a month-stamped Ozon realization row. Used to (a)
+    ;; skip already-spread rows on respread, (b) audit how a row's date
+    ;; was derived.
+    (let [info        (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                     {:builder-fn rs/as-unqualified-maps})
+          has-source? (some #(= "event_date_source" (:name %)) info)]
+      (when-not has-source?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN event_date_source
+                            TEXT NOT NULL DEFAULT 'api'"])
+        (println "Migration: finance.event_date_source column added")))
     ;; Migrate cost_prices.characteristic: 1C characteristic string (size,
     ;; composition, etc.) retained per-barcode so future lookup fallbacks
     ;; can disambiguate variants. Empty for legacy rows; new imports fill
