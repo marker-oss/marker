@@ -30,15 +30,19 @@
          (mapv #(-> % (update :type keyword) (update :marketplace keyword))))))
 
 (defn fetch-sales
-  "Fetch sales for a period. Reads from DB by default, :source :api for live."
-  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  "Fetch sales for a period. Reads from DB by default, :source :api for live.
+   :marketplace defaults to nil (= all marketplaces). For the :api source
+   marketplace must be supplied explicitly — the protocol is per-MP."
+  [period & {:keys [marketplace source] :or {source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
       :db  (db-sales from to marketplace)
       :api (proto/fetch-sales (get-mp marketplace) from to))))
 
 (defn fetch-orders
-  [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
+  "Fetch orders for a period. :marketplace defaults to nil (= all marketplaces).
+   For the :api source marketplace must be supplied explicitly."
+  [period & {:keys [marketplace source] :or {source :db}}]
   (let [[from to] (resolve-dates period)]
     (case source
       :db  (let [mp-clause (when marketplace " AND marketplace = ?")

@@ -60,9 +60,9 @@
     by-art))
 
 (defn report
-  [period]
+  [period & {:keys [marketplace]}]
   (println "\nАнализ % выкупа...")
-  (let [data    (analyze period)
+  (let [data    (analyze period :marketplace marketplace)
         total-o (reduce + 0 (map :ordered data))
         total-b (reduce + 0 (map :bought data))
         total-r (reduce + 0 (map :returned data))

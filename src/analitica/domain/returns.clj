@@ -57,7 +57,7 @@
    Usage:
      (report :last-30-days)
      (report {:from \"2026-03-01\" :to \"2026-03-31\"})"
-  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  [period & {:keys [marketplace]}]
   (println "\nЗагрузка данных для анализа возвратов...")
   (let [data    (sales/fetch-sales period :marketplace marketplace)
         summary (totals data)]
