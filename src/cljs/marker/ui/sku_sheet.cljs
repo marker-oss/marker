@@ -9,7 +9,7 @@
             [re-frame.core :as rf]
             [marker.state.subs   :as subs]
             [marker.state.events :as events]
-            [marker.ui.chrome    :refer [delta mp-badge kpi-card]]
+            [marker.ui.chrome    :refer [delta mp-badge kpi-card sparkline]]
             [marker.ui.icons     :refer [icon]]
             [marker.util.format  :as fmt]))
 
@@ -86,7 +86,9 @@
         ;; Q3: parameterized per-SKU subs — loading? and sku-data are scoped to
         ;; sheet-sku-id so SKU A's in-flight response never affects SKU B's state.
         loading?      (use-subscribe [::subs/sku-detail-loading? sheet-sku-id])
-        sku           (use-subscribe [::subs/sku-detail-data sheet-sku-id])]
+        sku           (use-subscribe [::subs/sku-detail-data sheet-sku-id])
+        ;; Phase 2 (UI restructure): per-warehouse + history drilldown.
+        stock-detail  (use-subscribe [::subs/stock-article-data sheet-sku-id])]
 
     (when sheet-sku-id
       (cond
@@ -212,7 +214,52 @@
                                       ($ mp-badge {:mp (or mp :wb)})
                                       (.toUpperCase (name (or mp :wb)))))
                                 ($ :td {:class "num mono"} (fmt/format-int (safe-num stock)))
-                                ($ :td {:class "num mono"} (or days "—")))))))))
+                                ($ :td {:class "num mono"} (or days "—"))))))))
+
+                ;; Phase 2: per-warehouse breakdown + history.
+                ;; Lazy — only renders when /stocks/article has loaded for this SKU.
+                (let [per-wh  (or (:per-warehouse stock-detail) [])
+                      history (or (:history stock-detail) [])]
+                  (when (or (seq per-wh) (seq history))
+                    ($ :div {:class "card section-card"}
+                       ($ :div {:class "section-head"}
+                          ($ :h3 {:class "section-title" :style {:font-size "13px"}}
+                             "По складам"))
+                       (when (seq history)
+                         ($ :div {:style {:margin-bottom "10px"}}
+                            ($ sparkline {:data   (mapv (fn [r] (or (:quantity r) 0)) history)
+                                          :width  240
+                                          :height 32})
+                            ($ :div {:style {:font-size "11px"
+                                              :color "var(--color-fg-muted)"
+                                              :margin-top "4px"}}
+                               (str "История остатка: "
+                                    (count history) " "
+                                    (fmt/plural-ru (count history) "день" "дня" "дней")))))
+                       (when (seq per-wh)
+                         ($ :table {:class "tbl"}
+                            ($ :thead
+                               ($ :tr
+                                  ($ :th "Склад")
+                                  ($ :th "МП")
+                                  ($ :th {:class "num"} "Шт")
+                                  ($ :th {:class "num"} "Полный")
+                                  ($ :th {:class "num"} "В пути К")))
+                            ($ :tbody
+                               (for [{:keys [warehouse marketplace quantity quantity-full in-way-to]}
+                                     (sort-by #(- (or (:quantity-full %) 0)) per-wh)]
+                                 ($ :tr {:key (str warehouse "-" (name (or marketplace :wb)))}
+                                    ($ :td (or warehouse "—"))
+                                    ($ :td
+                                       ($ :span {:class "row"}
+                                          ($ mp-badge {:mp (or marketplace :wb)})
+                                          (.toUpperCase (name (or marketplace :wb)))))
+                                    ($ :td {:class "num mono"}
+                                       (fmt/format-int (safe-num quantity)))
+                                    ($ :td {:class "num mono"}
+                                       (fmt/format-int (safe-num quantity-full)))
+                                    ($ :td {:class "num mono"}
+                                       (fmt/format-int (safe-num in-way-to))))))))))))
 
              ;; Footer
              ($ :div {:class "sheet-foot"}

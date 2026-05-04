@@ -99,3 +99,21 @@
 (rf/reg-sub ::report-loading?
   (fn [db [_ report-type]]
     (get-in db [:marker/reports-loading? report-type] false)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2: Stocks
+;; ---------------------------------------------------------------------------
+
+(rf/reg-sub ::stocks-overview
+  (fn [db _] (:marker/stocks-overview db)))
+
+(rf/reg-sub ::stocks-overview-loading?
+  (fn [db _] (:marker/stocks-overview-loading? db)))
+
+(rf/reg-sub ::stock-article-data
+  (fn [db [_ article]]
+    (get-in db [:marker/stocks-article-data article :data])))
+
+(rf/reg-sub ::stock-article-loading?
+  (fn [db [_ article]]
+    (get-in db [:marker/stocks-article-data article :loading?] false)))

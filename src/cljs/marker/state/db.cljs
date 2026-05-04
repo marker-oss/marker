@@ -37,4 +37,10 @@
    ;; {report-type {:report-type kw :columns [...] :rows [...] :totals {} :schema {} :compare {}}}
    :marker/reports-data      {}
    ;; {report-type bool}
-   :marker/reports-loading?  {}})
+   :marker/reports-loading?  {}
+
+   ;; Phase 2 (UI restructure): Stocks
+   :marker/stocks-overview          nil
+   :marker/stocks-overview-loading? false
+   ;; {article-id {:loading? bool :data <map>}}
+   :marker/stocks-article-data      {}})

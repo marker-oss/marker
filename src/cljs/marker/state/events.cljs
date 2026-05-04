@@ -359,10 +359,14 @@
 ;; ---------------------------------------------------------------------------
 
 ;; Open the SKU sheet and load its data from the API.
+;; Phase 2 (UI restructure): also kicks off the per-warehouse stock
+;; drilldown so the sheet's «Остаток по складам» section can render
+;; without a second user action.
 (rf/reg-event-fx ::open-sheet-and-load
   (fn [{:keys [db]} [_ sku-id]]
-    {:db       (assoc db :marker/sheet-sku sku-id)
-     :dispatch [::load-sku-detail sku-id]}))
+    {:db (assoc db :marker/sheet-sku sku-id)
+     :fx [[:dispatch [::load-sku-detail sku-id]]
+          [:dispatch [::load-stock-article sku-id]]]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: what-if-recalc (POST) — used by unit page for server validation
@@ -394,6 +398,76 @@
   (fn [{:keys [db]} [_ failure]]
     {:db       db   ; silently log; UI is driven by client-side compute
      :dispatch [::api-error what-if-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2 (UI restructure): Stocks — by-warehouse + per-article drilldown
+;; Stocks are snapshots, not period-windowed; only :mp-filter applies.
+;; ---------------------------------------------------------------------------
+
+(def ^:private stocks-overview-url "/api/v1/marker/stocks/overview")
+
+(defn- stock-article-url [article]
+  (str "/api/v1/marker/stocks/article/" (js/encodeURIComponent article)))
+
+(defn- stocks-params
+  "Stocks endpoints accept :mp only. mp-filter is a vec of keywords from
+   app-db; collapse to «wb»/«ozon»/«ym»/«all»."
+  [mp-filter]
+  (let [mp (api/mp-param mp-filter)]
+    (cond-> {}
+      mp (assoc :mp mp))))
+
+(rf/reg-event-fx ::load-stocks-overview
+  (fn [{:keys [db]} _]
+    (let [mp-filter (:marker/mp-filter db)
+          ckey      [:stocks/overview (api/mp-param mp-filter)]
+          hit       (get-in db [:marker/cache ckey])]
+      (if hit
+        {:db (assoc db
+                    :marker/stocks-overview         hit
+                    :marker/stocks-overview-loading? false)}
+        {:db         (assoc db :marker/stocks-overview-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url stocks-overview-url
+                                       (stocks-params mp-filter))
+                       [::stocks-overview-loaded ckey]
+                       [::stocks-overview-failed])}))))
+
+(rf/reg-event-fx ::stocks-overview-loaded
+  (fn [{:keys [db]} [_ ckey data]]
+    {:db (-> db
+             (assoc :marker/stocks-overview         data
+                    :marker/stocks-overview-loading? false)
+             (assoc-in [:marker/cache ckey] data)
+             (update :marker/api-errors dissoc stocks-overview-url))}))
+
+(rf/reg-event-fx ::stocks-overview-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/stocks-overview-loading? false)
+     :dispatch [::api-error stocks-overview-url failure]}))
+
+;; Per-article drilldown — keyed by article id so multiple sheet opens
+;; don't race on a global :loading? flag (mirrors sku-detail pattern).
+(rf/reg-event-fx ::load-stock-article
+  (fn [{:keys [db]} [_ article]]
+    (let [mp-filter (:marker/mp-filter db)
+          url       (stock-article-url article)]
+      {:db         (assoc-in db [:marker/stocks-article-data article :loading?] true)
+       :http-xhrio (api/get-xhrio
+                     (api/build-url url (stocks-params mp-filter))
+                     [::stock-article-loaded article]
+                     [::stock-article-failed article url])})))
+
+(rf/reg-event-db ::stock-article-loaded
+  (fn [db [_ article data]]
+    (-> db
+        (assoc-in [:marker/stocks-article-data article :loading?] false)
+        (assoc-in [:marker/stocks-article-data article :data] data))))
+
+(rf/reg-event-fx ::stock-article-failed
+  (fn [{:keys [db]} [_ article url failure]]
+    {:db       (assoc-in db [:marker/stocks-article-data article :loading?] false)
+     :dispatch [::api-error url failure]}))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 9: Generic reports loader — keyed by report-type

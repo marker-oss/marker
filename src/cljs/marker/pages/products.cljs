@@ -10,7 +10,8 @@
             [marker.ui.chrome          :refer [tabs]]
             [marker.util.nav           :as nav]
             [marker.router             :as router]
-            [marker.pages.products.skus :as skus]
+            [marker.pages.products.skus   :as skus]
+            [marker.pages.products.stocks :as stocks]
             [marker.pages.cost-prices  :as cost-prices]
             [marker.pages.reports      :as reports]))
 
@@ -35,7 +36,7 @@
                 :on-change (fn [t] (router/nav! [:products t]))})
        (case active
          :skus        ($ skus/skus {})
-         :stocks      ($ placeholder-tab {:title "Склады"})
+         :stocks      ($ stocks/stocks {})
          :abc         ($ reports/report {:type :abc})
          :cost-prices ($ cost-prices/cost-prices {})
          :storage     ($ placeholder-tab {:title "Хранение"})
