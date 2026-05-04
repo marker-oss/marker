@@ -1217,7 +1217,8 @@
     (let [sched (sync-scheduler/get-schedule)]
       (if sched
         {:status 200 :body sched}
-        {:status 404 :body {:error "schedule not initialized"}})))
+        {:status 404 :body {:error      "schedule not initialized"
+                            :error-code "not-initialized"}})))
 
   (POST "/api/sync/schedule" {body :body params :params}
     (let [body-str  (when body (slurp body))

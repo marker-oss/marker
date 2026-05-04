@@ -21,6 +21,30 @@
 (def valid-mp-values    #{"all" "wb" "ozon" "ym"})
 (def valid-period-values #{"last-week" "last-7-days" "last-30-days" "this-month"})
 
+(def what-labels
+  {"all"      "Все"
+   "sales"    "Продажи"
+   "orders"   "Заказы"
+   "finance"  "Финансы"
+   "storage"  "Хранение"
+   "stocks"   "Остатки"
+   "stats"    "Статистика товара"
+   "prices"   "Цены"
+   "regions"  "География"
+   "cashflow" "Cash-flow"})
+
+(def mp-labels
+  {"all"  "Все"
+   "wb"   "WB"
+   "ozon" "Ozon"
+   "ym"   "YM"})
+
+(def period-labels
+  {"last-week"    "Прошлая неделя"
+   "last-7-days"  "Последние 7 дней"
+   "last-30-days" "Последние 30 дней"
+   "this-month"   "Этот месяц"})
+
 ;; ---------------------------------------------------------------------------
 ;; Pure helpers (testable without a DOM)
 ;; ---------------------------------------------------------------------------
@@ -143,21 +167,21 @@
                ($ :select {:value (:what form) :on-change #(on-field :what (.. % -target -value))}
                   (for [v ["all" "sales" "orders" "finance" "storage" "stocks"
                             "stats" "prices" "regions" "cashflow"]]
-                    ($ :option {:key v :value v} v))))
+                    ($ :option {:key v :value v} (get what-labels v v)))))
 
             ;; Marketplace
             ($ :div {:style {:display "flex" :align-items "center" :gap "8px" :font-size "14px"}}
                ($ :span {:style {:color "var(--color-fg-muted)" :min-width "110px"}} "Маркетплейс")
                ($ :select {:value (:marketplace form) :on-change #(on-field :marketplace (.. % -target -value))}
                   (for [v ["all" "wb" "ozon" "ym"]]
-                    ($ :option {:key v :value v} v))))
+                    ($ :option {:key v :value v} (get mp-labels v v)))))
 
             ;; Period
             ($ :div {:style {:display "flex" :align-items "center" :gap "8px" :font-size "14px"}}
                ($ :span {:style {:color "var(--color-fg-muted)" :min-width "110px"}} "Период")
                ($ :select {:value (:period form) :on-change #(on-field :period (.. % -target -value))}
                   (for [v ["last-week" "last-7-days" "last-30-days" "this-month"]]
-                    ($ :option {:key v :value v} v))))
+                    ($ :option {:key v :value v} (get period-labels v v)))))
 
             ;; Next-run hint
             (when (and (:enabled form) next-run)

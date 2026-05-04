@@ -71,6 +71,26 @@
                          (is (= 8 (:hour body))     "hour should be updated to 8")
                          (is (= 15 (:minute body))  "minute should be updated to 15"))))])))
 
+;; ---------------------------------------------------------------------------
+;; Test — GET /api/sync/schedule 404 includes structured :error-code
+;; ---------------------------------------------------------------------------
+
+(deftest schedule-get-not-initialized-returns-error-code
+  (testing "GET /api/sync/schedule returns 404 with :error-code 'not-initialized' when scheduler has no data"
+    (with-redefs [scheduler/get-schedule (fn [] nil)]
+      (let [handler  (server/app)
+            request  {:request-method :get
+                      :uri            "/api/sync/schedule"
+                      :params         {}}
+            response (handler request)]
+        (is (= 404 (:status response))
+            "Should return 404 when schedule is not initialized")
+        (let [body (json/read-value (:body response) json/keyword-keys-object-mapper)]
+          (is (= "not-initialized" (:error-code body))
+              "Body should include :error-code 'not-initialized'")
+          (is (string? (:error body))
+              "Body should still include human-readable :error message"))))))
+
 (deftest schedule-update-rejects-bad-hour
   (testing "POST /api/sync/schedule with out-of-range hour returns 400"
     (let [handler (server/app)

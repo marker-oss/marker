@@ -37,9 +37,15 @@
 
 (defn- fetch-json! [url on-ok on-err]
   (-> (js/fetch url #js {:headers #js {"Accept" "application/json"}})
-      (.then (fn [r] (.json r)))
-      (.then (fn [body] (on-ok (js->clj body :keywordize-keys true))))
-      (.catch (fn [e] (when on-err (on-err (.-message e)))))))
+      (.then (fn [r]
+               (-> (.text r)
+                   (.then (fn [t]
+                            (let [body   (try (js/JSON.parse t) (catch :default _ nil))
+                                  parsed (when body (js->clj body :keywordize-keys true))]
+                              (if (.-ok r)
+                                (on-ok parsed)
+                                (when on-err (on-err {:status (.-status r) :body parsed})))))))))
+      (.catch (fn [e] (when on-err (on-err {:status 0 :body nil :message (.-message e)}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Date formatting
@@ -480,12 +486,12 @@
                        (fn [body]
                          (set-schedule! (schedule/parse-schedule-payload body))
                          (set-schedule-loading! false))
-                       (fn [msg]
-                         ;; 404 "schedule not initialized" → show form with defaults
+                       (fn [err]
+                         ;; 404 with :error-code "not-initialized" → show form with defaults, no error banner
                          (set-schedule! (schedule/parse-schedule-payload nil))
                          (set-schedule-loading! false)
-                         (when-not (str/includes? (or msg "") "not initialized")
-                           (set-schedule-error! msg)))))
+                         (when-not (= "not-initialized" (get-in err [:body :error-code]))
+                           (set-schedule-error! (or (:message err) (get-in err [:body :error]) "Не удалось загрузить расписание"))))))
 
         save-schedule!
         (fn [form]
@@ -515,8 +521,8 @@
                          (set-coverage-error! nil)
                          (set-coverage! body)
                          (set-coverage-loading! false))
-                       (fn [msg]
-                         (set-coverage-error! msg)
+                       (fn [err]
+                         (set-coverage-error! (or (:message err) (get-in err [:body :error]) "Не удалось загрузить"))
                          (set-coverage-loading! false))))
 
         load-runs!
