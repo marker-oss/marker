@@ -100,6 +100,24 @@
                      ($ :span {:class "nav-counter"} counter)))))))
        )))
 
+;; ============= Tabs =============
+
+(defui tabs
+  "Horizontal tab strip for in-page sub-navigation.
+   Props:
+     :items     — vec of {:id keyword :label string}
+     :active    — id of the active tab
+     :on-change — fn [id] called when user clicks a tab"
+  [{:keys [items active on-change]}]
+  ($ :div {:class "tab-bar" :role "tablist"}
+     (for [{:keys [id label]} items]
+       ($ :button {:key      (name id)
+                   :class    (str "tab" (when (= id active) " active"))
+                   :role     "tab"
+                   :aria-selected (= id active)
+                   :on-click #(when on-change (on-change id))}
+          label))))
+
 ;; ============= Topbar =============
 
 (defui topbar
