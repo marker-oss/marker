@@ -16,89 +16,51 @@
 ;; ============= NAV constant =============
 
 (def NAV
-  [{:id "pulse"    :label "Главная (Pulse)" :icon :pulse}
-   {:id "finance"  :label "Финансы"         :icon :finance
-    :children [{:id "pnl"            :label "P&L"}
-               {:id "unit"           :label "Юнит-экономика"}
-               {:id "report:finance" :label "Финансовый отчёт"}
-               {:id "report:returns" :label "Возвраты"}]}
-   {:id "products" :label "Товары"          :icon :products}
-   {:id "cost-prices" :label "Себестоимость" :icon :archive}
-   {:id "report:stock"  :label "Склады"     :icon :warehouse}
-   {:id "reports"  :label "Отчёты"          :icon :layers
-    :children [{:id "report:sales"   :label "Продажи"}
-               {:id "report:abc"     :label "ABC-анализ"}
-               {:id "report:buyout"  :label "Выкуп"}
-               {:id "report:geo"     :label "География"}
-               {:id "report:trends"  :label "Тренды"}
-               {:id "report:losses"  :label "Потери"}
-               {:id "report:ue"      :label "Юнит-экономика"}]}
-   {:id "sync"     :label "Синхронизация" :icon :refresh}
-   {:id "plan"     :label "План"    :icon :target}
-   {:id "kit"      :label "UI Kit"  :icon :sparkles}])
+  "Top-level sidebar nav. Sectioned items (finance/products/dynamics)
+   carry a :default-tab — clicking the sidebar entry navigates to
+   /app/<id>/<default-tab>. Internal tab navigation lives inside the
+   wrapper page (see marker.ui.chrome/tabs and marker.util.nav)."
+  [{:id "pulse"    :label "Главная"        :icon :pulse}
+   {:id "finance"  :label "Финансы"        :icon :finance
+    :default-tab "pnl"}
+   {:id "products" :label "Товары"         :icon :products
+    :default-tab "skus"}
+   {:id "dynamics" :label "Динамика"       :icon :layers
+    :default-tab "trends"}
+   {:id "sync"     :label "Синхронизация"  :icon :refresh}])
 
 ;; ============= Sidebar =============
 
 (defui sidebar
-  "App sidebar with collapsible nav groups.
-   Props: :active (string id), :on-nav (fn [id]).
-   Collapse state is applied externally via data-sidebar on the wrapper."
+  "App sidebar with 5 top-level nav items.
+   Props: :active (string id, possibly \"section/tab\"), :on-nav (fn [id]).
+   Items with :default-tab navigate to \"<id>/<default-tab>\" so the
+   wrapper page picks the right sub-tab on first hit."
   [{:keys [active on-nav]}]
-  (let [[open-groups set-open-groups!] (use-state #{"finance"})
-        toggle-group! (fn [id]
-                        (set-open-groups!
-                         (fn [s]
-                           (if (contains? s id)
-                             (disj s id)
-                             (conj s id)))))]
-    ($ :aside {:class "sidebar"}
-       ;; Brand
-       ($ :div {:class "sidebar-brand"}
-          ($ :div {:class "brand-mark"})
-          ($ :div {:class "brand-name"}
-             "Marker"
-             ($ :span {:class "dot"} ".")))
-       ;; Nav
-       ($ :nav {:class "sidebar-nav"}
-          (for [item NAV]
-            (let [item-id  (:id item)
-                  children (:children item)
-                  is-active (or (= active item-id)
-                                (and children
-                                     (some #(= active (:id %)) children)))]
-              (if children
-                ;; Group item
-                (let [open? (contains? open-groups item-id)]
-                  ($ :div {:key item-id}
-                     ($ :button
-                        {:class    (str "nav-item" (when is-active " active"))
-                         :on-click #(toggle-group! item-id)}
-                        ($ icon {:name (:icon item) :class "nav-icon"})
-                        ($ :span {:class "nav-label"} (:label item))
-                        ($ icon {:name  :chev-down
-                                 :size  12
-                                 :style {:margin-left "auto"
-                                         :transform   (if open? "none" "rotate(-90deg)")
-                                         :transition  "transform 150ms"}}))
-                     (when open?
-                       ($ :div {:class "nav-children"}
-                          (for [child children]
-                            ($ :button
-                               {:key      (:id child)
-                                :class    (str "nav-item"
-                                               (when (= active (:id child)) " active"))
-                                :on-click #(on-nav (:id child))}
-                               ($ :span {:class "nav-label"} (:label child))))))))
-                ;; Leaf item
-                ($ :button
-                   {:key      item-id
-                    :class    (str "nav-item" (when (= active item-id) " active"))
-                    :on-click #(on-nav item-id)}
-                   ($ icon {:name (:icon item) :class "nav-icon"})
-                   ($ :span {:class "nav-label"} (:label item))
-                   (when-let [counter (:counter item)]
-                     ($ :span {:class "nav-counter"} counter)))))))
-       )))
+  ($ :aside {:class "sidebar"}
+     ;; Brand
+     ($ :div {:class "sidebar-brand"}
+        ($ :div {:class "brand-mark"})
+        ($ :div {:class "brand-name"}
+           "Marker"
+           ($ :span {:class "dot"} ".")))
+     ;; Nav
+     ($ :nav {:class "sidebar-nav"}
+        (for [item NAV]
+          (let [item-id   (:id item)
+                target    (if-let [t (:default-tab item)]
+                            (str item-id "/" t)
+                            item-id)
+                is-active (or (= active item-id)
+                              (str/starts-with? (or active "") (str item-id "/")))]
+            ($ :button
+               {:key      item-id
+                :class    (str "nav-item" (when is-active " active"))
+                :on-click #(on-nav target)}
+               ($ icon {:name (:icon item) :class "nav-icon"})
+               ($ :span {:class "nav-label"} (:label item))
+               (when-let [counter (:counter item)]
+                 ($ :span {:class "nav-counter"} counter))))))))
 
 ;; ============= Tabs =============
 
