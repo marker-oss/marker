@@ -17,85 +17,79 @@
             [marker.ui.sku-sheet   :refer [sku-sheet-content]]
             [marker.ui.error       :as err]
             [marker.pages.pulse    :as pulse]
-            [marker.pages.pnl      :as pnl]
-            [marker.pages.unit     :as unit]
+            [marker.pages.finance  :as finance]
             [marker.pages.products :as products]
-            [marker.pages.reports  :as reports]
-            [marker.pages.cost-prices :as cost-prices]
-            [marker.pages.sync     :as sync-page]
-            [marker.pages.kit      :as kit]))
+            [marker.pages.dynamics :as dynamics]
+            [marker.pages.sync     :as sync-page]))
 
 ;; ---------------------------------------------------------------------------
 ;; Page metadata
 ;; ---------------------------------------------------------------------------
 
 (def ^:private page-titles
-  {:pulse        "Главная (Pulse)"
-   :pnl          "P&L"
-   :unit         "Юнит-экономика"
-   :products     "Товары"
-   :cost-prices  "Себестоимость"
-   :sync         "Синхронизация"
-   :plan         "План"
-   :kit          "UI Kit"})
+  "Top-level section titles."
+  {:pulse    "Главная"
+   :finance  "Финансы"
+   :products "Товары"
+   :dynamics "Динамика"
+   :sync     "Синхронизация"})
 
-(def ^:private report-titles
-  {:sales   "Продажи"
-   :finance "Финансы"
-   :ue      "Юнит-экономика"
-   :abc     "ABC-анализ"
-   :stock   "Остатки"
-   :returns "Возвраты"
-   :buyout  "Выкуп"
-   :geo     "География"
-   :trends  "Тренды"
-   :losses  "Потери"})
+(def ^:private tab-titles
+  "Per-section tab titles, keyed by [:section :tab]."
+  {[:finance :pnl]        "P&L"
+   [:finance :unit-calc]  "Юнит-эк (калькулятор)"
+   [:finance :unit-table] "Юнит-эк (таблица)"
+   [:finance :returns]    "Возвраты"
+   [:finance :losses]     "Потери"
+   [:finance :finance]    "Финансовый отчёт"
+   [:finance :plan-fact]  "План/Факт"
+   [:products :skus]        "SKU-список"
+   [:products :stocks]      "Склады"
+   [:products :abc]         "ABC"
+   [:products :cost-prices] "Себестоимость"
+   [:products :storage]     "Хранение"
+   [:dynamics :trends] "Тренды"
+   [:dynamics :sales]  "Продажи"
+   [:dynamics :geo]    "География"
+   [:dynamics :buyout] "Выкуп"})
 
-(defn- page-key
-  "Reduce a page value (kw or [:report :finance]) to a stable lookup key."
+(defn- page-section
+  "Return the section keyword for any page shape."
   [page]
   (cond
     (vector? page) (first page)
-    :else page))
+    :else          page))
 
 (defn- page-title-for [page]
   (cond
-    (and (vector? page) (= :report (first page)))
-    (get report-titles (second page) (name (or (second page) "")))
+    (and (vector? page) (= 2 (count page)))
+    (or (get tab-titles page)
+        (get page-titles (first page))
+        (name (first page)))
 
-    :else
-    (get page-titles page (name page))))
+    (keyword? page)
+    (get page-titles page (name page))
+
+    :else "Marker"))
 
 (defn- crumbs-for [page]
-  (let [finance-children #{:pnl :unit}]
-    (cond
-      (and (vector? page) (= :report (first page)))
-      ["Marker" "Отчёты" (page-title-for page)]
+  (cond
+    (and (vector? page) (= 2 (count page)))
+    ["Marker"
+     (or (get page-titles (first page)) (name (first page)))
+     (or (get tab-titles page) (name (second page)))]
 
-      (contains? finance-children page)
-      ["Marker" "Финансы" (page-title-for page)]
+    :else
+    ["Marker" (page-title-for page)]))
 
-      :else
-      ["Marker" (page-title-for page)])))
-
-;; ---------------------------------------------------------------------------
-;; Placeholder card (for routes not yet implemented)
-;; ---------------------------------------------------------------------------
-
-(defui ^:private placeholder-page [{:keys [title]}]
-  ($ :div {:class "page-content"}
-     ($ :div {:class "card section-card"
-              :style {:text-align    "center"
-                      :padding       "64px 32px"
-                      :color         "var(--color-fg-muted)"}}
-        ($ :div {:style {:font-size "32px" :margin-bottom "12px"}} "📊")
-        ($ :p {:style {:font-size   "15px"
-                       :font-weight 600
-                       :margin      "0 0 6px"
-                       :color       "var(--color-fg-primary)"}}
-           (str "Страница «" title "»"))
-        ($ :p {:style {:font-size "13px" :margin 0}}
-           "Будет реализована в следующей фазе."))))
+(defn- page-subtitle-for [page]
+  (case (page-section page)
+    :finance  "Финансовая отчётность и юнит-экономика"
+    :products "Товарный каталог, остатки и себестоимость"
+    :dynamics "Динамика продаж, география и тренды"
+    :pulse    "Анализ данных по всем маркетплейсам"
+    :sync     "Синхронизация с маркетплейсами"
+    "Анализ данных по всем маркетплейсам"))
 
 ;; ---------------------------------------------------------------------------
 ;; Root component
@@ -139,10 +133,14 @@
     ($ :<>
        ($ :div {:class "app"}
           ;; Sidebar
-          ($ sidebar {:active    (let [pk (page-key page)]
-                                   (if (and (vector? page) (= :report (first page)))
-                                     (str "report:" (name (second page)))
-                                     (name pk)))
+          ($ sidebar {:active    (cond
+                                   (and (vector? page) (= 2 (count page)))
+                                   (str (name (first page)) "/" (name (second page)))
+
+                                   (keyword? page)
+                                   (name page)
+
+                                   :else "pulse")
                       :on-nav    router/nav!
                       :collapsed collapsed})
 
@@ -167,8 +165,7 @@
              ($ :div {:class "page-header"}
                 ($ :div
                    ($ :h1 {:class "page-title"} (page-title-for page))
-                   ($ :p {:class "page-subtitle"}
-                      "Анализ данных по всем маркетплейсам"))
+                   ($ :p {:class "page-subtitle"} (page-subtitle-for page)))
                 ($ :div {:class "page-actions"}
                    ($ :button {:class "btn btn-secondary"}
                       ($ icon {:name :download :size 14})
@@ -187,22 +184,16 @@
                                        :compare    compare?
                                        :on-compare #(rf/dispatch [::events/set-compare %])})))
 
-             ;; Page content — dispatch by route
-             (cond
-               (and (vector? page) (= :report (first page)))
-               ($ reports/report {:type (second page)})
-
-               :else
-               (case page
-                 :pulse        ($ pulse/pulse {})
-                 :pnl          ($ pnl/pnl {})
-                 :unit         ($ unit/unit {})
-                 :products     ($ products/products {})
-                 :cost-prices  ($ cost-prices/cost-prices {})
-                 :sync         ($ sync-page/sync-page {})
-                 :kit          ($ kit/kit {})
-                 ;; Placeholder for routes not yet implemented
-                 ($ placeholder-page {:title (page-title-for page)})))))
+             ;; Page content — dispatch by section, pass tab to wrappers.
+             (let [section (page-section page)
+                   tab     (when (vector? page) (second page))]
+               (case section
+                 :pulse    ($ pulse/pulse    {})
+                 :sync     ($ sync-page/sync-page {})
+                 :finance  ($ finance/finance   {:tab tab})
+                 :products ($ products/products {:tab tab})
+                 :dynamics ($ dynamics/dynamics {:tab tab})
+                 ($ pulse/pulse {})))))
 
        ;; Tweaks panel (portals out of the page flow, fixed position)
        ($ tweaks-panel {})
