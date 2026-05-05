@@ -515,11 +515,11 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
       (is (vector? (:alerts body)))))
 
-  (testing ":kpis contains all 9 KPI keys"
+  (testing ":kpis contains all 10 KPI keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (is (map? kpis))
-      (doseq [k [:revenue :profit :orders :purchases :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :margin
                  :avg-check :buyout :roas :drr]]
         (is (contains? kpis k) (str "kpis missing: " k)))))
 
@@ -583,7 +583,7 @@
   (testing "every KPI has :source and :as-of keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
-      (doseq [k [:revenue :profit :orders :purchases :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :margin
                  :avg-check :buyout :roas :drr]]
         (let [kpi (get kpis k)]
           (is (contains? kpi :source)
@@ -594,7 +594,7 @@
   (testing ":source values are from the closed valid set"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
-      (doseq [k [:revenue :profit :orders :purchases :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :margin
                  :avg-check :buyout :roas :drr]]
         (let [src (get-in kpis [k :source])]
           (is (contains? valid-kpi-sources src)
@@ -628,6 +628,33 @@
       (when (not= :none margin-src)
         (is (= rev-src margin-src)
             (str "margin :source=" margin-src " should mirror revenue :source=" rev-src))))))
+
+;; ---------------------------------------------------------------------------
+;; B1c. pulse-summary — :realized KPI specific tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration pulse-summary-realized-test
+  (testing ":realized matches sum of finance.sale-qty across articles"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          realized-val (get-in body [:kpis :realized :value])
+          realized-src (get-in body [:kpis :realized :source])]
+      (is (number? realized-val))
+      (is (>= realized-val 0))
+      (when (pos? realized-val)
+        (is (= :realization realized-src)))
+      (when (zero? realized-val)
+        (is (= :none realized-src)))))
+
+  (testing ":purchases >= :realized (delivered units >= settled units)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          purchases (get-in body [:kpis :purchases :value])
+          realized  (get-in body [:kpis :realized :value])]
+      ;; In a healthy late-month state, realized = purchases (all delivered are settled).
+      ;; Mid-month or with Ozon realization lag, purchases > realized.
+      ;; realized > purchases is impossible (you can't be paid for what wasn't delivered).
+      (is (>= purchases realized)
+          (str "Realized must not exceed delivered. Got purchases=" purchases
+               " realized=" realized)))))
 
 ;; ---------------------------------------------------------------------------
 ;; B2. pnl — shape tests

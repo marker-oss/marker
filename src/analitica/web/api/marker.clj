@@ -535,6 +535,14 @@
           purchases-prev (let [c (canon-deliv (:from prev) (:to prev))]
                            (if (pos? c) c (long (or (:total-sales prev-tots) 0))))
 
+          ;; Realized: units that appear in canonical realization-based finance rows.
+          ;; Source: finance/totals :total-sales-qty — same concept UE shows as
+          ;; :sales-qty for a single article. Never :preliminary by definition:
+          ;; this reads finance.realization rows; if those don't exist the value is 0.
+          realized-cur  (long (or (:total-sales-qty (finance/totals fin-cur))  0))
+          realized-prev (long (or (:total-sales-qty (finance/totals fin-prev)) 0))
+          realized-src  (if (pos? realized-cur) :realization :none)
+
           ;; Revenue / avg-check: come from PnL with preliminary overlay
           ;; applied via with-prelim. Canonical realization-based when
           ;; available; cash-flow-derived (preliminary) for Ozon when
@@ -599,6 +607,11 @@
                                      :delta-pct (math/pct-delta purchases-cur purchases-prev)
                                      :spark     purch-spark
                                      :source    purchases-src
+                                     :as-of     nil}
+                         :realized  {:value     realized-cur
+                                     :delta-pct (math/pct-delta realized-cur realized-prev)
+                                     :spark     []
+                                     :source    realized-src
                                      :as-of     nil}
                          :margin    {:value     (or (:margin-net pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
