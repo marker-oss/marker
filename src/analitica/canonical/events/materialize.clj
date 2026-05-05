@@ -7,6 +7,7 @@
    same period overwrites nothing critical and adds no duplicates."
   (:require [analitica.db :as db]
             [analitica.canonical.events.ozon :as ozon-ev]
+            [analitica.canonical.events.wb   :as wb-ev]
             [next.jdbc :as jdbc])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
@@ -98,4 +99,38 @@
                     (map (fn [[t n]] (str t " " n)) by-type))
                   ") from " (count post-batches) " posting + "
                   (count real-batches) " realization batches"))
+    n))
+
+(defn materialize-wb-events!
+  "Read raw WB data and emit canonical item_events:
+     orders raw → ordered + cancelled (when isCancel=true)
+     sales  raw → delivered (saleID 'S*') + returned (saleID 'R*')
+
+   WB raw is item-level by design — every row is one event, no quantity
+   expansion needed. INSERT OR REPLACE keyed by composite PK so re-runs
+   are idempotent.
+
+   Args: from, to — ISO dates bounding the work window."
+  [from to]
+  (let [order-batches (db/get-raw-range "wb" :orders from to)
+        order-events  (into []
+                            (mapcat (fn [{:keys [data id]}]
+                                      (mapcat #(wb-ev/order->events % id)
+                                              (or data []))))
+                            order-batches)
+        sale-batches  (db/get-raw-range "wb" :sales from to)
+        sale-events   (into []
+                            (mapcat (fn [{:keys [data id]}]
+                                      (mapcat #(wb-ev/sale->events % id)
+                                              (or data []))))
+                            sale-batches)
+        all-events    (into order-events sale-events)
+        n             (insert-events! all-events)
+        by-type       (frequencies (map :event-type all-events))]
+    (println (str "Materialized canonical WB item_events: "
+                  (count all-events) " events ("
+                  (clojure.string/join ", "
+                    (map (fn [[t n]] (str t " " n)) by-type))
+                  ") from " (count order-batches) " orders + "
+                  (count sale-batches) " sales batches"))
     n))

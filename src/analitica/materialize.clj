@@ -261,11 +261,12 @@
         cnt)
 
       :wb
-      ;; Two-step WB pipeline (spec 003 US5 T039):
+      ;; Three-step WB pipeline (spec 003 US5 T039 + spec 004 Phase 5f):
       ;;   1. finance report → finance rows (same as other marketplaces).
       ;;   2. IF ad_stats raw_data exists for the period → populate
       ;;      finance.ad_cost per B-003 proportional-to-revenue rule.
-      ;; Step 2 is silently no-op when no ad_stats raw_data is present, so
+      ;;   3. canonical item_events from orders/sales raw (Phase 5f).
+      ;; Steps 2-3 silently no-op when no source raw_data is present, so
       ;; this change is a pure superset of the old WB behaviour.
       (let [source    "wb"
             raw-items (load-raw source :finance from to)
@@ -275,11 +276,10 @@
             cnt       (db/insert-batch! :finance sync/finance-columns rows)]
         (println (str "Materialized finance: " cnt))
         (when (seq (db/get-raw-range source :ad_stats from to))
-          ;; ad_stats raw exists → make sure it's flattened into the
-          ;; `ad_stats` table first (idempotent), then allocate per-article
-          ;; ad-cost onto the newly materialized WB finance rows.
           (materialize-wb-ad-stats! [from to])
           (materialize-wb-ad-cost! [from to]))
+        ((requiring-resolve 'analitica.canonical.events.materialize/materialize-wb-events!)
+         from to)
         cnt)
 
       ;; Default path (e.g. :ym): plain finance materialize.
