@@ -415,27 +415,35 @@
 
 (defn- distribute-service-amount
   "Distribute a service.price across products proportional to price × quantity.
-   Fallback to equal split when total weight is 0. Sign of service-price is
-   ignored — returned weights are always non-negative (abs).
+   Fallback to equal split when total weight is 0.
+
+   The input service-price uses Ozon's cash-flow convention:
+     negative = seller charged (cost)
+     positive = refund to seller (e.g. cancellation reversal)
+
+   Output is the FinanceRow cost convention (positive = deduction,
+   negative = revenue), so we negate the input. Refunds therefore
+   net out from charges when the same service appears as both within
+   a period — matching LK Накопления column semantics.
 
    Args:
-     service-price  number (can be negative — sign stripped via Math/abs)
+     service-price  signed number from raw Ozon services[].price
      products       seq of maps (may contain :price and :quantity)
 
-   Returns a vector of non-negative allocations, same length as products,
-   summing to |service-price|. Returns [] when products is empty."
+   Returns a vector of allocations, same length as products, summing
+   to (- service-price). [] when products is empty."
   [service-price products]
-  (let [n         (count products)
-        abs-price (Math/abs (double (or service-price 0)))]
+  (let [n      (count products)
+        amount (- (double (or service-price 0)))]
     (if (zero? n)
       []
-      (let [weights (mapv #(* (double (or (:price %) 0))
+      (let [weights (mapv #(* (Math/abs (double (or (:price %) 0)))
                               (double (or (:quantity %) 1)))
                           products)
             total   (reduce + 0.0 weights)]
         (if (pos? total)
-          (mapv (fn [w] (* abs-price (/ w total))) weights)
-          (vec (repeat n (/ abs-price n))))))))
+          (mapv (fn [w] (* amount (/ w total))) weights)
+          (vec (repeat n (/ amount n))))))))
 
 (defn service-rrd-id
   "Stable hash for a service-row natural key (operation-id, sku, service-name).

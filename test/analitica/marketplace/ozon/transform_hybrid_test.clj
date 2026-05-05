@@ -116,6 +116,45 @@
             "date-to same as date-from for monthly attribution")
         (is (some? (:rrd-id row)) "rrd-id populated")))))
 
+(deftest service-refund-row-stored-as-negative-cost
+  ;; Ozon convention: service.price < 0 → seller charged (cost), > 0 → refund.
+  ;; Old transform Math/abs'd both, collapsing refunds INTO charges → costs
+  ;; double-counted. LK Apr 2026 acquiring net = -3,054 ₽; we got +6,141 ₽
+  ;; before this fix because refund 1,544 ₽ added instead of subtracted.
+  (testing "positive service.price (refund) is stored as NEGATIVE cost so it
+            offsets earlier positive charges in aggregate sums"
+    (let [refund-op (-> single-item-op
+                        (assoc :operation_id 112)
+                        (assoc :services [{:name "MarketplaceServiceItemDirectFlowLogistic"
+                                           :price 50}]))     ;; positive = refund
+          rows (transform/tx-op->service-rows refund-op {1 "ART-A"})]
+      (is (= 1 (count rows)))
+      (is (= -50.0 (:delivery-cost (first rows)))
+          "Refund of 50 ₽ from Ozon must store as -50 cost (revenue),
+           not +50 like a charge."))))
+
+(deftest charge-and-refund-aggregate-to-net-zero
+  (testing "one charge -50 and one refund +50 across two ops aggregate
+            to net cost of 0 ₽ (matches LK net-deduction semantics)"
+    (let [charge {:operation_id 201
+                  :operation_type "OperationAgentDeliveredToCustomer"
+                  :operation_date "2026-04-10 10:00:00"
+                  :type "services"
+                  :amount -50
+                  :items [{:sku 1 :name "A" :price 500 :quantity 1}]
+                  :services [{:name "MarketplaceRedistributionOfAcquiringOperation"
+                              :price -50}]
+                  :posting {:posting_number "P1" :delivery_schema "FBO"}}
+          refund (-> charge
+                     (assoc :operation_id 202)
+                     (assoc :services [{:name "MarketplaceRedistributionOfAcquiringOperation"
+                                        :price 50}]))
+          rows (mapcat #(transform/tx-op->service-rows % {1 "ART-A"}) [charge refund])
+          net (reduce + 0.0 (keep :acquiring-fee rows))]
+      (is (= 0.0 net)
+          "charge -50 and refund +50 must net to 0; old abs-based code
+           gave +100 (collapsed both into deductions)."))))
+
 (deftest string-sku-article-lookup-also-works
   (testing "article-lookup with string sku keys also resolves"
     (let [op (assoc single-item-op :items [{:sku "1" :name "A"}])
