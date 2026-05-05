@@ -94,6 +94,21 @@
                 (= 0.0 dflt))
             (str "ad_cost default should be 0 (got " (pr-str dflt) ")"))))))
 
+(deftest init!-creates-item-events-table
+  (testing "Phase 5a: canonical event log table exists after init!.
+            Each row = one lifecycle event of one item-unit; replaces
+            split-by-MP semantics of orders/sales/finance for counting."
+    (let [ds (db/init!)
+          info (jdbc/execute! ds ["PRAGMA table_info(item_events)"]
+                              {:builder-fn rs/as-unqualified-maps})
+          col-names (set (map :name info))]
+      (is (seq info) "item_events table must exist")
+      (doseq [c ["marketplace" "posting_id" "item_seq" "article" "sku" "barcode"
+                 "event_type" "event_date" "event_ts" "quantity"
+                 "related_event_id" "gross_price" "status" "raw_data_id"
+                 "ingested_at"]]
+        (is (contains? col-names c) (str "column missing: " c))))))
+
 (deftest init!-creates-return-logistics-and-dropoff-cost-columns
   (testing "Phase 4 split adds finance.return_logistics and finance.dropoff_cost
             columns so Ozon return/dropoff services can be tracked separately

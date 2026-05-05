@@ -162,6 +162,37 @@
       PRIMARY KEY (article, barcode)
     )"
 
+   ;; Phase 5 (2026-05-05): canonical item-event log. One row per
+   ;; lifecycle event of one item-unit (1 unit = 1 row). Replaces the
+   ;; lossy MP-specific semantics of orders/sales tables for
+   ;; заказы/продажи/возвраты/выкуп counters. Per-MP normalizers
+   ;; populate this from raw_data; domain reads from here, not from
+   ;; orders/sales. See specs/004-canonical-item-events/data-model.md.
+   "CREATE TABLE IF NOT EXISTS item_events (
+      marketplace      TEXT    NOT NULL,
+      posting_id       TEXT    NOT NULL,
+      item_seq         INTEGER NOT NULL DEFAULT 0,
+      sku              TEXT,
+      article          TEXT    NOT NULL,
+      barcode          TEXT,
+      event_type       TEXT    NOT NULL,
+      event_date       TEXT    NOT NULL,
+      event_ts         TEXT,
+      quantity         INTEGER NOT NULL DEFAULT 1,
+      related_event_id INTEGER,
+      gross_price      REAL,
+      status           TEXT,
+      raw_data_id      INTEGER,
+      ingested_at      TEXT    NOT NULL,
+      PRIMARY KEY (marketplace, posting_id, item_seq, event_type)
+    )"
+
+   "CREATE INDEX IF NOT EXISTS idx_item_events_lookup
+      ON item_events(marketplace, event_type, event_date)"
+
+   "CREATE INDEX IF NOT EXISTS idx_item_events_article
+      ON item_events(marketplace, article, event_date)"
+
    "CREATE TABLE IF NOT EXISTS product_stats (
       nm_id         INTEGER,
       article       TEXT NOT NULL,
