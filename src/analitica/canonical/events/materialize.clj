@@ -57,36 +57,45 @@
           (jdbc/execute-one! tx (into [sql] row))))
       (count rows))))
 
-(defn materialize-ozon-events!
-  "Read raw Ozon postings and emit canonical item_events:
-     - ordered  from in_process_at
-     - delivered from analytics_data.delivery_date_end (for status
-       delivered/returned)
-     - cancelled from status='cancelled' (event_date = in_process_at)
+(defn- realization-batch->returned-events
+  "Walk one realization raw_data batch and emit returned events from each
+   row's return_commission section (Phase 5c.5)."
+  [{:keys [data id]}]
+  (let [header     (:header data)
+        month-first (:start_date header)
+        rows       (or (:rows data) [])]
+    (when month-first
+      (mapcat #(ozon-ev/realization-row->returned-events % month-first id) rows))))
 
-   `returned` events are NOT emitted here yet — see Phase 5c notes in
-   ozon.clj/transaction-op->returned-events. Transaction-list returns
-   reflect refund-processing events (multiple per physical return), so
-   counting from there over-states 5-10×. The right source for physical
-   return counts is /v2/finance/realization (sku-level monthly
-   aggregates that already match LK). Wiring deferred to Phase 5c.5.
+(defn materialize-ozon-events!
+  "Read raw Ozon data and emit canonical item_events:
+     - ordered/delivered/cancelled from `postings`
+     - returned                    from `realization` (sku-level monthly
+       aggregates that match LK Накопления / UE «Возвращено»)
 
    INSERT OR REPLACE keyed by (marketplace, posting_id, item_seq,
-   event_type) so re-runs are idempotent.
+   event_type) so re-runs are idempotent. Realization-source returns
+   use a synthesized posting_id so they don't collide with real ones.
 
    Args: from, to — ISO dates bounding the work window."
   [from to]
-  (let [batches (db/get-raw-range "ozon" :postings from to)
-        events  (into []
-                      (mapcat (fn [{:keys [data id]}]
-                                (mapcat #(ozon-ev/posting->events % id)
-                                        (or data []))))
-                      batches)
-        n       (insert-events! events)
-        by-type (frequencies (map :event-type events))]
+  (let [post-batches  (db/get-raw-range "ozon" :postings from to)
+        post-events   (into []
+                            (mapcat (fn [{:keys [data id]}]
+                                      (mapcat #(ozon-ev/posting->events % id)
+                                              (or data []))))
+                            post-batches)
+
+        real-batches  (db/get-raw-range "ozon" :realization from to)
+        real-events   (into [] (mapcat realization-batch->returned-events) real-batches)
+
+        all-events    (into post-events real-events)
+        n             (insert-events! all-events)
+        by-type       (frequencies (map :event-type all-events))]
     (println (str "Materialized canonical Ozon item_events: "
-                  (count events) " events ("
+                  (count all-events) " events ("
                   (clojure.string/join ", "
                     (map (fn [[t n]] (str t " " n)) by-type))
-                  ") from " (count batches) " posting batches"))
+                  ") from " (count post-batches) " posting + "
+                  (count real-batches) " realization batches"))
     n))

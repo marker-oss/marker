@@ -214,6 +214,49 @@
                   :raw-data-id raw-data-id})))
            vec))))
 
+(defn realization-row->returned-events
+  "Emit `returned` events from one /v2/finance/realization row. Realization
+   rows are Ozon's authoritative monthly aggregate of physical returns —
+   `return_commission.quantity` is the unit count Ozon credits the seller
+   for during that month, and matches LK Накопления / UE «Возвращено».
+
+   Realization rows lack posting_number, so we synthesize a stable
+   posting_id from sku + month: `realization-{sku}-{month-first}`. This
+   keeps INSERT OR REPLACE idempotent across re-runs while making the
+   synthetic origin explicit in the data.
+
+   Args:
+     rrow         one row from realization payload (:rows)
+     month-first  realization period start (\"YYYY-MM-01\") used as event_date
+     raw-data-id  audit pointer to raw_data.id
+
+   Returns [] when there's no return_commission section or its quantity
+   is zero — counting must remain honest."
+  [rrow month-first raw-data-id]
+  (let [rc  (:return_commission rrow)
+        q   (or (:quantity rc) 0)
+        item (:item rrow)
+        sku  (:sku item)
+        article (:offer_id item)
+        barcode (:barcode item)
+        price   (or (:seller_price_per_instance rrow) 0)
+        sku-str (some-> sku str)]
+    (if (or (nil? rc) (not (pos? q)))
+      []
+      (let [synth-pid (str "realization-" sku-str "-" month-first)
+            base      {:marketplace "ozon"
+                       :posting-id  synth-pid
+                       :sku         sku-str
+                       :article     article
+                       :barcode     barcode
+                       :event-type  "returned"
+                       :event-date  month-first
+                       :event-ts    nil
+                       :status      "realization"
+                       :gross-price (when (pos? price) (double price))
+                       :raw-data-id raw-data-id}]
+        (mapv (fn [i] (assoc base :item-seq i :quantity 1)) (range q))))))
+
 (defn posting->events
   "Top-level normalizer: convert one Ozon posting into ALL relevant
    canonical item_events (ordered + delivered + cancelled).

@@ -202,3 +202,48 @@
       (is (= 1 (count events)))
       (is (nil? (:article (first events))))
       (is (= "99999" (:sku (first events)))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 5c.5: returned events sourced from /v2/finance/realization
+;;
+;; Realization rows are the authoritative monthly aggregate Ozon publishes.
+;; Each row has a return_commission.quantity reporting how many units of
+;; that (article, sku, month) came back. We expand each into N per-unit
+;; returned events with a synthesized posting_id so they have stable
+;; identity for idempotent INSERT OR REPLACE.
+;; ---------------------------------------------------------------------------
+
+(def ^:private realization-row-with-return
+  "One realization row mirroring live Ozon /v2/finance/realization shape."
+  {:rowNumber 1
+   :seller_price_per_instance 1500
+   :item {:offer_id "ART-RZ-A" :sku 12345 :barcode "BC-RZ-A"}
+   :delivery_commission {:quantity 5 :standard_fee 200 :amount 1300 :total 1300}
+   :return_commission   {:quantity 2 :standard_fee 200 :amount 600  :total 600}})
+
+(deftest realization-row-emits-returned-event-per-unit
+  (testing "return_commission.quantity=2 → 2 returned events with item_seq 0,1
+            and a stable synthetic posting_id."
+    (let [events (ozon-events/realization-row->returned-events
+                   realization-row-with-return "2026-04-01" 33)]
+      (is (= 2 (count events)))
+      (is (= [0 1] (mapv :item-seq events)))
+      (is (every? #(= "ART-RZ-A" (:article %)) events))
+      (is (every? #(= "12345"    (:sku %))     events))
+      (is (every? #(= "returned" (:event-type %)) events))
+      (is (every? #(= "2026-04-01" (:event-date %)) events)
+          "all units share the realization period start date")
+      (is (every? #(re-matches #"^realization-12345-2026-04-01$" (:posting-id %))
+                  events)
+          "synthetic posting_id ties to (sku, month) for idempotency")
+      (is (every? #(= 33 (:raw-data-id %)) events)))))
+
+(deftest realization-row-no-return-commission-emits-nothing
+  (testing "rows without a return_commission section produce no events"
+    (let [row (dissoc realization-row-with-return :return_commission)]
+      (is (empty? (ozon-events/realization-row->returned-events row "2026-04-01" 1))))))
+
+(deftest realization-row-zero-quantity-return-emits-nothing
+  (testing "return_commission.quantity=0 → no events (counts must be honest)"
+    (let [row (assoc-in realization-row-with-return [:return_commission :quantity] 0)]
+      (is (empty? (ozon-events/realization-row->returned-events row "2026-04-01" 1))))))
