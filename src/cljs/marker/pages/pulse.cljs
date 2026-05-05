@@ -14,7 +14,8 @@
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
-            [marker.util.format    :as fmt]))
+            [marker.util.format    :as fmt]
+            [clojure.string        :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Chart colour constants
@@ -49,6 +50,16 @@
   "Return formatted string, or '—' when value is nil."
   [v fmt-fn]
   (if (nil? v) "—" (fmt-fn v)))
+
+(defn- prelim-badge
+  "Badge string for a KPI tile when its data source is preliminary."
+  [kpi]
+  (when (= :preliminary (:source kpi)) "≈"))
+
+(defn- format-date-short
+  "Truncate ISO date/datetime to YYYY-MM-DD for compact display."
+  [iso]
+  (when iso (subs (str iso) 0 10)))
 
 ;; ---------------------------------------------------------------------------
 ;; Alert card
@@ -461,7 +472,6 @@
         purch-cnt (safe-num (:value purchases))
         conv-pct  (when (pos? order-cnt)
                     (* 100.0 (/ purch-cnt order-cnt)))
-        prelim-badge (fn [kpi] (when (= :preliminary (:source kpi)) "≈"))
         cards  [{:label     "Выручка"
                  :value     (fmt/format-rub (safe-num (:value rev)))
                  :delta     (:delta-pct rev)
@@ -486,7 +496,7 @@
                  :value     (str (fmt/format-int purch-cnt) " шт")
                  :delta     (:delta-pct purchases)
                  :spark     (safe-spark (:spark purchases))
-                 :sub       "доставлено клиенту"
+                 :sub       "WoW"
                  :badge     (prelim-badge purchases)}
                 {:label     "Маржа"
                  :value     (fmt/format-pct (safe-num (:value margin)))
@@ -514,17 +524,21 @@
                  :sub       "WoW"
                  :inverted? true
                  :badge     (prelim-badge drr)}]
+        ;; orders/purchases excluded: backend always returns :canon or :legacy-* for
+        ;; those — they cannot be :preliminary, so they don't trigger the footnote.
         any-preliminary? (some #(= :preliminary (:source %))
                                [rev profit margin check buyout roas drr])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
              ($ :h3 {:class "section-title"} "Ключевые метрики")
-             (when compare?
-               ($ :div {:class "section-subtitle"} "vs предыдущий период"))
-             (when preliminary-as-of
-               ($ :div {:class "section-subtitle"}
-                  (str "по состоянию на " preliminary-as-of))))
+             (let [subtitle-parts (cond-> []
+                                    compare?           (conj "vs предыдущий период")
+                                    preliminary-as-of  (conj (str "по состоянию на "
+                                                                  (format-date-short preliminary-as-of))))]
+               (when (seq subtitle-parts)
+                 ($ :div {:class "section-subtitle"}
+                    (str/join " · " subtitle-parts)))))
           ($ :div {:class "row"}
              ($ :span {:class "badge badge-success"}
                 ($ :span {:class "dot-status green"})
@@ -695,7 +709,7 @@
                    ($ :div
                       "Часть выручки рассчитана из cash-flow Ozon, пока не опубликован realization-отчёт. "
                       "Цифры уточнятся после его выхода"
-                      (when prelim-as-of (str " (последняя точка: " prelim-as-of ")"))
+                      (when prelim-as-of (str " (последняя точка: " (format-date-short prelim-as-of) ")"))
                       "."))))
 
            ;; Cost-coverage warning — when registered cost-prices cover
