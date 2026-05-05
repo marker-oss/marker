@@ -72,12 +72,20 @@
   "Build one sales row from a single posting product. The financial_data
    entry carries the seller payout (`:payout`) and the buyer's actual
    final paid price (`:customer_price`) — fields the legacy transformer
-   left as nil."
+   left as nil.
+
+   `:date` reflects when the goods arrived at the buyer
+   (analytics_data.delivery_date_end). For Pulse \"revenue by day\"
+   semantics the cash-flow event is delivery, not order placement —
+   using in_process_at would attribute Mar-placed Apr-delivered postings
+   to the wrong month. Falls back to in_process_at when Ozon hasn't yet
+   populated delivery_date_end (rare for status='delivered')."
   [order product fin-product idx type]
   (let [analytics (get order :analytics_data {})]
     {:marketplace     :ozon
      :sale-id         (str (get order :posting_number) "-" idx)
-     :date            (get order :in_process_at)
+     :date            (or (get analytics :delivery_date_end)
+                          (get order :in_process_at))
      :article         (get product :offer_id)
      :nm-id           nil
      :barcode         nil

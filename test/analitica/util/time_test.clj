@@ -3,6 +3,17 @@
             [analitica.util.time :as t])
   (:import [java.time LocalDate]))
 
+(deftest test-minus-days
+  (testing "minus-days shifts a date string backward by N days"
+    (is (= "2026-02-01" (t/minus-days "2026-04-02" 60)))
+    (is (= "2026-04-01" (t/minus-days "2026-04-02" 1)))
+    (is (= "2026-03-31" (t/minus-days "2026-04-01" 1))
+        "month boundary handled by LocalDate arithmetic"))
+  (testing "non-positive N is allowed"
+    (is (= "2026-04-02" (t/minus-days "2026-04-02" 0)))
+    (is (= "2026-04-03" (t/minus-days "2026-04-02" -1))
+        "negative shift moves the date forward")))
+
 (deftest test-parse-period-predefined
   (testing "Predefined period strings"
     (testing "last-week"

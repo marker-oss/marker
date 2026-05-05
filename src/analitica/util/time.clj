@@ -50,6 +50,14 @@
 (defn days-between [^LocalDate a ^LocalDate b]
   (.between ChronoUnit/DAYS a b))
 
+(defn minus-days
+  "Shift a YYYY-MM-DD date string backward by N days.
+   Used by ingest-ozon-postings! to widen the in_process_at filter so
+   postings created before the requested window but delivered within it
+   still land in raw_data."
+  [date-str n]
+  (-> (parse-date date-str) (.minusDays (long n)) format-date))
+
 (defn date-chunks
   "Split [from to] into chunks of at most max-days each.
    Returns a vec of [chunk-from chunk-to] date-string pairs."

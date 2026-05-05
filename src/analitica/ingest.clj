@@ -158,6 +158,15 @@
 ;; Ozon ingest
 ;; ---------------------------------------------------------------------------
 
+(def ^:private postings-lookback-days
+  "How far back from the requested `from` to widen the in_process_at filter
+   when ingesting Ozon postings. Postings whose order date falls outside
+   this window won't appear in raw_data even if they were delivered inside
+   the requested period — the materialize-sales date filter then drops
+   them at the sales-row stage. 60 days covers the long tail of late
+   deliveries / cancellations / returns observed in production."
+  60)
+
 (defn- ingest-ozon-postings!
   "Fetch FBO + FBS postings, chunking by 3-day windows to defend against
    Ozon's cursor-pagination quirks: in the wild we've observed `last_id`
@@ -169,18 +178,26 @@
    downstream materialize for active stores; 3-day shrinks the loss
    surface roughly 2.5× without saturating Ozon rate limits.
 
+   Pulls in_process_at ∈ [from − N days .. to] (default N=60) so postings
+   whose order was placed before the requested window but were delivered
+   within it land in raw_data. materialize-sales then filters by the
+   actual delivery date for the requested window. Without this widening
+   ~57% of April Ozon sales rows were missing from the sales table.
+
    Concatenates results across all chunks before persisting one raw_data row
-   for the full [from..to] range — keeps the materialize layer's load-raw
-   semantics unchanged."
+   for the full [from..to] range (the original window, not the widened one,
+   so future ingest runs requested for an earlier period won't double-cover)."
   [client from to]
-  (let [chunks (t/date-chunks from to 3)
+  (let [shifted-from (t/minus-days from postings-lookback-days)
+        chunks (t/date-chunks shifted-from to 3)
         fbo    (vec (mapcat (fn [[cf ct]] (ozon-api/fbo-orders client cf ct)) chunks))
         fbs    (vec (mapcat (fn [[cf ct]] (ozon-api/fbs-orders client cf ct)) chunks))
         data   (into fbo fbs)]
     (db/insert-raw! :ozon :postings from to data)
     (println (str "  Ingested Ozon postings: " (count data) " items "
                   "(FBO: " (count fbo) ", FBS: " (count fbs) ", "
-                  (count chunks) " weekly chunks)"))
+                  (count chunks) " 3-day chunks, lookback "
+                  postings-lookback-days "d for cross-month deliveries)"))
     (count data)))
 
 (defn- ingest-ozon-stocks! [client]

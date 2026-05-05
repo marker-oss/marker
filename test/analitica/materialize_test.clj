@@ -396,6 +396,40 @@
   [date-from date-to postings]
   (db/insert-raw! :ozon :postings date-from date-to postings))
 
+(deftest materialize-ozon-sales-filters-by-delivery-date-window
+  (testing "Ozon postings whose delivery_date_end falls outside [from..to]
+            are dropped from the sales table even when raw_data covers
+            a wider window (needed once ingest fetches in_process_at-60d
+            to catch cross-month deliveries)."
+    (let [in-window  {:posting_number "P-WIN"
+                      :status         "delivered"
+                      :in_process_at  "2026-03-25T10:00:00Z"
+                      :products       [{:offer_id "ART-IN"
+                                        :sku 10 :quantity 1 :price "100"}]
+                      :financial_data {:products [{:product_id 10 :payout 80}]}
+                      :analytics_data {:warehouse "WH" :region "RU"
+                                       :delivery_date_end "2026-04-05T18:00:00Z"}}
+          out-window {:posting_number "P-OUT"
+                      :status         "delivered"
+                      :in_process_at  "2026-04-28T10:00:00Z"
+                      :products       [{:offer_id "ART-OUT"
+                                        :sku 11 :quantity 1 :price "200"}]
+                      :financial_data {:products [{:product_id 11 :payout 160}]}
+                      :analytics_data {:warehouse "WH" :region "RU"
+                                       :delivery_date_end "2026-05-03T18:00:00Z"}}]
+      (seed-postings-raw! "2026-03-01" "2026-04-30" [in-window out-window])
+
+      (mat/materialize-sales! ["2026-04-01" "2026-04-30"] :marketplace :ozon)
+
+      (let [rows (db/query
+                   ["SELECT article, date FROM sales WHERE marketplace='ozon' ORDER BY article"])]
+        (is (= 1 (count rows))
+            "Only the in-window posting (delivered 2026-04-05) should land in sales;
+             the May-delivered posting must be filtered out.")
+        (is (= "ART-IN" (:article (first rows))))
+        (is (= "2026-04-05" (subs (:date (first rows)) 0 10))
+            "Sales row date reflects delivery, not in_process_at.")))))
+
 (deftest materialize-ozon-sales-dedupes-overlapping-batches
   (testing "same posting_number across overlapping batches counts ONCE"
     (let [;; A delivered posting present in both batches.

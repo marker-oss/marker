@@ -115,9 +115,12 @@
                        :sales)
         raw-items    (load-raw source entity-type from to)
         data         (transform-sales source raw-items)
-        ;; WB impl filters by date range
-        data         (if (= marketplace :wb)
-                       (filterv #(and (<= (compare from (subs (:date %) 0 10)) 0)
+        ;; WB and Ozon may receive postings outside [from..to] (WB: weekly
+        ;; report shape; Ozon: in_process_at-60d window catches cross-month
+        ;; deliveries). Drop sales whose :date falls outside the window.
+        data         (if (#{:wb :ozon} marketplace)
+                       (filterv #(and (some? (:date %))
+                                      (<= (compare from (subs (:date %) 0 10)) 0)
                                       (>= (compare to   (subs (:date %) 0 10)) 0))
                                 data)
                        data)

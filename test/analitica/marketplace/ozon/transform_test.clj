@@ -26,6 +26,32 @@
    :analytics_data {:warehouse "SHEGIDA основной"
                     :region    "Москва"}})
 
+(deftest delivered-posting-uses-delivery-date-end-as-sale-date
+  ;; Ozon postings have two relevant dates: in_process_at (when buyer placed
+  ;; the order) and analytics_data.delivery_date_end (when goods arrive at
+  ;; the buyer). For Pulse "revenue by day" the cash-flow event is delivery,
+  ;; not order placement. Old code used in_process_at, attributing March-
+  ;; placed Apr-delivered postings to March in Pulse — and missing them
+  ;; entirely whenever ingest-ozon-postings! pulled by April-only window.
+  (testing ":date comes from delivery_date_end when present"
+    (let [posting (-> delivered-posting
+                      (assoc :in_process_at "2026-03-28T10:00:00Z")
+                      (assoc-in [:analytics_data :delivery_date_end]
+                                "2026-04-05T18:00:00Z"))
+          [row]   (transform/->sales [posting])]
+      (is (= "2026-04-05T18:00:00Z" (:date row))
+          ":date must reflect when the goods arrived at the buyer, not
+           when the order was placed."))))
+
+(deftest delivered-posting-falls-back-to-in-process-at
+  (testing ":date falls back to in_process_at when delivery_date_end is missing"
+    (let [posting (assoc-in delivered-posting
+                            [:analytics_data :delivery_date_end] nil)
+          [row]   (transform/->sales [posting])]
+      (is (= "2026-04-15T10:00:00Z" (:date row))
+          "When Ozon hasn't populated delivery_date_end (rare for delivered
+           postings), the in_process_at field is the safe fallback."))))
+
 (deftest delivered-posting-extracts-financial-data
   (let [[row] (transform/->sales [delivered-posting])]
     (is (= "A1"                  (:article row)))
