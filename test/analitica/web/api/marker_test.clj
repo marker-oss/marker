@@ -507,7 +507,7 @@
 
   (testing "has all required top-level keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
-      (doseq [k [:alerts :kpis :forecast :charts :top-movers :top-fallers
+      (doseq [k [:alerts :kpis :costs :forecast :charts :top-movers :top-fallers
                  :critical-stocks :data-fresh]]
         (is (contains? body k) (str "missing key: " k)))))
 
@@ -515,11 +515,11 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
       (is (vector? (:alerts body)))))
 
-  (testing ":kpis contains all 10 KPI keys"
+  (testing ":kpis contains all 11 KPI keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (is (map? kpis))
-      (doseq [k [:revenue :profit :orders :purchases :realized :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
                  :avg-check :buyout :roas :drr]]
         (is (contains? kpis k) (str "kpis missing: " k)))))
 
@@ -583,7 +583,7 @@
   (testing "every KPI has :source and :as-of keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
-      (doseq [k [:revenue :profit :orders :purchases :realized :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
                  :avg-check :buyout :roas :drr]]
         (let [kpi (get kpis k)]
           (is (contains? kpi :source)
@@ -594,7 +594,7 @@
   (testing ":source values are from the closed valid set"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
-      (doseq [k [:revenue :profit :orders :purchases :realized :margin
+      (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
                  :avg-check :buyout :roas :drr]]
         (let [src (get-in kpis [k :source])]
           (is (contains? valid-kpi-sources src)
@@ -655,7 +655,58 @@
       ;; could exceed gross-purchases in periods with heavy returns.
       (is (>= purchases realized)
           (str "Realized must not exceed delivered. Got purchases=" purchases
-               " realized=" realized)))))
+               " realized=" realized))))
+
+  (testing "funnel: returned <= purchases"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          purchases (get-in body [:kpis :purchases :value])
+          returned  (get-in body [:kpis :returned  :value])]
+      ;; Cannot return more than was delivered.
+      (is (>= purchases returned)
+          (str "Returned must not exceed delivered. Got purchases=" purchases
+               " returned=" returned)))))
+
+;; ---------------------------------------------------------------------------
+;; B1d. pulse-summary — :costs breakdown tests
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration pulse-summary-costs-shape-test
+  (testing "response has :costs map with 6 cost-line keys"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          costs (:costs body)]
+      (is (map? costs))
+      (doseq [k [:cogs :commission :logistics :ads :other :total]]
+        (is (contains? costs k) (str "costs missing: " k)))))
+
+  (testing "each cost line has :value :delta-pct :source :as-of"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          costs (:costs body)]
+      (doseq [k [:cogs :commission :logistics :ads :other :total]]
+        (let [line (get costs k)]
+          (is (number? (:value line))           (str k " :value not a number"))
+          (is (or (number? (:delta-pct line))
+                  (nil?    (:delta-pct line)))  (str k " :delta-pct must be number or nil"))
+          (is (contains? line :source)          (str k " missing :source"))
+          (is (contains? line :as-of)           (str k " missing :as-of"))))))
+
+  (testing ":costs :total == sum of individual cost lines (within ₽1 rounding)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          costs (:costs body)
+          parts (+ (get-in costs [:cogs       :value])
+                   (get-in costs [:commission :value])
+                   (get-in costs [:logistics  :value])
+                   (get-in costs [:ads        :value])
+                   (get-in costs [:other      :value]))
+          total (get-in costs [:total :value])]
+      (is (< (Math/abs (- total parts)) 1.0)
+          (str "Cost-total " total " should equal sum of parts " parts " within ₽1"))))
+
+  (testing ":returned KPI present and >= 0"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          returned (get-in body [:kpis :returned])]
+      (is (some? returned))
+      (is (number? (:value returned)))
+      (is (>= (:value returned) 0)))))
 
 ;; ---------------------------------------------------------------------------
 ;; B2. pnl — shape tests

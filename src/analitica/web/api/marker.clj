@@ -217,6 +217,34 @@
 
 ;; ---------------------------------------------------------------------------
 ;; B1. pulse-summary
+
+(defn- cost-line
+  "Build a cost-breakdown line with consistent shape.
+   :source is :none when cur is zero (nothing to attribute)."
+  [cur prev source as-of]
+  {:value     (math/round2 (or cur 0))
+   :delta-pct (math/pct-delta (or cur 0) (or prev 0))
+   :source    (if (and source (pos? (or cur 0))) source :none)
+   :as-of     as-of})
+
+(defn- sum-other-costs
+  "Storage + acceptance + penalties + deduction + additional."
+  [pnl]
+  (+ (or (:storage    pnl) 0)
+     (or (:acceptance pnl) 0)
+     (or (:penalties  pnl) 0)
+     (or (:deduction  pnl) 0)
+     (or (:additional pnl) 0)))
+
+(defn- sum-total-costs
+  "Sum of all tracked cost components."
+  [pnl]
+  (+ (or (:cogs      pnl) 0)
+     (or (:wb-reward pnl) 0)
+     (or (:logistics pnl) 0)
+     (or (:ad-spend  pnl) 0)
+     (sum-other-costs pnl)))
+
 ;; ---------------------------------------------------------------------------
 
 (defn- build-kpi
@@ -544,6 +572,13 @@
           realized-prev (long (or (:sales-qty pnl-prev) 0))
           realized-src  (if (pos? realized-cur) :realization :none)
 
+          ;; Returned: units that came back to seller in this period.
+          ;; Sourced from pnl-cur :returns-qty — same realization-based
+          ;; accounting as :realized. Source :none when 0 (nothing to show).
+          returned-cur  (long (or (:returns-qty pnl-cur)  0))
+          returned-prev (long (or (:returns-qty pnl-prev) 0))
+          returned-src  (if (pos? returned-cur) :realization :none)
+
           ;; Revenue / avg-check: come from PnL with preliminary overlay
           ;; applied via with-prelim. Canonical realization-based when
           ;; available; cash-flow-derived (preliminary) for Ozon when
@@ -616,6 +651,12 @@
                                      :spark     []
                                      :source    realized-src
                                      :as-of     nil}
+                         ;; TODO: daily returns spark — needs finance-by-day aggregation.
+                         :returned  {:value     returned-cur
+                                     :delta-pct (math/pct-delta returned-cur returned-prev)
+                                     :spark     []
+                                     :source    returned-src
+                                     :as-of     nil}
                          :margin    {:value     (or (:margin-net pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
                                                   (or (:margin-net pnl-cur) 0.0)
@@ -647,6 +688,12 @@
                                      :spark     []
                                      :source    revenue-src
                                      :as-of     revenue-as-of}}
+       :costs           {:cogs       (cost-line (:cogs      pnl-cur) (:cogs      pnl-prev) revenue-src revenue-as-of)
+                        :commission (cost-line (:wb-reward pnl-cur) (:wb-reward pnl-prev) revenue-src revenue-as-of)
+                        :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
+                        :ads        (cost-line (:ad-spend  pnl-cur) (:ad-spend  pnl-prev) revenue-src revenue-as-of)
+                        :other      (cost-line (sum-other-costs pnl-cur) (sum-other-costs pnl-prev) revenue-src revenue-as-of)
+                        :total      (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of)}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
                          :month-fact (math/round2 rev-cur)
                          :projection projection}
