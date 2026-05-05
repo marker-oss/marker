@@ -462,6 +462,7 @@
         orders    (:orders k)
         purchases (:purchases k)
         realized  (:realized k)
+        returned  (:returned k)
         margin    (:margin k)
         check     (:avg-check k)
         buyout    (:buyout k)
@@ -505,6 +506,13 @@
                  :spark     (safe-spark (:spark realized))
                  :sub       "WoW"
                  :badge     (prelim-badge realized)}
+                {:label     "Возвращено"
+                 :value     (str (fmt/format-int (safe-num (:value returned))) " шт")
+                 :delta     (:delta-pct returned)
+                 :spark     (safe-spark (:spark returned))
+                 :sub       "WoW"
+                 :badge     (prelim-badge returned)
+                 :inverted? true}
                 {:label     "Маржа"
                  :value     (fmt/format-pct (safe-num (:value margin)))
                  :delta     (:delta-pct margin)
@@ -565,6 +573,59 @@
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "12px" :font-size "12px"}}
             "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП")))))
+
+;; ---------------------------------------------------------------------------
+;; Cost breakdown section
+;; ---------------------------------------------------------------------------
+
+(defui ^:private cost-breakdown-section [{:keys [costs]}]
+  (let [c        (or costs {})
+        rows     [{:k :cogs       :label "Себестоимость"}
+                  {:k :commission :label "Комиссия МП"}
+                  {:k :logistics  :label "Логистика"}
+                  {:k :ads        :label "Реклама"}
+                  {:k :other      :label "Прочее"}]]
+    ($ :section {:class "card section-card"}
+       ($ :div {:class "section-head"}
+          ($ :h3 {:class "section-title"} "Расходы периода"))
+       ($ :div {:class "cost-breakdown" :style {:display "flex" :flex-direction "column" :gap "8px"}}
+          (for [{:keys [k label]} rows
+                :let [line (get c k)
+                      v    (safe-num (:value line))
+                      src  (:source line)
+                      pct  (:delta-pct line)]]
+            ($ :div {:key   (name k)
+                     :style {:display         "flex"
+                             :justify-content "space-between"
+                             :align-items     "baseline"
+                             :padding         "8px 0"
+                             :border-bottom   "1px solid var(--color-border-subtle)"}}
+               ($ :span {:style {:color "var(--color-fg-secondary)"}}
+                  label
+                  (when (= :preliminary src)
+                    ($ :span {:style {:margin-left "6px"}} "≈")))
+               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                  ($ :span {:style {:font-weight 500}}
+                     (fmt/format-rub v))
+                  (when (and pct (not (js/isNaN pct)))
+                    ($ delta {:pct pct :inverted true})))))
+          ;; Total row (bold, no border-bottom)
+          (let [total (get c :total)
+                tv    (safe-num (:value total))
+                tsrc  (:source total)
+                tpct  (:delta-pct total)]
+            ($ :div {:style {:display         "flex"
+                             :justify-content "space-between"
+                             :align-items     "baseline"
+                             :padding         "12px 0 4px 0"
+                             :font-weight     600}}
+               ($ :span "Итого расходов"
+                  (when (= :preliminary tsrc)
+                    ($ :span {:style {:margin-left "6px"}} "≈")))
+               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                  ($ :span (fmt/format-rub tv))
+                  (when (and tpct (not (js/isNaN tpct)))
+                    ($ delta {:pct tpct :inverted true})))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Loading skeleton helpers
@@ -745,6 +806,9 @@
                            :kpis              kpis
                            :preliminary?      preliminary?
                            :preliminary-as-of prelim-as-of})
+
+           ;; Cost breakdown
+           ($ cost-breakdown-section {:costs (:costs data)})
 
            ;; Plan-fact + Donut
            ($ :div {:class "grid-12"}
