@@ -154,7 +154,17 @@
      :returns-pay   (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines)))
      :spp-amount    (math/round2 (- (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines))
                                     (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines))))
-     :logistics     (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
+     ;; Phase 4 (2026-05-05): :logistics is the rollup of forward delivery
+     ;; + return logistics + drop-off so existing P&L numbers stay stable;
+     ;; sub-fields surfaced separately for LK row-by-row sverka.
+     :logistics     (math/round2 (reduce + 0.0
+                                   (mapcat (fn [l] [(or (:delivery-cost l) 0)
+                                                    (or (:return-logistics l) 0)
+                                                    (or (:dropoff-cost l) 0)])
+                                           lines)))
+     :delivery-cost    (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
+     :return-logistics (math/round2 (reduce + 0.0 (map #(or (:return-logistics %) 0) lines)))
+     :dropoff-cost     (math/round2 (reduce + 0.0 (map #(or (:dropoff-cost %) 0) lines)))
      :penalties     (math/round2 (reduce + 0.0 (map #(or (:penalty %) 0) lines)))
      :additional    (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
      :storage       (math/round2
@@ -247,7 +257,14 @@
                  :returns-pay (math/round2 (reduce + 0.0 (map #(or (:for-pay %) 0) return-lines)))
                  :spp-amount  (math/round2 (- (reduce + 0.0 (map #(or (:for-pay %) 0) sales-lines))
                                               (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines))))
-                 :logistics   (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
+                 :logistics   (math/round2 (reduce + 0.0
+                                             (mapcat (fn [l] [(or (:delivery-cost l) 0)
+                                                              (or (:return-logistics l) 0)
+                                                              (or (:dropoff-cost l) 0)])
+                                                     lines)))
+                 :delivery-cost    (math/round2 (reduce + 0.0 (map #(or (:delivery-cost %) 0) lines)))
+                 :return-logistics (math/round2 (reduce + 0.0 (map #(or (:return-logistics %) 0) lines)))
+                 :dropoff-cost     (math/round2 (reduce + 0.0 (map #(or (:dropoff-cost %) 0) lines)))
                  :penalties   (math/round2 (reduce + 0.0 (map #(or (:penalty %) 0) lines)))
                  :additional  (math/round2 (reduce + 0.0 (map #(or (:additional-payment %) 0) lines)))
                  :storage     (math/round2 (reduce + 0.0 (map #(or (:storage-fee %) 0) lines)))

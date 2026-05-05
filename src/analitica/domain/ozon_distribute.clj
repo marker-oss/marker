@@ -162,9 +162,14 @@
                         rows)))))))
 
 (def ^:private numeric-fields
-  "Fields that scale linearly with day-weight when a row is split."
+  "Fields that scale linearly with day-weight when a row is split.
+   Phase 4 (2026-05-05): :return-logistics + :dropoff-cost added when
+   delivery cost was split. Without them, every spread daily child
+   carried the full month value → ~30× over-statement of returns/dropoff
+   (Apr 2026: return_logistics 32k → 548k before this entry was added)."
   [:quantity :retail-amount :for-pay :mp-commission
-   :delivery-cost :storage-fee :acceptance :acquiring-fee
+   :delivery-cost :return-logistics :dropoff-cost
+   :storage-fee :acceptance :acquiring-fee
    :additional-payment :penalty :deduction :wb-reward
    :ad-cost])
 

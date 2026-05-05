@@ -380,18 +380,26 @@
 
 (def ^:const ozon-service-mapping
   "Ozon transaction-list operations[].services[].name → FinanceRow field.
-   Last updated: 2026-04-22 based on live data (1754 services / 18 types).
+   Phase 4 split (2026-05-05): :delivery-cost now holds ONLY forward
+   delivery so it aligns with LK Накопления column «Логистика» (+ last
+   mile). Returns moved to :return-logistics, drop-offs to :dropoff-cost.
+   Package & warehouse-movement stay in :delivery-cost (small enough to
+   not warrant their own column).
    See specs/003-finance-row-completeness/data-model.md §3."
-  {"MarketplaceServiceItemDirectFlowLogistic"            :delivery-cost
+  {;; — Forward delivery (LK «Логистика» + «Последняя миля») —
+   "MarketplaceServiceItemDirectFlowLogistic"            :delivery-cost
    "MarketplaceServiceItemRedistributionLastMileCourier" :delivery-cost
-   "MarketplaceServiceItemReturnFlowLogistic"            :delivery-cost
-   "MarketplaceServiceItemRedistributionReturnsPVZ"      :delivery-cost
-   "MarketplaceServiceItemDropoffSC"                     :delivery-cost
-   "MarketplaceServiceItemDropoffPVZ"                    :delivery-cost
-   "MarketplaceServiceItemRedistributionDropOffApvz"     :delivery-cost
    "MarketplaceServiceItemDeliveryToHandoverPlaceOzon"   :delivery-cost
    "MarketplaceServiceItemPackageRedistribution"         :delivery-cost
    "MarketplaceServiceProductMovementFromWarehouse"      :delivery-cost
+   ;; — Return logistics (LK «Обратная логистика» + «Обработка возврата») —
+   "MarketplaceServiceItemReturnFlowLogistic"            :return-logistics
+   "MarketplaceServiceItemRedistributionReturnsPVZ"      :return-logistics
+   ;; — Drop-off (LK «Обработка отправления (Drop-off/Pick-up)») —
+   "MarketplaceServiceItemDropoffSC"                     :dropoff-cost
+   "MarketplaceServiceItemDropoffPVZ"                    :dropoff-cost
+   "MarketplaceServiceItemRedistributionDropOffApvz"     :dropoff-cost
+   ;; — Acquiring / storage / packaging / additional —
    "MarketplaceRedistributionOfAcquiringOperation"       :acquiring-fee
    "MarketplaceServiceItemPackageMaterialsProvision"     :acceptance
    "MarketplaceServiceItemTemporaryStorageRedistribution" :storage-fee

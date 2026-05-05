@@ -49,6 +49,7 @@
    (:commission-pct f) (:mp-commission f) (:wb-reward f)
    (:wb-kvw-prc f) (:spp-prc f) (:price-with-disc f)
    (:delivery-amount f) (:return-amount f) (:delivery-cost f)
+   (or (:return-logistics f) 0) (or (:dropoff-cost f) 0)
    (:for-pay f) (:penalty f) (:storage-fee f) (:acceptance f)
    (:additional-payment f) (:deduction f) (:acquiring-fee f)
    (:ad-cost f)
@@ -70,6 +71,7 @@
    :commission_pct :mp_commission :wb_reward
    :wb_kvw_prc :spp_prc :price_with_disc
    :delivery_amount :return_amount :delivery_cost
+   :return_logistics :dropoff_cost
    :for_pay :penalty :storage_fee :acceptance
    :additional_payment :deduction :acquiring_fee
    :ad_cost

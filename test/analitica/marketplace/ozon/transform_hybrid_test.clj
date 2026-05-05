@@ -21,28 +21,56 @@
   (testing "mapping table contains exactly the documented service names"
     (is (= 19 (count transform/ozon-service-mapping)))))
 
-(deftest delivery-cost-services-map-correctly
-  (testing "10 delivery/logistics services → :delivery-cost"
+(deftest forward-delivery-services-stay-in-delivery-cost-after-phase4
+  (testing "5 forward-delivery and warehouse-movement services → :delivery-cost"
     (is (= :delivery-cost (transform/ozon-service-mapping
                             "MarketplaceServiceItemDirectFlowLogistic")))
     (is (= :delivery-cost (transform/ozon-service-mapping
                             "MarketplaceServiceItemRedistributionLastMileCourier")))
     (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceItemReturnFlowLogistic")))
-    (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceItemRedistributionReturnsPVZ")))
-    (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceItemDropoffSC")))
-    (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceItemDropoffPVZ")))
-    (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceItemRedistributionDropOffApvz")))
-    (is (= :delivery-cost (transform/ozon-service-mapping
                             "MarketplaceServiceItemDeliveryToHandoverPlaceOzon")))
     (is (= :delivery-cost (transform/ozon-service-mapping
                             "MarketplaceServiceItemPackageRedistribution")))
     (is (= :delivery-cost (transform/ozon-service-mapping
-                            "MarketplaceServiceProductMovementFromWarehouse")))))
+                            "MarketplaceServiceProductMovementFromWarehouse"))))
+  (testing "Phase 4 split moved these out of :delivery-cost"
+    (is (not= :delivery-cost (transform/ozon-service-mapping
+                               "MarketplaceServiceItemReturnFlowLogistic"))
+        "ReturnFlowLogistic now → :return-logistics")
+    (is (not= :delivery-cost (transform/ozon-service-mapping
+                               "MarketplaceServiceItemDropoffSC"))
+        "DropoffSC now → :dropoff-cost")))
+
+(deftest return-logistics-services-map-to-return-logistics-field
+  (testing "Phase 4 split: return-flow services move from :delivery-cost to
+            new :return-logistics so they align with LK Накопления column
+            «Обратная логистика» / «Обработка возврата»."
+    (is (= :return-logistics (transform/ozon-service-mapping
+                               "MarketplaceServiceItemReturnFlowLogistic")))
+    (is (= :return-logistics (transform/ozon-service-mapping
+                               "MarketplaceServiceItemRedistributionReturnsPVZ")))))
+
+(deftest dropoff-services-map-to-dropoff-cost-field
+  (testing "Phase 4 split: drop-off services move from :delivery-cost to
+            new :dropoff-cost so they align with LK Накопления column
+            «Обработка отправления (Drop-off/Pick-up)»."
+    (is (= :dropoff-cost (transform/ozon-service-mapping
+                           "MarketplaceServiceItemDropoffSC")))
+    (is (= :dropoff-cost (transform/ozon-service-mapping
+                           "MarketplaceServiceItemDropoffPVZ")))
+    (is (= :dropoff-cost (transform/ozon-service-mapping
+                           "MarketplaceServiceItemRedistributionDropOffApvz")))))
+
+(deftest forward-delivery-services-stay-in-delivery-cost
+  (testing "After Phase 4 split, delivery_cost holds ONLY forward delivery —
+            DirectFlow, LastMile, DeliveryToHandover (matches LK column
+            «Логистика» + «Последняя миля»)."
+    (is (= :delivery-cost (transform/ozon-service-mapping
+                            "MarketplaceServiceItemDirectFlowLogistic")))
+    (is (= :delivery-cost (transform/ozon-service-mapping
+                            "MarketplaceServiceItemRedistributionLastMileCourier")))
+    (is (= :delivery-cost (transform/ozon-service-mapping
+                            "MarketplaceServiceItemDeliveryToHandoverPlaceOzon")))))
 
 (deftest temporary-storage-service-maps-to-storage-fee
   (testing "MarketplaceServiceItemTemporaryStorage (no Redistribution suffix) is

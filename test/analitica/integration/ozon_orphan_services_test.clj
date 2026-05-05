@@ -98,7 +98,8 @@
 (defn- finance-rows-for-article [article]
   (db/query
     ["SELECT rrd_id, operation, article, for_pay, retail_amount,
-             delivery_cost, acquiring_fee, acceptance, storage_fee,
+             delivery_cost, return_logistics, dropoff_cost,
+             acquiring_fee, acceptance, storage_fee,
              additional_payment, ad_cost, date_from, date_to
       FROM finance
       WHERE marketplace='ozon' AND article = ?
@@ -174,8 +175,9 @@
       (let [row (first rows-b)]
         (is (= "service" (:operation row))
             "new orphan row: operation='service'")
-        (is (= 30.0 (:delivery-cost row))
-            "B: delivery_cost populated from orphan service")
+        (is (= 30.0 (:return-logistics row))
+            "B: return_logistics populated from orphan service
+             (Phase 4: ReturnFlowLogistic moved from :delivery-cost)")
         (is (or (nil? (:for-pay row))
                 (zero? (:for-pay row)))
             "B-005 invariant: inserted service-row has for_pay=0")
@@ -204,7 +206,7 @@
     (let [first-count (count-ozon-rows)
           rows-b-1    (finance-rows-for-article "B")]
       (is (= 2 first-count))
-      (is (= 30.0 (:delivery-cost (first rows-b-1))))
+      (is (= 30.0 (:return-logistics (first rows-b-1))))
 
       ;; Second run — both merges rerun; DB state must be unchanged
       (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
@@ -215,8 +217,8 @@
       (let [rows-b-2 (finance-rows-for-article "B")]
         (is (= 1 (count rows-b-2))
             "only one B row (no duplicate from deterministic rrd_id)")
-        (is (= 30.0 (:delivery-cost (first rows-b-2)))
-            "delivery_cost STILL 30 (not double-added to 60)"))
+        (is (= 30.0 (:return-logistics (first rows-b-2)))
+            "return_logistics STILL 30 (not double-added to 60)"))
       (let [rows-a (finance-rows-for-article "A")]
         (is (= 500.0 (:for-pay (first rows-a)))
             "B-005 invariant still holds after second run")

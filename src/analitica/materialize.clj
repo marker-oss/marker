@@ -323,12 +323,17 @@
 
 (def ^:private ozon-cost-fields
   "Canonical list of FinanceRow fields that the service merge can populate.
-   Kept narrow intentionally — widening this list risks violating B-005."
-  [:delivery-cost :acquiring-fee :acceptance :storage-fee
+   Kept narrow intentionally — widening this list risks violating B-005.
+   Phase 4 (2026-05-05): :return-logistics + :dropoff-cost added when the
+   ozon-service-mapping was split for LK Накопления row-by-row sverka."
+  [:delivery-cost :return-logistics :dropoff-cost
+   :acquiring-fee :acceptance :storage-fee
    :additional-payment :ad-cost])
 
 (def ^:private ozon-cost-field->column
   {:delivery-cost      :delivery_cost
+   :return-logistics   :return_logistics
+   :dropoff-cost       :dropoff_cost
    :acquiring-fee      :acquiring_fee
    :acceptance         :acceptance
    :storage-fee        :storage_fee

@@ -89,6 +89,8 @@
       delivery_amount    INTEGER,
       return_amount      INTEGER,
       delivery_cost      REAL,
+      return_logistics   REAL DEFAULT 0,
+      dropoff_cost       REAL DEFAULT 0,
       for_pay            REAL,
       penalty            REAL,
       storage_fee        REAL,
@@ -601,6 +603,22 @@
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN event_date_source
                             TEXT NOT NULL DEFAULT 'api'"])
         (println "Migration: finance.event_date_source column added")))
+    ;; Phase 4 (2026-05-05): split Ozon delivery_cost into separate cost
+    ;; columns so finance rows align row-by-row with LK Накопления columns
+    ;; «Логистика» / «Обратная логистика» / «Обработка отправления».
+    ;;   return_logistics ← ReturnFlowLogistic + RedistributionReturnsPVZ
+    ;;   dropoff_cost     ← DropoffSC + DropoffPVZ + RedistributionDropOffApvz
+    ;; delivery_cost stays for forward delivery (DirectFlow + LastMile + …).
+    (let [info        (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                     {:builder-fn rs/as-unqualified-maps})
+          has-rl?     (some #(= "return_logistics" (:name %)) info)
+          has-dc?     (some #(= "dropoff_cost"     (:name %)) info)]
+      (when-not has-rl?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN return_logistics REAL DEFAULT 0"])
+        (println "Migration: finance.return_logistics column added (Phase 4)"))
+      (when-not has-dc?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN dropoff_cost REAL DEFAULT 0"])
+        (println "Migration: finance.dropoff_cost column added (Phase 4)")))
     ;; Migrate cost_prices.characteristic: 1C characteristic string (size,
     ;; composition, etc.) retained per-barcode so future lookup fallbacks
     ;; can disambiguate variants. Empty for legacy rows; new imports fill

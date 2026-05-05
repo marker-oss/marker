@@ -94,6 +94,21 @@
                 (= 0.0 dflt))
             (str "ad_cost default should be 0 (got " (pr-str dflt) ")"))))))
 
+(deftest init!-creates-return-logistics-and-dropoff-cost-columns
+  (testing "Phase 4 split adds finance.return_logistics and finance.dropoff_cost
+            columns so Ozon return/dropoff services can be tracked separately
+            from forward delivery_cost (LK Накопления sverka)."
+    (let [ds   (db/init!)
+          info (finance-column-info ds)]
+      (is (some? (find-column info "return_logistics"))
+          "finance.return_logistics column should exist after init!")
+      (is (some? (find-column info "dropoff_cost"))
+          "finance.dropoff_cost column should exist after init!")
+      (let [rl (find-column info "return_logistics")
+            dc (find-column info "dropoff_cost")]
+        (is (= "REAL" (:type rl)))
+        (is (= "REAL" (:type dc)))))))
+
 (deftest init!-is-idempotent
   (testing "calling init! twice in a row does not throw duplicate-column error"
     (let [ds1 (db/init!)]
