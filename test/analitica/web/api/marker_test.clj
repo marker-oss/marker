@@ -573,6 +573,63 @@
       (is (re-find #"transit" (get headers "Content-Type" ""))))))
 
 ;; ---------------------------------------------------------------------------
+;; B1b. pulse-summary — per-KPI source metadata
+;; ---------------------------------------------------------------------------
+
+(def valid-kpi-sources
+  #{:realization :preliminary :canon :legacy-orders :legacy-sales :none})
+
+(deftest ^:integration pulse-summary-source-metadata-test
+  (testing "every KPI has :source and :as-of keys"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis (:kpis body)]
+      (doseq [k [:revenue :profit :orders :purchases :margin
+                 :avg-check :buyout :roas :drr]]
+        (let [kpi (get kpis k)]
+          (is (contains? kpi :source)
+              (str k " missing :source"))
+          (is (contains? kpi :as-of)
+              (str k " missing :as-of"))))))
+
+  (testing ":source values are from the closed valid set"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis (:kpis body)]
+      (doseq [k [:revenue :profit :orders :purchases :margin
+                 :avg-check :buyout :roas :drr]]
+        (let [src (get-in kpis [k :source])]
+          (is (contains? valid-kpi-sources src)
+              (str k " :source=" src " not in valid set"))))))
+
+  (testing "when top-level :preliminary? is true, at least one KPI has :source = :preliminary"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis          (:kpis body)
+          prelim?       (:preliminary? body)]
+      (when prelim?
+        (let [preliminary-kpis (filter #(= :preliminary (get-in kpis [% :source]))
+                                       (keys kpis))]
+          (is (seq preliminary-kpis)
+              "Expected at least one KPI with :source=:preliminary when :preliminary?=true")))))
+
+  (testing ":profit :source matches :revenue :source"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis           (:kpis body)
+          rev-src        (get-in kpis [:revenue :source])
+          profit-src     (get-in kpis [:profit :source])]
+      ;; profit inherits revenue source; only exception is when profit=0 → :none
+      (when (not= :none profit-src)
+        (is (= rev-src profit-src)
+            (str "profit :source=" profit-src " should match revenue :source=" rev-src)))))
+
+  (testing ":margin :source matches :profit :source"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis           (:kpis body)
+          profit-src     (get-in kpis [:profit :source])
+          margin-src     (get-in kpis [:margin :source])]
+      (when (not= :none margin-src)
+        (is (= profit-src margin-src)
+            (str "margin :source=" margin-src " should match profit :source=" profit-src))))))
+
+;; ---------------------------------------------------------------------------
 ;; B2. pnl — shape tests
 ;; ---------------------------------------------------------------------------
 

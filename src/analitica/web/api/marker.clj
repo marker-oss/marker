@@ -219,10 +219,16 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- build-kpi
-  [cur-val prev-val spark]
-  {:value     (or cur-val 0.0)
-   :delta-pct (math/pct-delta (or cur-val 0.0) (or prev-val 0.0))
-   :spark     (or spark [])})
+  ([cur-val prev-val spark]
+   {:value     (or cur-val 0.0)
+    :delta-pct (math/pct-delta (or cur-val 0.0) (or prev-val 0.0))
+    :spark     (or spark [])})
+  ([cur-val prev-val spark source as-of]
+   {:value     (or cur-val 0.0)
+    :delta-pct (math/pct-delta (or cur-val 0.0) (or prev-val 0.0))
+    :spark     (or spark [])
+    :source    source
+    :as-of     as-of}))
 
 (defn- build-alerts
   "Adapt analitica.alerts/detect-alerts output to SPA shape."
@@ -538,6 +544,39 @@
           preliminary? (boolean (or (:preliminary? pnl-cur)
                                     (:preliminary? pnl-prev)))
 
+          ;; ---------------------------------------------------------------------------
+          ;; Per-KPI source metadata (for seller-view rendering of "preliminary" stars)
+          ;; ---------------------------------------------------------------------------
+          ;; revenue-src / revenue-as-of: derived from pnl-cur revenue-source.
+          ;;   :preliminary  → Ozon cash-flow overlay (real but unconfirmed).
+          ;;   :realization  → canonical finance table (settled).
+          ;;   :legacy-sales → last-ditch sales-tots fallback when PnL=0.
+          ;;   :none         → no source had data (value is 0).
+          revenue-src   (cond
+                          (= :preliminary (:revenue-source pnl-cur)) :preliminary
+                          (pos? (or (:revenue pnl-cur) 0.0))         :realization
+                          (pos? (or (:revenue sales-tots) 0.0))       :legacy-sales
+                          :else                                        :none)
+          revenue-as-of (when (= :preliminary revenue-src)
+                          (:preliminary-as-of pnl-cur))
+
+          ;; orders-src: canon > legacy-orders > none
+          orders-src    (let [c (canon-orders from to)]
+                          (cond
+                            (pos? c)                                   :canon
+                            (pos? (legacy-orders from to))             :legacy-orders
+                            :else                                      :none))
+
+          ;; purchases-src: canon > legacy-sales > none
+          purchases-src (let [c (canon-deliv from to)]
+                          (cond
+                            (pos? c)                                   :canon
+                            (pos? (or (:total-sales sales-tots) 0))    :legacy-sales
+                            :else                                      :none))
+
+          ;; buyout-src: from pnl (realization-based); none when 0
+          buyout-src    (if (pos? (or (:buyout-rate pnl-cur) 0.0)) :realization :none)
+
           ;; Projection uses the SAME revenue source as the KPI tile —
           ;; otherwise the «Прогноз» line under the chart drifts away
           ;; from the headline outage. Fixes Bug #3.
@@ -549,33 +588,53 @@
           ad-cur      (or (:ad-spend pnl-cur) 0.0)]
 
       {:alerts          alert-list
-       :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark)
-                         :profit    (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
+       :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
+                         :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
+                                        (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
+                                                          revenue-src
+                                                          :none)
+                                               :as-of revenue-as-of))
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
-                                     :spark     ord-spark}
+                                     :spark     ord-spark
+                                     :source    orders-src
+                                     :as-of     nil}
                          :purchases {:value     purchases-cur
                                      :delta-pct (math/pct-delta purchases-cur purchases-prev)
-                                     :spark     purch-spark}
+                                     :spark     purch-spark
+                                     :source    purchases-src
+                                     :as-of     nil}
                          :margin    {:value     (or (:margin-net pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
                                                   (or (:margin-net pnl-cur) 0.0)
                                                   (or (:margin-net pnl-prev) 0.0))
-                                     :spark     []}
+                                     :spark     []
+                                     :source    (if (pos? (or (:margin-net pnl-cur) 0.0))
+                                                  revenue-src
+                                                  :none)
+                                     :as-of     revenue-as-of}
                          :avg-check {:value     ac-cur
                                      :delta-pct (math/pct-delta ac-cur ac-prev)
-                                     :spark     []}
+                                     :spark     []
+                                     :source    revenue-src
+                                     :as-of     revenue-as-of}
                          :buyout    {:value     (or (:buyout-rate pnl-cur) 0.0)
                                      :delta-pct (math/pct-delta
                                                   (or (:buyout-rate pnl-cur) 0.0)
                                                   (or (:buyout-rate pnl-prev) 0.0))
-                                     :spark     []}
+                                     :spark     []
+                                     :source    buyout-src
+                                     :as-of     nil}
                          :roas      {:value     (math/roas rev-cur ad-cur)
                                      :delta-pct nil
-                                     :spark     []}
+                                     :spark     []
+                                     :source    revenue-src
+                                     :as-of     revenue-as-of}
                          :drr       {:value     (math/drr rev-cur ad-cur)
                                      :delta-pct nil
-                                     :spark     []}}
+                                     :spark     []
+                                     :source    revenue-src
+                                     :as-of     revenue-as-of}}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
                          :month-fact (math/round2 rev-cur)
                          :projection projection}
