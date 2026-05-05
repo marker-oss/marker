@@ -536,11 +536,12 @@
                            (if (pos? c) c (long (or (:total-sales prev-tots) 0))))
 
           ;; Realized: units that appear in canonical realization-based finance rows.
-          ;; Source: finance/totals :total-sales-qty — same concept UE shows as
-          ;; :sales-qty for a single article. Never :preliminary by definition:
-          ;; this reads finance.realization rows; if those don't exist the value is 0.
-          realized-cur  (long (or (:total-sales-qty (finance/totals fin-cur))  0))
-          realized-prev (long (or (:total-sales-qty (finance/totals fin-prev)) 0))
+          ;; Read directly from pnl-cur/prev :sales-qty — pnl/calculate already
+          ;; aggregated this; no need to re-run finance/totals over the same data.
+          ;; Never :preliminary by definition: this reflects finance.realization rows;
+          ;; if those don't exist the value is 0.
+          realized-cur  (long (or (:sales-qty pnl-cur)  0))
+          realized-prev (long (or (:sales-qty pnl-prev) 0))
           realized-src  (if (pos? realized-cur) :realization :none)
 
           ;; Revenue / avg-check: come from PnL with preliminary overlay
@@ -608,6 +609,8 @@
                                      :spark     purch-spark
                                      :source    purchases-src
                                      :as-of     nil}
+                         ;; TODO: daily realized-qty spark — needs a finance-by-day aggregation,
+                         ;; analogous to orders-count-spark. Empty vec until then.
                          :realized  {:value     realized-cur
                                      :delta-pct (math/pct-delta realized-cur realized-prev)
                                      :spark     []

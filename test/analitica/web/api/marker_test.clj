@@ -634,7 +634,7 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest ^:integration pulse-summary-realized-test
-  (testing ":realized matches sum of finance.sale-qty across articles"
+  (testing ":realized equals sum of :sales-qty across finance articles"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           realized-val (get-in body [:kpis :realized :value])
           realized-src (get-in body [:kpis :realized :source])]
@@ -649,9 +649,10 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           purchases (get-in body [:kpis :purchases :value])
           realized  (get-in body [:kpis :realized :value])]
-      ;; In a healthy late-month state, realized = purchases (all delivered are settled).
-      ;; Mid-month or with Ozon realization lag, purchases > realized.
-      ;; realized > purchases is impossible (you can't be paid for what wasn't delivered).
+      ;; Both :purchases and :realized are GROSS counts (returns excluded —
+      ;; returns are tracked separately as :returns-qty in pnl). If either counter
+      ;; is ever changed to net, this invariant must be revisited: net-realized
+      ;; could exceed gross-purchases in periods with heavy returns.
       (is (>= purchases realized)
           (str "Realized must not exceed delivered. Got purchases=" purchases
                " realized=" realized)))))
