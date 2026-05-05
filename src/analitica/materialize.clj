@@ -239,26 +239,25 @@
   (let [[from to] (resolve-period period)]
     (case marketplace
       :ozon
-      ;; Four-step Ozon pipeline (spec 003 US3B + T047 B-009 fix + D1):
+      ;; Five-step Ozon pipeline (spec 003 US3B + T047 + D1 + spec 004
+      ;; canonical events):
       ;;   1. realization → finance rows (for-pay, retail, commission).
-      ;;   2. transaction/list services[] merge → cost fields per article
-      ;;      (UPDATE existing rows).
+      ;;   2. transaction/list services[] merge → cost fields per article.
       ;;   3. orphan-service INSERT (T047): service-only rows for articles
-      ;;      without a sale-row in the realization window — closes SC-003
-      ;;      reconciliation gap. Reuses :orphan-aggregates from step 2 to
-      ;;      avoid recomputing.
+      ;;      without a sale-row in the realization window.
       ;;   4. respread-ozon-finance! (D1): replace month-stamped rows with
-      ;;      daily children using sales/orders coverage as weights so any
-      ;;      direct SQL on finance gets the daily breakdown, not the
-      ;;      monthly aggregate. Idempotent — re-runs are no-ops once rows
-      ;;      are tagged event_date_source = 'spread'.
-      ;; Steps 2–3 are optional and silently no-op when no :transactions
-      ;; raw_data exists for the period.
+      ;;      daily children. Idempotent.
+      ;;   5. canonical item_events: ordered/delivered/cancelled (Phase 5)
+      ;;      so Pulse and UE see one count per concept. Returns deferred
+      ;;      to Phase 5c.5 (realization-based, not transactions).
+      ;; Steps 2–3 silently no-op when no :transactions raw_data exists.
       (let [cnt (materialize-ozon-finance-from-realization! from to)]
         (when (seq (db/get-raw-range "ozon" :transactions from to))
           (let [{:keys [orphan-aggregates]} (materialize-ozon-services! [from to])]
             (materialize-ozon-orphan-services! [from to] orphan-aggregates)))
         (respread-ozon-finance! from to)
+        ((requiring-resolve 'analitica.canonical.events.materialize/materialize-ozon-events!)
+         from to)
         cnt)
 
       :wb
