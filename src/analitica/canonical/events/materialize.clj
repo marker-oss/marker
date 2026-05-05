@@ -8,6 +8,7 @@
   (:require [analitica.db :as db]
             [analitica.canonical.events.ozon :as ozon-ev]
             [analitica.canonical.events.wb   :as wb-ev]
+            [analitica.canonical.events.ym   :as ym-ev]
             [next.jdbc :as jdbc])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
@@ -99,6 +100,30 @@
                     (map (fn [[t n]] (str t " " n)) by-type))
                   ") from " (count post-batches) " posting + "
                   (count real-batches) " realization batches"))
+    n))
+
+(defn materialize-ym-events!
+  "Read raw YM orders and emit canonical item_events:
+     ordered   from creationDate (always)
+     delivered when status ∈ {DELIVERED, PARTIALLY_DELIVERED}
+     cancelled when status starts with CANCELLED
+   `returned` not yet wired — needs YM /v2/return ingest first.
+
+   Args: from, to — ISO dates bounding the work window."
+  [from to]
+  (let [batches (db/get-raw-range "ym" :orders from to)
+        events  (into []
+                      (mapcat (fn [{:keys [data id]}]
+                                (mapcat #(ym-ev/order->events % id)
+                                        (or data []))))
+                      batches)
+        n       (insert-events! events)
+        by-type (frequencies (map :event-type events))]
+    (println (str "Materialized canonical YM item_events: "
+                  (count events) " events ("
+                  (clojure.string/join ", "
+                    (map (fn [[t n]] (str t " " n)) by-type))
+                  ") from " (count batches) " orders batches"))
     n))
 
 (defn materialize-wb-events!

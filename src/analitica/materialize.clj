@@ -282,7 +282,9 @@
          from to)
         cnt)
 
-      ;; Default path (e.g. :ym): plain finance materialize.
+      ;; Default path (e.g. :ym): plain finance materialize + canonical
+      ;; item_events (Phase 5g for YM; the dispatch is generic so other
+      ;; future MPs only need a normalizer ns and a registration here).
       (let [source    (name marketplace)
             raw-items (load-raw source :finance from to)
             data      (transform-finance source raw-items)
@@ -290,6 +292,9 @@
             rows      (mapv sync/finance->row data)
             cnt       (db/insert-batch! :finance sync/finance-columns rows)]
         (println (str "Materialized finance: " cnt))
+        (when (= :ym marketplace)
+          ((requiring-resolve 'analitica.canonical.events.materialize/materialize-ym-events!)
+           from to))
         cnt))))
 
 ;; ---------------------------------------------------------------------------
