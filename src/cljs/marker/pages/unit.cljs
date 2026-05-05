@@ -1,20 +1,21 @@
 (ns marker.pages.unit
-  "Unit-economics what-if calculator — Phase 8.
-   Strategy: HYBRID (option c).
-   - Client-side compute runs instantly on every slider drag for snappy UX.
-   - Debounced POST to /what-if-recalc fires ~300ms after the slider settles;
-     this validates the computation server-side and is a hook for future
-     persistence (save-as-scenario feature).
-   - Server response is currently not used to override the client display
-     because: (a) both sides use the same formula, (b) round-trip latency
-     would make the UI feel sluggish with no benefit, (c) server confirms
-     the calculation silently in the background.
-   - compute-unit-econ stays as the pure CLJS function used by unit_test.cljs."
+  "Unit-economics what-if calculator.
+
+   Two modes:
+   - DEMO mode (default): hardcoded baseline so the calculator is usable
+     without any data context.
+   - ARTICLE mode: load per-unit baseline from the backend for a real SKU
+     in the active period (price, cogs, commission %, logistics ₽/шт,
+     returns %, ads ₽/шт). The user can then drag sliders to explore
+     scenarios for THAT article. No save / no overwrite — purely local.
+
+   compute-unit-econ stays as the pure CLJS function used by unit_test.cljs."
   (:require [uix.core :refer [$ defui use-state use-memo use-effect]]
+            [uix.re-frame :refer [use-subscribe]]
             [re-frame.core :as rf]
             [marker.state.events :as events]
+            [marker.state.subs   :as subs]
             [marker.ui.chrome   :refer [delta]]
-            [marker.ui.icons    :refer [icon]]
             [marker.util.format :as fmt]))
 
 ;; ---------------------------------------------------------------------------
@@ -53,29 +54,55 @@
      :break-even  break-even}))
 
 ;; ---------------------------------------------------------------------------
-;; Default baseline
+;; Default demo baseline (used when no article is loaded)
 ;; ---------------------------------------------------------------------------
 
-(def ^:private baseline
+(def ^:private demo-baseline
   {:price 2500 :cogs 1200 :commission 17 :logistics 90 :returns 8 :ads 220})
 
 ;; ---------------------------------------------------------------------------
-;; Slider rows spec
+;; Slider rows spec — mins/maxes adapt to the active baseline so the slider
+;; never pins to its edge when an article has unusual values.
 ;; ---------------------------------------------------------------------------
 
-(def ^:private sliders
-  [{:k :price      :label "Цена розничная, ₽"  :min 1000 :max 5000 :step 50
-    :fmt fmt/format-rub}
-   {:k :cogs       :label "Себестоимость, ₽"   :min 400  :max 2500 :step 25
-    :fmt fmt/format-rub}
-   {:k :commission :label "Комиссия МП, %"      :min 5    :max 30   :step 0.5
-    :fmt #(fmt/format-pct %)}
-   {:k :logistics  :label "Логистика, ₽"        :min 30   :max 250  :step 5
-    :fmt fmt/format-rub}
-   {:k :returns    :label "Возвраты, %"          :min 0    :max 25   :step 0.5
-    :fmt #(fmt/format-pct %)}
-   {:k :ads        :label "Реклама, ₽/шт"       :min 0    :max 600  :step 10
-    :fmt fmt/format-rub}])
+(defn- pct-bounds
+  "Symmetric bounds around v with a sensible floor/ceiling."
+  [v lo-floor hi-ceil]
+  (let [v   (double (or v 0))
+        spn (max (* 0.6 (js/Math.abs v)) 5)
+        lo  (max lo-floor (- v spn))
+        hi  (min hi-ceil (+ v spn))]
+    [(js/Math.floor lo) (js/Math.ceil hi)]))
+
+(defn- rub-bounds
+  [v hi-floor]
+  (let [v   (double (or v 0))
+        spn (max (* 0.5 v) hi-floor)
+        lo  (max 0 (- v spn))
+        hi  (+ v spn)]
+    [(js/Math.floor lo) (js/Math.ceil hi)]))
+
+(defn- sliders-for-baseline
+  "Build slider definitions adapted to a baseline so values land mid-range."
+  [b]
+  (let [[p-lo p-hi] (rub-bounds (:price b)     2000)
+        [c-lo c-hi] (rub-bounds (:cogs b)      800)
+        [l-lo l-hi] (rub-bounds (:logistics b) 100)
+        [a-lo a-hi] (rub-bounds (:ads b)       200)
+        [k-lo k-hi] (pct-bounds (:commission b) -10 60)
+        [r-lo r-hi] (pct-bounds (:returns b)    0   60)]
+    [{:k :price      :label "Цена розничная, ₽"  :min p-lo :max (max p-hi (+ p-lo 100))
+      :step (max 50 (js/Math.round (/ (- p-hi p-lo) 100))) :fmt fmt/format-rub}
+     {:k :cogs       :label "Себестоимость, ₽"   :min c-lo :max (max c-hi (+ c-lo 100))
+      :step (max 25 (js/Math.round (/ (- c-hi c-lo) 100))) :fmt fmt/format-rub}
+     {:k :commission :label "Комиссия МП, %"      :min k-lo :max k-hi
+      :step 0.5 :fmt #(fmt/format-pct %)}
+     {:k :logistics  :label "Логистика, ₽"        :min l-lo :max (max l-hi (+ l-lo 50))
+      :step (max 5 (js/Math.round (/ (- l-hi l-lo) 100))) :fmt fmt/format-rub}
+     {:k :returns    :label "Возвраты, %"          :min r-lo :max r-hi
+      :step 0.5 :fmt #(fmt/format-pct %)}
+     {:k :ads        :label "Реклама, ₽/шт"       :min a-lo :max (max a-hi (+ a-lo 50))
+      :step (max 10 (js/Math.round (/ (- a-hi a-lo) 100))) :fmt fmt/format-rub}]))
 
 ;; ---------------------------------------------------------------------------
 ;; Cost structure bar rows
@@ -98,17 +125,95 @@
     :val   (:ads params)
     :color "var(--chart-5)"}])
 
+;; ---------------------------------------------------------------------------
+;; Article picker — search + select an SKU; submitting loads its baseline
+;; ---------------------------------------------------------------------------
+
+(defui ^:private article-picker
+  [{:keys [active-article on-load on-clear]}]
+  (let [[input set-input!] (use-state (or active-article ""))
+        submit  (fn [e]
+                  (.preventDefault e)
+                  (when (seq input) (on-load input)))]
+    ($ :form {:on-submit submit
+              :style     {:display          "flex"
+                          :gap              "8px"
+                          :align-items      "center"
+                          :flex-wrap        "wrap"}}
+       ($ :input {:type        "text"
+                  :class       "input"
+                  :placeholder "Артикул (например, 3467/белый) или nm-id"
+                  :value       input
+                  :on-change   #(set-input! (.. % -target -value))
+                  :style       {:flex      1
+                                :min-width "240px"
+                                :font-size "12px"}})
+       ($ :button {:type  "submit"
+                   :class "btn btn-primary btn-sm"}
+          "Загрузить артикул")
+       (when active-article
+         ($ :button {:type     "button"
+                     :class    "btn btn-ghost btn-sm"
+                     :on-click on-clear}
+            "Очистить")))))
+
+(defui ^:private article-info
+  [{:keys [data]}]
+  (let [{:keys [name article qty revenue period found?]} data]
+    (if found?
+      ($ :div {:style {:display         "flex"
+                       :gap             "16px"
+                       :flex-wrap       "wrap"
+                       :font-size       "11px"
+                       :color           "var(--color-fg-muted)"
+                       :padding         "8px 10px"
+                       :background      "var(--color-bg-muted)"
+                       :border-radius   "6px"
+                       :margin-top      "8px"}}
+         ($ :span ($ :strong {:style {:color "var(--color-fg-primary)"}}
+                    (or name article))
+            (when (and name (not= name article))
+              (str " · " article)))
+         ($ :span (str (:from period) " — " (:to period)))
+         ($ :span (str "продано: " qty " шт"))
+         ($ :span (str "выручка: " (fmt/format-rub revenue))))
+      ($ :div {:style {:padding       "8px 10px"
+                       :margin-top    "8px"
+                       :background    "var(--color-bg-muted)"
+                       :border-radius "6px"
+                       :font-size     "11px"
+                       :color         "var(--color-warning-fg)"}}
+         (str "За период данных по артикулу «" article "» нет — попробуй другой период или артикул.")))))
 
 ;; ---------------------------------------------------------------------------
-;; Page component
+;; Main page
 ;; ---------------------------------------------------------------------------
 
 (defui unit []
-  (let [[params set-params!] (use-state baseline)
+  (let [loaded      (use-subscribe [::subs/unit-baseline-data])
+        bl-loading? (use-subscribe [::subs/unit-baseline-loading?])
+        bl-article  (use-subscribe [::subs/unit-baseline-article])
+
+        loaded-ok? (boolean (and loaded (:found? loaded)))
+        baseline   (if loaded-ok?
+                     (merge demo-baseline (:params loaded))
+                     demo-baseline)
+
+        [params set-params!] (use-state baseline)
         set-k! (fn [k v] (set-params! #(assoc % k v)))
 
-        cur  (use-memo #(compute-unit-econ params)  [params])
-        base (use-memo #(compute-unit-econ baseline) [])
+        ;; When backend returns a new baseline, replace params so sliders reset
+        ;; to the loaded article's values. Depends on `loaded` map identity
+        ;; (changes only when the subscribed value changes), so editing sliders
+        ;; doesn't re-trigger this effect.
+        _ (use-effect
+           (fn []
+             (when loaded-ok? (set-params! baseline))
+             js/undefined)
+           [loaded loaded-ok? baseline])
+
+        cur  (use-memo #(compute-unit-econ params)   [params])
+        base (use-memo #(compute-unit-econ baseline) [baseline])
 
         d-profit (if (zero? (:profit base))
                    0
@@ -118,14 +223,9 @@
         d-margin (- (:margin cur) (:margin base))
         d-roas   (- (:roas cur) (:roas base))
 
-]
+        sliders  (use-memo #(sliders-for-baseline baseline) [baseline])]
 
-    ;; Q1 + Q2: inline debounce — React-idiomatic shape.
-    ;; deps: only [params] — the timeout is created/cleared entirely inside this
-    ;; effect; there is no external fn ref to include.
-    ;; The cleanup fn (returned from the effect body) cancels the pending timer
-    ;; on every params change AND on component unmount, preventing spurious POSTs
-    ;; after the user navigates away from /app/unit.
+    ;; Debounced server-side validation (keeps prior behavior)
     (use-effect
      (fn []
        (let [t (js/setTimeout
@@ -135,6 +235,28 @@
      [params])
 
     ($ :div {:class "page-content"}
+
+       ;; Article picker bar — full width above the grid
+       ($ :div {:class "card section-card"
+                :style {:margin-bottom "12px"}}
+          ($ :div {:class "section-head"}
+             ($ :div
+                ($ :h3 {:class "section-title"} "Источник данных")
+                ($ :div {:class "section-subtitle"}
+                   (cond
+                     bl-loading?
+                     "загружаем данные артикула…"
+                     loaded-ok?
+                     "what-if на реальных данных артикула"
+                     :else
+                     "демо-сценарий — введи артикул, чтобы посчитать на своих данных")))
+             ($ article-picker
+                {:active-article bl-article
+                 :on-load        #(rf/dispatch [::events/load-unit-baseline %])
+                 :on-clear       #(rf/dispatch [::events/clear-unit-baseline])}))
+          (when loaded
+            ($ article-info {:data loaded})))
+
        ($ :div {:class "grid-12"}
 
           ;; Left: sliders panel (7 columns)
@@ -170,19 +292,7 @@
                         ($ :span (fmt min))
                         ($ :span {:style {:color "var(--color-fg-disabled)"}}
                            (str "baseline " (fmt (get baseline k))))
-                        ($ :span (fmt max))))))
-
-             ;; Footer buttons
-             ($ :div {:style {:margin-top    "24px"
-                              :padding-top   "16px"
-                              :border-top    "1px solid var(--color-border-subtle)"
-                              :display       "flex"
-                              :gap           "8px"}}
-                ($ :button {:class "btn btn-primary btn-sm"}
-                   "Применить как основной")
-                ($ :button {:class    "btn btn-ghost btn-sm"
-                            :on-click #(rf/dispatch [::events/what-if-recalc params])}
-                   "Сохранить как сценарий")))
+                        ($ :span (fmt max)))))))
 
           ;; Right: 4 metric cards + cost structure below (5 columns)
           ($ :section {:class "col-5"

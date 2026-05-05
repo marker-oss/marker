@@ -126,3 +126,16 @@
 (rf/reg-sub ::stock-article-loading?
   (fn [db [_ article]]
     (get-in db [:marker/stocks-article-data article :loading?] false)))
+
+;; ---------------------------------------------------------------------------
+;; Unit-econ: real-article baseline
+;; ---------------------------------------------------------------------------
+
+(rf/reg-sub ::unit-baseline-data
+  (fn [db _] (:marker/unit-baseline-data db)))
+
+(rf/reg-sub ::unit-baseline-loading?
+  (fn [db _] (:marker/unit-baseline-loading? db)))
+
+(rf/reg-sub ::unit-baseline-article
+  (fn [db _] (:marker/unit-baseline-article db)))

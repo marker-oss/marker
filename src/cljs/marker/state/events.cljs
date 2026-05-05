@@ -4,6 +4,7 @@
    tweaks persistence via localStorage[\"marker/tweaks\"],
    and Phase 8 API load events."
   (:require [re-frame.core :as rf]
+            [clojure.string  :as str]
             [marker.state.db :as db]
             [marker.api      :as api]))
 
@@ -398,6 +399,48 @@
   (fn [{:keys [db]} [_ failure]]
     {:db       db   ; silently log; UI is driven by client-side compute
      :dispatch [::api-error what-if-url failure]}))
+
+;; ---------------------------------------------------------------------------
+;; Unit-econ: load real article baseline (for "what-if for THIS SKU" mode)
+;; ---------------------------------------------------------------------------
+
+(def ^:private unit-baseline-url "/api/v1/marker/unit-baseline")
+
+(rf/reg-event-fx ::load-unit-baseline
+  (fn [{:keys [db]} [_ article]]
+    (let [art (some-> article str str/trim)]
+      (if (or (nil? art) (= "" art))
+        {:db db}
+        (let [fs   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   false}
+              params (assoc (api/build-params fs) :article art)
+              url    (api/build-url unit-baseline-url params)]
+          {:db         (assoc db
+                              :marker/unit-baseline-loading? true
+                              :marker/unit-baseline-article  art)
+           :http-xhrio (api/get-xhrio url
+                                      [::unit-baseline-loaded]
+                                      [::unit-baseline-load-failed])})))))
+
+(rf/reg-event-db ::unit-baseline-loaded
+  (fn [db [_ data]]
+    (-> db
+        (assoc :marker/unit-baseline-data     data
+               :marker/unit-baseline-loading? false)
+        (update :marker/api-errors dissoc unit-baseline-url))))
+
+(rf/reg-event-fx ::unit-baseline-load-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/unit-baseline-loading? false)
+     :dispatch [::api-error unit-baseline-url failure]}))
+
+(rf/reg-event-db ::clear-unit-baseline
+  (fn [db _]
+    (dissoc db
+            :marker/unit-baseline-data
+            :marker/unit-baseline-loading?
+            :marker/unit-baseline-article)))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 2 (UI restructure): Stocks — by-warehouse + per-article drilldown
