@@ -395,6 +395,7 @@
    "MarketplaceRedistributionOfAcquiringOperation"       :acquiring-fee
    "MarketplaceServiceItemPackageMaterialsProvision"     :acceptance
    "MarketplaceServiceItemTemporaryStorageRedistribution" :storage-fee
+   "MarketplaceServiceItemTemporaryStorage"              :storage-fee
    "ItemAgentServiceStarsMembership"                     :additional-payment
    "MarketplaceServiceSellerReturnsCargoAssortment"      :additional-payment
    "MarketplaceServiceItemReturnNotDelivToCustomer"      :additional-payment

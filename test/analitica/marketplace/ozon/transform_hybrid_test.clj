@@ -17,9 +17,9 @@
 ;; T017: service-name mapping
 ;; ---------------------------------------------------------------------------
 
-(deftest service-mapping-has-18-entries-covering-all-fields
-  (testing "mapping table contains exactly the 18 documented service names"
-    (is (= 18 (count transform/ozon-service-mapping)))))
+(deftest service-mapping-has-19-entries-covering-all-fields
+  (testing "mapping table contains exactly the documented service names"
+    (is (= 19 (count transform/ozon-service-mapping)))))
 
 (deftest delivery-cost-services-map-correctly
   (testing "10 delivery/logistics services → :delivery-cost"
@@ -43,6 +43,13 @@
                             "MarketplaceServiceItemPackageRedistribution")))
     (is (= :delivery-cost (transform/ozon-service-mapping
                             "MarketplaceServiceProductMovementFromWarehouse")))))
+
+(deftest temporary-storage-service-maps-to-storage-fee
+  (testing "MarketplaceServiceItemTemporaryStorage (no Redistribution suffix) is
+            also storage. Apr 2026 LK had 204 ₽ missing because we only mapped
+            the Redistribution variant."
+    (is (= :storage-fee (transform/ozon-service-mapping
+                          "MarketplaceServiceItemTemporaryStorage")))))
 
 (deftest acquiring-acceptance-storage-services-map-correctly
   (testing "specialised single-field services"
