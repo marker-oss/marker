@@ -620,14 +620,14 @@
         (is (= rev-src profit-src)
             (str "profit :source=" profit-src " should match revenue :source=" rev-src)))))
 
-  (testing ":margin :source matches :profit :source"
+  (testing ":margin :source mirrors :revenue :source"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis           (:kpis body)
-          profit-src     (get-in kpis [:profit :source])
+          rev-src        (get-in kpis [:revenue :source])
           margin-src     (get-in kpis [:margin :source])]
       (when (not= :none margin-src)
-        (is (= profit-src margin-src)
-            (str "margin :source=" margin-src " should match profit :source=" profit-src))))))
+        (is (= rev-src margin-src)
+            (str "margin :source=" margin-src " should mirror revenue :source=" rev-src))))))
 
 ;; ---------------------------------------------------------------------------
 ;; B2. pnl — shape tests

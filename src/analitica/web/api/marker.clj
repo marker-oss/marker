@@ -120,7 +120,8 @@
           (-> pnl-result
               (update :revenue + (:revenue p))
               (assoc :preliminary?      true
-                     :preliminary-as-of (:as-of p)))
+                     :preliminary-as-of (:as-of p)
+                     :revenue-source    :preliminary))
           pnl-result)
         pnl-result))
 
@@ -516,12 +517,21 @@
           canon-deliv    (fn [from* to*] (canon/units-delivered from* to* mp1))
           ;; Use canon when it has data for this period+mp; fallback otherwise.
           ;; Phase 5e is Ozon-only — WB/YM canon is empty until 5f/g land.
-          orders-cur  (let [c (canon-orders from to)]
-                        (if (pos? c) c (legacy-orders from to)))
+          [orders-cur orders-src]
+                      (let [c (canon-orders from to)]
+                        (cond
+                          (pos? c)                       [c :canon]
+                          (pos? (legacy-orders from to)) [(legacy-orders from to) :legacy-orders]
+                          :else                          [0 :none]))
           orders-prev (let [c (canon-orders (:from prev) (:to prev))]
                         (if (pos? c) c (legacy-orders (:from prev) (:to prev))))
-          purchases-cur  (let [c (canon-deliv from to)]
-                           (if (pos? c) c (long (or (:total-sales sales-tots) 0))))
+          [purchases-cur purchases-src]
+                      (let [c (canon-deliv from to)]
+                        (cond
+                          (pos? c)                                    [c :canon]
+                          (pos? (long (or (:total-sales sales-tots) 0)))
+                            [(long (or (:total-sales sales-tots) 0)) :legacy-sales]
+                          :else                                       [0 :none]))
           purchases-prev (let [c (canon-deliv (:from prev) (:to prev))]
                            (if (pos? c) c (long (or (:total-sales prev-tots) 0))))
 
@@ -559,20 +569,6 @@
                           :else                                        :none)
           revenue-as-of (when (= :preliminary revenue-src)
                           (:preliminary-as-of pnl-cur))
-
-          ;; orders-src: canon > legacy-orders > none
-          orders-src    (let [c (canon-orders from to)]
-                          (cond
-                            (pos? c)                                   :canon
-                            (pos? (legacy-orders from to))             :legacy-orders
-                            :else                                      :none))
-
-          ;; purchases-src: canon > legacy-sales > none
-          purchases-src (let [c (canon-deliv from to)]
-                          (cond
-                            (pos? c)                                   :canon
-                            (pos? (or (:total-sales sales-tots) 0))    :legacy-sales
-                            :else                                      :none))
 
           ;; buyout-src: from pnl (realization-based); none when 0
           buyout-src    (if (pos? (or (:buyout-rate pnl-cur) 0.0)) :realization :none)
