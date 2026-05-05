@@ -444,7 +444,7 @@
 ;; KPI section — reads from API :kpis map
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private kpi-section [{:keys [compare? kpis preliminary?]}]
+(defui ^:private kpi-section [{:keys [compare? kpis preliminary? preliminary-as-of]}]
   (let [k      (or kpis {})
         rev       (:revenue k)
         profit    (:profit k)
@@ -461,56 +461,70 @@
         purch-cnt (safe-num (:value purchases))
         conv-pct  (when (pos? order-cnt)
                     (* 100.0 (/ purch-cnt order-cnt)))
+        prelim-badge (fn [kpi] (when (= :preliminary (:source kpi)) "≈"))
         cards  [{:label     "Выручка"
                  :value     (fmt/format-rub (safe-num (:value rev)))
                  :delta     (:delta-pct rev)
                  :spark     (safe-spark (:spark rev))
-                 :sub       (if preliminary? "WoW · предварительная" "WoW")
-                 :badge     (when preliminary? "≈")}
+                 :sub       "WoW"
+                 :badge     (prelim-badge rev)}
                 {:label     "Чистая прибыль"
                  :value     (fmt/format-rub (safe-num (:value profit)))
                  :delta     (:delta-pct profit)
                  :spark     (safe-spark (:spark profit))
-                 :sub       "WoW"}
-                {:label     "Заказы"
+                 :sub       "WoW"
+                 :badge     (prelim-badge profit)}
+                {:label     "Заказано"
                  :value     (str (fmt/format-int order-cnt) " шт")
                  :delta     (:delta-pct orders)
                  :spark     (safe-spark (:spark orders))
                  :sub       (if conv-pct
                               (str "конв. " (fmt/format-pct conv-pct))
-                              "WoW")}
-                {:label     "Продажи"
+                              "WoW")
+                 :badge     (prelim-badge orders)}
+                {:label     "Доставлено"
                  :value     (str (fmt/format-int purch-cnt) " шт")
                  :delta     (:delta-pct purchases)
                  :spark     (safe-spark (:spark purchases))
-                 :sub       "выкуплено"}
+                 :sub       "доставлено клиенту"
+                 :badge     (prelim-badge purchases)}
                 {:label     "Маржа"
                  :value     (fmt/format-pct (safe-num (:value margin)))
                  :delta     (:delta-pct margin)
-                 :sub       "WoW"}
+                 :sub       "WoW"
+                 :badge     (prelim-badge margin)}
                 {:label     "Средний чек"
                  :value     (fmt/format-rub (safe-num (:value check)))
                  :delta     (:delta-pct check)
-                 :sub       "WoW"}
+                 :sub       "WoW"
+                 :badge     (prelim-badge check)}
                 {:label     "Выкуп"
                  :value     (fmt/format-pct (safe-num (:value buyout)))
                  :delta     (:delta-pct buyout)
-                 :sub       "WoW"}
+                 :sub       "WoW"
+                 :badge     (prelim-badge buyout)}
                 {:label     "ROAS"
                  :value     (or-ndash (:value roas) fmt/format-mul)
                  :delta     (:delta-pct roas)
-                 :sub       "WoW"}
+                 :sub       "WoW"
+                 :badge     (prelim-badge roas)}
                 {:label     "ДРР"
                  :value     (or-ndash (:value drr) fmt/format-pct)
                  :delta     (:delta-pct drr)
                  :sub       "WoW"
-                 :inverted? true}]]
+                 :inverted? true
+                 :badge     (prelim-badge drr)}]
+        any-preliminary? (some #(= :preliminary (:source %))
+                               [rev profit margin check buyout roas drr])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
              ($ :h3 {:class "section-title"} "Ключевые метрики")
              (when compare?
-               ($ :div {:class "section-subtitle"} "vs предыдущий период")))
+               ($ :div {:class "section-subtitle"} "vs предыдущий период"))
+             (when preliminary-as-of
+               ($ :div {:class "section-subtitle"}
+                  (str "по состоянию на " preliminary-as-of))))
           ($ :div {:class "row"}
              ($ :span {:class "badge badge-success"}
                 ($ :span {:class "dot-status green"})
@@ -525,7 +539,11 @@
                          :spark     spark
                          :compare?  compare?
                          :inverted? (boolean inverted?)
-                         :badge     badge}))))))
+                         :badge     badge})))
+       (when any-preliminary?
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "12px" :font-size "12px"}}
+            "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Loading skeleton helpers
@@ -702,7 +720,10 @@
                         " чтобы получить точные цифры.")))))
 
            ;; KPI grid
-           ($ kpi-section {:compare? compare? :kpis kpis :preliminary? preliminary?})
+           ($ kpi-section {:compare?          compare?
+                           :kpis              kpis
+                           :preliminary?      preliminary?
+                           :preliminary-as-of prelim-as-of})
 
            ;; Plan-fact + Donut
            ($ :div {:class "grid-12"}
