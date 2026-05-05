@@ -175,8 +175,10 @@
             (when (and name (not= name article))
               (str " · " article)))
          ($ :span (str (:from period) " — " (:to period)))
-         ($ :span (str "продано: " qty " шт"))
-         ($ :span (str "выручка: " (fmt/format-rub revenue))))
+         ($ :span {:title "Доставлено и закрыто реализацией МП. Финал ~15 мая для Ozon."}
+            (str "Реализовано: " qty " шт"))
+         ($ :span {:title "Выручка по строкам реализации (для-pay net)."}
+            (str "Доход: " (fmt/format-rub revenue))))
       ($ :div {:style {:padding       "8px 10px"
                        :margin-top    "8px"
                        :background    "var(--color-bg-muted)"
