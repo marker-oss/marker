@@ -51,6 +51,27 @@
              :quantity    1})
           (range q))))
 
+(defn- expand-units
+  "Walk products[] and produce {:seq :units} where :units is a vector of
+   per-unit maps with shared identity fields. The :seq value at the end
+   is the next free item_seq (= total unit count)."
+  [products]
+  (reduce (fn [{:keys [seq units]} product]
+            (let [unit-maps (product-units product seq)]
+              {:seq   (+ seq (count unit-maps))
+               :units (into units unit-maps)}))
+          {:seq 0 :units []}
+          (or products [])))
+
+(def ^:private delivered-statuses
+  "Posting statuses that mean the item reached the buyer. `returned` is
+   here too — a returned item was first delivered."
+  #{"delivered" "returned"})
+
+(def ^:private cancelled-statuses
+  "Posting statuses that mean the order was killed before delivery."
+  #{"cancelled"})
+
 (defn posting->ordered-events
   "Transform one raw Ozon posting into a vector of `ordered` item events —
    one event per unit (per-item, expanding products[].quantity).
@@ -80,11 +101,69 @@
                          :event-ts    in-process
                          :status      status
                          :raw-data-id raw-data-id}
-            products    (or (:products posting) [])]
-        (->> products
-             (reduce (fn [{:keys [seq events]} product]
-                       (let [units (product-units product seq)]
-                         {:seq    (+ seq (count units))
-                          :events (into events (map #(merge base %) units))}))
-                     {:seq 0 :events []})
-             :events)))))
+            {:keys [units]} (expand-units (:products posting))]
+        (mapv #(merge base %) units)))))
+
+(defn- posting->delivered-events
+  "Emit `delivered` events when posting status indicates the items reached
+   the buyer (delivered or returned — returned implies a prior delivery).
+   Event date comes from analytics_data.delivery_date_end. Returns [] when
+   status doesn't qualify or the delivery date is missing."
+  [posting raw-data-id]
+  (let [status     (:status posting)
+        delivery-ts (get-in posting [:analytics_data :delivery_date_end])
+        event-date  (->date delivery-ts)]
+    (if (or (nil? event-date)
+            (not (contains? delivered-statuses status)))
+      []
+      (let [posting-num (:posting_number posting)
+            base        {:marketplace "ozon"
+                         :posting-id  posting-num
+                         :event-type  "delivered"
+                         :event-date  event-date
+                         :event-ts    delivery-ts
+                         :status      status
+                         :raw-data-id raw-data-id}
+            {:keys [units]} (expand-units (:products posting))]
+        (mapv #(merge base %) units)))))
+
+(defn- posting->cancelled-events
+  "Emit `cancelled` events when posting status='cancelled'. Falls back to
+   in_process_at as event_date — Ozon doesn't expose an explicit
+   cancellation timestamp on /v3/posting/list responses (the
+   `cancellation` block has reason and initiator but no datetime)."
+  [posting raw-data-id]
+  (let [status (:status posting)]
+    (if (not (contains? cancelled-statuses status))
+      []
+      (let [in-process (:in_process_at posting)
+            event-date (->date in-process)]
+        (if (nil? event-date)
+          []
+          (let [posting-num (:posting_number posting)
+                base        {:marketplace "ozon"
+                             :posting-id  posting-num
+                             :event-type  "cancelled"
+                             :event-date  event-date
+                             :event-ts    in-process
+                             :status      status
+                             :raw-data-id raw-data-id}
+                {:keys [units]} (expand-units (:products posting))]
+            (mapv #(merge base %) units)))))))
+
+(defn posting->events
+  "Top-level normalizer: convert one Ozon posting into ALL relevant
+   canonical item_events (ordered + delivered + cancelled).
+
+   Returned events are NOT emitted here — they require correlation with
+   /v2/finance/realization or transaction-list return rows for an actual
+   return date and are handled by Phase 5c.
+
+   Output ordering: ordered events first, then delivered, then cancelled
+   — matches the lifecycle, but the canonical PK doesn't depend on order."
+  [posting raw-data-id]
+  (into []
+        cat
+        [(posting->ordered-events   posting raw-data-id)
+         (posting->delivered-events posting raw-data-id)
+         (posting->cancelled-events posting raw-data-id)]))

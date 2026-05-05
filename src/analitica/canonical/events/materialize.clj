@@ -70,10 +70,14 @@
   (let [batches (db/get-raw-range "ozon" :postings from to)
         events  (into []
                       (mapcat (fn [{:keys [data id]}]
-                                (mapcat #(ozon-ev/posting->ordered-events % id)
+                                (mapcat #(ozon-ev/posting->events % id)
                                         (or data []))))
                       batches)
-        n       (insert-events! events)]
+        n       (insert-events! events)
+        by-type (frequencies (map :event-type events))]
     (println (str "Materialized canonical Ozon item_events: "
-                  (count events) " events from " (count batches) " raw batches"))
+                  (count events) " events ("
+                  (clojure.string/join ", "
+                    (map (fn [[t n]] (str t " " n)) by-type))
+                  ") from " (count batches) " raw batches"))
     n))

@@ -76,3 +76,62 @@
     (let [posting (dissoc single-item-posting :in_process_at)
           events  (ozon-events/posting->ordered-events posting 1)]
       (is (empty? events)))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 5b: delivered + cancelled events
+;; ---------------------------------------------------------------------------
+
+(deftest delivered-event-emitted-when-status-delivered
+  (testing "status='delivered' posting emits 1 delivered event per unit
+            (in addition to the ordered event), dated by delivery_date_end"
+    (let [events (ozon-events/posting->events single-item-posting 99)
+          delivered (filter #(= "delivered" (:event-type %)) events)]
+      (is (= 1 (count delivered)))
+      (let [d (first delivered)]
+        (is (= "ozon" (:marketplace d)))
+        (is (= "0001-1" (:posting-id d)))
+        (is (= 0 (:item-seq d)))
+        (is (= "ART-A" (:article d)))
+        (is (= "2026-04-18" (:event-date d))
+            "event_date from analytics_data.delivery_date_end")
+        (is (= "2026-04-18T18:00:00Z" (:event-ts d)))))))
+
+(deftest delivered-event-also-emitted-for-returned-postings
+  (testing "status='returned' means item was first delivered, then returned —
+            both delivered and ordered events fire (returned itself is Phase 5c)"
+    (let [posting (assoc single-item-posting :status "returned")
+          events  (ozon-events/posting->events posting 1)]
+      (is (= 1 (count (filter #(= "ordered" (:event-type %)) events))))
+      (is (= 1 (count (filter #(= "delivered" (:event-type %)) events)))))))
+
+(deftest delivered-event-not-emitted-when-status-cancelled
+  (testing "cancelled postings never reached the buyer → no delivered event"
+    (let [posting (assoc single-item-posting :status "cancelled")
+          events  (ozon-events/posting->events posting 1)]
+      (is (empty? (filter #(= "delivered" (:event-type %)) events))))))
+
+(deftest delivered-event-not-emitted-when-status-in-flight
+  (testing "delivering / awaiting_packaging are not yet settled — no delivered event"
+    (doseq [s ["delivering" "awaiting_packaging" "awaiting_deliver"]]
+      (let [posting (assoc single-item-posting :status s)
+            events  (ozon-events/posting->events posting 1)]
+        (is (empty? (filter #(= "delivered" (:event-type %)) events))
+            (str "no delivered event for status=" s))))))
+
+(deftest cancelled-event-emitted-when-status-cancelled
+  (testing "status='cancelled' emits cancelled events (one per unit). Falls back
+            to in_process_at when no explicit cancellation date is present."
+    (let [posting (assoc single-item-posting :status "cancelled")
+          events  (ozon-events/posting->events posting 1)
+          cancelled (filter #(= "cancelled" (:event-type %)) events)]
+      (is (= 1 (count cancelled)))
+      (is (= "2026-04-15" (:event-date (first cancelled)))
+          "fallback to in_process_at day when cancellation timestamp is absent"))))
+
+(deftest cancelled-event-not-emitted-when-status-not-cancelled
+  (testing "delivered / delivering / returned do not emit cancelled events"
+    (doseq [s ["delivered" "delivering" "returned" "awaiting_packaging"]]
+      (let [posting (assoc single-item-posting :status s)
+            events  (ozon-events/posting->events posting 1)]
+        (is (empty? (filter #(= "cancelled" (:event-type %)) events))
+            (str "no cancelled event for status=" s))))))
