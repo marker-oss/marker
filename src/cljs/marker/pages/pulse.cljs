@@ -461,6 +461,7 @@
         profit    (:profit k)
         orders    (:orders k)
         purchases (:purchases k)
+        realized  (:realized k)
         margin    (:margin k)
         check     (:avg-check k)
         buyout    (:buyout k)
@@ -498,6 +499,12 @@
                  :spark     (safe-spark (:spark purchases))
                  :sub       "WoW"
                  :badge     (prelim-badge purchases)}
+                {:label     "Реализовано"
+                 :value     (str (fmt/format-int (safe-num (:value realized))) " шт")
+                 :delta     (:delta-pct realized)
+                 :spark     (safe-spark (:spark realized))
+                 :sub       "WoW"
+                 :badge     (prelim-badge realized)}
                 {:label     "Маржа"
                  :value     (fmt/format-pct (safe-num (:value margin)))
                  :delta     (:delta-pct margin)
