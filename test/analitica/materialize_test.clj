@@ -162,6 +162,39 @@
       (is (= 500.0 (:for-pay row2))
           "B-005: for_pay still untouched after second run"))))
 
+(deftest materialize-services-dedupes-overlapping-chunks
+  (testing "same operation_id across overlapping transaction chunks counts ONCE"
+    ;; Production hit (Apr 2026): 6 overlapping transaction chunks
+    ;; (Mar 1-31, Mar 26-Apr 25, Apr 3-May 3, Apr 13-25, Apr 18-25, Apr 26-May 3)
+    ;; caused load-transactions-operations to return the SAME op_id from
+    ;; multiple chunks. aggregate-service-contributions then SUMmed each
+    ;; per-chunk copy → service costs 5x overstated for April. LK acquiring
+    ;; was 3,054 ₽; ours was 15,118 ₽ before this fix.
+    (seed-finance-row! {:rrd-id 1 :article "ART-A"
+                        :date-from "2026-03-01"
+                        :for-pay 500.0
+                        :delivery-cost 0})
+    (seed-realization-raw! "ART-A" 10 "2026-03-01" "2026-03-31")
+    (let [op {:operation_id 999
+              :operation_type "OperationAgentDeliveredToCustomer"
+              :operation_date "2026-03-15 10:00:00"
+              :type "services"
+              :amount -50
+              :items [{:sku 10 :name "A" :price 500 :quantity 1}]
+              :services [{:name "MarketplaceServiceItemDirectFlowLogistic" :price -50}]
+              :posting {:posting_number "P1" :delivery_schema "FBO"}}]
+      ;; Chunk 1 covers full month
+      (seed-transactions-raw! [op] "2026-03-01" "2026-03-31")
+      ;; Chunk 2 overlaps chunk 1 — SAME operation present in both
+      (seed-transactions-raw! [op] "2026-03-10" "2026-03-20"))
+
+    (mat/materialize-ozon-services! ["2026-03-01" "2026-03-31"])
+
+    (let [row (finance-row-by-article "ART-A")]
+      (is (= 50.0 (:delivery-cost row))
+          "operation_id 999 appears in 2 overlapping chunks but its 50 ₽
+           service must be counted exactly once, not 100 ₽."))))
+
 (deftest materialize-services-multi-field-merge
   (testing "multiple distinct services map to distinct cost fields"
     (seed-finance-row! {:rrd-id 1 :article "ART-A"

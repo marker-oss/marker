@@ -363,12 +363,20 @@
 
 (defn- load-transactions-operations
   "Collect all operations from raw_data rows of entity_type=:transactions
-   for [from..to]. Raw stored shape: {:operations [...]}."
+   for [from..to]. Raw stored shape: {:operations [...]}.
+
+   Dedupes by `:operation_id` — Ozon transaction chunks routinely overlap
+   (e.g. a 30-day chunk and a 7-day chunk both cover the same week).
+   Without dedup the same op contributes its services N times, inflating
+   acquiring/delivery_cost/storage by the chunk-overlap factor."
   [from to]
-  (let [batches (db/get-raw-range "ozon" :transactions from to)]
-    (into [] (mapcat (fn [{:keys [data]}]
-                       (get data :operations []))
-                     batches))))
+  (let [batches (db/get-raw-range "ozon" :transactions from to)
+        all-ops (mapcat (fn [{:keys [data]}] (get data :operations [])) batches)]
+    (vec (vals (reduce (fn [acc op]
+                         (let [k (get op :operation_id)]
+                           (if (and k (contains? acc k)) acc (assoc acc k op))))
+                       (array-map)
+                       all-ops)))))
 
 (defn- aggregate-service-contributions
   "Pre-aggregate service-rows by (article, month, field). Returns a map
