@@ -20,6 +20,7 @@
             [analitica.domain.stock       :as stock]
             [analitica.domain.buyout      :as buyout]
             [analitica.alerts             :as alerts]
+            [analitica.canonical.events.query :as canon]
             [analitica.util.period        :as period]
             [analitica.util.math          :as math]
             [analitica.db                 :as db]
@@ -484,9 +485,14 @@
           ;; Data freshness
           fresh       (alerts/freshness-data)
 
-          ;; Order vs purchase counts:
-          ;;   :orders     = all orders created in window (incl. cancelled / in-flight)
-          ;;   :purchases  = orders that completed (sales / delivered)
+          ;; Order vs purchase counts. Phase 5e (2026-05-05): when canonical
+          ;; item_events covers the period, prefer them — they count by
+          ;; ITEM-UNIT (LK / MPStats convention) and have one definition
+          ;; across MPs. When canon is empty (period not yet materialized
+          ;; or MP without a normalizer — WB/YM until Phase 5f/g), fall
+          ;; back to the legacy orders/sales tables.
+          ;;   :orders     — units ordered (was: posting count)
+          ;;   :purchases  — units delivered (was: sales-table row count)
           ;; Conversion = purchases / orders.
           mp-name-clause (cond
                            (= :ozon mp1) " AND marketplace = 'ozon'"
@@ -496,15 +502,22 @@
           orders-total-q (str "SELECT COUNT(*) AS n FROM orders
                                WHERE substr(date,1,10) BETWEEN ? AND ?"
                               mp-name-clause)
-          orders-cur  (long (or (:n (first (try (db/query [orders-total-q from to])
-                                                (catch Exception _ [{:n 0}]))))
-                                0))
-          orders-prev (long (or (:n (first (try (db/query [orders-total-q
-                                                           (:from prev) (:to prev)])
-                                                (catch Exception _ [{:n 0}]))))
-                                0))
-          purchases-cur  (long (or (:total-sales sales-tots) 0))
-          purchases-prev (long (or (:total-sales prev-tots) 0))
+          legacy-orders  (fn [from* to*]
+                           (long (or (:n (first (try (db/query [orders-total-q from* to*])
+                                                     (catch Exception _ [{:n 0}]))))
+                                     0)))
+          canon-orders   (fn [from* to*] (canon/units-ordered   from* to* mp1))
+          canon-deliv    (fn [from* to*] (canon/units-delivered from* to* mp1))
+          ;; Use canon when it has data for this period+mp; fallback otherwise.
+          ;; Phase 5e is Ozon-only — WB/YM canon is empty until 5f/g land.
+          orders-cur  (let [c (canon-orders from to)]
+                        (if (pos? c) c (legacy-orders from to)))
+          orders-prev (let [c (canon-orders (:from prev) (:to prev))]
+                        (if (pos? c) c (legacy-orders (:from prev) (:to prev))))
+          purchases-cur  (let [c (canon-deliv from to)]
+                           (if (pos? c) c (long (or (:total-sales sales-tots) 0))))
+          purchases-prev (let [c (canon-deliv (:from prev) (:to prev))]
+                           (if (pos? c) c (long (or (:total-sales prev-tots) 0))))
 
           ;; Revenue / avg-check: come from PnL with preliminary overlay
           ;; applied via with-prelim. Canonical realization-based when
@@ -1045,6 +1058,88 @@
     (catch Exception e
       {:id    (get-in request [:params :sku-id] "")
        :error (.getMessage e)})))
+
+;; ---------------------------------------------------------------------------
+;; B4b. unit-baseline — derive per-unit calculator inputs from real article data
+;; ---------------------------------------------------------------------------
+;;
+;; What it does:
+;;   Takes an article + period and aggregates finance/sales/ad data into the
+;;   per-unit shape consumed by the unit-econ what-if calculator (price, cogs,
+;;   commission %, logistics ₽/шт, returns %, ads ₽/шт).
+;;
+;; Sales-qty in by-article counts only sale rows; returns-qty counts return
+;; rows. Per-unit denominators:
+;;   - price          = revenue / sales-qty                (gross per sold unit)
+;;   - cogs           = :cost-price                        (already per-unit)
+;;   - commission %   = mp-commission / revenue × 100      (% of gross)
+;;   - logistics ₽/шт = logistics / (sales-qty + returns-qty) (per shipped unit)
+;;   - returns %      = returns-qty / (sales-qty + returns-qty) × 100
+;;   - ads ₽/шт       = ad-cost / sales-qty
+;;
+;; When no data exists for the article in the period, returns :found? false
+;; and zeros so the UI can show a graceful empty state.
+
+(defn- safe-div [n d]
+  (if (and d (pos? d)) (double (/ n d)) 0.0))
+
+(defn unit-baseline-handler
+  "Handler for GET /api/v1/marker/unit-baseline?article=...
+   Optional: ?from&to (period), ?mp=wb|ozon|ym (single MP).
+
+   Returns:
+     {:article  string
+      :name     string
+      :marketplace kw|nil
+      :period   {:from iso :to iso}
+      :found?   bool
+      :qty      int      ; sales-qty
+      :revenue  double
+      :params   {:price :cogs :commission :logistics :returns :ads}}"
+  [request]
+  (try
+    (let [params  (:params request)
+          article (or (:article params) (get params "article") "")
+          period  (parse-period-params params)
+          mp1     (let [mps (parse-mp-param params)]
+                    (when (and mps (= 1 (count mps))) (first mps)))
+          fin-all (load-finance period mp1)
+          fin-art (filter #(= article (or (:article %) "")) fin-all)
+          by-art  (try (finance/by-article fin-art) (catch Exception _ []))
+          agg     (first by-art)
+          qty     (long (or (:sales-qty agg) 0))
+          ret-qty (long (or (:returns-qty agg) 0))
+          shipped (+ qty ret-qty)
+          revenue (double (or (:revenue agg) 0.0))
+          ads-by-art (try (pnl/ad-spend-by-article (:from period) (:to period) mp1)
+                          (catch Exception _ {}))
+          ad-cost (double (or (get ads-by-art article) 0.0))
+          mp-out  (or mp1
+                      (some-> (:marketplace agg) keyword))
+          price       (math/round2 (safe-div revenue qty))
+          cogs        (math/round2 (or (:cost-price agg) 0.0))
+          commission  (math/round2 (* (safe-div (or (:mp-commission agg) 0.0) revenue) 100.0))
+          logistics   (math/round2 (safe-div (or (:logistics agg) 0.0) shipped))
+          returns-pct (math/round2 (* (safe-div ret-qty shipped) 100.0))
+          ads-per     (math/round2 (safe-div ad-cost qty))]
+      {:article     article
+       :name        (or (:subject agg) article)
+       :marketplace mp-out
+       :period      period
+       :found?      (boolean (and agg (pos? qty)))
+       :qty         qty
+       :returns-qty ret-qty
+       :revenue     (math/round2 revenue)
+       :params      {:price      price
+                     :cogs       cogs
+                     :commission commission
+                     :logistics  logistics
+                     :returns    returns-pct
+                     :ads        ads-per}})
+    (catch Exception e
+      {:article (get-in request [:params :article] "")
+       :found?  false
+       :error   (.getMessage e)})))
 
 ;; ---------------------------------------------------------------------------
 ;; B5. what-if-recalc
