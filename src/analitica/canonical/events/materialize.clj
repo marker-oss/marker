@@ -58,14 +58,23 @@
       (count rows))))
 
 (defn materialize-ozon-events!
-  "Read all `postings` raw_data rows whose [date_from..date_to] overlaps
-   the requested window, normalize each posting to ordered events, and
-   INSERT OR REPLACE into item_events.
+  "Read raw Ozon postings and emit canonical item_events:
+     - ordered  from in_process_at
+     - delivered from analytics_data.delivery_date_end (for status
+       delivered/returned)
+     - cancelled from status='cancelled' (event_date = in_process_at)
 
-   Args:
-     period — [from to] vector or {:from :to} map (resolved upstream)
+   `returned` events are NOT emitted here yet — see Phase 5c notes in
+   ozon.clj/transaction-op->returned-events. Transaction-list returns
+   reflect refund-processing events (multiple per physical return), so
+   counting from there over-states 5-10×. The right source for physical
+   return counts is /v2/finance/realization (sku-level monthly
+   aggregates that already match LK). Wiring deferred to Phase 5c.5.
 
-   Returns count of events written."
+   INSERT OR REPLACE keyed by (marketplace, posting_id, item_seq,
+   event_type) so re-runs are idempotent.
+
+   Args: from, to — ISO dates bounding the work window."
   [from to]
   (let [batches (db/get-raw-range "ozon" :postings from to)
         events  (into []
@@ -79,5 +88,5 @@
                   (count events) " events ("
                   (clojure.string/join ", "
                     (map (fn [[t n]] (str t " " n)) by-type))
-                  ") from " (count batches) " raw batches"))
+                  ") from " (count batches) " posting batches"))
     n))

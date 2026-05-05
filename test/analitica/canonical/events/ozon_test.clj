@@ -135,3 +135,70 @@
             events  (ozon-events/posting->events posting 1)]
         (is (empty? (filter #(= "cancelled" (:event-type %)) events))
             (str "no cancelled event for status=" s))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 5c: returned events from transaction-list operations
+;; ---------------------------------------------------------------------------
+
+(def ^:private return-op
+  "Single-item return operation from /v3/finance/transaction/list."
+  {:operation_id   77001
+   :operation_type "OperationItemReturn"
+   :operation_date "2026-04-12 14:30:00"
+   :type           "returns"
+   :amount         -120.0
+   :items          [{:name "Платье SHEGIDA" :sku 2152872479}]
+   :services       []
+   :posting        {:posting_number "07815547-0994-1"}})
+
+(def ^:private sku-lookup
+  "sku → offer_id (article) — what build-article-lookup produces in materialize."
+  {2152872479 "ART-RET-A"
+   1738937827 "ART-RET-B"})
+
+(deftest return-op-emits-returned-event-per-item
+  (testing "one return operation with one item → one returned event"
+    (let [events (ozon-events/transaction-op->returned-events return-op sku-lookup 100)]
+      (is (= 1 (count events)))
+      (let [e (first events)]
+        (is (= "ozon" (:marketplace e)))
+        (is (= "07815547-0994-1" (:posting-id e)))
+        (is (= "ART-RET-A" (:article e)))
+        (is (= "2152872479" (:sku e)))
+        (is (= "returned" (:event-type e)))
+        (is (= "2026-04-12" (:event-date e)) "day slice of operation_date")
+        (is (= "OperationItemReturn" (:status e)) "raw op_type as audit status")
+        (is (= 100 (:raw-data-id e)))))))
+
+(deftest return-op-multi-item-emits-row-per-item
+  (testing "return op with 2 items → 2 returned events with item_seq 0 and 1"
+    (let [op (assoc return-op :items
+                    [{:name "A" :sku 2152872479}
+                     {:name "B" :sku 1738937827}])
+          events (ozon-events/transaction-op->returned-events op sku-lookup 1)]
+      (is (= 2 (count events)))
+      (is (= ["ART-RET-A" "ART-RET-B"] (mapv :article events)))
+      (is (= [0 1] (mapv :item-seq events))))))
+
+(deftest non-return-op-emits-nothing
+  (testing "transaction-list operations of type other than 'returns' produce no
+            returned events (sale, services, compensation, etc.)"
+    (doseq [t ["orders" "services" "compensation"]]
+      (let [op (assoc return-op :type t)]
+        (is (empty? (ozon-events/transaction-op->returned-events op sku-lookup 1))
+            (str "type=" t " must not emit returned"))))))
+
+(deftest return-op-without-posting-number-skipped
+  (testing "account-level returns (no posting_number) are dropped — the
+            canonical event log requires identity to attribute to a unit"
+    (let [op (assoc return-op :posting {:posting_number nil})]
+      (is (empty? (ozon-events/transaction-op->returned-events op sku-lookup 1))))))
+
+(deftest return-op-with-orphan-sku-still-emits-with-nil-article
+  (testing "if sku doesn't resolve in the lookup we still emit the event —
+            counting matters more than identity; article = nil flags it for audit"
+    (let [op (assoc return-op :items [{:name "?" :sku 99999}])
+          events (ozon-events/transaction-op->returned-events op sku-lookup 1)]
+      (is (= 1 (count events)))
+      (is (nil? (:article (first events))))
+      (is (= "99999" (:sku (first events)))))))

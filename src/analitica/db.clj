@@ -173,7 +173,7 @@
       posting_id       TEXT    NOT NULL,
       item_seq         INTEGER NOT NULL DEFAULT 0,
       sku              TEXT,
-      article          TEXT    NOT NULL,
+      article          TEXT,
       barcode          TEXT,
       event_type       TEXT    NOT NULL,
       event_date       TEXT    NOT NULL,

@@ -151,6 +151,69 @@
                 {:keys [units]} (expand-units (:products posting))]
             (mapv #(merge base %) units)))))))
 
+(defn- ts->date
+  "Slice an Ozon transaction-list operation_date 'YYYY-MM-DD HH:mm:ss'
+   to YYYY-MM-DD."
+  [s]
+  (when (and (string? s) (>= (count s) 10))
+    (subs s 0 10)))
+
+(defn transaction-op->returned-events
+  "Emit `returned` events from one /v3/finance/transaction/list operation.
+   Only operations with type='returns' qualify; one event per item in
+   items[].
+
+   ⚠️ NOT WIRED INTO materialize-ozon-events! (Phase 5c deferred). Live
+   data shows 1 physical return → 5–10 transaction-list events
+   (OperationItemReturn + OperationReturnGoodsFBSofRMS +
+   ClientReturnAgentOperation, each repeated across overlapping chunks).
+   Naive counting from transactions over-states returns 14× vs LK
+   realization-aggregate (Apr 2026: 360 events vs LK 25 actual returns).
+   For physical-return counting we should source from
+   /v2/finance/realization rows (which already match LK). This pure
+   normalizer is kept as the building block for refund-event tracking
+   (separate concept) and tested for shape correctness.
+
+   `sku-lookup` is {sku → offer_id}. When sku doesn't resolve we still
+   emit the event — counting must happen even if article identity is
+   missing — and flag it via article=nil for audit.
+
+   Skips:
+     - operations with type ≠ 'returns'
+     - operations with no posting.posting_number (account-level)
+     - operations with empty items[]"
+  [operation sku-lookup raw-data-id]
+  (let [op-type (:operation_type operation)
+        type-   (:type operation)
+        op-id   (:operation_id operation)
+        posting-num (get-in operation [:posting :posting_number])
+        items   (or (:items operation) [])
+        op-date (:operation_date operation)
+        ev-date (ts->date op-date)]
+    (cond
+      (not= "returns" type-)             []
+      (or (nil? posting-num)
+          (clojure.string/blank? posting-num)) []
+      (empty? items)                     []
+      (nil? ev-date)                     []
+      :else
+      (->> items
+           (map-indexed
+             (fn [idx item]
+               (let [sku (:sku item)]
+                 {:marketplace "ozon"
+                  :posting-id  posting-num
+                  :item-seq    idx
+                  :sku         (some-> sku str)
+                  :article     (or (get sku-lookup sku)
+                                   (get sku-lookup (str sku)))
+                  :event-type  "returned"
+                  :event-date  ev-date
+                  :event-ts    op-date
+                  :status      op-type
+                  :raw-data-id raw-data-id})))
+           vec))))
+
 (defn posting->events
   "Top-level normalizer: convert one Ozon posting into ALL relevant
    canonical item_events (ordered + delivered + cancelled).
