@@ -156,3 +156,84 @@
     (is (= 2895.00 (:for-pay sale))
         ":for-pay must include both coinvestment fields (Dec 2024 Ozon API)")))
 
+;; ---------------------------------------------------------------------------
+;; Realization commission/retail semantics — verified against LK Apr 2026
+;;
+;; Ozon's realization-row delivery_commission shape (verified on 1620 rows):
+;;   amount + bonus + bank_coinvestment + pick_up_point_coinvestment  ≈
+;;     seller_price_per_instance × quantity   (gross seller revenue)
+;;   standard_fee × quantity = Ozon commission deducted from gross
+;;   total = seller_price - standard_fee per unit (net after commission)
+;;
+;; LK «Доставка покупателю» row aggregate Apr 2026:
+;;   col [9]  «За продажу до вычета комиссий» = 522,986   ← gross
+;;   col [11] «Вознаграждение Ozon»           = -243,540  ← commission
+;; Both confirmed against SUM(seller_price × q) and SUM(standard_fee × q)
+;; respectively across raw realization rows.
+;;
+;; Old transform used `total` for retail_amount and computed mp_commission
+;; as max(0, q*total - payout) which collapses to 0 because payout = gross
+;; (bonus subsidies bring net cash up to gross). That hides commission from
+;; P&L and makes K-перечислению overstated by ~commission.
+;; ---------------------------------------------------------------------------
+
+(def ^:private rrow-with-clear-commission
+  "Realistic single row matching prod shape (April 2026 raw data sample).
+   seller_price 3581, standard_fee 1539.83, payout = gross by design."
+  {:rows [{:item  {:offer_id "SKU-B" :sku "222" :barcode "BC-B"}
+           :seller_price_per_instance 3581
+           :delivery_commission
+           {:amount                      1755.24
+            :bonus                       1808.21
+            :bank_coinvestment             17.55
+            :pick_up_point_coinvestment     0
+            :stars                          0
+            :compensation                   0
+            :commission                     0
+            :quantity                       1
+            :total                       2041.17  ;; = seller_price - standard_fee
+            :standard_fee                1539.83
+            :price_per_instance          1755.24}
+           :return_commission nil}]
+   :start_date "2026-04-01"
+   :stop_date  "2026-04-30"})
+
+(deftest realization-mp-commission-from-standard-fee
+  (let [[sale] (transform/->finance-from-realization rrow-with-clear-commission)]
+    (is (= 1539.83 (:mp-commission sale))
+        "mp_commission = standard_fee × quantity (Ozon's gross commission deduction).
+         LK «Вознаграждение Ozon» column equals SUM(standard_fee × q) row-by-row,
+         not max(0, q*total − payout) which collapses to 0 in promo periods.")))
+
+(deftest realization-retail-amount-equals-gross-seller-price
+  (let [[sale] (transform/->finance-from-realization rrow-with-clear-commission)]
+    (is (= 3581.0 (double (:retail-amount sale)))
+        "retail_amount = q × seller_price_per_instance (gross sale).
+         Old code used q × total which gives net-after-commission and
+         under-reports gross revenue by exactly the commission amount.")))
+
+(def ^:private rrow-with-return
+  "Single-unit return only (no sale half). standard_fee 100, gross 250.
+   Verifies return rows compute mp_commission the same way as sales —
+   refund of Ozon's commission when goods come back."
+  {:rows [{:item  {:offer_id "SKU-R" :sku "333" :barcode "BC-R"}
+           :seller_price_per_instance 250
+           :delivery_commission nil
+           :return_commission
+           {:amount    150
+            :bonus     100
+            :quantity   1
+            :total     150
+            :standard_fee 100}}]
+   :start_date "2026-04-01"
+   :stop_date  "2026-04-30"})
+
+(deftest realization-return-row-also-uses-standard-fee
+  (let [[ret] (transform/->finance-from-realization rrow-with-return)]
+    (is (= "return" (:operation ret)))
+    (is (= 100.0 (double (:mp-commission ret)))
+        "Return row mp_commission = standard_fee × q (positive, sign applied
+         by downstream by-operation-kind aggregation).")
+    (is (= 250.0 (double (:retail-amount ret)))
+        "Return row retail_amount = q × seller_price_per_instance.")))
+

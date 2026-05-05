@@ -238,13 +238,15 @@
 ;; Key decisions (see specs/002-calculation-audit/verdicts.md B-005):
 ;;   - article = item.offer_id (direct, no sku-map needed)
 ;;   - for_pay = amount + bonus + compensation + stars + bank_coinvestment
-;;                + pick_up_point_coinvestment (full Ozon payout to seller)
-;;   - retail_amount = qty * seller_price_per_instance (gross revenue)
-;;   - mp_commission = standard_fee - amount (commission deducted;
-;;     negative value means seller got MORE than base rate due to
-;;     bonus / bank_coinvestment / stars)
-;;   - Returns carry POSITIVE for_pay (matches WB convention; by-article
-;;     subtracts via abs).
+;;                + pick_up_point_coinvestment (= gross seller revenue;
+;;     bonus/coinvestment subsidies bring net cash up to seller_price)
+;;   - retail_amount = qty * seller_price_per_instance (gross revenue,
+;;     == for_pay by Ozon's accounting since payout sums to gross)
+;;   - mp_commission = standard_fee × quantity (Ozon's commission deducted
+;;     from gross — verified against LK «Вознаграждение Ozon» column,
+;;     Apr 2026: SUM = 243,540 sale + 56,008 return refund = 187,532 net)
+;;   - Returns carry POSITIVE for_pay AND POSITIVE mp_commission (matches
+;;     WB convention; by-operation-kind aggregation applies the sign).
 ;; ---------------------------------------------------------------------------
 
 (defn- realization-row->finance-rows
@@ -308,9 +310,9 @@
                            (or (get c :bank_coinvestment) 0)
                            (or (get c :pick_up_point_coinvestment) 0)))
         sale-row   (when (pos? (or (get dc :quantity) 0))
-                     (let [q      (get dc :quantity)
-                           payout (seller-payout dc)
-                           total  (or (get dc :total) 0)]
+                     (let [q          (get dc :quantity)
+                           payout     (seller-payout dc)
+                           commission (* q (or (get dc :standard_fee) 0))]
                        (assoc common
                               :rrd-id            (hash [:ozon-real :sale row-no article sku date-from date-to])
                               :operation         "sale"
@@ -318,13 +320,13 @@
                               :operation-subtype "realization"
                               :quantity          q
                               :retail-price      price
-                              :retail-amount     (* q total)
-                              :mp-commission     (max 0 (- (* q total) payout))
+                              :retail-amount     (* q price)
+                              :mp-commission     commission
                               :for-pay           payout)))
         return-row (when (pos? (or (get rc :quantity) 0))
-                     (let [q      (get rc :quantity)
-                           payout (seller-payout rc)
-                           total  (or (get rc :total) 0)]
+                     (let [q          (get rc :quantity)
+                           payout     (seller-payout rc)
+                           commission (* q (or (get rc :standard_fee) 0))]
                        (assoc common
                               :rrd-id            (hash [:ozon-real :return row-no article sku date-from date-to])
                               :operation         "return"
@@ -332,8 +334,8 @@
                               :operation-subtype "realization"
                               :quantity          q
                               :retail-price      price
-                              :retail-amount     (* q total)
-                              :mp-commission     (max 0 (- (* q total) payout))
+                              :retail-amount     (* q price)
+                              :mp-commission     commission
                               :for-pay           payout)))]
     (into [] (remove nil? [sale-row return-row]))))
 
