@@ -372,13 +372,12 @@ Usage: clojure -M -m analitica.cli audit <subcommand> [options]
 
 Subcommands:
   reconcile             Build reconciliation report for a period/marketplace
-                        (see specs/002-calculation-audit/contracts/cli-audit.md)
+                        (run `audit help` for the full command reference)
   kpi measure|list|show Measure / inspect Accuracy KPI baseline (WB-only in MVP)
   verdict list|show     Read bug-hypothesis verdicts from verdicts.md
                         (list supports --conclusion :confirmed|:refuted|:fixed|:confirmed-deferred|:not-yet-verdicted)
   fixture capture|list|verify
-                        Manage ground-truth fixtures under specs/.../fixtures/
-                        (see specs/002-calculation-audit/contracts/cli-audit.md)
+                        Manage ground-truth fixtures (operator-local; see docs/architecture.md §Audit)
 
 Exit codes:
   0  success, no suspicious discrepancies
@@ -814,7 +813,7 @@ Currently registered rules:")
    ["-m" "--marketplace MP" "Marketplace: wb, ozon, ym"
     :default "wb"]
    [nil "--from-report ID" "Optional: attach an existing report-id to :fixture/source"]
-   [nil "--fixtures-dir PATH" "Override fixtures directory (default: specs/002-.../fixtures/)"]
+   [nil "--fixtures-dir PATH" "Override fixtures directory (operator-local; default: see analitica.audit.fixture/default-fixtures-dir)"]
    [nil "--notes TEXT" "Free-form operator notes — why this period is clean"]])
 
 (defn- resolve-fixture-period
@@ -1045,7 +1044,7 @@ Subcommands:
   infer <endpoint-id> [--sample N] [--out PATH]
                                 Derive a candidate schema from recent raw data
 
-See specs/001-openapi-schemas/contracts/cli-schema.md for full contract.
+See docs/architecture.md §Schema contracts for the schema-command reference.
 
 Exit codes: 0 ok, 1 violations, 2 partial support, 3 input error,
             4 target not eligible (e.g. regenerate on :manual), 5+ internal
