@@ -1,4 +1,4 @@
-# Analitica
+# Marker
 
 Marketplace analytics tool for e-commerce sellers. Built in Clojure.
 
@@ -465,5 +465,5 @@ ANALITICA_DB=test-analitica.db clojure -M:test --no-skip-meta :integration
 
 ## License
 
-Released under the [MIT License](LICENSE) — copyright (c) 2026 Analitica
+Released under the [MIT License](LICENSE) — copyright (c) 2026 Marker
 project authors.
