@@ -44,6 +44,11 @@ GEMINI.md
 AGENTS.md
 docs/superpowers/
 
+# --- Development specs (spec-kit planning artifacts; not for OSS release) ---
+# Operational data read by the audit feature (verdicts.md, fixtures/) is
+# operator-local by design — code degrades gracefully when specs/ is absent.
+specs/
+
 # --- Internal planning docs (Russian scratch, not for OSS) ---
 docs/scope.md
 docs/vision.md
