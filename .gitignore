@@ -2,6 +2,10 @@
 .env
 config.edn
 
+# --- Real seller LK exports (live commercial financial data — never publish) ---
+lk-exports/
+1c/
+
 # --- Build / runtime caches ---
 .cpcache/
 .nrepl-port

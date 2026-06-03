@@ -465,4 +465,17 @@ ANALITICA_DB=test-analitica.db clojure -M:test --no-skip-meta :integration
 
 ## License
 
-Private / Internal use.
+Copyright (c) 2026 Analitica project authors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the **GNU Affero General Public License v3.0** as published by the
+Free Software Foundation. See the [LICENSE](LICENSE) file for the full text.
+
+The AGPL is a strong copyleft license chosen deliberately: anyone who modifies
+this software — **including running a modified version as a hosted/network
+service (SaaS)** — must make their corresponding source code available under
+the same license. This keeps improvements flowing back to the project.
+
+For use under different terms (e.g. a proprietary or closed-source SaaS without
+AGPL obligations), a separate commercial license is required — contact the
+copyright holder.
