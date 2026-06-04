@@ -472,7 +472,7 @@ ui/
 
 ### 12.3. Layer 11 — Verdict
 
-**Артефакт**: [specs/002-calculation-audit/verdicts.md](../specs/002-calculation-audit/verdicts.md) — markdown, редактируется человеком через git, не CLI.
+**Артефакт**: `verdicts.md` — operator-local markdown (в репозиторий не входит), редактируется человеком через git, не CLI.
 
 **Идиома**: persistence через файл, а не через БД. Это осознанный выбор — verdict должен переживать rebuild БД и быть review'имым в PR.
 
@@ -555,7 +555,7 @@ ui/
 
 Хочешь отлаживать расхождение:
 
-1. [verdicts.md](../specs/002-calculation-audit/verdicts.md) — возможно уже описано.
+1. `verdicts.md` (operator-local) — возможно уже описано.
 2. Audit rule (L9-L10) — добавить правило, воспроизводящее симптом.
 3. Fixture из реального raw_data (берётся через `db/raw_data`).
 4. Вердикт в `verdicts.md` после выяснения причины.
