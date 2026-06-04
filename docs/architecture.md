@@ -38,6 +38,8 @@
 
 ### 1.3. Naming conventions
 
+> **Бренд vs код.** `Marker` — продуктовый бренд. В коде сохранён исторический namespace `analitica` (`analitica.*`, БД `analitica.db`, переменная окружения `ANALITICA_DB`, npm-пакет `analitica-marker-spa`). Это одно и то же приложение.
+
 | Суффикс / префикс | Значение | Пример |
 |---|---|---|
 | `foo!` | side effect (IO, БД, сеть) | `ingest-finance!`, `db/execute!` |
@@ -74,6 +76,8 @@
  │  rules     ▶  run-rule-set ▶  verdicts.md                            │
  └──────────────────────────────────────────────────────────────────────┘
 ```
+
+**L8 Render — два потребителя**: (1) legacy server-rendered HTML-страницы (`web/pages/*`), которые рендерятся Hiccup прямо на сервере; (2) re-frame SPA (`src/cljs/marker/`), которая получает данные через JSON/transit API (`/api/*`) и рендерит UI на клиенте. SPA — основной и развивающийся путь.
 
 ---
 
@@ -401,6 +405,52 @@ Pure map, зависит от функции:
 
 ---
 
+## 11a. Фронтенд — ClojureScript SPA
+
+**Что это**: интерактивный веб-интерфейс на re-frame + UIx (React 18), расположен в `src/cljs/marker/`. Это основной пользовательский UI продукта Marker.
+
+**Сборка**: shadow-cljs, билд `:app` → `resources/public/js/cljs-out/` (файл точки входа — `marker.js`). Директория отдаётся ring-middleware `wrap-resource "public"`. Монтируется через `analitica.web.server/marker-spa-shell`: сервер рендерит минимальную HTML-оболочку, SPA берёт управление на себе.
+
+**Структура `src/cljs/marker/`**:
+```
+state/
+  db.cljs        — начальный app-db (состояние всего приложения)
+  events.cljs    — re-frame event handlers
+  subs.cljs      — re-frame subscriptions (derived state)
+router.cljs      — reitit-frontend: определение маршрутов, навигация
+api.cljs         — функции запросов к backend через transit; все /api/* эндпоинты
+core.cljs        — точка входа, init, монтирование React-дерева
+pages/
+  pulse.cljs     — дашборд Pulse (сводные KPI)
+  finance.cljs   — финансы
+  pnl.cljs       — P&L
+  products/      — товары (с поддиректорией)
+  unit.cljs      — юнит-экономика
+  dynamics.cljs  — динамика
+  cost_prices.cljs — себестоимости
+  reports.cljs   — отчёты
+  sync/          — синхронизация данных
+ui/
+  chrome.cljs    — общий shell (шапка, навигация)
+  sku_sheet.cljs — таблица SKU
+  icons.cljs     — иконки
+  error.cljs     — экран ошибки
+  tweaks.cljs    — мелкие UI-утилиты
+```
+
+**Транспорт**: `api.cljs` использует `transit-cljs` для общения с backend. Backend отдаёт данные через `/api/*` эндпоинты в transit-формате; HTTP-запросы — через `day8.re-frame/http-fx`.
+
+**Стек**:
+- `com.pitch/uix.core` + `com.pitch/uix.dom` — React 18 с ClojureScript (UIx = идиоматичные хуки + компоненты).
+- `re-frame/re-frame` — управление состоянием (события → эффекты → подписки).
+- `metosin/reitit-frontend` — клиентская маршрутизация (push-state SPA).
+- `com.cognitect/transit-cljs` — сериализация данных через transit.
+- `chart.js` (npm, 4.4.0), `tabulator-tables` (npm, 6.3.0) — графики и таблицы, подключаются через npm-интероп.
+
+> **HTMX/Hiccup server-rendered страницы** (`web/pages/*`, `web/components/*`) — **legacy/переходный слой**. Они существуют как исторический артефакт и не развиваются. Весь новый UI строится в SPA (`src/cljs/marker/`).
+
+---
+
 ## 12. Layer 9–11 — Audit
 
 ### 12.1. Layer 9 — Rule registry (pure)
@@ -425,6 +475,8 @@ Pure map, зависит от функции:
 **Артефакт**: [specs/002-calculation-audit/verdicts.md](../specs/002-calculation-audit/verdicts.md) — markdown, редактируется человеком через git, не CLI.
 
 **Идиома**: persistence через файл, а не через БД. Это осознанный выбор — verdict должен переживать rebuild БД и быть review'имым в PR.
+
+> **Operator-local данные.** `verdicts.md` и захваченные фикстуры (`audit fixture`) — операторские артефакты, в репозиторий не входят. На свежем клоне `audit verdict list/show` возвращает пусто, а fixture-regression-тест SKIP-ается (non-failing) — оба пути спроектированы под отсутствие данных.
 
 ---
 
