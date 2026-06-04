@@ -9,7 +9,6 @@
 Связанные документы:
 - [docs/canonical-formulas.md](./canonical-formulas.md) — контракт данных (finance-row) и формулы.
 - [docs/db-schema.md](./db-schema.md) — ER-диаграмма, связи между таблицами, статус Malli-покрытия.
-- [docs/vision.md](./vision.md) — границы продукта.
 
 ---
 

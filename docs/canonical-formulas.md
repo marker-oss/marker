@@ -200,7 +200,7 @@ gross_profit := mp_payout
 ```
 net_profit := gross_profit − ad_spend_total − tax
 ```
-- **tax** — out of scope MVP per [vision §13](./vision.md#13). Селлер сам вычитает налог на своей стороне.
+- **tax** — out of scope MVP (налоги вне периметра MVP). Селлер сам вычитает налог на своей стороне.
 - В коде формула: `net_profit := gross_profit − ad_spend`.
 
 #### 3.12. Производные метрики
@@ -1136,8 +1136,8 @@ margin-net    := net-profit   / revenue × 100
 **Economic justification.** Advertising isn't a unit cost per se (no
 article directly produces it), so in the canonical break it's
 subtracted once at the period level. `margin-*` as share-of-revenue is
-the standard business KPI. No tax is subtracted — MVP-scope per
-[vision §13](./vision.md#13).
+the standard business KPI. No tax is subtracted — MVP-scope
+(taxes are out of the MVP perimeter).
 
 **Inputs.** P&L.3 + P&L.2 + P&L.1 revenue.
 
