@@ -105,7 +105,7 @@ clojure -M -m analitica.cli audit reconcile -m wb -p last-30-days --bank-sum 150
 clojure -M -m analitica.cli audit kpi measure -m wb -f 2026-03-01 -t 2026-03-31
 ```
 
-Полный справочник команд — [docs/architecture.md](docs/architecture.md).
+Полный справочник команд — `clojure -M -m analitica.cli --help` (а также `audit help`, `schema help`); интерактивное меню — `clojure -M -m analitica.cli menu`.
 
 ### REPL
 
@@ -151,7 +151,7 @@ clojure -M -m analitica.cli audit kpi measure -m wb -f 2026-03-01 -t 2026-03-31
 ## Тестирование
 
 ```bash
-# Clojure (unit; интеграционные пропускаются без реальных токенов)
+# Clojure (интеграционные помечены ^:integration и пропускаются по умолчанию)
 clojure -M:test
 
 # ClojureScript

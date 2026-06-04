@@ -105,7 +105,7 @@ clojure -M -m analitica.cli audit reconcile -m wb -p last-30-days --bank-sum 150
 clojure -M -m analitica.cli audit kpi measure -m wb -f 2026-03-01 -t 2026-03-31
 ```
 
-Full command reference — [docs/architecture.md](docs/architecture.md).
+Full command reference — `clojure -M -m analitica.cli --help` (plus `audit help`, `schema help`); interactive menu — `clojure -M -m analitica.cli menu`.
 
 ### REPL
 
@@ -151,7 +151,7 @@ Custom range: `{:from "2026-03-01" :to "2026-03-31"}`
 ## Testing
 
 ```bash
-# Clojure (unit; integration tests skipped without real tokens)
+# Clojure (integration tests are tagged ^:integration and skipped by default)
 clojure -M:test
 
 # ClojureScript
