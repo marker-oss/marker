@@ -5,9 +5,8 @@
 > If a definition needs raw-MP semantics, it links out to the L1 section
 > instead of repeating the detail.
 >
-> Authored 2026-04-23 canon audit; see
-> [`superpowers/specs/2026-04-23-canon-audit-l1-l2-design.md`](superpowers/specs/2026-04-23-canon-audit-l1-l2-design.md)
-> for design decisions behind the L1/L2 split.
+> Authored 2026-04-23 canon audit; the design decisions behind the L1/L2 split
+> are recorded in the project's internal design notes.
 
 ## Report Index
 
@@ -438,15 +437,14 @@ Service / adjustment строки **не входят** в эти суммы —
 
 1. Описать EDN-схему ответа в `resources/schemas/<mp>/<endpoint>.edn`.
 2. Если endpoint источник для нового canonical-поля — сначала обновить §4 (контракт), потом transform.
-3. Если замещает старый (как `/v2/finance/realization` заменил `/v3/finance/transaction/list`) — оставить verdict в `specs/002-calculation-audit/verdicts.md`, описать причину и сверку.
+3. Если замещает старый (как `/v2/finance/realization` заменил `/v3/finance/transaction/list`) — оставить verdict в operator-local `verdicts.md`, описать причину и сверку.
 
 ---
 
 ### 9. Ссылки
 
-- [specs/002-calculation-audit/verdicts.md](../specs/002-calculation-audit/verdicts.md) — история баг-гипотез по формулам, принятые решения.
-- [specs/001-openapi-schemas/](../specs/001-openapi-schemas/) — формализация API-контрактов (Malli + OpenAPI).
-- [docs/vision.md](./vision.md) — границы продукта (особенно §13 про налоги).
+- `verdicts.md` (operator-local) — история баг-гипотез по формулам, принятые решения.
+- API-контракты формализованы как Malli/EDN-схемы в `resources/schemas/` (см. раздел «Schema contracts» в [architecture.md](architecture.md)).
 
 ---
 

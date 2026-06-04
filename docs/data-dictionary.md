@@ -6,9 +6,8 @@
 > built. Every field listed here has a corresponding Malli schema at
 > `src/analitica/schema/normalized/<table>.clj`.
 >
-> Authored as part of the 2026-04-23 canon audit; see
-> `docs/superpowers/specs/2026-04-23-canon-audit-l1-l2-design.md` for the
-> design decisions behind this split.
+> Authored as part of the 2026-04-23 canon audit; the design decisions behind
+> this split are recorded in the project's internal design notes.
 
 ## Index
 
@@ -117,7 +116,7 @@ report. For Ozon, `rrd_id` is synthesized by `transform.clj` from
 - **WB service rows** ("Логистика", "Хранение", "Платная приёмка", …) carry `operation-kind = :service`, `for-pay = 0`; the actual money lives in `delivery-cost` / `storage-fee` / `acceptance`.
 - **WB adjustment rows** ("Компенсация ущерба", "Корректировка вознаграждения", "Штраф", …) carry `operation-kind = :adjustment`, `for-pay = 0`; cash impact lives in `additional-payment` / `penalty` / `deduction`.
 - **Ozon cancellations** appear as transactions with `operation_type = OperationTypeRefund` — normalized to `operation-kind = :return` by `ozon/transform.clj`.
-- **Ozon per-article service costs** live as separate rows with `quantity = 0` or `nil` and a single cost field populated (e.g. `delivery-cost`). See B-009 in `specs/002-calculation-audit/verdicts.md`.
+- **Ozon per-article service costs** live as separate rows with `quantity = 0` or `nil` and a single cost field populated (e.g. `delivery-cost`). See verdict B-009 (operator-local `verdicts.md`).
 - **YM cancelled orders** carry `operation-kind = :adjustment` with `for-pay = 0`; the bidFee loss lives in `ad-cost` (and any commissions still charged in `mp-commission` / `delivery-cost`). L2 `mp_payout` ignores adjustment rows.
 - **Multi-article ad campaigns** (WB) allocate `ad-cost` proportionally to revenue per article (spec 003 US5).
 - **Timezone:** all dates are in Moscow TZ as emitted by MPs; no UTC conversion.
