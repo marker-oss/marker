@@ -54,7 +54,11 @@
         rows (db/query ["SELECT id, created_at, kind, message, page_url, user_agent, app_context, status
                          FROM feedback ORDER BY id DESC LIMIT ?" n])
         atts (when (seq rows)
-               (group-by :feedback-id
-                 (db/query ["SELECT feedback_id, filename, content_type, size, stored_path
-                             FROM feedback_attachments"])))]
+               (let [ids        (mapv :id rows)
+                     placeholders (clojure.string/join "," (repeat (count ids) "?"))
+                     sql        (str "SELECT feedback_id, filename, content_type, size, stored_path"
+                                    " FROM feedback_attachments"
+                                    " WHERE feedback_id IN (" placeholders ")")]
+                 (group-by :feedback-id
+                   (db/query (into [sql] ids)))))]
     (mapv (fn [r] (assoc r :attachments (vec (get atts (:id r) [])))) rows)))
