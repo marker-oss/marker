@@ -6,7 +6,7 @@
 
 (defonce ^:private datasource (atom nil))
 
-(def ^:private db-spec
+(def db-spec
   {:dbtype "sqlite"
    :dbname (or (System/getenv "ANALITICA_DB") "analitica.db")})
 
@@ -438,7 +438,14 @@
       PRIMARY KEY (period_month, marketplace, metric)
     )"
    "CREATE INDEX IF NOT EXISTS idx_monthly_plans_period
-      ON monthly_plans(period_month)"])
+      ON monthly_plans(period_month)"
+
+   "CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT,
+      secret     INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT
+    )"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
