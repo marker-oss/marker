@@ -20,7 +20,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
           {
-            echo "Host analitica-vps"
+            echo "Host marker-vps"
             echo "  HostName $VPS_HOST"
             echo "  User $VPS_USER"
             echo "  Port $VPS_PORT"
@@ -33,7 +33,7 @@ jobs:
           DEPLOY_REF: ${{ github.ref_name }}
           REPO_URL: git@github.com:${{ github.repository }}.git
         run: |
-          ssh analitica-vps "
+          ssh marker-vps "
             set -eu
             if [ -x /srv/analitica-src/deploy/server-deploy.sh ]; then
               REPO_URL='$REPO_URL' DEPLOY_REF='$DEPLOY_REF' sh /srv/analitica-src/deploy/server-deploy.sh
