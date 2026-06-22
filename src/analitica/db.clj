@@ -16,6 +16,11 @@
   (or @datasource
       (throw (ex-info "Database not initialized. Call (analitica.db/init!) first." {}))))
 
+(defn initialized?
+  "Returns true if the datasource has been initialized via (init!)."
+  []
+  (some? @datasource))
+
 ;; ---------------------------------------------------------------------------
 ;; Schema
 ;; ---------------------------------------------------------------------------

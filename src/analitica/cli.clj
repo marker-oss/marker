@@ -183,6 +183,7 @@
 (defn- init! []
   (config/load-config)
   (db/init!)
+  (config/reload!)
   (mu/start-publisher! {:type :console})
   (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
     (registry/register! :wb (wb-client/make-client wb-cfg)))

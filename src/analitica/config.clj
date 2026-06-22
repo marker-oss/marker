@@ -52,8 +52,16 @@
                             ". Copy config.example.edn to config.edn and fill in your API keys.")
                        {:path path})))
      (let [base      (aero/read-config f)
-           overrides (try ((requiring-resolve 'analitica.settings/overrides))
-                          (catch Throwable _ {}))
+           overrides (let [db-initialized? (try ((requiring-resolve 'analitica.db/initialized?))
+                                                (catch Throwable _ false))]
+                       (if db-initialized?
+                         ;; DB is up: call overrides and let real errors propagate
+                         (try ((requiring-resolve 'analitica.settings/overrides))
+                              (catch Throwable e
+                                (println "WARNING: failed to load DB setting overrides:" (.getMessage e))
+                                (throw e)))
+                         ;; DB not yet initialized: silently return no overrides
+                         {}))
            cfg       (apply-overrides base overrides)]
        (reset! state cfg)
        cfg))))

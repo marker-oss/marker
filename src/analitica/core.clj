@@ -60,6 +60,7 @@
   []
   (config/load-config)
   (db/init!)
+  (config/reload!)
   (mu/start-publisher! {:type :console})
   (register-marketplaces!)
   (println "=== Analitica started ===")
