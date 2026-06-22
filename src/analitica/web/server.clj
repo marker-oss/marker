@@ -1274,9 +1274,9 @@
   ;; ---------------------------------------------------------------------------
   (GET  "/api/v1/settings" req (settings-api/get-settings req))
   (POST "/api/v1/settings/marketplace/:mp/test" [mp :as req]
-    (settings-api/test-marketplace (assoc-in req [:body-params :marketplace] mp)))
+    (settings-api/test-marketplace (assoc-in req [:body :marketplace] mp)))
   (PUT  "/api/v1/settings/marketplace/:mp" [mp :as req]
-    (settings-api/put-marketplace (assoc-in req [:body-params :marketplace] mp)))
+    (settings-api/put-marketplace (assoc-in req [:body :marketplace] mp)))
 
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA Transit API  (/api/v1/marker/*)

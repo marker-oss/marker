@@ -16,7 +16,8 @@
           :business-id {:setting-key "mp.ym.business-id" :secret? false}}})
 
 (defn- body-of [req]
-  (or (:body-params req) (:params req) {}))
+  (let [b (:body req)]
+    (if (map? b) b (or (:params req) {}))))
 
 (defn- parse-mp [req]
   (let [b  (body-of req)
@@ -53,7 +54,11 @@
           (doseq [[field v] cfg]
             (let [{:keys [setting-key secret?]} (get-in mp-fields [mp field])]
               (settings/set! setting-key v :secret? secret?)))
-          (let [reload (core/reload-config!)]
-            {:status 200 :body {:ok true :valid? true
-                                :marketplaces (:marketplaces reload)}}))))
+          (try
+            (let [reload (core/reload-config!)]
+              {:status 200 :body {:ok true :valid? true
+                                  :marketplaces (:marketplaces reload)}})
+            (catch Throwable _e
+              {:status 500 :body {:ok false :saved? true :reloaded? false
+                                  :error "Сохранено, но перезагрузка конфигурации не удалась — потребуется перезапуск"}})))))
     {:status 400 :body {:error "Unknown or missing marketplace"}}))
