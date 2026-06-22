@@ -599,6 +599,69 @@
 ;; Phase 8: Sync / refresh — clear cache + reload current page
 ;; ---------------------------------------------------------------------------
 
+;; ---------------------------------------------------------------------------
+;; Settings: operator marketplace credentials
+;; ---------------------------------------------------------------------------
+
+(def ^:private settings-url "/api/v1/settings")
+
+(defn settings-form->payload
+  "Drop blank/nil values; keep only fields the operator actually typed."
+  [form]
+  (into {} (remove (fn [[_ v]] (or (nil? v) (and (string? v) (= "" (str/trim v))))) form)))
+
+(rf/reg-event-fx ::load-settings
+  (fn [_ _]
+    {:http-xhrio (api/get-xhrio settings-url
+                                [::settings-loaded] [::settings-load-failed])}))
+
+(rf/reg-event-db ::settings-loaded
+  (fn [db [_ resp]]
+    (assoc-in db [:marker/settings :data] (:settings resp))))
+
+(rf/reg-event-db ::settings-load-failed
+  (fn [db [_ _err]]
+    (assoc-in db [:marker/settings :data] {})))
+
+(rf/reg-event-fx ::test-marketplace
+  (fn [{:keys [db]} [_ mp form]]
+    {:db (assoc-in db [:marker/settings :status mp :testing?] true)
+     :http-xhrio (api/post-xhrio (str settings-url "/marketplace/" (name mp) "/test")
+                                 (settings-form->payload form)
+                                 [::marketplace-tested mp] [::marketplace-tested mp])}))
+
+(rf/reg-event-db ::marketplace-tested
+  (fn [db [_ mp resp]]
+    (-> db
+        (assoc-in [:marker/settings :status mp :testing?] false)
+        (assoc-in [:marker/settings :status mp :verdict]
+                  {:valid? (boolean (:valid? resp)) :detail (:detail resp)}))))
+
+(rf/reg-event-fx ::save-marketplace
+  (fn [{:keys [db]} [_ mp form]]
+    {:db (assoc-in db [:marker/settings :status mp :saving?] true)
+     :http-xhrio (api/put-xhrio (str settings-url "/marketplace/" (name mp))
+                                (settings-form->payload form)
+                                [::marketplace-saved mp] [::marketplace-save-failed mp])}))
+
+(rf/reg-event-fx ::marketplace-saved
+  (fn [{:keys [db]} [_ mp resp]]
+    {:db (-> db
+             (assoc-in [:marker/settings :status mp :saving?] false)
+             (assoc-in [:marker/settings :status mp :saved?] (boolean (:ok resp)))
+             (assoc-in [:marker/settings :status mp :error] nil))
+     :fx [[:dispatch [::load-settings]]]}))   ; refresh masked values
+
+(rf/reg-event-db ::marketplace-save-failed
+  (fn [db [_ mp resp]]
+    (-> db
+        (assoc-in [:marker/settings :status mp :saving?] false)
+        (assoc-in [:marker/settings :status mp :saved?] false)
+        (assoc-in [:marker/settings :status mp :error]
+                  (or (get-in resp [:response :detail])
+                      (get-in resp [:response :error])
+                      "Не удалось сохранить")))))
+
 (rf/reg-event-fx ::sync-and-refresh
   ;; Clear cache, show sync running state, reload data for the current page.
   (fn [{:keys [db]} _]

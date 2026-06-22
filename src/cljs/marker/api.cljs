@@ -200,3 +200,15 @@
    :response-format (transit-response-format)
    :on-success      on-success
    :on-failure      on-failure})
+
+(defn put-xhrio
+  "Build an http-xhrio effect map for a Transit PUT request."
+  [url body on-success on-failure]
+  {:method          :put
+   :uri             url
+   :timeout         15000
+   :params          body
+   :format          (transit-request-format)
+   :response-format (transit-response-format)
+   :on-success      on-success
+   :on-failure      on-failure})

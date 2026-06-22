@@ -48,4 +48,8 @@
    :marker/stocks-overview          nil
    :marker/stocks-overview-loading? false
    ;; {article-id {:loading? bool :data <map>}}
-   :marker/stocks-article-data      {}})
+   :marker/stocks-article-data      {}
+
+   ;; Settings page — operator marketplace credentials
+   ;; {:data <server settings map> :status {<mp> {:testing? bool :saving? bool :verdict {:valid? bool :detail str} :saved? bool :error str}}}
+   :marker/settings {:data nil :status {}}})

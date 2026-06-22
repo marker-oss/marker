@@ -139,3 +139,13 @@
 
 (rf/reg-sub ::unit-baseline-article
   (fn [db _] (:marker/unit-baseline-article db)))
+
+;; ---------------------------------------------------------------------------
+;; Settings — operator marketplace credentials
+;; ---------------------------------------------------------------------------
+
+(rf/reg-sub ::settings-data
+  (fn [db _] (get-in db [:marker/settings :data])))
+
+(rf/reg-sub ::settings-status
+  (fn [db _] (get-in db [:marker/settings :status])))
