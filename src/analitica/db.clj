@@ -450,6 +450,26 @@
       value      TEXT,
       secret     INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT
+    )"
+
+   "CREATE TABLE IF NOT EXISTS feedback (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at  TEXT,
+      kind        TEXT,
+      message     TEXT,
+      page_url    TEXT,
+      user_agent  TEXT,
+      app_context TEXT,
+      status      TEXT NOT NULL DEFAULT 'new'
+    )"
+
+   "CREATE TABLE IF NOT EXISTS feedback_attachments (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      feedback_id  INTEGER NOT NULL,
+      filename     TEXT,
+      content_type TEXT,
+      size         INTEGER,
+      stored_path  TEXT
     )"])
 
 ;; ---------------------------------------------------------------------------
