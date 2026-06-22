@@ -4,6 +4,28 @@
             [clojure.string :as str]))
 
 (defonce ^:private state (atom nil))
+(defonce ^:private last-path (atom "config.edn"))
+
+(defn- ->path
+  "Turn a dotted setting key into an assoc-in path into the config tree.
+   First segment selects the subtree; remaining segments are keywordized.
+   Special-case: mp.<mp>.<field> → [:marketplaces <mp> <field>]."
+  [dotted-key]
+  (let [segs (str/split dotted-key #"\.")]
+    (case (first segs)
+      "mp"       (into [:marketplaces] (map keyword (rest segs)))
+      "business" (into [:business]     (map keyword (rest segs)))
+      "sync"     (into [:sync]         (map keyword (rest segs)))
+      "notify"   (into [:notify]       (map keyword (rest segs)))
+      ;; default: keywordize every segment
+      (mapv keyword segs))))
+
+(defn- apply-overrides
+  "Overlay flat {dotted-key value} settings onto the aero base config."
+  [base overrides]
+  (reduce-kv (fn [cfg k v] (assoc-in cfg (->path k) v))
+             base
+             overrides))
 
 (defn- load-env-file!
   "Reads .env file and sets entries as system properties
@@ -20,17 +42,28 @@
         (System/setProperty (str/trim k) (str/trim v))))))
 
 (defn load-config
-  ([] (load-config "config.edn"))
+  ([] (load-config @last-path))
   ([path]
+   (reset! last-path path)
    (load-env-file! ".env")
    (let [f (io/file path)]
      (when-not (.exists f)
        (throw (ex-info (str "Config file not found: " path
                             ". Copy config.example.edn to config.edn and fill in your API keys.")
                        {:path path})))
-     (let [cfg (aero/read-config f)]
+     (let [base      (aero/read-config f)
+           overrides (try ((requiring-resolve 'analitica.settings/overrides))
+                          (catch Throwable _ {}))
+           cfg       (apply-overrides base overrides)]
        (reset! state cfg)
        cfg))))
+
+(defn reload!
+  "Re-read config.edn + DB overrides and swap the config atom. Returns the
+   new config. Callers that also cache derived state (e.g. marketplace
+   clients) must re-init after this — see analitica.core/reload-config!."
+  []
+  (load-config @last-path))
 
 (defn config
   "Returns current config. Call (load-config) first."
