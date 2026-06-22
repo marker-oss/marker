@@ -55,7 +55,7 @@
        ;; Modal dialog
        (when open?
          ($ :div {:class "modal-backdrop open"
-                  :on-click #(set-open! false)}
+                  :on-click #(do (set-open! false) (set-status! nil))}
             ($ :div {:class "modal"
                      :on-click #(.stopPropagation %)}
                ($ :h3 {} "Обратная связь")
@@ -90,9 +90,10 @@
                                                           :files   files
                                                           :on-ok   #(do (set-status! :ok)
                                                                         (set-message! "")
-                                                                        (set-files! []))
+                                                                        (set-files! [])
+                                                                        (set-open! false))
                                                           :on-err  #(set-status! {:error %})}))))}
                      "Отправить")
                   ($ :button {:class    "btn btn-ghost"
-                              :on-click #(set-open! false)}
+                              :on-click #(do (set-open! false) (set-status! nil))}
                      "Закрыть"))))))))
