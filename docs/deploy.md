@@ -17,6 +17,19 @@ Install Docker, Docker Compose, Caddy, Git, and SSH access for the deploy user.
 The deploy user must be able to run Docker Compose; the current deploy script is
 intended to run as root, matching the Reviews deployment style.
 
+Preferred bootstrap:
+
+```bash
+scp deploy/server-bootstrap.sh reviews-vps:/tmp/marker-bootstrap.sh
+ssh reviews-vps "MARKER_BASIC_AUTH_HASH='<caddy-hash>' sh /tmp/marker-bootstrap.sh"
+```
+
+Generate the Caddy Basic Auth hash with:
+
+```bash
+caddy hash-password --plaintext 'change-me'
+```
+
 Create runtime directories:
 
 ```bash
@@ -47,6 +60,10 @@ Required GitHub Actions secrets:
 - `VPS_SSH_KEY`
 
 Run deployment manually from GitHub Actions: `Deploy VPS`.
+
+The VPS itself must also have a GitHub deploy key with read access to
+`marker-oss/marker`, because the deploy script clones/pulls the repository on
+the server.
 
 ## Caddy
 

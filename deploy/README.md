@@ -11,6 +11,24 @@ This deployment mirrors the Reviews project shape:
 
 ## One-time server setup
 
+If SSH access works, copy and run the bootstrap script:
+
+```bash
+scp deploy/server-bootstrap.sh reviews-vps:/tmp/marker-bootstrap.sh
+ssh reviews-vps "MARKER_BASIC_AUTH_HASH='<caddy-hash>' sh /tmp/marker-bootstrap.sh"
+```
+
+Create the hash on the VPS or locally:
+
+```bash
+caddy hash-password --plaintext 'change-me'
+```
+
+The script installs/starts Docker, Docker Compose, Caddy, Git, and SQLite,
+creates `/srv/analitica`, and writes the Caddy site for `marker.shegida.ru`.
+
+Manual minimum:
+
 ```bash
 mkdir -p /srv/analitica/data /srv/analitica/reports
 cp config.example.edn /srv/analitica/config.edn
@@ -22,6 +40,10 @@ Fill `/srv/analitica/config.edn` with marketplace tokens out-of-band.
 
 Install Docker, Docker Compose, Caddy, and add the GitHub deploy key to the
 server account used by the GitHub Actions secrets.
+
+The VPS also needs a GitHub deploy key that can read `marker-oss/marker`,
+because `deploy/server-deploy.sh` pulls the repository from GitHub on the
+server.
 
 ## GitHub secrets
 
