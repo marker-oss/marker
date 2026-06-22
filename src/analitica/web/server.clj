@@ -36,6 +36,7 @@
             [analitica.web.api.search :as search-api]
             [analitica.web.api.marker :as marker-api]
             [analitica.web.api.settings :as settings-api]
+            [analitica.web.api.feedback :as feedback-api]
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
@@ -1277,6 +1278,12 @@
     (settings-api/test-marketplace (assoc-in req [:body :marketplace] mp)))
   (PUT  "/api/v1/settings/marketplace/:mp" [mp :as req]
     (settings-api/put-marketplace (assoc-in req [:body :marketplace] mp)))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Feedback API  (/api/v1/feedback)
+  ;; ---------------------------------------------------------------------------
+  (POST "/api/v1/feedback" req (feedback-api/submit req))
+  (GET  "/api/v1/feedback" req (feedback-api/list-recent req))
 
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA Transit API  (/api/v1/marker/*)
