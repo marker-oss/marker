@@ -9,3 +9,8 @@
 
 (deftest mp-specs-cover-three-marketplaces
   (is (= #{:wb :ozon :ym} (set (map :mp settings/mp-specs)))))
+
+(deftest wb-first-field-setting-key
+  (let [wb-spec  (first (filter #(= :wb (:mp %)) settings/mp-specs))
+        first-fk (:setting-key (first (:fields wb-spec)))]
+    (is (= "mp.wb.api-token" first-fk))))

@@ -625,7 +625,7 @@
 
 (rf/reg-event-fx ::test-marketplace
   (fn [{:keys [db]} [_ mp form]]
-    {:db (assoc-in db [:marker/settings :status mp :testing?] true)
+    {:db (assoc-in db [:marker/settings :status mp] {:testing? true})
      :http-xhrio (api/post-xhrio (str settings-url "/marketplace/" (name mp) "/test")
                                  (settings-form->payload form)
                                  [::marketplace-tested mp] [::marketplace-tested mp])}))
@@ -639,7 +639,7 @@
 
 (rf/reg-event-fx ::save-marketplace
   (fn [{:keys [db]} [_ mp form]]
-    {:db (assoc-in db [:marker/settings :status mp :saving?] true)
+    {:db (assoc-in db [:marker/settings :status mp] {:saving? true})
      :http-xhrio (api/put-xhrio (str settings-url "/marketplace/" (name mp))
                                 (settings-form->payload form)
                                 [::marketplace-saved mp] [::marketplace-save-failed mp])}))

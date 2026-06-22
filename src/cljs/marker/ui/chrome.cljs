@@ -34,7 +34,7 @@
 ;; ============= Sidebar =============
 
 (defui sidebar
-  "App sidebar with 5 top-level nav items.
+  "App sidebar with 6 top-level nav items.
    Props: :active (string id, possibly \"section/tab\"), :on-nav (fn [id]).
    Items with :default-tab navigate to \"<id>/<default-tab>\" so the
    wrapper page picks the right sub-tab on first hit."

@@ -106,7 +106,7 @@
                               (redirect-to target)
                               (rfe/replace-state :pulse)))
 
-      ;; Single-page: pulse, sync.
+      ;; Single-page: pulse, sync, settings.
       (rf/dispatch [::events/set-page (or route-name :pulse)]))))
 
 ;; ---------------------------------------------------------------------------
