@@ -26,6 +26,7 @@ reports/
 .calva/
 .kiro/
 .claude/
+.codex/
 .specify/
 .superpowers/
 .playwright-mcp/

@@ -12,18 +12,19 @@
 
 services:
   analitica:
-    build: .
+    build:
+      context: ${ANALITICA_BUILD_CONTEXT:-.}
     container_name: analitica
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${ANALITICA_HOST_PORT:-3000}:3000"
     environment:
       ANALITICA_DB: /app/data/analitica.db
     volumes:
-      - ./config.edn:/app/config.edn:ro
-      - ./.env:/app/.env:ro
-      - ./data:/app/data
-      - ./reports:/app/reports
+      - ${ANALITICA_CONFIG:-./config.edn}:/app/config.edn:ro
+      - ${ANALITICA_ENV_FILE:-./.env}:/app/.env:ro
+      - ${ANALITICA_DATA_DIR:-./data}:/app/data
+      - ${ANALITICA_REPORTS_DIR:-./reports}:/app/reports
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:3000/", "-o", "/dev/null"]
       interval: 30s

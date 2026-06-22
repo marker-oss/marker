@@ -6,6 +6,8 @@
 target/
 
 # Local-only data (mounted as volumes at runtime instead)
+1c/
+lk-exports/
 data/
 *.db
 *.db-shm
@@ -26,6 +28,7 @@ config.edn
 .kiro/
 .specify/
 .claude/
+.codex/
 .superpowers/
 .playwright-mcp/
 
@@ -51,7 +54,6 @@ specs/
 
 # Node leftovers from ad-hoc Playwright scripts
 node_modules/
-package*.json
 
 # Vendored vendor docs
 resources/Документация*

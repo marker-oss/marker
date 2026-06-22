@@ -1,0 +1,17 @@
+marker.shegida.ru {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+	}
+
+	# Replace with a hash from:
+	# caddy hash-password --plaintext 'change-me'
+	basic_auth {
+		admin REPLACE_WITH_CADDY_PASSWORD_HASH
+	}
+
+	reverse_proxy 127.0.0.1:3000
+}

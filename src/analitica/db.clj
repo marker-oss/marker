@@ -162,23 +162,34 @@
       PRIMARY KEY (article, barcode)
     )"
 
-   ;; Phase 5 (2026-05-05): canonical item-event log. One row per
-   ;; lifecycle event of one item-unit (1 unit = 1 row). Replaces the
-   ;; lossy MP-specific semantics of orders/sales tables for
-   ;; заказы/продажи/возвраты/выкуп counters. Per-MP normalizers
-   ;; populate this from raw_data; domain reads from here, not from
-   ;; orders/sales. See specs/004-canonical-item-events/data-model.md.
+   ;; Phase 5 / spec 006 (2026-05-05): canonical item-event log.
+   ;; One row per lifecycle event of one item-unit. Replaces lossy
+   ;; MP-specific semantics of orders/sales tables.
+   ;;
+   ;; Compatibility note: v2 columns are present (posting_kind,
+   ;; occurrence, event_subtype, canonical_sku_id), but the current
+   ;; materializers still write the v1 key with item_seq. Keep item_seq
+   ;; and nullable sku until the full writer/read pipeline moves to v2.
+   ;;
+   ;; event_subtype NOT NULL DEFAULT '' — SQLite does not allow expressions
+   ;; in PRIMARY KEY (COALESCE), so '' means "no subtype".
    "CREATE TABLE IF NOT EXISTS item_events (
       marketplace      TEXT    NOT NULL,
       posting_id       TEXT    NOT NULL,
       item_seq         INTEGER NOT NULL DEFAULT 0,
+      posting_kind     TEXT    NOT NULL DEFAULT 'real'
+                       CHECK (posting_kind IN ('real','synthetic')),
       sku              TEXT,
-      article          TEXT,
-      barcode          TEXT,
+      occurrence       INTEGER NOT NULL DEFAULT 0,
       event_type       TEXT    NOT NULL,
+      event_subtype    TEXT    NOT NULL DEFAULT '',
       event_date       TEXT    NOT NULL,
       event_ts         TEXT,
-      quantity         INTEGER NOT NULL DEFAULT 1,
+      quantity         INTEGER NOT NULL DEFAULT 1
+                       CHECK (quantity > 0),
+      article          TEXT,
+      canonical_sku_id INTEGER,
+      barcode          TEXT,
       related_event_id INTEGER,
       gross_price      REAL,
       status           TEXT,
@@ -192,6 +203,12 @@
 
    "CREATE INDEX IF NOT EXISTS idx_item_events_article
       ON item_events(marketplace, article, event_date)"
+
+   "CREATE INDEX IF NOT EXISTS idx_item_events_canonical
+      ON item_events(canonical_sku_id, event_date) WHERE canonical_sku_id IS NOT NULL"
+
+   "CREATE INDEX IF NOT EXISTS idx_item_events_related
+      ON item_events(related_event_id) WHERE related_event_id IS NOT NULL"
 
    "CREATE TABLE IF NOT EXISTS product_stats (
       nm_id         INTEGER,

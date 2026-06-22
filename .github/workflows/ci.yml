@@ -1,21 +1,19 @@
-name: Tests
+name: CI
 
 on:
   push:
-    branches: [master]
+    branches: ["**"]
   pull_request:
-    branches: [master]
+  workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: docker
+  clojure-tests:
+    runs-on: ubuntu-latest
     container:
       image: clojure:temurin-21-tools-deps-bookworm-slim
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Restore Maven dep cache between runs so re-builds are fast.
       - name: Cache Clojure deps
         uses: actions/cache@v4
         with:
@@ -27,7 +25,15 @@ jobs:
             clj-
 
       - name: Pre-fetch dependencies
-        run: clojure -P -X:deps prep
+        run: clojure -P
 
-      - name: Run unit + integration tests
+      - name: Run unit and integration tests
         run: clojure -M:test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build -t analitica-ci:${{ github.sha }} .

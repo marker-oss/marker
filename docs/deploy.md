@@ -1,211 +1,90 @@
-# Deployment — analitica on internal LAN
+# Deployment
 
-> Self-hosted Docker deployment to a Debian LXC at `192.168.2.140`,
-> reachable via `https://analitica.lan` (Caddy reverse-proxy on
-> `192.168.2.50`). CI/CD runs on a Forgejo Actions runner.
+Marker/Analitica is deployed to a VPS with Docker Compose and Caddy.
 
-## Topology
+The current production path mirrors the Reviews project:
 
-```
-┌── developer laptop ──┐
-│  git push origin → ──┼──► Forgejo (forge.lan)
-└──────────────────────┘            │
-                                    │ webhook
-                                    ▼
-                            Forgejo Actions runner
-                                    │
-                                    │ ssh + docker compose
-                                    ▼
-┌── analitica LXC (.140) ─┐    Caddy (.50) ── https://analitica.lan
-│  /opt/analitica          │       │
-│    Dockerfile            │       │
-│    docker-compose.yml    │   reverse_proxy
-│    config.edn  (mounted) │       │
-│    .env        (mounted) ◄───────┘
-│    data/analitica.db     │
-│    docker container :3000│
-└──────────────────────────┘
-```
+- GitHub Actions workflow: `.github/workflows/deploy.yml`
+- Server deploy script: `deploy/server-deploy.sh`
+- Source checkout on the VPS: `/srv/analitica-src`
+- Runtime state on the VPS: `/srv/analitica`
+- App container bound to localhost: `127.0.0.1:3000`
+- Public HTTPS at `marker.shegida.ru` and temporary Basic Auth via Caddy
 
-## One-time setup
+## One-time VPS setup
 
-### 1. Forgejo Actions runner
+Install Docker, Docker Compose, Caddy, Git, and SSH access for the deploy user.
+The deploy user must be able to run Docker Compose; the current deploy script is
+intended to run as root, matching the Reviews deployment style.
 
-Where to run it — same LXC where you want CI artifacts to live, OR a
-dedicated runner LXC. For a single-seller setup a separate LXC is
-overkill; place the runner on the analitica LXC since it already has
-Docker + nesting enabled.
-
-On the analitica LXC:
+Create runtime directories:
 
 ```bash
-# Get latest runner version from
-# https://code.forgejo.org/forgejo/runner/releases
-RUNNER_VERSION=6.2.2
-wget -O /usr/local/bin/forgejo-runner \
-  "https://code.forgejo.org/forgejo/runner/releases/download/v${RUNNER_VERSION}/forgejo-runner-${RUNNER_VERSION}-linux-amd64"
-chmod +x /usr/local/bin/forgejo-runner
-
-# Token from Forgejo: Site Administration → Actions → Runners → Create new Runner
-mkdir -p /etc/forgejo-runner && cd /etc/forgejo-runner
-forgejo-runner register \
-  --no-interactive \
-  --instance https://forge.lan \
-  --token <TOKEN_HERE> \
-  --name analitica-runner \
-  --labels docker
-
-# systemd service
-cat > /etc/systemd/system/forgejo-runner.service <<'EOF'
-[Unit]
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-WorkingDirectory=/etc/forgejo-runner
-ExecStart=/usr/local/bin/forgejo-runner daemon
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable --now forgejo-runner
-systemctl status forgejo-runner --no-pager | head -5
+mkdir -p /srv/analitica/data /srv/analitica/reports
+touch /srv/analitica/.env
+chmod 600 /srv/analitica/.env
 ```
 
-If runner can't reach `forge.lan` over HTTPS due to self-signed Caddy
-cert, install the Caddy root CA on this LXC too (see below).
-
-### 2. Trust Caddy CA on the runner LXC
-
-Needed so the runner can `git clone https://forge.lan/...` without
-TLS errors:
+Copy and fill marketplace credentials out-of-band:
 
 ```bash
-# Copy Caddy root CA from AdGuard LXC
-scp root@192.168.2.50:/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt \
-    /usr/local/share/ca-certificates/caddy-local.crt
-update-ca-certificates
+cp config.example.edn /srv/analitica/config.edn
+chmod 600 /srv/analitica/config.edn
 ```
 
-### 3. Deploy SSH key
+Never commit `/srv/analitica/config.edn`, `/srv/analitica/.env`, SQLite DBs, or
+seller exports.
 
-The `deploy.yml` workflow uses an SSH keypair to push code from the
-runner to the analitica host. Generate it once:
+## GitHub setup
 
-```bash
-# On any machine — local laptop is fine
-ssh-keygen -t ed25519 -f /tmp/deploy_key -N ''  -C 'analitica-deploy'
+Create the GitHub repository, then add it as a remote locally.
+
+Required GitHub Actions secrets:
+
+- `VPS_HOST`
+- `VPS_USER`
+- `VPS_PORT` optional, defaults to `22`
+- `VPS_SSH_KEY`
+
+Run deployment manually from GitHub Actions: `Deploy VPS`.
+
+## Caddy
+
+Use `deploy/Caddyfile.example` as the starting point. The production domain is:
+
+```text
+marker.shegida.ru
 ```
 
-- **Private key** (`/tmp/deploy_key`) goes into Forgejo repo:
-  Settings → Secrets and variables → Actions → New repository secret →
-  Name: `DEPLOY_SSH_KEY`, value: paste the entire file content
-  including BEGIN/END lines.
+Create an `A` record for `marker.shegida.ru` pointing to the VPS IPv4 address.
+Add `AAAA` too if the VPS serves IPv6.
 
-- **Public key** (`/tmp/deploy_key.pub`) goes onto the analitica LXC
-  authorized_keys:
+Replace `REPLACE_WITH_CADDY_PASSWORD_HASH` with `caddy hash-password` output.
 
-  ```bash
-  cat /tmp/deploy_key.pub | ssh root@192.168.2.140 \
-    'cat >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'
-  ```
-
-- **Delete the keypair file** from `/tmp` afterwards.
-
-### 4. Bootstrap /opt/analitica on the host
-
-On `192.168.2.140`:
-
-```bash
-# Clone the repo (HTTPS path uses Caddy CA installed in step 2;
-# alternatively SSH path uses the deploy key from step 3).
-mkdir -p /opt && cd /opt
-git clone https://forge.lan/alexdev/Analitica.git analitica
-
-cd analitica
-mkdir -p data reports
-
-# Operator copies these out-of-band — never commit them.
-cp /tmp/config.edn   .            # WB / Ozon / YM tokens
-cp /tmp/.env         .            # env-prop overrides
-cp /tmp/analitica.db data/        # production DB
-
-# First build + start
-docker compose up -d --build
-
-# Verify
-docker compose ps
-docker compose logs --tail 30
-curl -sI http://localhost:3000/
-```
-
-Subsequent deploys are automatic via the Forgejo Actions workflow.
-
-### 5. Caddy front + DNS
-
-Already wired during initial deployment. For reference:
-
-**AdGuard LXC `.50` Caddyfile** (`/etc/caddy/Caddyfile`):
-```
-analitica.lan {
-    tls internal
-    reverse_proxy 192.168.2.140:3000
-}
-```
-
-**Keenetic CLI**:
-```
-ip host analitica.lan 192.168.2.50
-system configuration save
-```
-
-**AdGuard rewrites** (Filters → DNS rewrites):
-- `analitica.lan` → `192.168.2.50`
-
-## CI workflows
-
-### `.forgejo/workflows/test.yml`
-
-Runs the 800+ test suite on every push and PR. Uses
-`clojure:temurin-21-tools-deps-bookworm-slim` container with cached
-`~/.m2`. Exit non-zero blocks the deploy workflow (since deploy is
-gated on master push, but if tests are broken on master, deploy fails
-on the build step too).
-
-### `.forgejo/workflows/deploy.yml`
-
-Runs on master push. SSHes to `192.168.2.140`, pulls the latest code,
-rebuilds the Docker image, restarts the container, prunes old images
-older than 24h. Smoke-checks `localhost:3000` via the same SSH tunnel
-for up to 90s before declaring success.
-
-To skip auto-deploy for a particular commit: include `[skip ci]` in
-the commit message.
+Keep Caddy Basic Auth enabled until app-level authentication exists.
 
 ## Backup
 
-The SQLite DB at `/opt/analitica/data/analitica.db` is the only state.
-Recommended cron entry on the analitica LXC:
+The SQLite database is the production state:
 
-```cron
-0 3 * * * /usr/bin/sqlite3 /opt/analitica/data/analitica.db \
-            ".backup /var/backups/analitica-$(date +\%F).db" \
-          && find /var/backups -name 'analitica-*.db' -mtime +14 -delete
+```bash
+/srv/analitica/data/analitica.db
 ```
 
-In addition, Proxmox `vzdump` of the whole LXC weekly catches both DB
-and any local config state.
+Recommended daily backup:
 
-## Operator playbook
+```cron
+0 3 * * * /usr/bin/sqlite3 /srv/analitica/data/analitica.db ".backup /var/backups/analitica-$(date +\%F).db" && find /var/backups -name 'analitica-*.db' -mtime +14 -delete
+```
 
-| Situation | Action |
-|---|---|
-| Update production code | `git push forge master` from laptop — runner deploys automatically. |
-| Hotfix without redeploy | Edit `/opt/analitica/...` on `.140`, `docker compose up -d`. Note: next CI deploy will overwrite. |
-| Rollback | `cd /opt/analitica && git reset --hard <prev-sha> && docker compose up -d --build`. |
-| View logs | `docker compose logs -f` on `.140`, or via Forgejo Actions tab in the Forgejo UI. |
-| Restart | `docker compose restart` on `.140`. |
-| Inspect DB | `sqlite3 /opt/analitica/data/analitica.db` on `.140` (do NOT edit while container running — use `.backup` first). |
-| Update tokens | Edit `config.edn` / `.env` on `.140`, `docker compose restart`. |
+## Public release warning
+
+Before the first public GitHub push, rewrite local git history to remove old
+development-only paths and seller data that existed in previous commits:
+
+- `.claude/`
+- `docs/superpowers/`
+- `specs/`
+- `1c/`
+
+Do this before adding the GitHub remote or pushing any branch publicly.
