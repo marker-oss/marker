@@ -44,3 +44,14 @@
                                              "attachments" {:filename "e.exe" :content-type "application/x-msdownload"
                                                             :size 3 :tempfile (doto (java.io.File/createTempFile "exe-" ".exe") (spit "abc"))}}})]
     (is (= 415 (:status resp)))))
+
+;; === I2: GET limit param must be honoured ===
+
+(deftest list-honors-limit-param
+  ;; Insert 3 feedback rows then request limit=2; must get at most 2 back.
+  (doseq [i (range 3)]
+    (api/submit {:multipart-params {"message" (str "msg-" i) "kind" "bug"}}))
+  (let [resp (api/list-recent {:params {:limit "2"}})
+        rows (get-in resp [:body :feedback])]
+    (is (= 200 (:status resp)))
+    (is (<= (count rows) 2) "limit=2 must return at most 2 rows")))

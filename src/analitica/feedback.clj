@@ -3,6 +3,7 @@
    files live on disk under storage-root/<feedback-id>/; the DB holds metadata."
   (:require [analitica.db :as db]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]))
 
@@ -29,6 +30,16 @@
     (throw (ex-info (str "Attachment too large: " filename)
                     {:type :bad-attachment :reason :size :size size}))))
 
+(defn- safe-basename
+  "Return a safe filename derived from the client-supplied name.
+   Uses only the basename (strips directory components). Falls back to
+   `fallback` if the result is blank, \".\" or \"..\"."
+  [filename fallback]
+  (let [base (.getName (io/file (or filename "")))]
+    (if (or (str/blank? base) (= base ".") (= base ".."))
+      fallback
+      base)))
+
 (defn create!
   [{:keys [kind message page-url user-agent app-context attachments]}]
   (doseq [a attachments] (validate-attachment! a))
@@ -40,9 +51,14 @@
                                  {:builder-fn rs/as-unqualified-kebab-maps})
                   first :id))
         dir (io/file (storage-root) (str id))]
-    (doseq [{:keys [filename content-type size tempfile]} attachments]
+    (doseq [[idx {:keys [filename content-type size tempfile]}] (map-indexed vector attachments)]
       (.mkdirs dir)
-      (let [dest (io/file dir filename)]
+      (let [safe-name (safe-basename filename (str "file-" idx))
+            dest      (io/file dir safe-name)]
+        ;; Belt-and-suspenders: assert the destination is inside the per-id dir.
+        (when-not (.startsWith (.getCanonicalPath dest) (.getCanonicalPath dir))
+          (throw (ex-info "unsafe attachment path"
+                          {:type :bad-attachment :reason :type})))
         (io/copy tempfile dest)
         (db/execute! ["INSERT INTO feedback_attachments (feedback_id, filename, content_type, size, stored_path)
                        VALUES (?, ?, ?, ?, ?)"
@@ -54,11 +70,21 @@
         rows (db/query ["SELECT id, created_at, kind, message, page_url, user_agent, app_context, status
                          FROM feedback ORDER BY id DESC LIMIT ?" n])
         atts (when (seq rows)
-               (let [ids        (mapv :id rows)
-                     placeholders (clojure.string/join "," (repeat (count ids) "?"))
-                     sql        (str "SELECT feedback_id, filename, content_type, size, stored_path"
-                                    " FROM feedback_attachments"
-                                    " WHERE feedback_id IN (" placeholders ")")]
+               (let [ids          (mapv :id rows)
+                     placeholders (str/join "," (repeat (count ids) "?"))
+                     sql          (str "SELECT feedback_id, filename, content_type, size, stored_path"
+                                      " FROM feedback_attachments"
+                                      " WHERE feedback_id IN (" placeholders ")")]
                  (group-by :feedback-id
                    (db/query (into [sql] ids)))))]
     (mapv (fn [r] (assoc r :attachments (vec (get atts (:id r) [])))) rows)))
+
+(defn by-id
+  "Return a single feedback row (with :attachments vector) for `id`, or nil."
+  [id]
+  (let [rows (db/query ["SELECT id, created_at, kind, message, page_url, user_agent, app_context, status
+                         FROM feedback WHERE id = ?" id])]
+    (when (seq rows)
+      (let [atts (db/query ["SELECT feedback_id, filename, content_type, size, stored_path
+                             FROM feedback_attachments WHERE feedback_id = ?" id])]
+        (assoc (first rows) :attachments (vec atts))))))

@@ -30,7 +30,7 @@
                                                  (get-in request [:headers "user-agent"]))
                                 :app-context (get mp "app_context")
                                 :attachments atts})]
-          (notify/notify-async! (first (fb/list-recent 1)))
+          (notify/notify-async! (fb/by-id (:id res)))
           {:status 201 :body res})
         (catch clojure.lang.ExceptionInfo e
           (let [{:keys [type reason]} (ex-data e)]
@@ -39,7 +39,7 @@
               (throw e))))))))
 
 (defn list-recent [request]
-  (let [raw  (get-in request [:params "limit"])
+  (let [raw  (get-in request [:params :limit])
         n    (try (Integer/parseInt (str raw)) (catch Exception _ 50))
         n    (min n 200)
         rows (->> (fb/list-recent n)

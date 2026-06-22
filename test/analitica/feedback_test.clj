@@ -47,3 +47,54 @@
   (is (fb/allowed-type? "image/png"))
   (is (fb/allowed-type? "application/pdf"))
   (is (not (fb/allowed-type? "application/x-msdownload"))))
+
+;; === C1: path-traversal / arbitrary file write ===
+
+(deftest path-traversal-attachment-stays-inside-root
+  ;; A filename with directory components MUST NOT escape the per-id directory.
+  (let [att {:filename "../../../../tmp/evil.png"
+             :content-type "image/png" :size 5 :tempfile (tmpfile "12345")}
+        res (fb/create! {:kind "bug" :message "traversal-test"
+                         :attachments [att]})]
+    (is (pos? (:id res)))
+    (let [row  (first (fb/list-recent 10))
+          sp   (:stored-path (first (:attachments row)))
+          root (java.io.File. *root*)]
+      ;; The stored file must exist
+      (is (.exists (io/file sp)) "stored file must exist on disk")
+      ;; Its canonical path must be inside the storage root
+      (is (.startsWith (.getCanonicalPath (io/file sp))
+                       (.getCanonicalPath root))
+          "stored path must be contained within storage root")
+      ;; Nothing must have been written to /tmp with the evil name
+      (is (not (.exists (io/file "/tmp/evil.png")))
+          "file must NOT escape to /tmp/evil.png"))))
+
+(deftest path-traversal-original-filename-preserved-in-db
+  ;; DB metadata must record the ORIGINAL client filename, not the safe name.
+  (let [original "../../../../tmp/evil.png"
+        att {:filename original :content-type "image/png"
+             :size 5 :tempfile (tmpfile "12345")}
+        _res (fb/create! {:kind "bug" :message "meta-test"
+                          :attachments [att]})]
+    (let [row (first (fb/list-recent 10))
+          db-filename (:filename (first (:attachments row)))]
+      (is (= original db-filename)
+          "DB filename column must preserve the original client-supplied name"))))
+
+;; === M1: by-id returns row + attachments; nil for missing id ===
+
+(deftest by-id-returns-row-with-attachments
+  (let [att {:filename "shot.png" :content-type "image/png" :size 5 :tempfile (tmpfile "12345")}
+        res (fb/create! {:kind "bug" :message "by-id test"
+                         :attachments [att]})
+        id  (:id res)
+        row (fb/by-id id)]
+    (is (some? row) "must return the row")
+    (is (= id (:id row)))
+    (is (= "by-id test" (:message row)))
+    (is (= 1 (count (:attachments row))))
+    (is (= "shot.png" (:filename (first (:attachments row)))))))
+
+(deftest by-id-returns-nil-for-missing
+  (is (nil? (fb/by-id 999999)) "must return nil for unknown id"))
