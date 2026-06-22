@@ -34,8 +34,9 @@
    ["" {:name :app-root}]
 
    ;; Single-page routes.
-   ["/pulse" {:name :pulse}]
-   ["/sync"  {:name :sync}]
+   ["/pulse"    {:name :pulse}]
+   ["/sync"     {:name :sync}]
+   ["/settings" {:name :settings}]
 
    ;; Sectioned routes: bare /app/finance redirects to default tab;
    ;; /app/finance/:tab dispatches as [:finance :tab].

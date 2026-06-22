@@ -20,7 +20,8 @@
             [marker.pages.finance  :as finance]
             [marker.pages.products :as products]
             [marker.pages.dynamics :as dynamics]
-            [marker.pages.sync     :as sync-page]))
+            [marker.pages.sync     :as sync-page]
+            [marker.pages.settings :as settings-page]))
 
 ;; ---------------------------------------------------------------------------
 ;; Page metadata
@@ -32,7 +33,8 @@
    :finance  "Финансы"
    :products "Товары"
    :dynamics "Динамика"
-   :sync     "Синхронизация"})
+   :sync     "Синхронизация"
+   :settings "Настройки"})
 
 (def ^:private tab-titles
   "Per-section tab titles, keyed by [:section :tab]."
@@ -213,6 +215,7 @@
                (case section
                  :pulse    ($ pulse/pulse    {})
                  :sync     ($ sync-page/sync-page {})
+                 :settings ($ settings-page/settings {})
                  :finance  ($ finance/finance   {:tab tab})
                  :products ($ products/products {:tab tab})
                  :dynamics ($ dynamics/dynamics {:tab tab})
