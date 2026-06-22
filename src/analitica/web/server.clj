@@ -5,7 +5,7 @@
             [ring.middleware.keyword-params :refer [wrap-keyword-params]]
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.middleware.resource :as resource]
-            [compojure.core :refer [defroutes GET POST]]
+            [compojure.core :refer [defroutes GET POST PUT]]
             [compojure.route :as route]
             [hiccup.core]
             [analitica.db :as db]
@@ -35,6 +35,7 @@
             [analitica.web.api.sku :as sku-api]
             [analitica.web.api.search :as search-api]
             [analitica.web.api.marker :as marker-api]
+            [analitica.web.api.settings :as settings-api]
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
@@ -1267,6 +1268,15 @@
                         :marketplace (or mp-str "all")
                         :period      (or period-str "last-7-days")})]
           {:status 200 :body updated}))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Settings API  (/api/v1/settings/*)
+  ;; ---------------------------------------------------------------------------
+  (GET  "/api/v1/settings" req (settings-api/get-settings req))
+  (POST "/api/v1/settings/marketplace/:mp/test" [mp :as req]
+    (settings-api/test-marketplace (assoc-in req [:body-params :marketplace] mp)))
+  (PUT  "/api/v1/settings/marketplace/:mp" [mp :as req]
+    (settings-api/put-marketplace (assoc-in req [:body-params :marketplace] mp)))
 
   ;; ---------------------------------------------------------------------------
   ;; Marker SPA Transit API  (/api/v1/marker/*)
