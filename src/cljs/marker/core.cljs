@@ -21,7 +21,8 @@
             [marker.pages.products :as products]
             [marker.pages.dynamics :as dynamics]
             [marker.pages.sync     :as sync-page]
-            [marker.pages.settings :as settings-page]))
+            [marker.pages.settings :as settings-page]
+            [marker.pages.feedback :as feedback]))
 
 ;; ---------------------------------------------------------------------------
 ;; Page metadata
@@ -233,7 +234,10 @@
        ($ cmdk {:open?   cmdk-open?
                 :on-close #(rf/dispatch [::events/close-cmdk])
                 :on-nav  (fn [page-id]
-                           (router/nav! page-id))}))))
+                           (router/nav! page-id))})
+
+       ;; Floating feedback widget (visible on every page)
+       ($ feedback/widget {}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Mount
