@@ -113,5 +113,4 @@ echo "caddy=$(caddy version)"
 echo
 echo "Next steps:"
 echo "1. Fill $APP_DIR/config.edn with real marketplace credentials."
-echo "2. Put a GitHub deploy key for marker-oss/marker into /root/.ssh or use an agent."
-echo "3. Run deploy/server-deploy.sh from the source checkout or GitHub Actions."
+echo "2. Run deploy/server-deploy.sh from the source checkout or GitHub Actions."

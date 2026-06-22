@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO_URL="${REPO_URL:-git@github.com:marker-oss/marker.git}"
+REPO_URL="${REPO_URL:-https://github.com/marker-oss/marker.git}"
 DEPLOY_REF="${DEPLOY_REF:-main}"
 SRC_DIR="${SRC_DIR:-/srv/analitica-src}"
 APP_DIR="${APP_DIR:-/srv/analitica}"

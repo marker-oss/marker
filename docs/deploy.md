@@ -61,9 +61,8 @@ Required GitHub Actions secrets:
 
 Run deployment manually from GitHub Actions: `Deploy VPS`.
 
-The VPS itself must also have a GitHub deploy key with read access to
-`marker-oss/marker`, because the deploy script clones/pulls the repository on
-the server.
+The deploy script pulls the public repository over HTTPS, so the VPS does not
+need a GitHub deploy key for repo checkout.
 
 ## Caddy
 

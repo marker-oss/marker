@@ -38,12 +38,9 @@ chmod 600 /srv/analitica/config.edn /srv/analitica/.env
 
 Fill `/srv/analitica/config.edn` with marketplace tokens out-of-band.
 
-Install Docker, Docker Compose, Caddy, and add the GitHub deploy key to the
-server account used by the GitHub Actions secrets.
-
-The VPS also needs a GitHub deploy key that can read `marker-oss/marker`,
-because `deploy/server-deploy.sh` pulls the repository from GitHub on the
-server.
+Install Docker, Docker Compose, and Caddy. The deploy script pulls the public
+repository over HTTPS, so the VPS does not need a GitHub deploy key for repo
+checkout.
 
 ## GitHub secrets
 
