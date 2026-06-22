@@ -178,17 +178,22 @@
   ;; Pages
   (GET  "/plan" req (analitica.web.pages.plan/get-handler  req))
   (POST "/plan" req (analitica.web.pages.plan/post-handler req))
-  ;; Phase 2: GET / now points to the action-first digest page.
-  ;; Legacy summary-page kept at /dashboard/summary.
-  (GET "/" {params :params}
+  ;; Public entrypoint: production should land in the Marker SPA.
+  (GET "/" []
+    {:status 302
+     :headers {"Location" "/app/pulse"}
+     :body ""})
+
+  ;; Legacy digest page kept for server-rendered UI fallback/debugging.
+  (GET "/legacy" {params :params}
     (let [from (get params :from)
           to   (get params :to)
           mp   (get params :marketplace)]
       {:status 200
        :headers {"Content-Type" "text/html; charset=utf-8"}
        :body (layout/page "Главная"
-                          (digest-page/page {:from from :to to :marketplace mp})
-                          :active-route "/")}))
+                           (digest-page/page {:from from :to to :marketplace mp})
+                           :active-route "/legacy")}))
   ;; Legacy dashboard at /dashboard/summary (Phase 2: keep for backward compat)
   (GET "/dashboard/summary" {params :params}
     (if-let [period (resolve-period-from-params params)]
