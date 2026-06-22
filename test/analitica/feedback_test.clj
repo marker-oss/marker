@@ -98,3 +98,24 @@
 
 (deftest by-id-returns-nil-for-missing
   (is (nil? (fb/by-id 999999)) "must return nil for unknown id"))
+
+;; === M3: same-basename attachments must not overwrite each other ===
+
+(deftest same-basename-attachments-stored-as-distinct-files
+  ;; Two attachments with identical filenames but different content.
+  ;; Both must survive on disk as separate files with their own bytes.
+  (let [att1 {:filename "shot.png" :content-type "image/png" :size 5 :tempfile (tmpfile "AAAAA")}
+        att2 {:filename "shot.png" :content-type "image/png" :size 5 :tempfile (tmpfile "BBBBB")}
+        res  (fb/create! {:kind "bug" :message "collision-test"
+                          :page-url "/app" :user-agent "test" :app-context "{}"
+                          :attachments [att1 att2]})]
+    (is (= 2 (:attachments res)) "create! must report 2 attachments")
+    (let [row   (fb/by-id (:id res))
+          paths (mapv :stored-path (:attachments row))]
+      (is (= 2 (count paths)) "must have 2 attachment rows in DB")
+      (is (apply not= paths) "stored paths must be distinct")
+      (is (.exists (io/file (first paths)))  "first file must exist on disk")
+      (is (.exists (io/file (second paths))) "second file must exist on disk")
+      (is (not= (slurp (io/file (first paths)))
+                (slurp (io/file (second paths))))
+          "files must have distinct content — second must not have clobbered first"))))

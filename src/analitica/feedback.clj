@@ -53,8 +53,9 @@
         dir (io/file (storage-root) (str id))]
     (doseq [[idx {:keys [filename content-type size tempfile]}] (map-indexed vector attachments)]
       (.mkdirs dir)
-      (let [safe-name (safe-basename filename (str "file-" idx))
-            dest      (io/file dir safe-name)]
+      (let [safe-name   (safe-basename filename (str "file-" idx))
+            stored-name (str idx "-" safe-name)
+            dest        (io/file dir stored-name)]
         ;; Belt-and-suspenders: assert the destination is inside the per-id dir.
         (when-not (.startsWith (.getCanonicalPath dest) (.getCanonicalPath dir))
           (throw (ex-info "unsafe attachment path"
