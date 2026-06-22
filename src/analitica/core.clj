@@ -30,24 +30,38 @@
             [analitica.util.time :as t]
             [com.brunobonacci.mulog :as mu]))
 
+(defn- register-marketplaces!
+  "Build and register WB/Ozon/YM clients from the current config. Ozon/YM
+   failures are non-fatal (partial registry is acceptable, as in start!)."
+  []
+  (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
+    (registry/register! :wb (wb-client/make-client wb-cfg)))
+  (when-let [ozon-cfg (config/ozon-config)]
+    (try (registry/register! :ozon (ozon-client/make-client ozon-cfg))
+         (catch Exception e
+           (println "Warning: Could not register Ozon:" (.getMessage e)))))
+  (when-let [ym-cfg (config/ym-config)]
+    (try (registry/register! :ym (ym-client/make-client ym-cfg))
+         (catch Exception e
+           (println "Warning: Could not register YM:" (.getMessage e)))))
+  (vec (registry/registered)))
+
+(defn reload-config!
+  "Re-read config.edn + DB overrides and rebuild marketplace clients with no
+   process restart. Returns {:marketplaces [...]}."
+  []
+  (config/reload!)
+  (let [mps (register-marketplaces!)]
+    (println "Config reloaded. Registered marketplaces:" mps)
+    {:marketplaces mps}))
+
 (defn start!
   "Initialize the system: config, DB, marketplace clients."
   []
   (config/load-config)
   (db/init!)
   (mu/start-publisher! {:type :console})
-  (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
-    (registry/register! :wb (wb-client/make-client wb-cfg)))
-  (when-let [ozon-cfg (config/ozon-config)]
-    (try
-      (registry/register! :ozon (ozon-client/make-client ozon-cfg))
-      (catch Exception e
-        (println "Warning: Could not register Ozon:" (.getMessage e)))))
-  (when-let [ym-cfg (config/ym-config)]
-    (try
-      (registry/register! :ym (ym-client/make-client ym-cfg))
-      (catch Exception e
-        (println "Warning: Could not register YM:" (.getMessage e)))))
+  (register-marketplaces!)
   (println "=== Analitica started ===")
   (println "Registered marketplaces:" (vec (registry/registered)))
   ;; Prefer DB as the runtime source of truth for cost prices. When the
