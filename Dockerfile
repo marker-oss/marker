@@ -35,7 +35,7 @@ EXPOSE 3000
 # Runtime env points the SQLite path at the volume mount under /app/data.
 ENV ANALITICA_DB=/app/data/analitica.db
 
-# JVM defaults — encoding for Russian source data, modest heap for 4 GB host.
-ENV JAVA_OPTS="-Dfile.encoding=UTF-8 -Xmx2g -XX:+ExitOnOutOfMemoryError"
+# JVM defaults — encoding for Russian source data, modest heap for a 2 GB VPS.
+ENV JAVA_OPTS="-Dfile.encoding=UTF-8 -Xmx1g -XX:+ExitOnOutOfMemoryError"
 
 CMD ["clojure", "-M", "-m", "analitica.web.server"]
