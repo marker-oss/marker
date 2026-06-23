@@ -196,3 +196,26 @@
   (testing "Cross-year custom range → DD.MM.YYYY–DD.MM.YYYY"
     (is (= "15.12.2025–10.01.2026"
            (api/format-period-range "2025-12-15,2026-01-10" may-15)))))
+
+;; ---------------------------------------------------------------------------
+;; X-API-Key attachment (Task 6 / 7b)
+;; ---------------------------------------------------------------------------
+
+(deftest api-key-safe-in-node-without-dom
+  ;; C1: under :node-test there is no js/document; the real fn must return ""
+  ;; (NOT throw ReferenceError). Called WITHOUT with-redefs on purpose.
+  (is (= "" (api/api-key))))
+
+(deftest post-xhrio-has-api-key-header
+  (with-redefs [api/api-key (constantly "T-KEY")]
+    (let [m (api/post-xhrio "/api/x" {:a 1} [:ok] [:err])]
+      (is (= "T-KEY" (get-in m [:headers "X-API-Key"])))
+      (is (= :post (:method m)))))
+  ;; GET must NOT carry the key (GET is exempt server-side; keep requests clean)
+  (let [g (api/get-xhrio "/api/x" [:ok] [:err])]
+    (is (not (contains? g :headers)))))
+
+(deftest put-xhrio-has-api-key-header
+  (with-redefs [api/api-key (constantly "T-KEY")]
+    (let [m (api/put-xhrio "/api/x" {:a 1} [:ok] [:err])]
+      (is (= "T-KEY" (get-in m [:headers "X-API-Key"]))))))

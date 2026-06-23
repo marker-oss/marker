@@ -3,6 +3,7 @@
    Self-contained: floating FAB button + modal dialog.
    POSTs to /api/v1/feedback via FormData+fetch (no Transit)."
   (:require [clojure.string :as str]
+            [marker.api :as api]
             [uix.core :as uix :refer [defui $]]))
 
 ;; ---------------------------------------------------------------------------
@@ -29,7 +30,9 @@
     (.append fd "page_url"   (.. js/window -location -pathname))
     (.append fd "user_agent" (.. js/navigator -userAgent))
     (doseq [f files] (.append fd "attachments" f))
-    (-> (js/fetch "/api/v1/feedback" #js {:method "POST" :body fd})
+    (-> (js/fetch "/api/v1/feedback"
+                  #js {:method "POST" :body fd
+                       :headers #js {"X-API-Key" (api/api-key)}})
         (.then (fn [resp]
                  (if (.-ok resp)
                    (on-ok)

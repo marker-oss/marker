@@ -11,6 +11,7 @@
      - Expandable run rows with per-task retry (Phase 10)"
   (:require [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [clojure.string :as str]
+            [marker.api :as api]
             [marker.ui.icons :refer [icon]]
             [marker.ui.chrome :refer [mp-badge]]
             [marker.pages.sync.schedule :as schedule]))
@@ -23,7 +24,8 @@
   (-> (js/fetch url
                 #js {:method  "POST"
                      :headers #js {"Content-Type" "application/json"
-                                   "Accept"       "application/json"}
+                                   "Accept"       "application/json"
+                                   "X-API-Key"    (api/api-key)}
                      :body    (js/JSON.stringify (clj->js (or body {})))})
       (.then (fn [r]
                (-> (.text r)

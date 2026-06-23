@@ -6,6 +6,7 @@
      GET  /api/cost-prices/imports — recent import audit rows
    Uses fetch + FormData so no Transit/JSON wiring is needed."
   (:require [uix.core :refer [$ defui use-state use-effect use-ref]]
+            [marker.api :as api]
             [marker.ui.icons :refer [icon]]))
 
 (defn parse-imports-payload
@@ -38,7 +39,8 @@
     (on-progress :sending)
     (-> (js/fetch "/api/cost-prices/upload"
                   #js {:method "POST" :body fd
-                       :headers #js {"Accept" "application/json"}})
+                       :headers #js {"Accept"    "application/json"
+                                     "X-API-Key" (api/api-key)}})
         (.then (fn [r]
                  (-> (.json r)
                      (.then (fn [body]

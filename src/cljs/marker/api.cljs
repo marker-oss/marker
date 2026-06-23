@@ -10,6 +10,23 @@
             [ajax.core :refer [transit-response-format transit-request-format]]))
 
 ;; ---------------------------------------------------------------------------
+;; API key (X-API-Key) — read once from the SPA shell <meta> tag
+;; ---------------------------------------------------------------------------
+
+(defn api-key
+  "The X-API-Key injected into the SPA shell <meta> tag. \"\" when absent.
+   Guards js/document: shadow-cljs :node-test runs in Node with NO DOM, and
+   referencing the undefined js/document throws ReferenceError (some-> cannot
+   short-circuit it). exists? compiles to a safe typeof check."
+  []
+  (if (exists? js/document)
+    (or (some-> js/document
+                (.querySelector "meta[name=api-key]")
+                (.getAttribute "content"))
+        "")
+    ""))
+
+;; ---------------------------------------------------------------------------
 ;; Transit encode / decode (exported for tests)
 ;; ---------------------------------------------------------------------------
 
@@ -196,6 +213,7 @@
    :uri             url
    :timeout         15000
    :params          body
+   :headers         {"X-API-Key" (api-key)}
    :format          (transit-request-format)
    :response-format (transit-response-format)
    :on-success      on-success
@@ -208,6 +226,7 @@
    :uri             url
    :timeout         15000
    :params          body
+   :headers         {"X-API-Key" (api-key)}
    :format          (transit-request-format)
    :response-format (transit-response-format)
    :on-success      on-success
