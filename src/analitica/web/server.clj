@@ -8,6 +8,8 @@
             [compojure.core :refer [defroutes GET POST PUT]]
             [compojure.route :as route]
             [hiccup.core]
+            [analitica.config :as config]
+            [analitica.web.middleware.auth :as auth]
             [analitica.db :as db]
             [analitica.core :as core]
             [analitica.util.time :as time]
@@ -1365,7 +1367,8 @@
       (transit-mw/wrap-transit-body)     ; decode incoming transit+json POST bodies
       (transit-mw/wrap-transit-response) ; encode outgoing maps to transit when requested
       (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
-      (wrap-cors :access-control-allow-origin [#".*"]
+      (auth/wrap-api-key)
+      (wrap-cors :access-control-allow-origin [#".*"]   ; replaced in Task 5
                  :access-control-allow-methods [:get :post :options])))
 
 ;; ---------------------------------------------------------------------------

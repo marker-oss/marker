@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.web.server :as server]
             [analitica.web.api.sync :as sync-api]
+            [analitica.config :as config]
             [analitica.db :as db]
             [analitica.sync.registry :as reg]
             [analitica.sync.plan :as sync-plan]
@@ -31,6 +32,9 @@
 
 ;; Each test gets a fresh in-memory SQLite so route tests that seed data
 ;; don't interfere with each other or the dev DB.
+;; Mutating routes now flow through wrap-api-key (config/api-key). Config is not
+;; loaded in this test process, so pin api-key to nil (fail-open) — these tests
+;; exercise routing, not auth (covered by analitica.web.middleware.auth-test).
 (use-fixtures :each
   (fn [f]
     (reset! sync-api/sync-running? false)
@@ -40,7 +44,8 @@
       (try
         (alter-var-root #'db/db-spec (constantly {:dbtype "sqlite" :dbname path}))
         (db/init!)
-        (f)
+        (with-redefs [config/api-key (constantly nil)]
+          (f))
         (finally
           (alter-var-root #'db/db-spec (constantly orig-spec))
           (reset! @#'db/datasource nil)

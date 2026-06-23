@@ -3,9 +3,13 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.web.server :as server]
             [analitica.sync.scheduler :as scheduler]
+            [analitica.config :as config]
             [analitica.db :as db]
             [jsonista.core :as json]))
 
+;; POST /api/sync/schedule now flows through wrap-api-key (config/api-key).
+;; Config is not loaded here, so pin api-key to nil (fail-open) — these tests
+;; exercise routing, not auth (covered by analitica.web.middleware.auth-test).
 (use-fixtures :once
   (fn [f]
     (db/init!)
@@ -16,7 +20,8 @@
                    SET enabled=0, hour=6, minute=0, what='all', marketplace='all',
                        period='last-7-days', last_run_at=NULL, last_run_id=NULL, next_run_at=NULL
                    WHERE id=1"])
-    (f)))
+    (with-redefs [config/api-key (constantly nil)]
+      (f))))
 
 ;; ---------------------------------------------------------------------------
 ;; Test 7 — GET /api/sync/schedule returns singleton

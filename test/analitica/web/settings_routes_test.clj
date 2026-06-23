@@ -1,9 +1,19 @@
 (ns analitica.web.settings-routes-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is use-fixtures]]
             [analitica.web.server :as server]
             [analitica.web.api.settings :as settings-api]
+            [analitica.config :as config]
             [analitica.web.middleware.transit :as transit-mw])
   (:import (java.io ByteArrayInputStream)))
+
+;; These PUT routes flow through the full (server/app) stack, which now
+;; includes wrap-api-key. Config is not loaded in this test process, so pin
+;; api-key to nil (fail-open) — these tests exercise routing/middleware, not
+;; auth. The auth path itself is covered by analitica.web.middleware.auth-test.
+(use-fixtures :each
+  (fn [f]
+    (with-redefs [config/api-key (constantly nil)]
+      (f))))
 
 (deftest get-settings-route-wired
   (with-redefs [settings-api/get-settings (fn [_] {:status 200 :body {:settings {}}})]
