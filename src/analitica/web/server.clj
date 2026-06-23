@@ -165,6 +165,7 @@
                   [:meta {:charset "utf-8"}]
                   [:title "Marker · Аналитика маркетплейсов"]
                   [:meta {:name "viewport" :content "width=1920"}]
+                  [:meta {:name "api-key" :content (or (config/api-key) "")}]
                   [:link {:rel "preconnect" :href "https://fonts.googleapis.com"}]
                   [:link {:rel "preconnect" :href "https://fonts.gstatic.com" :crossorigin true}]
                   [:link {:rel "stylesheet"
