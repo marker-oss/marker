@@ -1347,6 +1347,11 @@
             (assoc-in [:headers "Content-Type"] "application/json; charset=utf-8"))
         response))))
 
+(defn- cors-origin-patterns
+  "Compile each configured origin into an anchored exact-match regex."
+  []
+  (mapv #(re-pattern (str "\\Q" % "\\E")) (config/cors-origins)))
+
 (defn app []
   ;; Middleware application order in the -> thread is innermost-first.
   ;; Execution order on a request is outermost-first (last in thread).
@@ -1369,8 +1374,8 @@
       (transit-mw/wrap-transit-response) ; encode outgoing maps to transit when requested
       (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
       (auth/wrap-api-key)
-      (wrap-cors :access-control-allow-origin [#".*"]   ; replaced in Task 5
-                 :access-control-allow-methods [:get :post :options])))
+      (wrap-cors :access-control-allow-origin (cors-origin-patterns)
+                 :access-control-allow-methods [:get :post :put :delete :options])))
 
 ;; ---------------------------------------------------------------------------
 ;; Server lifecycle
