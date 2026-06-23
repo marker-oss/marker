@@ -1,7 +1,8 @@
 (ns analitica.web.middleware.auth-test
   (:require [clojure.test :refer [deftest is]]
             [analitica.web.middleware.auth :as auth]
-            [analitica.config :as config]))
+            [analitica.config :as config]
+            [jsonista.core :as json]))
 
 (defn- ok-handler [_] {:status 200 :body "ok"})
 
@@ -11,7 +12,13 @@
       ;; design's verbatim acceptance route + the SPA routes
       (let [resp (h {:request-method :post :uri "/api/sync/start" :headers {}})]
         (is (= 401 (:status resp)))
-        (is (= {:error "unauthorized"} (:body resp))))            ; M3: body shape
+        ;; F2: body MUST be a pre-serialized JSON string (not a raw map) because
+        ;; this middleware sits OUTSIDE wrap-json-response — a map body would
+        ;; throw at the Jetty adapter (no StreamableResponseBody for IPersistentMap).
+        (is (string? (:body resp)))                                 ; F2: regression guard
+        (is (= "application/json" (get-in resp [:headers "Content-Type"])))
+        (is (= {:error "unauthorized"}
+               (json/read-value (:body resp) json/keyword-keys-object-mapper))))  ; M3: logical body shape
       (is (= 401 (:status (h {:request-method :post :uri "/api/v1/feedback" :headers {}}))))
       (is (= 401 (:status (h {:request-method :put  :uri "/api/v1/settings/marketplace/wb"
                               :headers {"x-api-key" "WRONG"}}))))

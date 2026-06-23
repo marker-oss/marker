@@ -4,7 +4,8 @@
    config never bricks the pilot; fail-closed when a key IS configured."
   (:require [analitica.config :as config]
             [clojure.string :as str]
-            [com.brunobonacci.mulog :as mu]))
+            [com.brunobonacci.mulog :as mu]
+            [jsonista.core :as json]))
 
 (defn constant-time-eq?
   "Length-aware constant-time string comparison."
@@ -39,4 +40,10 @@
           (handler request)
 
           :else
-          {:status 401 :body {:error "unauthorized"}})))))
+          ;; F2: this middleware sits OUTSIDE wrap-json-response on the response
+          ;; path, so the body must be a pre-serialized JSON string — a raw map
+          ;; would throw at the Jetty adapter (ring 1.12.1 has no
+          ;; StreamableResponseBody for IPersistentMap) → a bodyless 500.
+          {:status  401
+           :headers {"Content-Type" "application/json"}
+           :body    (json/write-value-as-string {:error "unauthorized"})})))))
