@@ -16,7 +16,7 @@
        :business-id "your-ym-business-id"
        :rate-limits {:default 600}}}
 
- :api-key      #env API_KEY        ; X-API-Key for mutating routes; set API_KEY in .env
+ :api-key      #prop API_KEY       ; X-API-Key for mutating routes; set API_KEY in .env (loaded as a JVM system property)
  :cors-origins ["https://marker.shegida.ru" "http://localhost:3000"]
 
  :cost-prices
