@@ -10,6 +10,7 @@
             [hiccup.core]
             [analitica.config :as config]
             [analitica.web.middleware.auth :as auth]
+            [analitica.web.middleware.body-limit :as body-limit]
             [analitica.db :as db]
             [analitica.core :as core]
             [analitica.util.time :as time]
@@ -1375,7 +1376,8 @@
       (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
       (auth/wrap-api-key)
       (wrap-cors :access-control-allow-origin (cors-origin-patterns)
-                 :access-control-allow-methods [:get :post :put :delete :options])))
+                 :access-control-allow-methods [:get :post :put :delete :options])
+      (body-limit/wrap-content-length-limit)))
 
 ;; ---------------------------------------------------------------------------
 ;; Server lifecycle
