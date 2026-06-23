@@ -16,6 +16,9 @@
        :business-id "your-ym-business-id"
        :rate-limits {:default 600}}}
 
+ :api-key      #env API_KEY        ; X-API-Key for mutating routes; set API_KEY in .env
+ :cors-origins ["https://marker.shegida.ru" "http://localhost:3000"]
+
  :cost-prices
  {:source :edn
   :path   "data/cost-prices.edn"}

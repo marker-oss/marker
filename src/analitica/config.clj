@@ -82,6 +82,17 @@
 (defn wb-token []
   (get-in (config) [:marketplaces :wb :api-token]))
 
+(defn api-key
+  "Static API key for X-API-Key auth on mutating routes. nil when unconfigured."
+  []
+  (get-in (config) [:api-key]))
+
+(defn cors-origins
+  "Allowed CORS origins. Defaults to the pilot host + localhost when unset."
+  []
+  (or (get-in (config) [:cors-origins])
+      ["https://marker.shegida.ru" "http://localhost:3000"]))
+
 (defn wb-rate-limits []
   (get-in (config) [:marketplaces :wb :rate-limits]))
 
