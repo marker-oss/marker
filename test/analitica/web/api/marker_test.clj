@@ -175,6 +175,7 @@
 (def ^:private compute-mp-share     #'marker-api/compute-mp-share)
 (def ^:private compute-orders-by-mp #'marker-api/compute-orders-by-mp)
 (def ^:private compute-projection   #'marker-api/compute-projection)
+(def ^:private build-kpi            #'marker-api/build-kpi)
 ;; ROAS / ДРР now live in analitica.util.math (shared with sku-list,
 ;; what-if, and digest). Test the canonical implementation directly.
 (def ^:private compute-roas analitica.util.math/roas)
@@ -586,6 +587,12 @@
       (is (contains? rev :delta-pct))
       (is (vector? (:spark rev)))))
 
+  (testing "FR-P1.3: :kpis :revenue carries :spark-source :sales (live sales series)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          rev (get-in body [:kpis :revenue])]
+      (is (= :sales (:spark-source rev))
+          "revenue spark is always the live sales series — must be labeled :sales")))
+
   (testing ":forecast has month-fact and projection"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           fc (:forecast body)]
@@ -941,3 +948,29 @@
                                          :params {:type "ue" :article "SOMETHING"})]
       (is (= 200 status))
       (is (vector? (:rows body))))))
+
+;; ---------------------------------------------------------------------------
+;; B4d. revenue KPI dual-source labeling — FR-P1.3 (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+(deftest revenue-kpi-spark-source-pure
+  ;; FR-P1.3: the revenue KPI tile is backed by finance (PnL) but its
+  ;; sparkline is always the live per-day sales series.
+  ;;
+  ;; Contract: build-kpi does NOT emit :spark-source (it is source-agnostic);
+  ;; the :spark-source :sales key is added by the pulse-summary handler assoc
+  ;; on the revenue KPI only.  The ^:integration pulse-summary-shape-test
+  ;; above is the RED/GREEN gate for the handler-level contract; this test
+  ;; guards the build-kpi layer boundary.
+  (testing "build-kpi base map does NOT carry :spark-source (handler assoc owns it)"
+    (let [base (build-kpi 50000.0 45000.0 [100.0 200.0] :realization nil)]
+      (is (not (contains? base :spark-source))
+          "build-kpi must not pre-populate :spark-source")))
+
+  (testing ":source (tile) and :spark-source (sparkline) can coexist independently"
+    ;; Verify the assoc semantics are additive — :source is not overwritten.
+    (let [kpi (-> (build-kpi 50000.0 45000.0 [] :preliminary nil)
+                  (assoc :spark-source :sales))]
+      (is (= :preliminary (:source kpi))
+          "tile :source must be preserved when :spark-source is assoc'd")
+      (is (= :sales (:spark-source kpi))))))

@@ -674,7 +674,8 @@
       {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
                                         (assoc :date-basis fin-basis :completeness fin-completeness
-                                               :basis-note (basis-note fin-basis window-days)))
+                                               :basis-note (basis-note fin-basis window-days)
+                                               :spark-source :sales))
                          :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
                                         (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
                                                           revenue-src
