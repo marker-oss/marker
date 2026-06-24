@@ -41,3 +41,45 @@
     (let [wb (get (sc/coverage-by-mp-and-type) :wb)]
       (is (contains? wb :storage))
       (is (vector? (get-in wb [:storage :days]))))))
+
+;; ---------------------------------------------------------------------------
+;; P0-A Part B (specs/010) — honest per-calendar-day coverage semantics (pure)
+;; ---------------------------------------------------------------------------
+
+(deftest day-list->coverage-empty
+  (let [r (sc/day-list->coverage :event-stream [])]
+    (is (= 0 (:present r)))
+    (is (= :missing (:status r)))
+    (is (nil? (:span r)))))
+
+(deftest day-list->coverage-snapshot
+  (testing "snapshot reports as-of, never a span/holes/expected (point-in-time)"
+    (let [r (sc/day-list->coverage :snapshot ["2026-05-03"])]
+      (is (= :snapshot (:kind r)))
+      (is (= "2026-05-03" (:as-of r)))
+      (is (nil? (:holes r)))
+      (is (nil? (:expected r))))))
+
+(deftest day-list->coverage-event-with-holes
+  (testing "calendar-day present/expected + hole ranges within span"
+    (let [r (sc/day-list->coverage :event-stream
+                                   ["2026-05-01" "2026-05-02" "2026-05-05"])]
+      (is (= 3 (:present r)))
+      (is (= {:from "2026-05-01" :to "2026-05-05"} (:span r)))
+      (is (= 5 (:expected r)))
+      (is (= [["2026-05-03" "2026-05-04"]] (:holes r)))
+      (is (= :partial (:status r))))))
+
+(deftest day-list->coverage-full
+  (testing "contiguous coverage → :full, no holes"
+    (let [r (sc/day-list->coverage :event-stream
+                                   ["2026-05-01" "2026-05-02" "2026-05-03"])]
+      (is (= :full (:status r)))
+      (is (empty? (:holes r))))))
+
+(deftest day-list->coverage-collapses-timestamps-to-calendar-days
+  (testing "duplicate days collapse — fixes the 'WB orders 2652 дн' row-count bug"
+    (let [r (sc/day-list->coverage :event-stream
+                                   ["2026-05-02" "2026-05-01" "2026-05-01" "2026-05-02"])]
+      (is (= 2 (:present r))
+          "present must be distinct calendar days, not record count"))))

@@ -1156,10 +1156,12 @@
   (GET "/api/sync/stream" request
     (sync-api/sse-stream request))
   
+  ;; P0-A Part B (specs/010): the /sync matrix now serves the honest per-day
+  ;; coverage-report (kind/holes/status; ad_stats+regions included), not the
+  ;; old MIN/MAX/COUNT(DISTINCT date) shape that mislabelled row-counts as days.
   (GET "/api/sync/coverage" []
-    (let [coverage (metrics-api/sync-coverage)]
-      {:status 200
-       :body coverage}))
+    {:status 200
+     :body (sync-coverage/coverage-report)})
 
   (GET "/api/sync/coverage-days" []
     (let [data (sync-coverage/coverage-by-mp-and-type)]

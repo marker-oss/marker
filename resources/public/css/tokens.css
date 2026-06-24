@@ -699,6 +699,9 @@ input[type="range"]::-moz-range-thumb {
 .coverage-stale   { background: var(--color-warning-bg); color: var(--color-warning-fg); }
 .coverage-old     { background: var(--color-danger-bg);  color: var(--color-danger-fg); }
 .coverage-missing { color: var(--color-fg-muted); }
+/* P0-A Part B: gaps within a coverage span (missing calendar days) */
+.coverage-gap     { color: var(--color-warning-fg); font-weight: 600; cursor: help; }
+.coverage-partial { box-shadow: inset 2px 0 0 var(--color-warning-fg); }
 
 .coverage-chip-good    { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-border); }
 .coverage-chip-stale   { background: var(--color-warning-bg); color: var(--color-warning-fg); border-color: var(--color-warning-border); }

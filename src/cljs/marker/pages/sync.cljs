@@ -139,19 +139,30 @@
       (catch :default _ "missing"))))
 
 (defn parse-coverage-cell
-  "Normalise a raw coverage cell from the JSON response.
-   Returns {:from string :to string :days int} or nil.
-   Accepts a map (good), nil (no data), or a sentinel string like \"—\"."
+  "Normalise a coverage-report cell (P0-A Part B). Returns a map carrying the
+   honest per-calendar-day shape, or nil when there is no data.
+
+     {:kind \"snapshot\"|\"event-stream\"|\"monthly-batch\"
+      :status \"full\"|\"partial\"
+      :present int :expected int          ; event/batch
+      :span {:from :to}                   ; event/batch
+      :holes [[from to] …]                ; event/batch
+      :as-of string}                      ; snapshot
+
+   Tolerates keyword or string :kind/:status (JSON vs Transit). A :missing
+   status (or absent cell) → nil → rendered as \"—\"."
   [cell]
-  (cond
-    (nil? cell)    nil
-    (string? cell) nil                  ; sentinel "—" or any string → absent
-    (map? cell)    (let [f (:from cell)
-                         t (:to   cell)
-                         d (:days cell)]
-                     (when (and f t)
-                       {:from f :to t :days (or d 0)}))
-    :else          nil))
+  (when (map? cell)
+    (let [kind   (some-> (:kind cell) name)
+          status (some-> (:status cell) name)]
+      (when (and kind (not= status "missing"))
+        {:kind     kind
+         :status   status
+         :present  (:present cell)
+         :expected (:expected cell)
+         :as-of    (:as-of cell)
+         :span     (:span cell)
+         :holes    (or (:holes cell) [])}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Status banner
@@ -369,29 +380,53 @@
 
 (def ^:private mp-keys   [:wb :ozon :ym])
 (def ^:private mp-labels {:wb "Wildberries" :ozon "Ozon" :ym "Яндекс Маркет"})
-(def ^:private dtype-keys   [:sales :orders :finance :storage :stocks])
-(def ^:private dtype-labels {:sales   "Продажи"
-                              :orders  "Заказы"
-                              :finance "Финансы"
-                              :storage "Хранение"
-                              :stocks  "Остатки"})
-(def ^:private cross-mp-keys   [:stats :regions :1c :prices])
+(def ^:private dtype-keys   [:sales :orders :finance :storage :stocks :prices :ad_stats])
+(def ^:private dtype-labels {:sales    "Продажи"
+                              :orders   "Заказы"
+                              :finance  "Финансы"
+                              :storage  "Хранение"
+                              :stocks   "Остатки"
+                              :prices   "Цены"
+                              :ad_stats "Реклама"})
+(def ^:private cross-mp-keys   [:stats :regions :1c])
 (def ^:private cross-mp-labels {:stats   "Статистика"
                                  :regions "Регионы"
-                                 :1c      "1С цены"
-                                 :prices  "Цены"})
+                                 :1c      "1С цены"})
+
+(defn- coverage-ref-date
+  "The date used for freshness colouring: snapshot → as-of, else span end."
+  [p]
+  (if (= (:kind p) "snapshot") (:as-of p) (get-in p [:span :to])))
+
+(defn- holes-title [holes]
+  (str "Пропуски: "
+       (str/join ", " (map (fn [[a b]] (if (= a b) a (str a "–" b))) holes))))
+
+(defui ^:private coverage-label
+  "Inner text for a coverage cell/chip. Snapshots read 'на <date>'; event &
+   batch entities read 'from–to · present/expected дн' plus a ⚠ gap marker
+   (count of missing calendar days, with the ranges in the tooltip)."
+  [{:keys [p]}]
+  (if (= (:kind p) "snapshot")
+    ($ :span {:class "coverage-range"} "на " (:as-of p))
+    (let [missing (max 0 (- (or (:expected p) 0) (or (:present p) 0)))]
+      ($ :<> {}
+         ($ :span {:class "coverage-range"}
+            (get-in p [:span :from]) "–" (get-in p [:span :to]))
+         ($ :span {:class "coverage-days"}
+            " · " (:present p) "/" (:expected p) " дн")
+         (when (pos? missing)
+           ($ :span {:class "coverage-gap"
+                     :title (holes-title (:holes p))}
+              " · ⚠ " missing))))))
 
 (defui ^:private coverage-cell [{:keys [cell now]}]
-  (let [parsed (parse-coverage-cell cell)
-        cls    (freshness-class (:to parsed) now)]
-    ($ :td {:class (str "coverage-cell coverage-" cls)}
-       (if parsed
-         ($ :span
-            ($ :span {:class "coverage-range"}
-               (:from parsed) "–" (:to parsed))
-            ($ :span {:class "coverage-days"}
-               " · " (:days parsed) " дн"))
-         "—"))))
+  (let [p (parse-coverage-cell cell)]
+    (if (nil? p)
+      ($ :td {:class "coverage-cell coverage-missing"} "—")
+      ($ :td {:class (str "coverage-cell coverage-" (freshness-class (coverage-ref-date p) now)
+                          (when (= (:status p) "partial") " coverage-partial"))}
+         ($ coverage-label {:p p})))))
 
 (defui ^:private coverage-matrix [{:keys [coverage error loading?]}]
   (let [now (use-memo (fn [] (js/Date.)) [coverage])]
@@ -450,13 +485,12 @@
                      :let [raw (or (get coverage k)
                                    (get coverage (name k)))
                            parsed (parse-coverage-cell raw)
-                           cls    (freshness-class (:to parsed) now)]]
+                           cls    (freshness-class (coverage-ref-date parsed) now)]]
                  ($ :div {:key k :class (str "chip coverage-chip-" cls)}
                     ($ :span {:class "chip-label"} (get cross-mp-labels k))
                     (if parsed
                       ($ :span {:class "chip-value"}
-                         (:from parsed) "–" (:to parsed)
-                         " · " (:days parsed) " дн")
+                         ($ coverage-label {:p parsed}))
                       ($ :span {:class "chip-value chip-absent"} "—"))))))))))
 ;; ---------------------------------------------------------------------------
 ;; Page root
