@@ -59,7 +59,7 @@
            #(.destroy c))))
      [spark])
     ($ :div {:style {:height "160px"}}
-       ($ :canvas {:ref ref}))))
+       ($ :canvas (assoc {} :ref ref)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Skeleton

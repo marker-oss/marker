@@ -225,10 +225,10 @@
                 ($ :thead
                    ($ :tr
                       ($ :th {:class "tbl-checkbox"}
-                         ($ :input {:type      "checkbox"
-                                    :ref       all-cb-ref
-                                    :checked   all-selected?
-                                    :on-change toggle-all!}))
+                         ($ :input (assoc {:type      "checkbox"
+                                           :checked   all-selected?
+                                           :on-change toggle-all!}
+                                          :ref all-cb-ref)))
                       ($ :th "Артикул")
                       ($ :th "МП")
                       ($ :th {:class "num"} "Выручка")

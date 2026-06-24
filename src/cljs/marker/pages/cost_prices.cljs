@@ -132,17 +132,17 @@
 
           ($ :div {:style {:display "flex" :gap "12px" :align-items "center"
                            :flex-wrap "wrap"}}
-             ($ :input {:type      "file"
-                        :ref       input-ref
-                        :accept    ".csv,text/csv"
-                        :style     {:flex "1"
-                                    :font-size "13px"
-                                    :padding "6px"}
-                        :on-change (fn [e]
-                                     (let [^js f (some-> e .-target .-files (aget 0))]
-                                       (set-file! f)
-                                       (set-status! :idle)
-                                       (set-error! nil)))})
+             ($ :input (assoc {:type      "file"
+                               :accept    ".csv,text/csv"
+                               :style     {:flex "1"
+                                           :font-size "13px"
+                                           :padding "6px"}
+                               :on-change (fn [e]
+                                            (let [^js f (some-> e .-target .-files (aget 0))]
+                                              (set-file! f)
+                                              (set-status! :idle)
+                                              (set-error! nil)))}
+                              :ref input-ref))
              ($ :button
                 {:class    (str "btn btn-primary"
                                 (when (or (nil? file) (= status :sending))

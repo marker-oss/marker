@@ -280,7 +280,7 @@
            #(.destroy c))))
      [data kind])
     ($ :div {:style {:height "360px"}}
-       ($ :canvas {:ref ref}))))
+       ($ :canvas (assoc {} :ref ref)))))
 
 (defui ^:private view-toggle [{:keys [view on-change]}]
   ($ :div {:class "row"

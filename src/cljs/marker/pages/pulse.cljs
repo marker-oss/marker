@@ -143,7 +143,7 @@
                                                                          :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
      [rev-spark rev-prev-spark compare?])
-    ($ :canvas {:ref canvas-ref})))
+    ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
 ;; Stacked bar — orders by MP
@@ -216,7 +216,7 @@
                                                                      :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
      [mp-filter orders-by-mp])
-    ($ :canvas {:ref canvas-ref})))
+    ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
 ;; MP share donut
@@ -258,7 +258,7 @@
                                                  :scales #js{}}})]
            (fn [] (.destroy chart)))))
      [mp-filter mp-share])
-    ($ :canvas {:ref canvas-ref})))
+    ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
 ;; Plan-fact card

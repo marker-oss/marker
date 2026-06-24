@@ -197,11 +197,11 @@
           #(.removeEventListener js/document "mousedown" handler)))
       [])
     ($ :div
-      {:ref   ref
-       :style {:position    "relative"
-               :display     "flex"
-               :gap         "6px"
-               :align-items "center"}}
+      (assoc {:style {:position    "relative"
+                      :display     "flex"
+                      :gap         "6px"
+                      :align-items "center"}}
+             :ref ref)
       ;; ---- trigger button ----
       ($ :button
         {:class    "btn btn-secondary"
@@ -580,13 +580,13 @@
                            :border-bottom "1px solid var(--color-border-subtle)"}}
              ($ icon {:name :search :size 16
                       :style {:color "var(--color-fg-muted)"}})
-             ($ :input {:ref          input-ref
-                        :class        "cmdk-input"
-                        :placeholder  "Поиск артикула, страницы, действия…"
-                        :value        q
-                        :on-change    #(do (set-q! (.. % -target -value))
-                                           (set-sel-idx! 0))
-                        :on-key-down  on-key-down})
+             ($ :input (assoc {:class        "cmdk-input"
+                               :placeholder  "Поиск артикула, страницы, действия…"
+                               :value        q
+                               :on-change    #(do (set-q! (.. % -target -value))
+                                                  (set-sel-idx! 0))
+                               :on-key-down  on-key-down}
+                              :ref input-ref))
              ($ :kbd {:class "kbd"} "esc"))
 
           ;; Results
