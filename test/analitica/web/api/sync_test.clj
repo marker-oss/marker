@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.web.api.sync :as sync-api]
             [analitica.sync.plan :as plan]
-            [analitica.sync.executor :as executor]))
+            [analitica.sync.executor :as executor])
+  (:import [java.time LocalDateTime]))
 
 (use-fixtures :each
   (fn [f]
@@ -133,6 +134,28 @@
               "persist-plan! should NOT be called for :1c")
           (is (false? @executor-called?)
               "executor/run-parallel! should NOT be called for :1c"))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-P2.8 — stuck-sync detection
+;; ---------------------------------------------------------------------------
+
+(deftest stuck-detection
+  (testing "running run older than threshold is stuck"
+    (let [now   (LocalDateTime/parse "2026-06-25T12:00:00")
+          old   {:status "running"   :started-at "2026-06-25T11:00:00"} ; 60 min ago
+          fresh {:status "running"   :started-at "2026-06-25T11:55:00"} ; 5 min ago
+          done  {:status "completed" :started-at "2026-06-25T09:00:00"}] ; not running
+      (is (true?  (executor/stuck? old   now 30)) "60-min running run should be stuck")
+      (is (false? (executor/stuck? fresh now 30)) "5-min running run should not be stuck")
+      (is (false? (executor/stuck? done  now 30)) "non-running run should never be stuck")))
+  (testing "nil started-at is not stuck"
+    (let [now (LocalDateTime/parse "2026-06-25T12:00:00")]
+      (is (false? (executor/stuck? {:status "running" :started-at nil} now 30))
+          "nil started-at should return false")))
+  (testing "missing started-at is not stuck"
+    (let [now (LocalDateTime/parse "2026-06-25T12:00:00")]
+      (is (false? (executor/stuck? {:status "running"} now 30))
+          "missing started-at should return false"))))
 
 (deftest start-sync-invalid-marketplace
   (testing "start-sync! with unrecognised marketplace produces empty plan, returns success"
