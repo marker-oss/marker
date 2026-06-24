@@ -31,7 +31,7 @@
 (defui finance
   [{:keys [tab]}]
   (let [active (or tab :pnl)]
-    ($ :<>
+    ($ :<> {}
        ($ tabs {:items     (nav/section-tabs :finance)
                 :active    active
                 :on-change (fn [t] (router/nav! [:finance t]))})

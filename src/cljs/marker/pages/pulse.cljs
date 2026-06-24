@@ -304,7 +304,7 @@
           (when plan-pct
             ($ :div {:style {:font-size "14px" :font-weight 600}} (str plan-pct "%"))))
        (when plan-pct
-         ($ :<>
+         ($ :<> {}
             ($ :div {:class prog-class}
                ($ :div {:style {:width (str plan-pct "%")}}))
             ($ :div {:style {:display         "flex"

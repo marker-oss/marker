@@ -66,7 +66,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defui ^:private sheet-skeleton []
-  ($ :<>
+  ($ :<> {}
      ($ :div {:class "sheet-head"}
         ($ :div
            ($ :div {:class "skel" :style {:height "14px" :width "60%" :margin-bottom "8px" :border-radius "4px"}})
@@ -132,7 +132,7 @@
                          {:l "Реклама"
                           :v (fmt/format-rub (safe-num (:value ads-kpi)))
                           :d nil}]]
-          ($ :<>
+          ($ :<> {}
              ;; Header
              ($ :div {:class "sheet-head"}
                 ($ :div

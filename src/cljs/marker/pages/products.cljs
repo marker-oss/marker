@@ -30,7 +30,7 @@
 (defui products
   [{:keys [tab]}]
   (let [active (or tab :skus)]
-    ($ :<>
+    ($ :<> {}
        ($ tabs {:items     (nav/section-tabs :products)
                 :active    active
                 :on-change (fn [t] (router/nav! [:products t]))})

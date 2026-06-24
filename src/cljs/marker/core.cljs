@@ -156,7 +156,7 @@
          #(.removeEventListener js/window "keydown" on-key)))
      [])
 
-    ($ :<>
+    ($ :<> {}
        ($ :div {:class "app"}
           ;; Sidebar
           ($ sidebar {:active    (cond

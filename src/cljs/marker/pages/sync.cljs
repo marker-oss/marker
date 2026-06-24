@@ -312,7 +312,7 @@
         secs     (duration-s started finished)
         status   (some-> run :status name)
         tasks    (:tasks run)]
-    ($ :<>
+    ($ :<> {}
        ($ :tr {:style         {:cursor "pointer"}
                :tab-index     "0"
                :role          "button"
@@ -420,7 +420,7 @@
             "Нет данных о покрытии.")
 
          :else
-         ($ :<>
+         ($ :<> {}
             ;; Per-MP table
             ($ :div {:style {:overflow-x "auto" :margin-bottom "16px"}}
                ($ :table {:class "tbl coverage-tbl"}

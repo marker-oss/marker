@@ -186,7 +186,7 @@
        js/undefined)
      [all-selected? some-selected?])
 
-    ($ :<>
+    ($ :<> {}
        ;; Bulk action bar
        (when (pos? (count selected))
          ($ :div {:class "bulk-bar"}

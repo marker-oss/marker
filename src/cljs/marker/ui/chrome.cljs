@@ -458,7 +458,7 @@
          (.addEventListener js/document "keydown" on-key)
          #(.removeEventListener js/document "keydown" on-key))))
    [open? on-close])
-  ($ :<>
+  ($ :<> {}
      ($ :div {:class    (str "sheet-backdrop" (when open? " open"))
               :on-click on-close})
      ($ :div {:class (str "sheet" (when open? " open"))}
@@ -593,7 +593,7 @@
           ($ :div {:class "cmdk-results"}
              ;; Nav section
              (when (seq (:nav-matches results))
-               ($ :<>
+               ($ :<> {}
                   ($ :div {:class "cmdk-section-title"} "Навигация")
                   (map-indexed
                    (fn [i n]
@@ -631,4 +631,3 @@
              ($ :span ($ :kbd {:class "kbd"} "↑↓") " навигация")
              ($ :span ($ :kbd {:class "kbd"} "↵") " открыть")
              ($ :span ($ :kbd {:class "kbd"} "esc") " закрыть"))))))
-

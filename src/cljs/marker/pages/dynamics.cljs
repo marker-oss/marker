@@ -14,7 +14,7 @@
 (defui dynamics
   [{:keys [tab]}]
   (let [active (or tab :trends)]
-    ($ :<>
+    ($ :<> {}
        ($ tabs {:items     (nav/section-tabs :dynamics)
                 :active    active
                 :on-change (fn [t] (router/nav! [:dynamics t]))})
