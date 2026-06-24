@@ -23,8 +23,10 @@ chmod 600 /srv/analitica/.env /srv/analitica/config.edn
 
 Each marketplace token is revoked and reissued in that marketplace's portal,
 then applied to Marker. Applying without downtime: paste the new token into the
-Settings UI — `PUT /api/v1/settings/marketplace/:mp` triggers `config/reload!`,
-so no restart is needed. Alternatively edit `.env` and restart the container.
+Settings UI — `PUT /api/v1/settings/marketplace/:mp` triggers
+`core/reload-config!` (which runs `config/reload!` AND re-initializes the
+marketplace clients/caches), so no restart is needed. Alternatively edit `.env`
+and restart the container.
 
 - **WB:** Seller portal -> Настройки -> Доступ к API -> revoke the old token,
   generate a new one -> paste into the Settings UI (or set `.env` `WB_API_TOKEN`).
@@ -68,11 +70,19 @@ systemctl reload caddy   # or: caddy reload --config /etc/caddy/Caddyfile
 
 ## Health check
 
-`GET /healthz` is unauthenticated at the app, but reaches the public domain
-behind Caddy Basic Auth. It runs a guarded `SELECT 1` DB probe and never throws.
+`GET /healthz` is unauthenticated at the app and runs a guarded `SELECT 1` DB
+probe (never throws). The Docker healthcheck already probes it in-container at
+`http://localhost:3000/healthz` (bypasses Caddy — no credentials needed):
 
 ```bash
-curl -fs https://marker.shegida.ru/healthz
+docker exec analitica curl -fs http://localhost:3000/healthz
+```
+
+Reaching it through the public domain goes through Caddy Basic Auth, so pass
+credentials (otherwise `curl -f` exits non-zero on the 401):
+
+```bash
+curl -fsu admin:YOUR_BASIC_AUTH_PASSWORD https://marker.shegida.ru/healthz
 ```
 
 A healthy instance returns `{"status":"ok","db-ok?":true}`. If `db-ok?` is
