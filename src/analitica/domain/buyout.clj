@@ -59,6 +59,28 @@
                       (sort-by :buyout-rate))]
     by-art))
 
+(defn aggregate
+  "Fold `analyze` rows into the three named period-level buyout rates (P0-B,
+   specs/010). Returns:
+     :sold :returned :placed :cancelled — raw totals
+     :buyout-orders-rate — sold/placed       («Выкуп (от заказов)», reconciles with MP cabinet)
+     :non-return-rate    — sold/(sold+ret)   («Доля невозвратов», the legacy figure)
+     :cancel-rate        — cancelled/placed  («% отмен»)
+   Order-based rates are nil when no orders data is present (placed = 0), per
+   the math/percentage zero-denominator contract — never silently 0 or 100."
+  [rows]
+  (let [sold      (reduce + 0 (map #(or (:bought %) 0) rows))
+        returned  (reduce + 0 (map #(or (:returned %) 0) rows))
+        placed    (reduce + 0 (map #(or (:placed %) 0) rows))
+        cancelled (reduce + 0 (map #(or (:cancelled %) 0) rows))]
+    {:sold               sold
+     :returned           returned
+     :placed             placed
+     :cancelled          cancelled
+     :buyout-orders-rate (math/percentage sold placed)
+     :non-return-rate    (math/percentage sold (+ sold returned))
+     :cancel-rate        (math/percentage cancelled placed)}))
+
 (defn report
   [period & {:keys [marketplace]}]
   (println "\nАнализ % выкупа...")

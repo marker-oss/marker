@@ -93,6 +93,40 @@
                (set (keys a)))
             "Backward-compat: legacy :ordered + canonical :total-ops alias both present (§Buyout.6.1)")))))
 
+;; ---------------------------------------------------------------------------
+;; §Buyout.8 — aggregate rates for the Pulse headline (P0-B, specs/010)
+;; ---------------------------------------------------------------------------
+
+(deftest aggregate-computes-order-based-rates
+  (testing "aggregate folds analyze rows into the three named period rates"
+    (let [rows [{:article "A" :bought 3 :returned 1 :placed 10 :cancelled 6}
+                {:article "B" :bought 1 :returned 2 :placed 5  :cancelled 2}]
+          agg  (buyout/aggregate rows)]
+      (testing "raw totals"
+        (is (= 4  (:sold agg)))
+        (is (= 3  (:returned agg)))
+        (is (= 15 (:placed agg)))
+        (is (= 8  (:cancelled agg))))
+      (testing "Выкуп (от заказов) = sold/placed = 4/15"
+        (is (= 26.67 (:buyout-orders-rate agg))))
+      (testing "Доля невозвратов = sold/(sold+returned) = 4/7"
+        (is (= 57.14 (:non-return-rate agg))))
+      (testing "% отмен = cancelled/placed = 8/15"
+        (is (= 53.33 (:cancel-rate agg)))))))
+
+(deftest aggregate-without-orders-data-yields-nil-order-rates
+  (testing "no :placed anywhere → order-based rates nil, non-return still computed"
+    (let [rows [{:article "C" :bought 2 :returned 0}
+                {:article "D" :bought 1 :returned 1}]
+          agg  (buyout/aggregate rows)]
+      (is (= 3 (:sold agg)))
+      (is (= 0 (:placed agg)))
+      (is (nil? (:buyout-orders-rate agg))
+          "Cannot compute sold/placed with zero placed — must be nil, not 0/100.")
+      (is (nil? (:cancel-rate agg)))
+      (is (= 75.0 (:non-return-rate agg))
+          "Доля невозвратов 3/(3+1) is still meaningful without orders data."))))
+
 (deftest article-without-orders-data-omits-true-rate
   (testing "Article missing from orders-map: legacy fields populated, §Buyout.7 fields absent."
     (with-redefs [sales/fetch-sales (fn [_period & _opts]

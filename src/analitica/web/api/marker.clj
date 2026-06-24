@@ -614,8 +614,27 @@
           revenue-as-of (when (= :preliminary revenue-src)
                           (:preliminary-as-of pnl-cur))
 
-          ;; buyout-src: from pnl (realization-based); none when 0
-          buyout-src    (if (pos? (or (:buyout-rate pnl-cur) 0.0)) :realization :none)
+          ;; ---------------------------------------------------------------------------
+          ;; Buyout — P0-B (specs/010). The headline «Выкуп» must reconcile with the
+          ;; MP seller cabinet, so it is ORDER-BASED (sold/placed) — NOT the legacy
+          ;; non-return rate (sold/(sold+returns)), which structurally cannot see
+          ;; cancellations and read 86%/0%/97% on the same data. Cancellations get
+          ;; their own «% отмен» (:cancel); the legacy rate survives under its honest
+          ;; name «Доля невозвратов» (:non-return).
+          ;; ---------------------------------------------------------------------------
+          buyout-of     (fn [pmap from* to*]
+                          (let [orows (db/orders-by-article from* to* :marketplace mp1)
+                                omap  (into {} (map (juxt :article identity) orows))]
+                            (buyout/aggregate
+                              (buyout/analyze pmap :marketplace mp1 :orders-by-article omap))))
+          buyout-agg    (buyout-of period from to)
+          buyout-prev   (buyout-of prev (:from prev) (:to prev))
+          buyout-rate   (:buyout-orders-rate buyout-agg)   ; sold/placed; nil if no orders
+          cancel-rate   (:cancel-rate buyout-agg)          ; cancelled/placed
+          non-return    (:non-return-rate buyout-agg)      ; legacy sold/(sold+ret)
+          ;; :source = :orders when orders data exists (a real 0% is still :orders,
+          ;; not :none). :none only when there are no placed orders to divide by.
+          buyout-src    (if (pos? (:placed buyout-agg)) :orders :none)
 
           ;; Projection uses the SAME revenue source as the KPI tile —
           ;; otherwise the «Прогноз» line under the chart drifts away
@@ -671,13 +690,37 @@
                                      :spark     []
                                      :source    revenue-src
                                      :as-of     revenue-as-of}
-                         :buyout    {:value     (or (:buyout-rate pnl-cur) 0.0)
+                         ;; «Выкуп (от заказов)» — sold/placed, reconciles with MP cabinet.
+                         :buyout    {:value     (or buyout-rate 0.0)
                                      :delta-pct (math/pct-delta
-                                                  (or (:buyout-rate pnl-cur) 0.0)
-                                                  (or (:buyout-rate pnl-prev) 0.0))
+                                                  (or buyout-rate 0.0)
+                                                  (or (:buyout-orders-rate buyout-prev) 0.0))
                                      :spark     []
+                                     :basis     :orders
                                      :source    buyout-src
                                      :as-of     nil}
+                         ;; «% отмен» — cancelled/placed; first-class, since the legacy
+                         ;; non-return rate structurally cannot see cancellations.
+                         :cancel    {:value     (or cancel-rate 0.0)
+                                     :delta-pct (math/pct-delta
+                                                  (or cancel-rate 0.0)
+                                                  (or (:cancel-rate buyout-prev) 0.0))
+                                     :spark     []
+                                     :basis     :orders
+                                     :source    buyout-src
+                                     :as-of     nil}
+                         ;; «Доля невозвратов» — the former «Выкуп» (sold/(sold+returns)),
+                         ;; renamed to its honest meaning. Realization-based.
+                         :non-return {:value     (or non-return 0.0)
+                                      :delta-pct (math/pct-delta
+                                                   (or non-return 0.0)
+                                                   (or (:non-return-rate buyout-prev) 0.0))
+                                      :spark     []
+                                      :basis     :delivered-units
+                                      :source    (if (pos? (+ (:sold buyout-agg)
+                                                              (:returned buyout-agg)))
+                                                   :realization :none)
+                                      :as-of     nil}
                          :roas      {:value     (math/roas rev-cur ad-cur)
                                      :delta-pct nil
                                      :spark     []

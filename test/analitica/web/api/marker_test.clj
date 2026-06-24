@@ -6,6 +6,7 @@
    and assert on *shape* (key presence + types) rather than specific values —
    the backend data is real and may shift."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [analitica.config :as config]
             [analitica.db :as db]
             [analitica.util.math]
             [analitica.web.server :as server]
@@ -18,6 +19,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defn init-test-db [f]
+  (config/load-config)   ; app() construction reads cors-origins → config must be loaded
   (db/init!)
   (f))
 
@@ -515,13 +517,28 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
       (is (vector? (:alerts body)))))
 
-  (testing ":kpis contains all 11 KPI keys"
+  (testing ":kpis contains all 13 KPI keys (P0-B added :cancel + :non-return)"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (is (map? kpis))
       (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
-                 :avg-check :buyout :roas :drr]]
+                 :avg-check :buyout :cancel :non-return :roas :drr]]
         (is (contains? kpis k) (str "kpis missing: " k)))))
+
+  (testing "P0-B: :buyout is order-based (от заказов), :cancel + :non-return present"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          buyout     (get-in body [:kpis :buyout])
+          cancel     (get-in body [:kpis :cancel])
+          non-return (get-in body [:kpis :non-return])]
+      (testing ":buyout carries its denominator basis (order-based)"
+        (is (= :orders (:basis buyout))
+            "Headline buyout must declare it is computed from orders placed, not sales-ops."))
+      (testing ":cancel is the % отмен KPI"
+        (is (map? cancel))
+        (is (or (nil? (:value cancel)) (number? (:value cancel)))))
+      (testing ":non-return preserves the legacy retention rate under its honest name"
+        (is (map? non-return))
+        (is (or (nil? (:value non-return)) (number? (:value non-return)))))))
 
   (testing ":orders is total orders (incl. cancelled), :purchases is delivered sales — orders >= purchases"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
@@ -577,14 +594,15 @@
 ;; ---------------------------------------------------------------------------
 
 (def valid-kpi-sources
-  #{:realization :preliminary :canon :legacy-orders :legacy-sales :none})
+  ;; :orders — P0-B: buyout/cancel are computed from orders placed (sold/placed).
+  #{:realization :preliminary :canon :legacy-orders :legacy-sales :orders :none})
 
 (deftest ^:integration pulse-summary-source-metadata-test
   (testing "every KPI has :source and :as-of keys"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
-                 :avg-check :buyout :roas :drr]]
+                 :avg-check :buyout :cancel :non-return :roas :drr]]
         (let [kpi (get kpis k)]
           (is (contains? kpi :source)
               (str k " missing :source"))
@@ -595,7 +613,7 @@
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           kpis (:kpis body)]
       (doseq [k [:revenue :profit :orders :purchases :realized :returned :margin
-                 :avg-check :buyout :roas :drr]]
+                 :avg-check :buyout :cancel :non-return :roas :drr]]
         (let [src (get-in kpis [k :source])]
           (is (contains? valid-kpi-sources src)
               (str k " :source=" src " not in valid set"))))))

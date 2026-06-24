@@ -466,6 +466,8 @@
         margin    (:margin k)
         check     (:avg-check k)
         buyout    (:buyout k)
+        cancel    (:cancel k)
+        non-return (:non-return k)
         roas      (:roas k)
         drr       (:drr k)
         ;; Conversion = purchases/orders × 100. Shown as sub-text on the
@@ -526,8 +528,19 @@
                 {:label     "Выкуп"
                  :value     (fmt/format-pct (safe-num (:value buyout)))
                  :delta     (:delta-pct buyout)
-                 :sub       "WoW"
+                 :sub       "от заказов"
                  :badge     (prelim-badge buyout)}
+                {:label     "% отмен"
+                 :value     (fmt/format-pct (safe-num (:value cancel)))
+                 :delta     (:delta-pct cancel)
+                 :sub       "от заказов"
+                 :inverted? true
+                 :badge     (prelim-badge cancel)}
+                {:label     "Доля невозвратов"
+                 :value     (fmt/format-pct (safe-num (:value non-return)))
+                 :delta     (:delta-pct non-return)
+                 :sub       "от доставленных"
+                 :badge     (prelim-badge non-return)}
                 {:label     "ROAS"
                  :value     (or-ndash (:value roas) fmt/format-mul)
                  :delta     (:delta-pct roas)
