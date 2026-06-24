@@ -657,7 +657,8 @@
           ;; Pulse ad-spend (canonical PnL). Below the noise threshold,
           ;; ROAS/ДРР return nil → UI renders «—» (avoids 7-digit ROAS
           ;; from 0.25 ₽ ad-stats artefacts; fixes Bugs #4+#5).
-          ad-cur      (or (:ad-spend pnl-cur) 0.0)]
+          ad-cur      (or (:ad-spend pnl-cur) 0.0)
+          ad-cost-src (:ad-cost-source pnl-cur)]
 
       {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
@@ -668,7 +669,8 @@
                                                           :none)
                                                :as-of revenue-as-of
                                                :date-basis fin-basis
-                                               :completeness fin-completeness))
+                                               :completeness fin-completeness
+                                               :ad-cost-source ad-cost-src))
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
                                      :spark     ord-spark
@@ -702,7 +704,8 @@
                                                   :none)
                                      :as-of     revenue-as-of
                                      :date-basis fin-basis
-                                     :completeness fin-completeness}
+                                     :completeness fin-completeness
+                                     :ad-cost-source ad-cost-src}
                          :avg-check {:value     ac-cur
                                      :delta-pct (math/pct-delta ac-cur ac-prev)
                                      :spark     []

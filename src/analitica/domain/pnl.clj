@@ -25,15 +25,17 @@
 
 (defn- ad-cost-sum
   "SUM(finance.ad_cost) across the period, optionally filtered by marketplace.
-   Returns a double (0.0 when no rows match). Non-throwing: a DB-schema drift
-   (no ad_cost column) returns nil.
+   Returns a double when one or more rows match (even if the sum is 0.0), or
+   nil when NO rows matched — so callers can distinguish a genuine zero-spend
+   period from a missing-data period.  Non-throwing: DB-schema drift (no
+   ad_cost column) also returns nil.
 
    Prefers per-event `event_date` filter (populated by the 2026-04-23
    migration); falls back to weekly-report overlap on date_from/date_to
    for legacy rows that pre-date event_date."
   [from to marketplace]
   (safe/safely
-    (let [base "SELECT COALESCE(SUM(ad_cost), 0) AS sum FROM finance
+    (let [base "SELECT COUNT(*) AS cnt, COALESCE(SUM(ad_cost), 0) AS sum FROM finance
                 WHERE ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
                        OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
           [sql params] (if marketplace
@@ -41,7 +43,8 @@
                           [from to to from (name marketplace)]]
                          [base [from to to from]])
           row (first (db/query (into [sql] params)))]
-      (double (or (:sum row) 0.0)))
+      (when (and row (pos? (or (:cnt row) 0)))
+        (double (or (:sum row) 0.0))))
     nil
     ::ad-cost-sum-failed))
 
@@ -75,14 +78,21 @@
 (defn- ad-spend-total
   "Total ad spend for period, optionally filtered by marketplace.
 
+   Returns a map {:value <double> :source <keyword>} where :source is one of:
+     :canonical — finance.ad_cost rows matched the period
+     :legacy    — no canonical rows; fell back to ad_stats JOIN (WB path)
+     :missing   — neither path returned any row (distinct from a genuine 0.0)
+
+   The :value is always a double (callers that only need the number use
+   (:value …) or continue using `(or … 0.0)` on the result).
+
    Preference order (spec 003 US5 T040):
      1. Canonical path — SUM(finance.ad_cost). YM and Ozon always use this
         (their ad_cost is populated by US2/US3 ingest). For :wb this is the
         primary path once the US5 migration has populated ad_cost.
      2. Legacy fallback — ad_stats JOIN. Used ONLY when:
           * marketplace is :wb OR nil, AND
-          * the canonical ad_cost SUM is 0 (i.e. migration has not yet been
-            run for this period).
+          * the canonical ad_cost SUM is nil (no rows — migration not yet run).
 
    This lets the migration roll out per-period: periods with materialized
    ad_cost use the canonical path; older periods without it continue to
@@ -94,16 +104,21 @@
       (cond
         ;; YM / Ozon — always canonical. No legacy path.
         (contains? #{:ym :ozon} marketplace)
-        (or canonical 0.0)
+        {:value  (or canonical 0.0)
+         :source (if (some? canonical) :canonical :missing)}
 
-        ;; WB or all-marketplaces: canonical if populated, else fall back.
-        ;; Threshold ≥ 0.01₽ on the canonical value so exactly-zero totals
-        ;; (no ad_cost yet materialized) trigger the fallback.
-        (and canonical (> canonical 0.0))
-        canonical
+        ;; WB or all-marketplaces: canonical if it returned a positive sum
+        ;; (i.e. ad_cost has been materialised for this period).
+        ;; Threshold ≥ 0.01₽: a nil (no rows) or 0.0 (rows exist but ad_cost
+        ;; not yet populated) both trigger the legacy fallback, matching the
+        ;; pre-migration roll-out semantics (spec 003 §FR-016 §SC-009).
+        (and (some? canonical) (> canonical 0.0))
+        {:value canonical :source :canonical}
 
         :else
-        (or (legacy-ad-spend-sum from to marketplace) 0.0)))))
+        (let [legacy (legacy-ad-spend-sum from to marketplace)]
+          {:value  (or legacy 0.0)
+           :source (if (some? legacy) :legacy :missing)})))))
 
 ;; ---------------------------------------------------------------------------
 ;; Per-article ad-spend lookup
@@ -225,7 +240,9 @@
         additional    (reduce + 0.0 (map :additional by-art))
         for-pay       (reduce + 0.0 (map :for-pay by-art))
         cogs          (reduce + 0.0 (map :total-cost by-art))
-        ad-spend      (or (ad-spend-total from to marketplace) 0.0)
+        ad-total      (ad-spend-total from to marketplace)
+        ad-spend      (or (:value ad-total) 0.0)
+        ad-cost-src   (or (:source ad-total) :missing)
         gross-profit  (- for-pay cogs logistics storage penalties acceptance deduction (- additional))
         net-profit    (- gross-profit ad-spend)
         sales-qty     (reduce + 0 (map :sales-qty by-art))
@@ -261,6 +278,7 @@
        :for-pay       (math/round2 for-pay)
        :cogs          (math/round2 cogs)
        :ad-spend      (math/round2 (double ad-spend))
+       :ad-cost-source ad-cost-src
        :gross-profit  (math/round2 gross-profit)
        :net-profit    (math/round2 net-profit)
        :margin-gross  (math/percentage gross-profit revenue)
