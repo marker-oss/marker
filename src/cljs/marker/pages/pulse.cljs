@@ -52,9 +52,33 @@
   (if (nil? v) "—" (fmt-fn v)))
 
 (defn- prelim-badge
-  "Badge string for a KPI tile when its data source is preliminary."
+  "Badge string for a KPI tile whose value is an ESTIMATE — either a
+   preliminary source (Ozon cash-flow overlay) or a date-basis flagged
+   :estimated (materially flat/spread-distributed finance, P0-A Part A).
+   Both mean a sub-period slice of this number has weak day-level meaning."
   [kpi]
-  (when (= :preliminary (:source kpi)) "≈"))
+  (when (or (= :preliminary (:source kpi))
+            (= :estimated   (:completeness kpi)))
+    "≈"))
+
+(defn- basis-tooltip
+  "Human tooltip describing a KPI's date-basis composition, e.g.
+   'Основа: 53% распределено равномерно, 47% по продажам, 0% фактические даты'."
+  [kpi]
+  (when-let [b (:date-basis kpi)]
+    (let [sum (+ (or (:api b) 0) (or (:spread b) 0) (or (:flat b) 0))
+          pct #(str (js/Math.round (* 100 (or % 0))) "%")]
+      (cond
+        ;; No realization rows at all → the number is a preliminary cash-flow
+        ;; estimate (recent window before the MP report is published).
+        (zero? sum)
+        "Предварительная оценка: realization-отчёт ещё не опубликован"
+
+        :else
+        (str "Основа значения: "
+             (pct (:flat b))   " равномерно распределено (без дневного смысла), "
+             (pct (:spread b)) " по продажам, "
+             (pct (:api b))    " фактические даты")))))
 
 (defn- format-date-short
   "Truncate ISO date/datetime to YYYY-MM-DD for compact display."
@@ -476,18 +500,20 @@
         purch-cnt (safe-num (:value purchases))
         conv-pct  (when (pos? order-cnt)
                     (* 100.0 (/ purch-cnt order-cnt)))
-        cards  [{:label     "Выручка"
-                 :value     (fmt/format-rub (safe-num (:value rev)))
-                 :delta     (:delta-pct rev)
-                 :spark     (safe-spark (:spark rev))
-                 :sub       "WoW"
-                 :badge     (prelim-badge rev)}
-                {:label     "Чистая прибыль"
-                 :value     (fmt/format-rub (safe-num (:value profit)))
-                 :delta     (:delta-pct profit)
-                 :spark     (safe-spark (:spark profit))
-                 :sub       "WoW"
-                 :badge     (prelim-badge profit)}
+        cards  [{:label       "Выручка"
+                 :value       (fmt/format-rub (safe-num (:value rev)))
+                 :delta       (:delta-pct rev)
+                 :spark       (safe-spark (:spark rev))
+                 :sub         "WoW"
+                 :badge       (prelim-badge rev)
+                 :badge-title (basis-tooltip rev)}
+                {:label       "Чистая прибыль"
+                 :value       (fmt/format-rub (safe-num (:value profit)))
+                 :delta       (:delta-pct profit)
+                 :spark       (safe-spark (:spark profit))
+                 :sub         "WoW"
+                 :badge       (prelim-badge profit)
+                 :badge-title (basis-tooltip profit)}
                 {:label     "Заказано"
                  :value     (str (fmt/format-int order-cnt) " шт")
                  :delta     (:delta-pct orders)
@@ -515,11 +541,12 @@
                  :sub       "WoW"
                  :badge     (prelim-badge returned)
                  :inverted? true}
-                {:label     "Маржа"
-                 :value     (fmt/format-pct (safe-num (:value margin)))
-                 :delta     (:delta-pct margin)
-                 :sub       "WoW"
-                 :badge     (prelim-badge margin)}
+                {:label       "Маржа"
+                 :value       (fmt/format-pct (safe-num (:value margin)))
+                 :delta       (:delta-pct margin)
+                 :sub         "WoW"
+                 :badge       (prelim-badge margin)
+                 :badge-title (basis-tooltip margin)}
                 {:label     "Средний чек"
                  :value     (fmt/format-rub (safe-num (:value check)))
                  :delta     (:delta-pct check)
@@ -554,7 +581,8 @@
                  :badge     (prelim-badge drr)}]
         ;; orders/purchases excluded: backend always returns :canon or :legacy-* for
         ;; those — they cannot be :preliminary, so they don't trigger the footnote.
-        any-preliminary? (some #(= :preliminary (:source %))
+        any-preliminary? (some #(or (= :preliminary (:source %))
+                                    (= :estimated (:completeness %)))
                                [rev profit margin check buyout roas drr])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
@@ -572,16 +600,17 @@
                 ($ :span {:class "dot-status green"})
                 " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted? badge]} cards]
-            ($ kpi-card {:key       label
-                         :label     label
-                         :value     value
-                         :delta-pct delta
-                         :sub       sub
-                         :spark     spark
-                         :compare?  compare?
-                         :inverted? (boolean inverted?)
-                         :badge     badge})))
+          (for [{:keys [label value delta sub spark inverted? badge badge-title]} cards]
+            ($ kpi-card {:key         label
+                         :label       label
+                         :value       value
+                         :delta-pct   delta
+                         :sub         sub
+                         :spark       spark
+                         :compare?    compare?
+                         :inverted?   (boolean inverted?)
+                         :badge       badge
+                         :badge-title badge-title})))
        (when any-preliminary?
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "12px" :font-size "12px"}}

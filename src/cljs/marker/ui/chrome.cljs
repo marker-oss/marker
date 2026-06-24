@@ -408,17 +408,19 @@
    Props: :label (string), :value (string), :delta-pct (number, optional),
           :sub (string, optional secondary label), :spark (vec of numbers, optional),
           :compare? (bool, default false), :inverted? (bool, default false),
-          :badge (string, optional — small inline tag next to label, e.g. '≈')."
-  [{:keys [label value delta-pct sub spark compare? inverted? badge]}]
+          :badge (string, optional — small inline tag next to label, e.g. '≈')
+          :badge-title (string, optional — hover tooltip for the badge)."
+  [{:keys [label value delta-pct sub spark compare? inverted? badge badge-title]}]
   ($ :div {:class "kpi" :style {:position "relative"}}
      ($ :div {:class "kpi-label"}
         label
         (when badge
           ($ :span {:class "tag tag-sm tag-info"
-                    :title "Предварительное значение — будет уточнено"
+                    :title (or badge-title "Предварительное значение — будет уточнено")
                     :style {:margin-left "6px"
                             :font-size "10px"
-                            :font-family "var(--font-mono)"}}
+                            :font-family "var(--font-mono)"
+                            :cursor "help"}}
              badge)))
      ($ :div {:class "kpi-value"} value)
      ($ :div {:class "kpi-foot"}

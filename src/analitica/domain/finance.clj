@@ -18,6 +18,33 @@
     (vector? period)  period
     :else             [(:from period) (:to period)]))
 
+(defn date-basis-split
+  "Fraction of |for_pay| by `event_date_source` (P0-A Part A, specs/010).
+   Returns {:api f :spread f :flat f} summing ~1.0 (all 0.0 when empty).
+
+   - api    — real per-day date from the marketplace API (WB/YM = 100%).
+   - spread — Ozon monthly realization split WEIGHTED by sales activity
+              (approximate day meaning).
+   - flat   — Ozon monthly amount split EVENLY across days (NO day-level
+              meaning). A high :flat fraction means a sub-period slice of this
+              metric is largely a guess-distribution, not a measured figure.
+
+   Tolerant of kebab (:event-date-source) and snake (:event_date_source) keys;
+   a missing source counts as :api (real)."
+  [rows]
+  (let [amt    (fn [r] (Math/abs (double (or (:for-pay r) (:for_pay r) 0.0))))
+        bucket (fn [r] (case (or (:event-date-source r) (:event_date_source r))
+                         "spread" :spread
+                         "flat"   :flat
+                         :api))
+        by     (group-by bucket rows)
+        sum    (fn [k] (reduce + 0.0 (map amt (get by k []))))
+        a (sum :api) s (sum :spread) f (sum :flat)
+        tot (+ a s f)]
+    (if (zero? tot)
+      {:api 0.0 :spread 0.0 :flat 0.0}
+      {:api (/ a tot) :spread (/ s tot) :flat (/ f tot)})))
+
 (defn- db-finance-event-date [from to mp-clause params]
   ;; Default event_date-precise query (with legacy overlap fallback).
   (db/query

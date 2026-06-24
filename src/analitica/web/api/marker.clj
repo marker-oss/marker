@@ -599,6 +599,19 @@
                                     (:preliminary? pnl-prev)))
 
           ;; ---------------------------------------------------------------------------
+          ;; Date-basis composition (P0-A Part A, specs/010). Fraction of finance
+          ;; for_pay by event_date_source. A high :flat share means the value is
+          ;; largely a guess-distribution (Ozon monthly realization split evenly), so
+          ;; a sub-period slice has no real day-level meaning → flag :estimated.
+          ;; WB/YM are 100% :api; this fires mostly on Ozon / all-MP views.
+          ;; ---------------------------------------------------------------------------
+          fin-basis        (finance/date-basis-split fin-cur)
+          fin-completeness (cond
+                             preliminary?               :estimated
+                             (>= (:flat fin-basis) 0.2) :estimated
+                             :else                      :full)
+
+          ;; ---------------------------------------------------------------------------
           ;; Per-KPI source metadata (for seller-view rendering of "preliminary" stars)
           ;; ---------------------------------------------------------------------------
           ;; revenue-src / revenue-as-of: derived from pnl-cur revenue-source.
@@ -647,12 +660,15 @@
           ad-cur      (or (:ad-spend pnl-cur) 0.0)]
 
       {:alerts          alert-list
-       :kpis            {:revenue   (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
+       :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
+                                        (assoc :date-basis fin-basis :completeness fin-completeness))
                          :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
                                         (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
                                                           revenue-src
                                                           :none)
-                                               :as-of revenue-as-of))
+                                               :as-of revenue-as-of
+                                               :date-basis fin-basis
+                                               :completeness fin-completeness))
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
                                      :spark     ord-spark
@@ -684,7 +700,9 @@
                                      :source    (if (pos? (or (:margin-net pnl-cur) 0.0))
                                                   revenue-src
                                                   :none)
-                                     :as-of     revenue-as-of}
+                                     :as-of     revenue-as-of
+                                     :date-basis fin-basis
+                                     :completeness fin-completeness}
                          :avg-check {:value     ac-cur
                                      :delta-pct (math/pct-delta ac-cur ac-prev)
                                      :spark     []

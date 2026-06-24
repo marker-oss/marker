@@ -19,8 +19,16 @@
 ;; ---------------------------------------------------------------------------
 
 (defn init-test-db [f]
-  (config/load-config)   ; app() construction reads cors-origins → config must be loaded
   (db/init!)
+  ;; app() construction reads cors-origins → config must be loaded for the
+  ;; ^:integration tests (skipped by default; run via the integration profile).
+  ;; Pin the real path — (load-config) no-arg reuses config's global last-path
+  ;; atom which another test may leave pointing at a deleted temp file. Tolerate
+  ;; failure: under a full-suite run another test can leave a temp DB connected,
+  ;; and settings/overrides would throw on its missing app_settings — the pure
+  ;; unit tests in this ns don't need config, so don't abort them.
+  (try (config/load-config "config.edn")
+       (catch Throwable _ nil))
   (f))
 
 (use-fixtures :once init-test-db)
@@ -539,6 +547,16 @@
       (testing ":non-return preserves the legacy retention rate under its honest name"
         (is (map? non-return))
         (is (or (nil? (:value non-return)) (number? (:value non-return)))))))
+
+  (testing "P0-A Part A: finance KPIs carry a date-basis contract"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          rev (get-in body [:kpis :revenue])]
+      (testing ":date-basis has api/spread/flat fractions"
+        (let [b (:date-basis rev)]
+          (is (map? b))
+          (is (every? #(number? (get b %)) [:api :spread :flat]))))
+      (testing ":completeness is a known state"
+        (is (contains? #{:full :partial :estimated :missing} (:completeness rev))))))
 
   (testing ":orders is total orders (incl. cancelled), :purchases is delivered sales — orders >= purchases"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
