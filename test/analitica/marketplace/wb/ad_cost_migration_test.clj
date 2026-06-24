@@ -355,7 +355,9 @@
                        FROM finance"])
           pnl     (pnl/calculate fin-data :marketplace :wb)]
       (is (= 77.0 (:ad-spend pnl))
-          "legacy JOIN used when ad_cost is empty"))))
+          "legacy JOIN used when ad_cost is empty")
+      (is (= :legacy (:ad-cost-source pnl))
+          "source flag is :legacy when falling back to ad_stats JOIN"))))
 
 (deftest ad-spend-total-ym-uses-ad-cost-only
   (testing "YM always uses :ad-cost (never legacy, since ad_stats is WB-only)"

@@ -53,10 +53,7 @@
    finance.ad_cost path returns 0 for WB (pre-migration state) or when an
    all-marketplace total is requested and no ad_cost has been materialized."
   [from to marketplace]
-  ;; TODO(obs/7e): deferred — convert this silent (catch Exception _ nil) to
-  ;; analitica.util.safe/safely post-pilot. See
-  ;; docs/superpowers/plans/2026-06-23-pilot-hardening-observability.md Task 2.
-  (try
+  (safe/safely
     (:spend
       (first
         (if marketplace
@@ -73,7 +70,8 @@
             ["SELECT SUM(spend) AS spend FROM ad_stats
               WHERE date >= ? AND date <= ?"
              from to]))))
-    (catch Exception _ nil)))
+    nil
+    ::legacy-ad-spend-sum-failed))
 
 (defn- ad-spend-total
   "Total ad spend for period, optionally filtered by marketplace.
