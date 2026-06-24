@@ -40,7 +40,7 @@
             [clojure.tools.cli :refer [parse-opts]]
             [clojure.pprint :as pp]
             [clojure.string :as str]
-            [com.brunobonacci.mulog :as mu]))
+            [analitica.logging :as logging]))
 
 (def cli-options
   [["-p" "--period PERIOD" "Period: last-7-days, last-30-days, this-month, etc."
@@ -184,7 +184,7 @@
   (config/load-config)
   (db/init!)
   (config/reload!)
-  (mu/start-publisher! {:type :console})
+  (logging/start-publishers!)
   (let [wb-cfg (get-in (config/config) [:marketplaces :wb])]
     (registry/register! :wb (wb-client/make-client wb-cfg)))
   (when-let [ozon-cfg (config/ozon-config)]

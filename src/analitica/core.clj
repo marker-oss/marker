@@ -28,7 +28,7 @@
             [analitica.domain.trends :as trends]
             [analitica.domain.buyout :as buyout]
             [analitica.util.time :as t]
-            [com.brunobonacci.mulog :as mu]))
+            [analitica.logging :as logging]))
 
 (defn- register-marketplaces!
   "Build and register WB/Ozon/YM clients from the current config. Ozon/YM
@@ -61,7 +61,7 @@
   (config/load-config)
   (db/init!)
   (config/reload!)
-  (mu/start-publisher! {:type :console})
+  (logging/start-publishers!)
   (register-marketplaces!)
   (println "=== Analitica started ===")
   (println "Registered marketplaces:" (vec (registry/registered)))
