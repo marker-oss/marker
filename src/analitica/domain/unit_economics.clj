@@ -128,7 +128,11 @@
                                    wb-cost-pct        (math/percentage total-wb-costs revenue)
                                    cogs-pct           (math/percentage total-cost revenue)
                                    logistics-pct      (math/percentage logistics-v revenue)
-                                   drr-pct            (math/percentage ad-spend-v revenue)]
+                                   drr-pct            (math/percentage ad-spend-v revenue)
+                                   max-drr-numer      (+ profit ad-spend-v)
+                                   max-drr-pct        (math/percentage max-drr-numer revenue)
+                                   headroom-pct       (math/round2 (- (or max-drr-pct 0.0) (or drr-pct 0.0)))
+                                   over-ceiling?      (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
                                (assoc row
                                       :total-wb-costs     (math/round2 total-wb-costs)
                                       :spp-compensation   (math/round2 spp-v)
@@ -149,7 +153,10 @@
                                       :wb-cost-pct        wb-cost-pct
                                       :cogs-pct           cogs-pct
                                       :logistics-pct      logistics-pct
-                                      :drr-pct            drr-pct)))))]
+                                      :drr-pct            drr-pct
+                                      :max-drr-pct        max-drr-pct
+                                      :drr-headroom-pct   headroom-pct
+                                      :over-ceiling?      over-ceiling?)))))]
     (if (= basis :article)
       (sort-by :article rows)
       (sort-by :profit > rows))))
@@ -207,6 +214,10 @@
      :wb-cost-pct      (math/percentage total-wb-costs total-revenue)
      :cogs-pct         (math/percentage total-cost total-revenue)
      :drr-pct          (math/percentage total-ad-spend total-revenue)
+     :max-drr-pct      (math/percentage (+ total-profit total-ad-spend) total-revenue)
+     :drr-headroom-pct (let [mx (math/percentage (+ total-profit total-ad-spend) total-revenue)
+                             dr (math/percentage total-ad-spend total-revenue)]
+                         (math/round2 (- (or mx 0.0) (or dr 0.0))))
      :profit-per-sale  (math/round2 (math/safe-div total-profit net-qty))
      :avg-check        (math/round2 (math/safe-div total-revenue sales-qty))
      :sales-qty        sales-qty
