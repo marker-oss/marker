@@ -1260,24 +1260,32 @@
                        (filterv some? [(some-> mp1 keyword) :wb])
                        [:wb])]
 
+      (let [rev-val      (or (:revenue pnl-cur) 0.0)
+            ads-val      (or (:ad-spend pnl-cur) 0.0)
+            np-val       (or (:net-profit pnl-cur) 0.0)
+            max-drr-pct  (math/percentage (+ np-val ads-val) (if (pos? rev-val) rev-val 1.0))
+            drr-pct      (math/percentage ads-val (if (pos? rev-val) rev-val 1.0))
+            over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
       {:id       sku-id
        :name     subject
        :nm-id    nm-id
        :subject  subject
        :mp       (vec mps-list)
-       :kpis     {:revenue {:value     (or (:revenue pnl-cur) 0.0)
-                             :delta-pct (math/pct-delta
-                                          (or (:revenue pnl-cur) 0.0)
-                                          (or (:revenue pnl-prev) 0.0))}
-                  :orders  {:value (or (:sales-qty agg) 0)}
-                  :margin  {:value (or (:margin-net pnl-cur) 0.0)}
-                  :ads     {:value (or (:ad-spend pnl-cur) 0.0)}}
+       :kpis     {:revenue     {:value     rev-val
+                                :delta-pct (math/pct-delta
+                                             rev-val
+                                             (or (:revenue pnl-prev) 0.0))}
+                  :orders      {:value (or (:sales-qty agg) 0)}
+                  :margin      {:value (or (:margin-net pnl-cur) 0.0)}
+                  :ads         {:value ads-val}
+                  :max-drr-pct {:value max-drr-pct}}
+       :over-ceiling?   over-ceiling?
        :revenue-30d  rev-spark
        :plan-fact    {:plan       nil
                       :fact       (math/round2 (or (:revenue pnl-cur) 0.0))
                       :projection proj}
        :stocks-by-mp (if (seq stk-by-mp) stk-by-mp [])
-       :preliminary? (boolean (:preliminary? pnl-cur))})
+       :preliminary? (boolean (:preliminary? pnl-cur))}))
     (catch Exception e
       {:id    (get-in request [:params :sku-id] "")
        :error (.getMessage e)})))

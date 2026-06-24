@@ -854,7 +854,18 @@
           pf (:plan-fact body)]
       (is (map? pf))
       (is (contains? pf :fact))
-      (is (contains? pf :projection)))))
+      (is (contains? pf :projection))))
+
+  (testing ":kpis has :max-drr-pct (FR-P4.2)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")
+          kpis (:kpis body)]
+      (is (contains? kpis :max-drr-pct) "sku-detail kpis must include :max-drr-pct (FR-P4.2)")
+      (is (map? (:max-drr-pct kpis))    ":max-drr-pct must be a {:value …} map")))
+
+  (testing ":over-ceiling? present at top level (FR-P4.2)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
+      (is (contains? body :over-ceiling?) "sku-detail must include :over-ceiling? (FR-P4.2)")
+      (is (boolean? (:over-ceiling? body)) ":over-ceiling? must be a boolean"))))
 
 ;; ---------------------------------------------------------------------------
 ;; C. Transit vs JSON content negotiation
@@ -1004,6 +1015,7 @@
           max-drr-pct   (analitica.util.math/percentage max-drr-numer rev)
           headroom-pct  (analitica.util.math/round2 (- (or max-drr-pct 0.0) (or drr-pct 0.0)))
           over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
+      (is (= 62.5 margin)         "margin % = (for-pay − cogs) / for-pay × 100")
       (is (= 50.0 max-drr-pct)   "max-drr-pct = (net-profit+ads)/revenue*100")
       (is (= 5.0  drr-pct)       "drr-pct = ads/revenue*100")
       (is (= 45.0 headroom-pct)  "headroom = max-drr - drr")
