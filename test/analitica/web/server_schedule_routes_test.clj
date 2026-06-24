@@ -7,9 +7,11 @@
             [analitica.db :as db]
             [jsonista.core :as json]))
 
-;; POST /api/sync/schedule now flows through wrap-api-key (config/api-key).
-;; Config is not loaded here, so pin api-key to nil (fail-open) — these tests
-;; exercise routing, not auth (covered by analitica.web.middleware.auth-test).
+;; (server/app) now reads config (wrap-api-key → config/api-key; CORS →
+;; config/cors-origins). Config is not loaded here and the getters throw
+;; "Config not loaded" (M4: surface load errors, don't swallow to nil), so pin
+;; both — these tests exercise routing, not auth/CORS policy (auth is covered
+;; by analitica.web.middleware.auth-test).
 (use-fixtures :once
   (fn [f]
     (db/init!)
@@ -20,7 +22,8 @@
                    SET enabled=0, hour=6, minute=0, what='all', marketplace='all',
                        period='last-7-days', last_run_at=NULL, last_run_id=NULL, next_run_at=NULL
                    WHERE id=1"])
-    (with-redefs [config/api-key (constantly nil)]
+    (with-redefs [config/api-key      (constantly nil)
+                  config/cors-origins (constantly ["http://localhost:3000"])]
       (f))))
 
 ;; ---------------------------------------------------------------------------

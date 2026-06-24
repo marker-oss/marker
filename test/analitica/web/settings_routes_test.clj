@@ -6,13 +6,16 @@
             [analitica.web.middleware.transit :as transit-mw])
   (:import (java.io ByteArrayInputStream)))
 
-;; These PUT routes flow through the full (server/app) stack, which now
-;; includes wrap-api-key. Config is not loaded in this test process, so pin
-;; api-key to nil (fail-open) — these tests exercise routing/middleware, not
-;; auth. The auth path itself is covered by analitica.web.middleware.auth-test.
+;; These PUT routes flow through the full (server/app) stack, which now reads
+;; config (wrap-api-key → config/api-key; CORS → config/cors-origins). Config
+;; is not loaded in this test process and the getters throw "Config not loaded"
+;; (M4: they must surface load errors, not swallow to nil), so pin both getters
+;; here — these tests exercise routing/middleware, not auth/CORS policy. The
+;; auth path itself is covered by analitica.web.middleware.auth-test.
 (use-fixtures :each
   (fn [f]
-    (with-redefs [config/api-key (constantly nil)]
+    (with-redefs [config/api-key      (constantly nil)
+                  config/cors-origins (constantly ["http://localhost:3000"])]
       (f))))
 
 (deftest get-settings-route-wired

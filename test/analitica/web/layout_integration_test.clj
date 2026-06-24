@@ -1,6 +1,18 @@
 (ns analitica.web.layout-integration-test
-  (:require [clojure.test :refer [deftest is testing]]
-            [analitica.web.server :as server]))
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [analitica.web.server :as server]
+            [analitica.config :as config]))
+
+;; (server/app) now reads config (wrap-api-key → config/api-key; CORS →
+;; config/cors-origins), which throw "Config not loaded" in this unloaded test
+;; process (M4: surface load errors, don't swallow to nil). Pin both getters so
+;; the handler builds; the root-route 302 assertions here are a pre-existing
+;; baseline failure unrelated to this work.
+(use-fixtures :each
+  (fn [f]
+    (with-redefs [config/api-key      (constantly nil)
+                  config/cors-origins (constantly ["http://localhost:3000"])]
+      (f))))
 
 (deftest layout-integration-test
   (testing "Root route renders layout with correct active route"

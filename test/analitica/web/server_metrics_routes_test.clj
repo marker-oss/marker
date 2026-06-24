@@ -1,13 +1,19 @@
 (ns analitica.web.server-metrics-routes-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.web.server :as server]
+            [analitica.config :as config]
             [analitica.db :as db]
             [jsonista.core :as json]))
 
+;; (server/app) now reads config (wrap-api-key → config/api-key; CORS →
+;; config/cors-origins), which throw "Config not loaded" in this unloaded test
+;; process (M4: surface load errors, don't swallow to nil). Pin both getters.
 (use-fixtures :once
   (fn [f]
     (db/init!)
-    (f)))
+    (with-redefs [config/api-key      (constantly nil)
+                  config/cors-origins (constantly ["http://localhost:3000"])]
+      (f))))
 
 (deftest test-api-metrics-route
   (testing "GET /api/metrics route"

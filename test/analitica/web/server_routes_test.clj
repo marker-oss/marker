@@ -32,9 +32,11 @@
 
 ;; Each test gets a fresh in-memory SQLite so route tests that seed data
 ;; don't interfere with each other or the dev DB.
-;; Mutating routes now flow through wrap-api-key (config/api-key). Config is not
-;; loaded in this test process, so pin api-key to nil (fail-open) — these tests
-;; exercise routing, not auth (covered by analitica.web.middleware.auth-test).
+;; (server/app) now reads config (wrap-api-key → config/api-key; CORS →
+;; config/cors-origins). Config is not loaded in this test process and the
+;; getters throw "Config not loaded" (M4: they must surface load errors, not
+;; swallow to nil), so pin both getters — these tests exercise routing, not
+;; auth/CORS policy (auth is covered by analitica.web.middleware.auth-test).
 (use-fixtures :each
   (fn [f]
     (reset! sync-api/sync-running? false)
@@ -44,7 +46,8 @@
       (try
         (alter-var-root #'db/db-spec (constantly {:dbtype "sqlite" :dbname path}))
         (db/init!)
-        (with-redefs [config/api-key (constantly nil)]
+        (with-redefs [config/api-key      (constantly nil)
+                      config/cors-origins (constantly ["http://localhost:3000"])]
           (f))
         (finally
           (alter-var-root #'db/db-spec (constantly orig-spec))

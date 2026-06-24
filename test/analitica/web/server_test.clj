@@ -1,7 +1,19 @@
 (ns analitica.web.server-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [analitica.web.server :as server]
+            [analitica.config :as config]
             [analitica.util.time :as time]))
+
+;; (server/app) now reads config (wrap-api-key → config/api-key; CORS →
+;; config/cors-origins), which throw "Config not loaded" in this unloaded test
+;; process (M4: surface load errors, don't swallow to nil). Pin both getters so
+;; the handler builds; the root-route 302 assertion in test-routes is a
+;; pre-existing baseline failure unrelated to this work.
+(use-fixtures :each
+  (fn [f]
+    (with-redefs [config/api-key      (constantly nil)
+                  config/cors-origins (constantly ["http://localhost:3000"])]
+      (f))))
 
 (deftest test-app-function
   (testing "app function returns a Ring handler"
