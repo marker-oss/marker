@@ -461,6 +461,31 @@
 
          :else
          ($ :<> {}
+            ;; Legend — two axes explained
+            ($ :div {:class "coverage-legend"
+                     :style {:font-size "12px"
+                             :color "var(--color-fg-muted)"
+                             :padding "8px 16px 4px"
+                             :display "flex"
+                             :flex-wrap "wrap"
+                             :gap "16px"}}
+               ($ :div {}
+                  ($ :strong {:style {:color "var(--color-fg-secondary)"}} "Цвет = свежесть")
+                  " (возраст последнего синка): "
+                  ($ :span {:class "tag tag-sm tag-good" :style {:font-size "11px"}} "зелёный")
+                  " < 3 дн · "
+                  ($ :span {:class "tag tag-sm tag-warn" :style {:font-size "11px"}} "жёлтый")
+                  " 3–7 дн · "
+                  ($ :span {:class "tag tag-sm tag-bad" :style {:font-size "11px"}} "красный")
+                  " > 7 дн")
+               ($ :div {}
+                  ($ :strong {:style {:color "var(--color-fg-secondary)"}} "«⚠ N» = полнота")
+                  " — пропущено N календарных дней; наведите для диапазонов")
+               ($ :div {}
+                  ($ :strong {:style {:color "var(--color-fg-secondary)"}} "Типы ячеек: ")
+                  "snapshot — одна точка «на дату»; "
+                  "event-stream — непрерывный ряд событий; "
+                  "monthly-batch — ежемесячная выгрузка"))
             ;; Per-MP table
             ($ :div {:style {:overflow-x "auto" :margin-bottom "16px"}}
                ($ :table {:class "tbl coverage-tbl"}
