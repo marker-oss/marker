@@ -1,5 +1,6 @@
 (ns analitica.util.time
-  (:require [analitica.util.period :as period])
+  (:require [analitica.util.period :as period]
+            [clojure.string :as str])
   (:import [java.time LocalDate LocalDateTime ZonedDateTime]
            [java.time.format DateTimeFormatter]
            [java.time.temporal ChronoUnit]))
@@ -108,7 +109,7 @@
     (period :this-month)
 
     (re-matches #"\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}" s)
-    (let [[from to] (clojure.string/split s #",")]
+    (let [[from to] (str/split s #",")]
       (try
         (parse-date from)
         (parse-date to)
