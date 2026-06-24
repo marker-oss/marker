@@ -5,6 +5,7 @@
             [analitica.report.table :as table]
             [analitica.report.export :as export]
             [analitica.util.math :as math]
+            [analitica.util.safe :as safe]
             [analitica.util.time :as t]))
 
 (defn- derive-date-range
@@ -31,7 +32,7 @@
    migration); falls back to weekly-report overlap on date_from/date_to
    for legacy rows that pre-date event_date."
   [from to marketplace]
-  (try
+  (safe/safely
     (let [base "SELECT COALESCE(SUM(ad_cost), 0) AS sum FROM finance
                 WHERE ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
                        OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
@@ -41,13 +42,17 @@
                          [base [from to to from]])
           row (first (db/query (into [sql] params)))]
       (double (or (:sum row) 0.0)))
-    (catch Exception _ nil)))
+    nil
+    ::ad-cost-sum-failed))
 
 (defn- legacy-ad-spend-sum
   "Legacy ad-spend SUM via ad_stats JOIN. Used as fallback when the canonical
    finance.ad_cost path returns 0 for WB (pre-migration state) or when an
    all-marketplace total is requested and no ad_cost has been materialized."
   [from to marketplace]
+  ;; TODO(obs/7e): deferred — convert this silent (catch Exception _ nil) to
+  ;; analitica.util.safe/safely post-pilot. See
+  ;; docs/superpowers/plans/2026-06-23-pilot-hardening-observability.md Task 2.
   (try
     (:spend
       (first
@@ -108,7 +113,7 @@
   "Per-article SUM(finance.ad_cost) over the period. Same date predicate as
    `ad-cost-sum`; returns {article → spend} for articles with positive spend."
   [from to marketplace]
-  (try
+  (safe/safely
     (let [base "SELECT article, COALESCE(SUM(ad_cost), 0) AS spend FROM finance
                 WHERE ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
                        OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))
@@ -124,7 +129,8 @@
                        (assoc m article (double spend))
                        m))
                    {})))
-    (catch Exception _ {})))
+    {}
+    ::ad-cost-by-article-failed))
 
 (defn- legacy-ad-spend-by-article
   "Legacy per-article ad-spend via ad_stats JOIN. Mirrors `legacy-ad-spend-sum`
@@ -134,6 +140,9 @@
    articles. Returns {} on schema drift or query error."
   [from to marketplace]
   (when (contains? #{nil :wb} marketplace)
+    ;; TODO(obs/7e): deferred — convert this silent (catch Exception _ {}) to
+    ;; analitica.util.safe/safely post-pilot. See
+    ;; docs/superpowers/plans/2026-06-23-pilot-hardening-observability.md Task 2.
     (try
       (->> (db/query
              ["SELECT f.article AS article, SUM(a.spend) AS spend

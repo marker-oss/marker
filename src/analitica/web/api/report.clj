@@ -13,6 +13,7 @@
             [analitica.domain.trends :as trends]
             [analitica.util.time :as t]
             [analitica.util.period :as period]
+            [analitica.util.safe :as safe]
             [analitica.web.report-schemas :as rs]))
 
 ;; ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@
 (defn- compute-report
   "Pure computation for a single period window. No compare awareness."
   [report-type period & {:keys [marketplace trend-type article]}]
-  (try
+  (safe/safely
     (case report-type
       ;; Sales report
       :sales
@@ -145,9 +146,8 @@
 
       ;; Unknown report type
       {:rows [] :totals {}})
-
-    (catch Exception _
-      {:rows [] :totals {}})))
+    {:rows [] :totals {}}
+    ::compute-report-failed))
 
 ;; ---------------------------------------------------------------------------
 ;; Compare enrichment

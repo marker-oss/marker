@@ -10,6 +10,7 @@
             [analitica.marketplace.ozon.transform :as ozon-t]
             [analitica.marketplace.ym.transform :as ym-t]
             [analitica.util.time :as t]
+            [analitica.util.safe :as safe]
             [clojure.string :as str]
             [com.brunobonacci.mulog :as mu]
             [next.jdbc :as jdbc]
@@ -1170,7 +1171,7 @@
               ;; invariant; any positive delta is "newly captured
               ;; multi-campaign allocation" (null-nm_id rows that the
               ;; legacy INNER JOIN silently dropped).
-              legacy (try
+              legacy (safe/safely
                        (->> (jdbc/execute!
                               tx
                               ["SELECT COALESCE(SUM(a.spend), 0) AS spend
@@ -1183,7 +1184,8 @@
                                from to]
                               {:builder-fn rs/as-unqualified-kebab-maps})
                             first :spend double)
-                       (catch Exception _ 0.0))
+                       0.0
+                       ::wb-ad-cost-legacy-failed)
               delta  (- total-allocated (or legacy 0.0))
               covg   (if (pos? total-allocated)
                        (* 100.0 (/ (- total-allocated delta) total-allocated))

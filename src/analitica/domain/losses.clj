@@ -1,3 +1,6 @@
+;; TODO(obs/7e): remaining bare (catch Exception _ …) sites in this ns are
+;; tracked for conversion to analitica.util.safe/safely post-pilot — see
+;; docs/superpowers/plans/2026-06-23-pilot-hardening-observability.md Task 2.
 (ns analitica.domain.losses
   "Losses report: identifies SKUs bleeding money through storage costs,
    low margin, or forecast deterioration.

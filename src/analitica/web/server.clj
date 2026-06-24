@@ -44,6 +44,7 @@
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
+            [analitica.util.safe :as safe]
             [jsonista.core :as json])
   (:gen-class))
 
@@ -287,7 +288,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :sales period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :sales period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -316,7 +317,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :finance period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :finance period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -346,7 +347,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :ue period-arg :marketplace validated-mp :article article-str :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :ue period-arg :marketplace validated-mp :article article-str :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               losses-totals (try (:totals (losses/calculate period-arg :marketplace validated-mp)) (catch Exception _ {}))
               totals        (merge (:totals data) (select-keys losses-totals [:total-loss]))
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
@@ -376,7 +377,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :pnl period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :pnl period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -405,7 +406,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :abc period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :abc period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -434,7 +435,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :stock period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :stock period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -463,7 +464,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :returns period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :returns period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -492,7 +493,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :buyout period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :buyout period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -521,7 +522,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :geo period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :geo period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -550,7 +551,7 @@
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if (and period-arg
                (or validated-mp (nil? marketplace-str) (= marketplace-str "all")))
-        (let [data          (try (report/report-data :trends period-arg :marketplace validated-mp :compare compare-kw) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (report/report-data :trends period-arg :marketplace validated-mp :compare compare-kw) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (and (empty? (:rows data)) (empty? totals))]
           {:status 200
@@ -578,7 +579,7 @@
           hide-period?    (false? (:uses-period? schema))
           supports-compare? (not (false? (:supports-compare? schema)))]
       (if period-arg
-        (let [data          (try (losses/calculate period-arg :marketplace validated-mp) (catch Exception _ {:rows [] :totals {}}))
+        (let [data          (safe/safely (losses/calculate period-arg :marketplace validated-mp) {:rows [] :totals {}} ::report-data-failed)
               totals        (:totals data)
               show-no-data? (empty? (:rows data))
               ;; Notice for non-WB: losses only available for WB
@@ -612,8 +613,8 @@
           marketplace-str (get params :marketplace)
           validated-mp    (when marketplace-str (validate-marketplace marketplace-str))]
       (if period-arg
-        (let [data (try (losses/calculate period-arg :marketplace validated-mp)
-                        (catch Exception _ {:rows [] :totals {}}))]
+        (let [data (safe/safely (losses/calculate period-arg :marketplace validated-mp)
+                                {:rows [] :totals {}} ::report-data-failed)]
           {:status 200
            :headers {"Content-Type" "application/json"}
            :body (json/write-value-as-string {:rows (mapv (fn [r] (update r :loss-type name)) (:rows data))
