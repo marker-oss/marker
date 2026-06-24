@@ -12,6 +12,7 @@
             [analitica.config :as config]
             [analitica.web.middleware.auth :as auth]
             [analitica.web.middleware.body-limit :as body-limit]
+            [analitica.web.middleware.error :as error]
             [analitica.db :as db]
             [analitica.core :as core]
             [analitica.util.time :as time]
@@ -1393,7 +1394,8 @@
       (auth/wrap-api-key)
       (wrap-cors :access-control-allow-origin (cors-origin-patterns)
                  :access-control-allow-methods [:get :post :put :delete :options])
-      (body-limit/wrap-content-length-limit)))
+      (body-limit/wrap-content-length-limit)
+      (error/wrap-exception)))
 
 ;; ---------------------------------------------------------------------------
 ;; Server lifecycle
