@@ -9,7 +9,8 @@
   (:require [analitica.db :as db]
             [analitica.sync.registry :as registry]
             [analitica.sync.runner :as runner]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [com.brunobonacci.mulog :as mu])
   (:import [java.util.concurrent
             Executors ExecutorCompletionService Callable TimeUnit]))
 
@@ -43,6 +44,12 @@
 ;; ---------------------------------------------------------------------------
 ;; Public API
 ;; ---------------------------------------------------------------------------
+
+(defn with-run-context
+  "Run f inside a mulog context carrying :run-id, so every mu/log emitted
+   during the task inherits the run-id for trace correlation."
+  [run-id f]
+  (mu/with-context {:run-id run-id} (f)))
 
 (defn run-sequential!
   "Run a plan (vector of task descriptors with :thunks) sequentially,
@@ -174,8 +181,10 @@
                   (do (swap! in-flight conj id)
                       (.submit ecs ^Callable
                                (fn []
-                                 (let [row (runner/run-task! id thunk)]
-                                   {:id id :status (:status row)}))))
+                                 (with-run-context run-id
+                                   (fn []
+                                     (let [row (runner/run-task! id thunk)]
+                                       {:id id :status (:status row)}))))))
 
                   :failed
                   (let [reason (dep-failure-reason depends-on)]
