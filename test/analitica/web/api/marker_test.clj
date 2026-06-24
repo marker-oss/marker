@@ -517,6 +517,63 @@
       (is (contains? body :error)))))
 
 ;; ---------------------------------------------------------------------------
+;; B4d. pulse-summary — ad-integrity flag propagation (FR-P4.3, pure/no DB)
+;;
+;; When pnl/calculate returns :ad-cost-source :missing (neither canonical
+;; finance.ad_cost nor legacy ad_stats had any row), the :drr and :roas KPI
+;; maps must carry :ad-cost-source :missing so the SPA can render
+;; «данные о рекламе отсутствуют» instead of a misleading 0 / «—».
+;; ---------------------------------------------------------------------------
+
+(def ^:private load-finance-var  #'marker-api/load-finance)
+(def ^:private load-sales-var    #'marker-api/load-sales)
+(def ^:private compute-pnl-var   #'marker-api/compute-pnl)
+(def ^:private with-prelim-var   #'marker-api/with-prelim)
+
+(def ^:private minimal-pnl-missing-ad
+  "Minimal pnl-cur map as pnl/calculate would return it when ad data absent."
+  {:revenue        10000.0
+   :net-profit     2000.0
+   :gross-profit   2500.0
+   :margin-net     20.0
+   :ad-spend       500.0   ;; above noise threshold so roas/drr compute non-nil
+   :cogs           5000.0
+   :logistics      500.0
+   :for-pay        10000.0
+   :sales-qty      100
+   :returns-qty    5
+   :buyout-rate    0.95
+   :avg-check      100.0
+   :ad-cost-source :missing})
+
+(deftest pulse-summary-ad-cost-source-propagates-to-drr-roas
+  (testing ":drr and :roas KPIs carry :ad-cost-source when pnl-cur has it"
+    (with-redefs
+      [load-finance-var                          (fn [& _] [])
+       load-sales-var                            (fn [& _] [])
+       compute-pnl-var                           (fn [& _] minimal-pnl-missing-ad)
+       with-prelim-var                           (fn [pnl & _] pnl)
+       analitica.domain.stock/fetch-stocks       (fn [& _] [])
+       analitica.domain.buyout/analyze           (fn [& _] [])
+       analitica.db/orders-by-article            (fn [& _] [])
+       analitica.canonical.events.query/units-ordered   (fn [& _] 0)
+       analitica.canonical.events.query/units-delivered (fn [& _] 0)
+       analitica.alerts/freshness-data           (fn [& _] {})
+       analitica.alerts/detect-alerts            (fn [& _] [])
+       analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+       analitica.domain.finance/fetch-finance    (fn [& _] [])
+       analitica.db/query                        (fn [& _] [{:n 0}])]
+      ;; pulse-summary returns a plain Clojure map (Transit middleware wraps it
+      ;; at the Ring layer; in unit tests the raw map is returned directly).
+      (let [body (marker-api/pulse-summary {:params {}})
+            kpis (:kpis body)]
+        (is (map? body) "handler returned a map (not an exception)")
+        (is (= :missing (get-in kpis [:drr  :ad-cost-source]))
+            ":drr must carry :ad-cost-source :missing")
+        (is (= :missing (get-in kpis [:roas :ad-cost-source]))
+            ":roas must carry :ad-cost-source :missing")))))
+
+;; ---------------------------------------------------------------------------
 ;; B1. pulse-summary — shape tests
 ;; ---------------------------------------------------------------------------
 

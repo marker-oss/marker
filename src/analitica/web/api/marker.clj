@@ -757,16 +757,18 @@
                                                               (:returned buyout-agg)))
                                                    :realization :none)
                                       :as-of     nil}
-                         :roas      {:value     (math/roas rev-cur ad-cur)
-                                     :delta-pct nil
-                                     :spark     []
-                                     :source    revenue-src
-                                     :as-of     revenue-as-of}
-                         :drr       {:value     (math/drr rev-cur ad-cur)
-                                     :delta-pct nil
-                                     :spark     []
-                                     :source    revenue-src
-                                     :as-of     revenue-as-of}
+                         :roas      {:value          (math/roas rev-cur ad-cur)
+                                     :delta-pct      nil
+                                     :spark          []
+                                     :source         revenue-src
+                                     :as-of          revenue-as-of
+                                     :ad-cost-source ad-cost-src}
+                         :drr       {:value          (math/drr rev-cur ad-cur)
+                                     :delta-pct      nil
+                                     :spark          []
+                                     :source         revenue-src
+                                     :as-of          revenue-as-of
+                                     :ad-cost-source ad-cost-src}
                          ;; max-ДРР ceiling — the break-even ad-spend rate.
                          ;; Formula (mirrors UE.7): (net-profit + ad-spend) / revenue × 100.
                          ;; When ads are at this ceiling the article hits exactly 0 profit.
