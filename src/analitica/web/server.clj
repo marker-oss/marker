@@ -182,6 +182,11 @@
 
 (defroutes app-routes
   ;; Pages
+  ;; NOTE: POST /plan mutates the DB (plan save/delete) but lives OUTSIDE /api,
+  ;; so wrap-api-key (auth/mutating? gates only /api) does NOT cover it by
+  ;; design — this legacy server-rendered page relies solely on Caddy
+  ;; basic-auth as its gate. If this route is ever exposed beyond the
+  ;; basic-auth perimeter, move it under /api or extend auth/mutating?.
   (GET  "/plan" req (analitica.web.pages.plan/get-handler  req))
   (POST "/plan" req (analitica.web.pages.plan/post-handler req))
   ;; Public entrypoint: production should land in the Marker SPA.
