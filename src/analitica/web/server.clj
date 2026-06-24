@@ -4,6 +4,7 @@
             [ring.middleware.params :refer [wrap-params]]
             [ring.middleware.keyword-params :refer [wrap-keyword-params]]
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
+            [ring.middleware.content-type :refer [wrap-content-type]]
             [ring.middleware.resource :as resource]
             [compojure.core :refer [defroutes GET POST PUT]]
             [compojure.route :as route]
@@ -1381,6 +1382,7 @@
   ;; serialises the map to JSON as before — no legacy behaviour change.
   (-> app-routes
       (resource/wrap-resource "public")
+      (wrap-content-type)
       (wrap-multipart-params)
       (wrap-keyword-params)
       (wrap-params)
