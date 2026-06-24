@@ -51,34 +51,60 @@
   [v fmt-fn]
   (if (nil? v) "—" (fmt-fn v)))
 
+(defn- flat-heavy?
+  "True when more than 20% of this KPI's value is flat-distributed
+   (no day-level meaning). Mirrors backend's :flat-heavy-subperiod note."
+  [kpi]
+  (> (or (:flat (:date-basis kpi)) 0) 0.2))
+
 (defn- prelim-badge
   "Badge string for a KPI tile whose value is an ESTIMATE — either a
-   preliminary source (Ozon cash-flow overlay) or a date-basis flagged
-   :estimated (materially flat/spread-distributed finance, P0-A Part A).
-   Both mean a sub-period slice of this number has weak day-level meaning."
+   preliminary source (Ozon cash-flow overlay), a date-basis flagged
+   :estimated, or a materially flat-distributed (>20%) finance slice
+   (P0-A Part A / FR-P1.2).  All mean a sub-period of this number has
+   weak day-level meaning."
   [kpi]
   (when (or (= :preliminary (:source kpi))
-            (= :estimated   (:completeness kpi)))
+            (= :estimated   (:completeness kpi))
+            (flat-heavy? kpi))
     "≈"))
 
+(defn- ad-cost-missing?
+  "True when this KPI's profit/margin was computed with NO ad-cost data
+   loaded (FR-P1.4 / FR-P1.5) — the headline therefore over-states profit."
+  [kpi]
+  (= :missing (:ad-cost-source kpi)))
+
+(defn- pct-str [x] (str (js/Math.round (* 100 (or x 0))) "%"))
+
 (defn- basis-tooltip
-  "Human tooltip describing a KPI's date-basis composition, e.g.
-   'Основа: 53% распределено равномерно, 47% по продажам, 0% фактические даты'."
+  "Human tooltip describing a KPI's date-basis composition.
+   - When no realization rows exist (:source :none / empty basis) → an
+     'реализация отсутствует' / preliminary note (FR-P1.4).
+   - Otherwise the verbose Russian breakdown PLUS a compact
+     'api X% · spread Y% · flat Z%' line (FR-P1.2).
+   - Appends the flat-heavy sub-month note when :basis-note is set."
   [kpi]
   (when-let [b (:date-basis kpi)]
-    (let [sum (+ (or (:api b) 0) (or (:spread b) 0) (or (:flat b) 0))
-          pct #(str (js/Math.round (* 100 (or % 0))) "%")]
-      (cond
-        ;; No realization rows at all → the number is a preliminary cash-flow
-        ;; estimate (recent window before the MP report is published).
-        (zero? sum)
-        "Предварительная оценка: realization-отчёт ещё не опубликован"
+    (let [sum  (+ (or (:api b) 0) (or (:spread b) 0) (or (:flat b) 0))
+          note (when (= :flat-heavy-subperiod (:basis-note kpi))
+                 "частичный месяц — реализация не разрешена по дням")
+          body (cond
+                 ;; No realization rows at all.
+                 (zero? sum)
+                 (if (= :none (:source kpi))
+                   "Реализация отсутствует: realization-отчёт ещё не опубликован"
+                   "Предварительная оценка: realization-отчёт ещё не опубликован")
 
-        :else
-        (str "Основа значения: "
-             (pct (:flat b))   " равномерно распределено (без дневного смысла), "
-             (pct (:spread b)) " по продажам, "
-             (pct (:api b))    " фактические даты")))))
+                 :else
+                 (str "Основа значения: "
+                      (pct-str (:flat b))   " равномерно распределено (без дневного смысла), "
+                      (pct-str (:spread b)) " по продажам, "
+                      (pct-str (:api b))    " фактические даты"
+                      "\n(api " (pct-str (:api b))
+                      " · spread " (pct-str (:spread b))
+                      " · flat " (pct-str (:flat b)) ")"))]
+      (str body (when note (str "\n" note))))))
 
 (defn- format-date-short
   "Truncate ISO date/datetime to YYYY-MM-DD for compact display."
@@ -288,7 +314,8 @@
 ;; Plan-fact card
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark]}]
+(defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark
+                                         rev-source rev-spark-source]}]
   (let [plan       (:month-plan  forecast)
         fact       (safe-num (:month-fact forecast))
         projection (safe-num (:projection forecast))
@@ -339,6 +366,14 @@
                ($ :span "0")
                ($ :span "50%")
                ($ :span "100% цель"))))
+       ;; FR-P1.3: when the sparkline source differs from the tile/headline
+       ;; source, the chart is LIVE SALES while the headline is REALIZED
+       ;; finance. Annotate so they aren't read as the same series.
+       (when (and rev-spark-source rev-source
+                  (not= rev-spark-source rev-source))
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "12px" :font-size "12px"}}
+            "График — продажи, live · число выше — реализация (финансы)"))
        ($ :div {:style {:margin-top "18px" :height "220px"}}
           ($ revenue-chart {:compare?      compare?
                             :rev-spark     rev-spark
@@ -500,20 +535,29 @@
         purch-cnt (safe-num (:value purchases))
         conv-pct  (when (pos? order-cnt)
                     (* 100.0 (/ purch-cnt order-cnt)))
+        ;; FR-P1.4: when realization is absent on a recent finance KPI, show
+        ;; "реализация отсутствует" instead of a misleading real-looking 0.
+        none-text  "реализация отсутствует"
         cards  [{:label       "Выручка"
-                 :value       (fmt/format-rub (safe-num (:value rev)))
+                 :value       (if (= :none (:source rev))
+                                none-text
+                                (fmt/format-rub (safe-num (:value rev))))
                  :delta       (:delta-pct rev)
                  :spark       (safe-spark (:spark rev))
                  :sub         "WoW"
                  :badge       (prelim-badge rev)
                  :badge-title (basis-tooltip rev)}
                 {:label       "Чистая прибыль"
-                 :value       (fmt/format-rub (safe-num (:value profit)))
+                 :value       (if (= :none (:source profit))
+                                none-text
+                                (fmt/format-rub (safe-num (:value profit))))
                  :delta       (:delta-pct profit)
                  :spark       (safe-spark (:spark profit))
                  :sub         "WoW"
                  :badge       (prelim-badge profit)
-                 :badge-title (basis-tooltip profit)}
+                 :badge-title (basis-tooltip profit)
+                 :warn-badge       (when (ad-cost-missing? profit) "реклама не загружена")
+                 :warn-badge-title "Реклама не загружена — прибыль завышена"}
                 {:label     "Заказано"
                  :value     (str (fmt/format-int order-cnt) " шт")
                  :delta     (:delta-pct orders)
@@ -542,11 +586,15 @@
                  :badge     (prelim-badge returned)
                  :inverted? true}
                 {:label       "Маржа"
-                 :value       (fmt/format-pct (safe-num (:value margin)))
+                 :value       (if (= :none (:source margin))
+                                none-text
+                                (fmt/format-pct (safe-num (:value margin))))
                  :delta       (:delta-pct margin)
                  :sub         "WoW"
                  :badge       (prelim-badge margin)
-                 :badge-title (basis-tooltip margin)}
+                 :badge-title (basis-tooltip margin)
+                 :warn-badge       (when (ad-cost-missing? margin) "реклама не загружена")
+                 :warn-badge-title "Реклама не загружена — маржа завышена"}
                 {:label     "Средний чек"
                  :value     (fmt/format-rub (safe-num (:value check)))
                  :delta     (:delta-pct check)
@@ -582,7 +630,8 @@
         ;; orders/purchases excluded: backend always returns :canon or :legacy-* for
         ;; those — they cannot be :preliminary, so they don't trigger the footnote.
         any-preliminary? (some #(or (= :preliminary (:source %))
-                                    (= :estimated (:completeness %)))
+                                    (= :estimated (:completeness %))
+                                    (flat-heavy? %))
                                [rev profit margin check buyout roas drr])]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
@@ -600,21 +649,28 @@
                 ($ :span {:class "dot-status green"})
                 " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted? badge badge-title]} cards]
-            ($ kpi-card {:key         label
-                         :label       label
-                         :value       value
-                         :delta-pct   delta
-                         :sub         sub
-                         :spark       spark
-                         :compare?    compare?
-                         :inverted?   (boolean inverted?)
-                         :badge       badge
-                         :badge-title badge-title})))
+          (for [{:keys [label value delta sub spark inverted? badge badge-title
+                        warn-badge warn-badge-title]} cards]
+            ($ kpi-card {:key              label
+                         :label            label
+                         :value            value
+                         :delta-pct        delta
+                         :sub              sub
+                         :spark            spark
+                         :compare?         compare?
+                         :inverted?        (boolean inverted?)
+                         :badge            badge
+                         :badge-title      badge-title
+                         :warn-badge       warn-badge
+                         :warn-badge-title warn-badge-title})))
        (when any-preliminary?
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "12px" :font-size "12px"}}
-            "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП")))))
+            "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП"))
+       (when (or (ad-cost-missing? profit) (ad-cost-missing? margin))
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "6px" :font-size "12px"}}
+            "Реклама не загружена — прибыль и маржа показаны как верхняя граница")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Cost breakdown section
@@ -854,11 +910,13 @@
 
            ;; Plan-fact + Donut
            ($ :div {:class "grid-12"}
-              ($ plan-fact-card {:compare?       compare?
-                                 :mp-filter      mp-filter
-                                 :forecast       forecast
-                                 :rev-spark      rev-spark
-                                 :rev-prev-spark rev-prev-spark})
+              ($ plan-fact-card {:compare?         compare?
+                                 :mp-filter        mp-filter
+                                 :forecast         forecast
+                                 :rev-spark        rev-spark
+                                 :rev-prev-spark   rev-prev-spark
+                                 :rev-source       (:source (:revenue kpis))
+                                 :rev-spark-source (:spark-source (:revenue kpis))})
               ($ mp-structure-card {:mp-filter mp-filter
                                     :mp-share  (:mp-share charts)}))
 

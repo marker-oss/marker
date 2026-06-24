@@ -409,19 +409,29 @@
           :sub (string, optional secondary label), :spark (vec of numbers, optional),
           :compare? (bool, default false), :inverted? (bool, default false),
           :badge (string, optional — small inline tag next to label, e.g. '≈')
-          :badge-title (string, optional — hover tooltip for the badge)."
-  [{:keys [label value delta-pct sub spark compare? inverted? badge badge-title]}]
+          :badge-title (string, optional — hover tooltip for the badge)
+          :warn-badge (string, optional — warning-flavoured tag, e.g. 'реклама не загружена')
+          :warn-badge-title (string, optional — hover tooltip for the warning badge)."
+  [{:keys [label value delta-pct sub spark compare? inverted? badge badge-title
+           warn-badge warn-badge-title]}]
   ($ :div {:class "kpi" :style {:position "relative"}}
      ($ :div {:class "kpi-label"}
         label
         (when badge
-          ($ :span {:class "tag tag-sm tag-info"
+          ($ :span {:class "tag tag-sm tag-info badge badge-info"
                     :title (or badge-title "Предварительное значение — будет уточнено")
                     :style {:margin-left "6px"
                             :font-size "10px"
                             :font-family "var(--font-mono)"
                             :cursor "help"}}
-             badge)))
+             badge))
+        (when warn-badge
+          ($ :span {:class "tag tag-sm badge badge-warning"
+                    :title (or warn-badge-title "Данные неполные — значение завышено")
+                    :style {:margin-left "6px"
+                            :font-size "10px"
+                            :cursor "help"}}
+             warn-badge)))
      ($ :div {:class "kpi-value"} value)
      ($ :div {:class "kpi-foot"}
         (when compare?
