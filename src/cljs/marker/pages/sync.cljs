@@ -344,8 +344,13 @@
           ($ :td {:class "num mono"} (if secs (str secs " с") "—"))
           ($ :td {:class "num mono"} (or (:total run) "—"))
           ($ :td
-             ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
-                (or status "—"))))
+             (if (and (:stuck? run) (= status "running"))
+               ($ :span {:class "tag tag-sm tag-warn"
+                         :title (str "Процесс завис — нет активности более "
+                                     (Math/round (or (:age-min run) 0)) " мин")}
+                  "⚠ завис " (Math/round (or (:age-min run) 0)) " мин")
+               ($ :span {:class (str "tag tag-sm " (status-tag-class status))}
+                  (or status "—")))))
        (when (and expanded? (seq tasks))
          ($ task-rows {:tasks tasks :load-runs! load-runs!})))))
 
