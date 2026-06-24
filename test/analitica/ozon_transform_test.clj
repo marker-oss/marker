@@ -6,6 +6,18 @@
             [analitica.marketplace.ozon.transform :as transform]))
 
 ;; ---------------------------------------------------------------------------
+;; Sale-type classification (P0-B, specs/010) — awaiting_deliver is in-flight
+;; ---------------------------------------------------------------------------
+
+(deftest awaiting-deliver-is-in-flight-not-sale
+  ;; A not-yet-delivered FBS posting must never count as a realized buyout.
+  ;; Must match domain.order-status, which treats only "delivered" as delivered.
+  (is (= :in-flight (#'transform/sale-type "awaiting_deliver")))
+  (is (= :sale      (#'transform/sale-type "delivered")))
+  (is (= :return    (#'transform/sale-type "returned")))
+  (is (= :cancelled (#'transform/sale-type "cancelled"))))
+
+;; ---------------------------------------------------------------------------
 ;; Generators
 ;; ---------------------------------------------------------------------------
 

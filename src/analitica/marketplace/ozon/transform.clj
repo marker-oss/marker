@@ -21,7 +21,10 @@
    longer needs to fold them into `:return`."
   [status]
   (cond
-    (#{"delivered" "awaiting_deliver"} status) :sale
+    ;; Only "delivered" is a realized buyout. "awaiting_deliver" is still in
+    ;; transit — classifying it as :sale would count an unsettled posting as a
+    ;; buyout and inflate the sold numerator. Matches domain.order-status.
+    (#{"delivered"}                    status) :sale
     (#{"returned"}                     status) :return
     (#{"cancelled"}                    status) :cancelled
     :else                                       :in-flight))
