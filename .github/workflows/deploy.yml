@@ -35,12 +35,8 @@ jobs:
         run: |
           ssh marker-vps "
             set -eu
-            if [ -x /srv/analitica-src/deploy/server-deploy.sh ]; then
-              REPO_URL='$REPO_URL' DEPLOY_REF='$DEPLOY_REF' sh /srv/analitica-src/deploy/server-deploy.sh
-            else
+            if [ ! -d /srv/analitica-src/.git ]; then
               git clone '$REPO_URL' /srv/analitica-src
-              cd /srv/analitica-src
-              git checkout '$DEPLOY_REF'
-              REPO_URL='$REPO_URL' DEPLOY_REF='$DEPLOY_REF' sh deploy/server-deploy.sh
             fi
+            REPO_URL='$REPO_URL' DEPLOY_REF='$DEPLOY_REF' sh /srv/analitica-src/deploy/server-deploy.sh
           "
