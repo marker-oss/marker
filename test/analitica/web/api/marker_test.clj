@@ -261,6 +261,16 @@
     (is (nil? (compute-drr 1000.0 nil)))))
 
 ;; ---------------------------------------------------------------------------
+;; B4c. basis-note — pure helper (no DB)
+;; ---------------------------------------------------------------------------
+
+(deftest basis-note-flags-flat-heavy-subperiod
+  (is (= :flat-heavy-subperiod
+         (marker-api/basis-note {:flat 0.6 :spread 0.3 :api 0.1} 7)))   ; sub-month, flat-heavy
+  (is (nil? (marker-api/basis-note {:flat 0.6} 31)))                     ; full month → no note
+  (is (nil? (marker-api/basis-note {:flat 0.05} 7))))                    ; low flat → no note
+
+;; ---------------------------------------------------------------------------
 ;; B4b. stocks-overview — pure shape via with-redefs (no live DB)
 ;; ---------------------------------------------------------------------------
 

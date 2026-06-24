@@ -247,6 +247,16 @@
 
 ;; ---------------------------------------------------------------------------
 
+(defn basis-note
+  "Note for a finance KPI given its date-basis split and the window length
+   in days. Returns :flat-heavy-subperiod when a sub-month window leans on
+   flat (guess-distributed) rows that carry no per-day meaning. nil otherwise."
+  [fin-basis window-days]
+  (when (and (< window-days 28) (>= (double (or (:flat fin-basis) 0.0)) 0.2))
+    :flat-heavy-subperiod))
+
+;; ---------------------------------------------------------------------------
+
 (defn- build-kpi
   ([cur-val prev-val spark]
    {:value     (or cur-val 0.0)
@@ -606,6 +616,7 @@
           ;; WB/YM are 100% :api; this fires mostly on Ozon / all-MP views.
           ;; ---------------------------------------------------------------------------
           fin-basis        (finance/date-basis-split fin-cur)
+          window-days      (period/days-between from to)
           fin-completeness (cond
                              preliminary?               :estimated
                              (>= (:flat fin-basis) 0.2) :estimated
@@ -662,7 +673,8 @@
 
       {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
-                                        (assoc :date-basis fin-basis :completeness fin-completeness))
+                                        (assoc :date-basis fin-basis :completeness fin-completeness
+                                               :basis-note (basis-note fin-basis window-days)))
                          :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
                                         (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
                                                           revenue-src
@@ -670,6 +682,7 @@
                                                :as-of revenue-as-of
                                                :date-basis fin-basis
                                                :completeness fin-completeness
+                                               :basis-note (basis-note fin-basis window-days)
                                                :ad-cost-source ad-cost-src))
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
@@ -705,6 +718,7 @@
                                      :as-of     revenue-as-of
                                      :date-basis fin-basis
                                      :completeness fin-completeness
+                                     :basis-note (basis-note fin-basis window-days)
                                      :ad-cost-source ad-cost-src}
                          :avg-check {:value     ac-cur
                                      :delta-pct (math/pct-delta ac-cur ac-prev)
