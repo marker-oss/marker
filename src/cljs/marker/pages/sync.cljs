@@ -516,6 +516,7 @@
         [schedule-saving?  set-schedule-saving!]  (use-state false)
         [schedule-error    set-schedule-error!]   (use-state nil)
         [schedule-status   set-schedule-status!]  (use-state nil)
+        [sync-period       set-sync-period!]       (use-state "last-7-days")
         es-ref                    (use-ref nil)
         runs-timer-ref            (use-ref nil)
 
@@ -616,7 +617,7 @@
           (set-running! true)
           (open-stream!)
           (post-json! "/api/sync/start"
-                      {:what "all" :period "last-7-days" :marketplace "all"}
+                      {:what "all" :period sync-period :marketplace "all"}
                       (fn [body]
                         (push-event! {:type :message
                                       :text (str "→ запущено: "
@@ -688,7 +689,16 @@
              ($ :h3 {:class "section-title"} "Управление")
              ($ :div {:class "section-subtitle"}
                 "По умолчанию синхронизируем все МП за последние 7 дней."))
-          ($ :div {:style {:display "flex" :gap "8px" :flex-wrap "wrap"}}
+          ($ :div {:style {:display "flex" :gap "8px" :flex-wrap "wrap"
+                           :align-items "center" :margin-bottom "8px"}}
+             ($ :select {:class     "select select-sm"
+                         :disabled  running?
+                         :value     sync-period
+                         :on-change (fn [e] (set-sync-period! (.. e -target -value)))}
+                ($ :option {:value "last-7-days"}  "Последние 7 дней")
+                ($ :option {:value "last-30-days"} "Последние 30 дней")
+                ($ :option {:value "this-month"}   "Текущий месяц")
+                ($ :option {:value "prev-month"}   "Прошлый месяц"))
              ($ :button {:class    (str "btn btn-primary" (when running? " btn-disabled"))
                          :disabled running?
                          :on-click start-sync!}
@@ -702,7 +712,16 @@
              ($ :button {:class    "btn btn-ghost"
                          :on-click (fn [] (load-runs!) (load-coverage!))}
                 ($ icon {:name :refresh :size 14})
-                "Обновить список")))
+                "Обновить список"))
+          ($ :div {:class "help-text"
+                   :style {:font-size "12px" :color "var(--color-fg-muted)"
+                           :padding "0 0 8px" :line-height "1.6"}}
+             "Окна по типу данных: "
+             ($ :strong "остатки/цены") " — снапшот «сейчас» (период игнорируется); "
+             ($ :strong "Ozon заказы/отправки") " — фиксировано −60 дн; "
+             ($ :strong "финансы") " — целый месяц; "
+             ($ :strong "WB хранение") " — чанки по 7 дн; "
+             ($ :strong "WB регионы, WB/YM реклама") " — чанки по 30 дн."))
 
        ($ live-log  {:events events})
        ($ coverage-matrix {:coverage  coverage
