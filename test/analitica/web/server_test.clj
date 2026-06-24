@@ -36,9 +36,10 @@
 (deftest test-routes
   (testing "Basic route responses"
     (let [handler (server/app)]
-      (testing "Root route"
+      (testing "Root route redirects to the Marker SPA"
         (let [response (handler {:request-method :get :uri "/"})]
-          (is (= 200 (:status response)) "Root should return 200")))
+          (is (= 302 (:status response)) "Root should redirect to the SPA")
+          (is (= "/app/pulse" (get-in response [:headers "Location"])))))
       
       (testing "API metrics route"
         (let [response (handler {:request-method :get :uri "/api/metrics"})]

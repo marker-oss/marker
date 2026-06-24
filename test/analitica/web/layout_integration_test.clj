@@ -15,14 +15,14 @@
       (f))))
 
 (deftest layout-integration-test
-  (testing "Root route renders layout with correct active route"
+  (testing "Root route redirects to the Marker SPA"
+    ;; Root is the public entrypoint and now 302-redirects to the SPA
+    ;; (server.clj GET "/"); the legacy server-rendered layout lives at /wb,
+    ;; /sync, /report (asserted below) and /legacy.
     (let [app (server/app)
           response (app {:request-method :get :uri "/"})]
-      (is (= 200 (:status response)))
-      (is (= "text/html; charset=utf-8" (get-in response [:headers "Content-Type"])))
-      (is (string? (:body response)))
-      (is (re-find #"Главная" (:body response)))
-      (is (re-find #"Analitica" (:body response)))))
+      (is (= 302 (:status response)))
+      (is (= "/app/pulse" (get-in response [:headers "Location"])))))
   
   (testing "WB route renders layout with WB active"
     (let [app (server/app)
