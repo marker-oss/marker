@@ -766,7 +766,18 @@
                                      :delta-pct nil
                                      :spark     []
                                      :source    revenue-src
-                                     :as-of     revenue-as-of}}
+                                     :as-of     revenue-as-of}
+                         ;; max-ДРР ceiling — the break-even ad-spend rate.
+                         ;; Formula (mirrors UE.7): (net-profit + ad-spend) / revenue × 100.
+                         ;; When ads are at this ceiling the article hits exactly 0 profit.
+                         ;; Above it → over-ceiling? true. Source follows revenue.
+                         :drr-ceiling {:value  (math/percentage
+                                                 (+ (or (:net-profit pnl-cur) 0.0) ad-cur)
+                                                 rev-cur)
+                                       :delta-pct nil
+                                       :spark     []
+                                       :source    revenue-src
+                                       :as-of     revenue-as-of}}
        :costs           {:cogs       (cost-line (:cogs      pnl-cur) (:cogs      pnl-prev) revenue-src revenue-as-of)
                         :commission (cost-line (:wb-reward pnl-cur) (:wb-reward pnl-prev) revenue-src revenue-as-of)
                         :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
@@ -1112,19 +1123,34 @@
                                               (max 1.0 for-pay))
                                   buyout    (math/percentage orders (+ orders returns))
                                   ads       (or (get ads-by-art art) 0.0)
-                                  roas      (math/roas rev ads)]
-                              {:id        art
-                               :name      (or (:subject a) art)
-                               :mp        [(keyword (or (:marketplace a) :wb))]
-                               :revenue   rev
-                               :orders    orders
-                               :margin    (or margin 0.0)
-                               :buyout    (or buyout 0.0)
-                               :stock     qty-full
-                               :delta-pct (math/pct-delta rev prev-r)
-                               :ads-cost  ads
-                               :roas      roas
-                               :spark     []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
+                                  roas      (math/roas rev ads)
+                                  ;; max-ДРР ceiling (FR-P4.2 / UE.7).
+                                  ;; net-profit proxy at sku-list level: for-pay − cogs − ads
+                                  ;; (logistics etc. not available per-article here; cogs absorbs them)
+                                  ;; max-drr-numer = net-profit + ads = for-pay − cogs
+                                  ;; i.e. gross margin ₽; max-drr-pct = that / revenue × 100.
+                                  net-profit-est  (- for-pay cogs ads)
+                                  max-drr-pct     (math/percentage (+ net-profit-est ads) rev)
+                                  drr-pct         (math/percentage ads rev)
+                                  drr-headroom    (math/round2 (- (or max-drr-pct 0.0)
+                                                                   (or drr-pct 0.0)))
+                                  over-ceiling?   (boolean (and max-drr-pct drr-pct
+                                                                (> drr-pct max-drr-pct)))]
+                              {:id               art
+                               :name             (or (:subject a) art)
+                               :mp               [(keyword (or (:marketplace a) :wb))]
+                               :revenue          rev
+                               :orders           orders
+                               :margin           (or margin 0.0)
+                               :buyout           (or buyout 0.0)
+                               :stock            qty-full
+                               :delta-pct        (math/pct-delta rev prev-r)
+                               :ads-cost         ads
+                               :roas             roas
+                               :max-drr-pct      max-drr-pct
+                               :drr-headroom-pct drr-headroom
+                               :over-ceiling?    over-ceiling?
+                               :spark            []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
                           by-art)
           ;; Default: drop orphan service-only SKUs (revenue=0 AND orders=0).
           ;; Pass ?include-orphans=true to see them.

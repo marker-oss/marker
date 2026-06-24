@@ -974,3 +974,79 @@
       (is (= :preliminary (:source kpi))
           "tile :source must be preserved when :spark-source is assoc'd")
       (is (= :sales (:spark-source kpi))))))
+
+;; ---------------------------------------------------------------------------
+;; B4e. max-ДРР / headroom / over-ceiling? — FR-P4.2 (pure + integration)
+;; ---------------------------------------------------------------------------
+
+(deftest sku-list-max-drr-formula-pure
+  ;; The sku-list-handler builds per-SKU rows inline. This test verifies the
+  ;; max-ДРР formula that must appear in each row:
+  ;;   max-drr-pct   = (net-profit + ads) / revenue × 100
+  ;;   drr-headroom-pct = max-drr-pct − drr-pct
+  ;;   over-ceiling? = drr-pct > max-drr-pct
+  ;; These mirror analitica.domain.unit_economics/calculate (UE.7).
+  (testing "max-drr-pct formula matches UE canon"
+    ;; revenue=10000, for-pay=8000, cogs=3000, ads=500
+    ;; net-profit (proxy) = for-pay - cogs - ads = 8000-3000-500 = 4500
+    ;; max-drr-numer = net-profit + ads = 4500+500 = 5000
+    ;; max-drr-pct = 5000/10000*100 = 50.0
+    (let [rev     10000.0
+          for-pay  8000.0
+          cogs     3000.0
+          ads       500.0
+          ;; replicate the inline formula used in sku-list-handler
+          margin    (analitica.util.math/percentage (- for-pay cogs) (max 1.0 for-pay))
+          drr-pct   (analitica.util.math/percentage ads rev)
+          ;; max-drr uses net-profit: for-pay - cogs - ads (no logistics etc. at sku-list level)
+          net-profit (- for-pay cogs ads)
+          max-drr-numer (+ net-profit ads)
+          max-drr-pct   (analitica.util.math/percentage max-drr-numer rev)
+          headroom-pct  (analitica.util.math/round2 (- (or max-drr-pct 0.0) (or drr-pct 0.0)))
+          over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
+      (is (= 50.0 max-drr-pct)   "max-drr-pct = (net-profit+ads)/revenue*100")
+      (is (= 5.0  drr-pct)       "drr-pct = ads/revenue*100")
+      (is (= 45.0 headroom-pct)  "headroom = max-drr - drr")
+      (is (false? over-ceiling?) "ads < max ceiling → not over")))
+
+  (testing "over-ceiling? fires when ads exceed break-even"
+    ;; margin article: for-pay=1000, cogs=1200 (loss), ads=200
+    ;; net-profit = 1000-1200-200 = -400
+    ;; max-drr-numer = -400+200 = -200 → max-drr-pct = -20%
+    ;; drr-pct = 200/1000*100 = 20% → 20 > -20 → over-ceiling?=true
+    (let [rev     1000.0
+          for-pay 1000.0
+          cogs    1200.0
+          ads      200.0
+          net-profit   (- for-pay cogs ads)
+          max-drr-pct  (analitica.util.math/percentage (+ net-profit ads) rev)
+          drr-pct      (analitica.util.math/percentage ads rev)
+          over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
+      (is (true? over-ceiling?) "loss-making SKU must be flagged over-ceiling"))))
+
+(deftest ^:integration sku-list-max-drr-fields-test
+  ;; FR-P4.2: sku-list rows must carry the three max-ДРР fields.
+  (testing ":skus entries carry :max-drr-pct, :drr-headroom-pct, :over-ceiling?"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")
+          skus (:skus body)]
+      (when (seq skus)
+        (let [s (first skus)]
+          (doseq [k [:max-drr-pct :drr-headroom-pct :over-ceiling?]]
+            (is (contains? s k) (str "sku-list row missing FR-P4.2 field: " k))))))))
+
+(deftest ^:integration pulse-summary-drr-ceiling-test
+  ;; FR-P4.2: pulse-summary kpis must contain a :drr-ceiling KPI alongside :drr.
+  (testing ":kpis contains :drr-ceiling"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          kpis (:kpis body)]
+      (is (contains? kpis :drr-ceiling)
+          "pulse-summary kpis must include :drr-ceiling (FR-P4.2)")))
+
+  (testing ":drr-ceiling has the expected KPI shape (:value key)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          dc (get-in body [:kpis :drr-ceiling])]
+      (is (map? dc))
+      (is (contains? dc :value)
+          ":drr-ceiling must carry a :value key")
+      (is (or (nil? (:value dc)) (number? (:value dc)))
+          ":drr-ceiling :value must be a number or nil"))))
