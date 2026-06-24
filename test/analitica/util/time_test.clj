@@ -38,21 +38,21 @@
       (let [[from to] (t/parse-period "last-7-days")]
         (is (string? from))
         (is (string? to))
-        ;; last-7-days means "7 days ago to today" which is 8 days inclusive
-        (is (= 8 (inc (.between java.time.temporal.ChronoUnit/DAYS
+        ;; last-7-days = today and the 6 preceding days = 7 days inclusive
+        (is (= 7 (inc (.between java.time.temporal.ChronoUnit/DAYS
                                 (LocalDate/parse from)
                                 (LocalDate/parse to))))
-            "Should span 8 days inclusive (7 days ago to today)")))
-    
+            "Should span exactly 7 days inclusive (today - 6 days to today)")))
+
     (testing "last-30-days"
       (let [[from to] (t/parse-period "last-30-days")]
         (is (string? from))
         (is (string? to))
-        ;; last-30-days means "30 days ago to today" which is 31 days inclusive
-        (is (= 31 (inc (.between java.time.temporal.ChronoUnit/DAYS
+        ;; last-30-days = today and the 29 preceding days = 30 days inclusive
+        (is (= 30 (inc (.between java.time.temporal.ChronoUnit/DAYS
                                  (LocalDate/parse from)
                                  (LocalDate/parse to))))
-            "Should span 31 days inclusive (30 days ago to today)")))
+            "Should span exactly 30 days inclusive (today - 29 days to today)")))
     
     (testing "this-month"
       (let [[from to] (t/parse-period "this-month")]

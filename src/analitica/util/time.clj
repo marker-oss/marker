@@ -39,13 +39,15 @@
     (case kw
       :today      [(format-date t) (format-date t)]
       :yesterday  (let [y (.minusDays t 1)] [(format-date y) (format-date y)])
-      :last-7-days  [(format-date (days-ago 7)) (format-date t)]
-      :last-30-days [(format-date (days-ago 30)) (format-date t)]
+      :last-7-days  (let [[f t2] (period/resolve-preset :last-7-days t)]
+                      [(period/format-date f) (period/format-date t2)])
+      :last-30-days (let [[f t2] (period/resolve-preset :last-30-days t)]
+                      [(period/format-date f) (period/format-date t2)])
       :this-week    (let [dow (.getValue (.getDayOfWeek t))
                           mon (.minusDays t (dec dow))]
                       [(format-date mon) (format-date t)])
-      :this-month   (let [first-day (.withDayOfMonth t 1)]
-                      [(format-date first-day) (format-date t)])
+      :this-month   (let [[f t2] (period/resolve-preset :this-month t)]
+                      [(period/format-date f) (period/format-date t2)])
       (throw (ex-info (str "Unknown period: " kw) {:period kw})))))
 
 (defn days-between [^LocalDate a ^LocalDate b]
