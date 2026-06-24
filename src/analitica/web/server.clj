@@ -176,6 +176,12 @@
                   [:div#root]
                   [:script {:src "/js/cljs-out/marker.js"}]]]))})
 
+(defn- healthz-response []
+  (let [db-ok? (try (= 1 (-> (db/query ["SELECT 1 AS one"]) first :one)) (catch Throwable _ false))]
+    {:status 200
+     :headers {"Content-Type" "application/json; charset=utf-8"}
+     :body {:status "ok" :db-ok? db-ok?}}))
+
 ;; ---------------------------------------------------------------------------
 ;; Routes
 ;; ---------------------------------------------------------------------------
@@ -1331,6 +1337,8 @@
   ;; ---------------------------------------------------------------------------
   (GET "/app" _ (marker-spa-shell))
   (GET ["/app/:path" :path #".*"] _ (marker-spa-shell))
+
+  (GET "/healthz" _ (healthz-response))
 
   ;; 404
   (route/not-found {:status 404 :body "Not Found"}))
