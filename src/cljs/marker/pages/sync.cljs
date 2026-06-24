@@ -345,7 +345,7 @@
           ($ :td {:class "num mono"} (or (:total run) "—"))
           ($ :td
              (if (and (:stuck? run) (= status "running"))
-               ($ :span {:class "tag tag-sm tag-warn"
+               ($ :span {:class "badge badge-warning"
                          :title (str "Процесс завис — нет активности более "
                                      (Math/round (or (:age-min run) 0)) " мин")}
                   "⚠ завис " (Math/round (or (:age-min run) 0)) " мин")
@@ -472,12 +472,22 @@
                ($ :div {}
                   ($ :strong {:style {:color "var(--color-fg-secondary)"}} "Цвет = свежесть")
                   " (возраст последнего синка): "
-                  ($ :span {:class "tag tag-sm tag-good" :style {:font-size "11px"}} "зелёный")
+                  ($ :span {:class "coverage-cell coverage-good"
+                             :style {:display "inline-block" :width "14px" :height "14px"
+                                     :vertical-align "middle" :margin "0 2px"}})
                   " < 3 дн · "
-                  ($ :span {:class "tag tag-sm tag-warn" :style {:font-size "11px"}} "жёлтый")
+                  ($ :span {:class "coverage-cell coverage-stale"
+                             :style {:display "inline-block" :width "14px" :height "14px"
+                                     :vertical-align "middle" :margin "0 2px"}})
                   " 3–7 дн · "
-                  ($ :span {:class "tag tag-sm tag-bad" :style {:font-size "11px"}} "красный")
-                  " > 7 дн")
+                  ($ :span {:class "coverage-cell coverage-old"
+                             :style {:display "inline-block" :width "14px" :height "14px"
+                                     :vertical-align "middle" :margin "0 2px"}})
+                  " > 7 дн · "
+                  ($ :span {:class "coverage-cell coverage-partial"
+                             :style {:display "inline-block" :width "14px" :height "14px"
+                                     :vertical-align "middle" :margin "0 2px"}})
+                  " есть пропуски")
                ($ :div {}
                   ($ :strong {:style {:color "var(--color-fg-secondary)"}} "«⚠ N» = полнота")
                   " — пропущено N календарных дней; наведите для диапазонов")
@@ -716,7 +726,7 @@
                 "По умолчанию синхронизируем все МП за последние 7 дней."))
           ($ :div {:style {:display "flex" :gap "8px" :flex-wrap "wrap"
                            :align-items "center" :margin-bottom "8px"}}
-             ($ :select {:class     "select select-sm"
+             ($ :select {:class     "select"
                          :disabled  running?
                          :value     sync-period
                          :on-change (fn [e] (set-sync-period! (.. e -target -value)))}
