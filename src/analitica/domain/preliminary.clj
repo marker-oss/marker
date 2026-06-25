@@ -127,7 +127,7 @@
           ::ozon-finance-count-failed)
 
         finance-counts
-        (into {} (map (fn [r] [(or (:month r) (:month r)) (or (:cnt r) 0)])
+        (into {} (map (fn [r] [(or (:month r) (:MONTH r)) (or (:cnt r) 0)])
                       finance-rows))
 
         ;; Months covered by cash_flow_periods (source='ozon') that
