@@ -343,7 +343,7 @@
       (let [rows         (or (:rows data) [])
             sku-rows     (or (:sku-detail data) [])
             completeness (:completeness data)
-            empty?       (= :empty completeness)]
+            empty-data?  (= :empty completeness)]
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner
@@ -356,7 +356,7 @@
                                :preliminary? (:preliminary? data)})
            ;; On a no-data window, show the empty-state INSTEAD of an
            ;; all-zero P&L table that would look like real (zero) numbers.
-           (if empty?
+           (if empty-data?
              ($ :section {:class "card section-card"}
                 ($ :div {:style {:text-align "center" :padding "48px 24px"
                                  :color "var(--color-fg-muted)" :font-size "14px"}}

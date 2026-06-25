@@ -17,7 +17,7 @@
             ;; LT3: honesty markers live in marker.ui.basis (single source of
             ;; truth). prelim-badge/basis-tooltip/flat-heavy?/format-date-short
             ;; were private here — now shared.
-            [marker.ui.basis       :refer [coverage-banner prelim-badge
+            [marker.ui.basis       :refer [prelim-badge
                                            basis-tooltip flat-heavy?
                                            format-date-short]]
             [marker.util.format    :as fmt]

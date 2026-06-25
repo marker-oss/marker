@@ -205,7 +205,7 @@
                                (or (empty? mps)
                                    (some (set mps) (:mp s))))
                              skus)
-            empty?  (= :empty (:completeness envelope))]
+            empty-data? (= :empty (:completeness envelope))]
 
         ($ :div {:class "page-content"}
            (when error-msg
@@ -216,14 +216,14 @@
            ($ coverage-banner {:completeness (:completeness envelope)
                                :date-basis   (:date-basis envelope)
                                :preliminary? (:preliminary? envelope)})
-           (if empty?
+           (if empty-data?
              ;; No-data window: show empty-state instead of an empty grid that
              ;; reads like a real (but empty) catalogue.
              ($ :section {:class "card section-card"}
                 ($ :div {:style {:text-align "center" :padding "48px 24px"
                                  :color "var(--color-fg-muted)" :font-size "14px"}}
                    "За выбранный период нет данных по товарам."))
-           ($ :section {:class "card section-card"}
+             ($ :section {:class "card section-card"}
               ($ :div {:class "section-head"}
                  ($ :div
                     ($ :h3 {:class "section-title"} "Каталог товаров")

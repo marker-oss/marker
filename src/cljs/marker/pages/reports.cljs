@@ -370,7 +370,7 @@
             compare-rows  (get-in data [:compare :rows])
             rows-mode     (get-in data [:schema :rows-mode])
             completeness  (:completeness data)
-            empty?        (= :empty completeness)]
+            empty-data?   (= :empty completeness)]
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner {:message error-msg :on-retry retry!}))
@@ -386,7 +386,7 @@
            ;; Main table — only render when rows-mode != :none
            (cond
              ;; LT3: no monetary data at all → empty-state, never a zero-row grid.
-             empty?
+             empty-data?
              ($ empty-state {:title title})
 
              (= rows-mode :none)
