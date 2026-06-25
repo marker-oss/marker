@@ -625,7 +625,9 @@
           (is (map? b))
           (is (every? #(number? (get b %)) [:api :spread :flat]))))
       (testing ":completeness is a known state"
-        (is (contains? #{:full :partial :estimated :missing} (:completeness rev))))))
+        ;; LT3: :empty is now a valid state — a recent window with no published
+        ;; finance (Ozon realization lag / no sales) honestly reports :empty.
+        (is (contains? #{:full :partial :estimated :missing :empty} (:completeness rev))))))
 
   (testing ":orders is total orders (incl. cancelled), :purchases is delivered sales — orders >= purchases"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
@@ -1217,6 +1219,21 @@
       (let [env (basis-envelope-fn [{:for_pay 200.0}] false)]
         (is (= :full (:completeness env))
             "snake_case :for_pay must count as monetary data")))))
+
+(deftest ^:integration pulse-summary-empty-window-completeness-test
+  ;; LT3: the Pulse top-level :completeness is computed by an inline
+  ;; fin-completeness cond that must mirror basis-envelope — including the
+  ;; :empty guard. Without it, a window with zero monetary finance reads
+  ;; «полные данные» on the coverage chip (the lie LT3 fixes). A far-future
+  ;; window has no finance rows, so :completeness MUST be :empty.
+  (testing "zero-monetary (future) window → top-level :completeness :empty"
+    (let [{:keys [status body]} (do-get "/api/v1/marker/pulse-summary"
+                                        :params {:from "2099-01-01" :to "2099-01-31"})]
+      (is (= 200 status))
+      (is (= :empty (:completeness body))
+          "Pulse :completeness must be :empty for a no-monetary-data window, not :full")
+      (is (contains? body :date-basis)
+          "Pulse must also carry top-level :date-basis for the coverage chip"))))
 
 (deftest ^:integration pnl-basis-contract-test
   ;; FR-P4.1: pnl-handler response must carry basis-contract at envelope level.

@@ -651,7 +651,13 @@
           ;; ---------------------------------------------------------------------------
           fin-basis        (finance/date-basis-split fin-cur)
           window-days      (period/days-between from to)
+          ;; NOTE: this cond MUST mirror basis-envelope's completeness tree
+          ;; (see basis-envelope above) so the two honesty paths don't diverge.
+          ;; In particular the `:empty` guard (empty-finance? first) is what
+          ;; stops the coverage chip from reading «полные данные» on a window
+          ;; with no monetary data at all. LT3 / specs/010 P0-A.
           fin-completeness (cond
+                             (empty-finance? fin-cur)   :empty
                              preliminary?               :estimated
                              (>= (:flat fin-basis) 0.2) :estimated
                              :else                      :full)
@@ -838,6 +844,11 @@
        ;; materialized). UI can render a "preliminary" badge.
        :preliminary?    preliminary?
        :preliminary-as-of (or (:preliminary-as-of pnl-cur) nil)
+       ;; LT3: top-level honesty envelope (mirrors pnl/sku-list/reports). The
+       ;; SPA's ::subs/active-coverage reads this to drive the topbar coverage
+       ;; chip; :empty here suppresses the «полные данные» lie on a no-data Pulse.
+       :completeness    fin-completeness
+       :date-basis      fin-basis
        ;; Cost-price coverage warning. cost_prices table is sparse
        ;; (~9% of articles have a registered cost). For any sale row
        ;; without cost-price, line-cost defaults to 0 → cogs = 0 → P&L
