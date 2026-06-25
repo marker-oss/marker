@@ -801,8 +801,8 @@
                                        :spark     []
                                        :source    revenue-src
                                        :as-of     revenue-as-of}}
-       :costs           {:cogs       (cost-line (:cogs      pnl-cur) (:cogs      pnl-prev) revenue-src revenue-as-of)
-                        :commission (cost-line (:wb-reward pnl-cur) (:wb-reward pnl-prev) revenue-src revenue-as-of)
+       :costs           {:cogs       (cost-line (:cogs         pnl-cur) (:cogs         pnl-prev) revenue-src revenue-as-of)
+                        :commission (cost-line (:mp-commission pnl-cur) (:mp-commission pnl-prev) revenue-src revenue-as-of)
                         :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
                         :ads        (cost-line (:ad-spend  pnl-cur) (:ad-spend  pnl-prev) revenue-src revenue-as-of)
                         :other      (cost-line (sum-other-costs pnl-cur) (sum-other-costs pnl-prev) revenue-src revenue-as-of)
@@ -1007,6 +1007,7 @@
   [[:revenue       "Выручка (розница)"        "income"]
    [:wb-reward     "Возмещение ПВЗ"            "income"]
    [:for-pay       "К выплате от МП"           "subtotal"]
+   [:mp-commission "Комиссия МП"               "cost"]
    [:cogs          "Себестоимость"             "cost"]
    [:logistics     "Логистика"                 "cost"]
    [:storage       "Хранение"                  "cost"]
@@ -1067,7 +1068,7 @@
                               :mp         [(keyword (or (:marketplace a) :wb))]
                               :revenue    (or (:revenue a) 0.0)
                               :cogs       (or (:total-cost a) 0.0)
-                              :commission (or (:deduction a) 0.0)
+                              :commission (or (:mp-commission a) 0.0)
                               :ads        (or (get ads-by-art art) 0.0)
                               :net        (or (:for-pay a) 0.0)}))
                          by-art)]

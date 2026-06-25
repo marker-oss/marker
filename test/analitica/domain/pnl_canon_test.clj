@@ -166,6 +166,68 @@
     (is (not (contains? p :cf-total)))))
 
 ;; ---------------------------------------------------------------------------
+;; ---------------------------------------------------------------------------
+;; P&L.7 — marketplace commission (mp_commission) informational field
+;; ---------------------------------------------------------------------------
+
+(deftest pnl-exposes-mp-commission
+  (testing "pnl/calculate exposes :mp-commission as normalized negative sum"
+    ;; fixture: Article A 5 sales × 15 = 75, Article B 3 sales × 8 = 24 → total 99
+    ;; normalized: (- (Math/abs 99.0)) = -99.0
+    (is (= -99.0 (:mp-commission p)))))
+
+(deftest pnl-mp-commission-does-not-change-gross
+  (testing "gross-profit and net-profit are byte-identical with and without commission"
+    (let [fx-no-commission (map #(dissoc % :mp-commission) fx)
+          p-no-comm        (pnl/calculate fx-no-commission)]
+      (is (= (:gross-profit p) (:gross-profit p-no-comm))
+          "gross-profit must not change when mp-commission is absent")
+      (is (= (:net-profit p) (:net-profit p-no-comm))
+          "net-profit must not change when mp-commission is absent"))))
+
+(deftest mp-commission-sign-normalized
+  (testing "ozon-positive, wb-negative, ym-positive all yield a negative sign"
+    ;; Ozon: positive in source (MP charges seller positive amount)
+    (let [ozon-rows [{:marketplace :ozon :rrd-id 1
+                      :date-from "2026-04-01" :date-to "2026-04-30"
+                      :event-date "2026-04-15"
+                      :article "X" :operation "sale" :quantity 1
+                      :retail-amount 1000.0 :retail-price 1000.0
+                      :for-pay 830.0 :mp-commission 150.0 :wb-reward 0.0
+                      :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                      :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+                      :additional-payment 0.0 :ad-cost 0.0}]
+          ozon-p    (pnl/calculate ozon-rows)]
+      (is (neg? (:mp-commission ozon-p))
+          "ozon positive-source commission must be normalized to negative"))
+    ;; WB: negative in source
+    (let [wb-rows [{:marketplace :wb :rrd-id 2
+                    :date-from "2026-03-01" :date-to "2026-03-07"
+                    :event-date "2026-03-03"
+                    :article "Y" :operation "sale" :quantity 1
+                    :retail-amount 500.0 :retail-price 500.0
+                    :for-pay 415.0 :mp-commission -75.0 :wb-reward 0.0
+                    :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                    :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+                    :additional-payment 0.0 :ad-cost 0.0}]
+          wb-p    (pnl/calculate wb-rows)]
+      (is (neg? (:mp-commission wb-p))
+          "wb negative-source commission must remain negative after normalization"))
+    ;; YM: positive in source
+    (let [ym-rows [{:marketplace :ym :rrd-id 3
+                    :date-from "2026-04-01" :date-to "2026-04-30"
+                    :event-date "2026-04-20"
+                    :article "Z" :operation "sale" :quantity 1
+                    :retail-amount 800.0 :retail-price 800.0
+                    :for-pay 680.0 :mp-commission 100.0 :wb-reward 0.0
+                    :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                    :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+                    :additional-payment 0.0 :ad-cost 0.0}]
+          ym-p    (pnl/calculate ym-rows)]
+      (is (neg? (:mp-commission ym-p))
+          "ym positive-source commission must be normalized to negative"))))
+
+;; ---------------------------------------------------------------------------
 ;; Cross-check — P&L and UE agree on the fixture
 ;; ---------------------------------------------------------------------------
 

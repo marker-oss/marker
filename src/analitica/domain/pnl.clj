@@ -238,6 +238,7 @@
         additional    (reduce + 0.0 (map :additional by-art))
         for-pay       (reduce + 0.0 (map :for-pay by-art))
         cogs          (reduce + 0.0 (map :total-cost by-art))
+        mp-commission (reduce + 0.0 (map :mp-commission by-art))
         ad-total      (ad-spend-total from to marketplace)
         ad-spend      (or (:value ad-total) 0.0)
         ad-cost-src   (or (:source ad-total) :missing)
@@ -274,6 +275,7 @@
        :deduction     (math/round2 deduction)
        :additional    (math/round2 additional)
        :for-pay       (math/round2 for-pay)
+       :mp-commission (math/round2 (- (Math/abs mp-commission)))
        :cogs          (math/round2 cogs)
        :ad-spend      (math/round2 (double ad-spend))
        :ad-cost-source ad-cost-src

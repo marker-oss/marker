@@ -1214,3 +1214,91 @@
       (is (contains? body :completeness) "sku-detail response missing :completeness (FR-P4.1)")
       (is (contains? #{:full :estimated} (:completeness body))
           "sku-detail :completeness must be :full or :estimated"))))
+
+;; ---------------------------------------------------------------------------
+;; LT2 — mp_commission wiring (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+
+(deftest pulse-commission-uses-mp-commission-not-wb-reward
+  (testing "Pulse :costs :commission is wired to :mp-commission, not :wb-reward"
+    ;; Strategy: mock load-finance to return a row whose by-article aggregate has a
+    ;; known mp-commission. pnl/calculate (called via compute-pnl) will produce
+    ;; :mp-commission = -99.0 from 1 sale row with :mp-commission 99.0 (ozon positive).
+    ;; :wb-reward = 200.0 is deliberately different so we can tell them apart.
+    ;; The test verifies :costs :commission :value = -99.0 (from :mp-commission),
+    ;; not 200.0 (from :wb-reward).
+    (let [finance-row {:marketplace :wb :rrd-id 1
+                       :date-from "2026-04-01" :date-to "2026-04-30"
+                       :event-date "2026-04-15"
+                       :article "LT2" :operation "sale" :quantity 1
+                       :retail-amount 1000.0 :retail-price 1000.0
+                       :for-pay 830.0 :mp-commission 99.0 :wb-reward 200.0
+                       :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                       :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+                       :additional-payment 0.0 :ad-cost 0.0}]
+      (with-redefs
+        [load-finance-var                                   (fn [& _] [finance-row])
+         load-sales-var                                     (fn [& _] [])
+         with-prelim-var                                    (fn [pnl & _] pnl)
+         analitica.domain.stock/fetch-stocks                (fn [& _] [])
+         analitica.domain.buyout/analyze                    (fn [& _] [])
+         analitica.db/orders-by-article                     (fn [& _] [])
+         analitica.canonical.events.query/units-ordered     (fn [& _] 0)
+         analitica.canonical.events.query/units-delivered   (fn [& _] 0)
+         analitica.alerts/freshness-data                    (fn [& _] {})
+         analitica.alerts/detect-alerts                     (fn [& _] [])
+         analitica.domain.finance/date-basis-split          (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+         analitica.domain.finance/fetch-finance             (fn [& _] [finance-row])
+         analitica.db/query                                 (fn [& _] [{:n 0}])]
+        (let [body     (marker-api/pulse-summary {:params {}})
+              comm-val (get-in body [:costs :commission :value])]
+          (is (map? body) "handler returned a map")
+          ;; :mp-commission (ozon-positive 99) normalizes to -99.0
+          ;; :wb-reward = 200.0 — they are distinct, so we can prove the wire
+          (is (= -99.0 comm-val)
+              (str "Pulse :costs :commission must use :mp-commission (-99.0 normalized), "
+                   "not :wb-reward (200.0). Got: " comm-val)))))))
+
+(deftest pnl-rows-include-mp-commission-row
+  (testing "pnl-row-defs contains a :mp-commission row labeled Комиссия МП"
+    (let [mp-comm-row (some #(when (= :mp-commission (first %)) %)
+                             marker-api/pnl-row-defs)]
+      (is (some? mp-comm-row)
+          "pnl-row-defs must contain [:mp-commission ...] entry")
+      (is (= "Комиссия МП" (second mp-comm-row))
+          "pnl-row-defs :mp-commission label must be \"Комиссия МП\"")
+      (is (= "cost" (nth mp-comm-row 2))
+          "pnl-row-defs :mp-commission group must be \"cost\""))))
+
+(deftest sku-detail-commission-is-mp-commission
+  (testing "sku-detail :commission field is wired to :mp-commission from by-article, not :deduction"
+    ;; Strategy: feed pnl-handler a real finance row with :mp-commission != :deduction.
+    ;; finance/by-article will produce :mp-commission -150.0 (WB negative, stored as-is
+    ;; from the fixture) and :deduction 10.0. The handler's sku-detail should use
+    ;; :mp-commission for :commission, yielding -150.0 not 10.0.
+    (let [finance-row {:marketplace :wb :rrd-id 1
+                       :date-from "2026-04-01" :date-to "2026-04-30"
+                       :event-date "2026-04-15"
+                       :article "TEST-SKU" :operation "sale" :quantity 1
+                       :retail-amount 1000.0 :retail-price 1000.0
+                       :for-pay 850.0 :mp-commission -150.0 :wb-reward 0.0
+                       :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                       :penalty 0.0 :acquiring-fee 0.0 :deduction 10.0
+                       :additional-payment 0.0 :ad-cost 0.0}]
+      (with-redefs
+        [load-finance-var                          (fn [& _] [finance-row])
+         analitica.domain.finance/fetch-finance    (fn [& _] [finance-row])
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+         with-prelim-var                           (fn [pnl & _] pnl)
+         analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+         analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+         analitica.db/query                        (fn [& _] [{:n 0}])]
+        (let [resp (marker-api/pnl-handler {:params {}})
+              sku  (first (:sku-detail resp))]
+          (is (map? resp) "pnl-handler returned a map")
+          (is (some? sku) "sku-detail must be non-empty for the fixture row")
+          (when sku
+            (is (= -150.0 (:commission sku))
+                (str "sku-detail :commission must use :mp-commission (-150.0), "
+                     "not :deduction (10.0). Got: " (:commission sku)))))))))
