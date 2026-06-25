@@ -11,7 +11,8 @@
             [analitica.util.math]
             [analitica.web.server :as server]
             [analitica.web.middleware.transit :as transit-mw]
-            [analitica.web.api.marker :as marker-api])
+            [analitica.web.api.marker :as marker-api]
+            [analitica.web.api.report])
   (:import (java.io ByteArrayInputStream)))
 
 ;; ---------------------------------------------------------------------------
@@ -1121,12 +1122,14 @@
           ":drr-ceiling :value must be a number or nil"))))
 
 ;; ---------------------------------------------------------------------------
-;; FR-P4.1 — basis-contract envelope on pnl / sku-list / sku-detail
+;; LT3 — basis-contract envelope on pnl / sku-list / sku-detail / reports
 ;; ---------------------------------------------------------------------------
 ;;
 ;; Every finance handler must emit {:date-basis {:api f :spread f :flat f}
-;;                                  :completeness #{:full :estimated}}
+;;                                  :completeness #{:empty :full :estimated}}
 ;; at the top level of its response map.
+;; :empty is the honest signal for zero-monetary-sum windows (no data published
+;; yet / no sales in period). Emitting :full on an empty window is a lie.
 ;;
 ;; Pure test: basis-envelope helper semantics (no DB).
 ;; Integration tests: shape contract on the three handlers.
@@ -1135,37 +1138,85 @@
 
 (deftest basis-envelope-pure
   (testing "basis-envelope returns :date-basis and :completeness keys"
-    (let [rows [] ; empty rows → all zeros → :full
-          env  (basis-envelope-fn rows false)]
-      (is (map? env))
-      (is (contains? env :date-basis))
-      (is (contains? env :completeness))))
+    ;; Use a dummy row so empty-monetary check doesn't fire
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [{:for-pay 100.0}] false)]
+        (is (map? env))
+        (is (contains? env :date-basis))
+        (is (contains? env :completeness)))))
 
   (testing ":date-basis has :api :spread :flat fraction keys"
-    (let [env (basis-envelope-fn [] false)
-          db  (:date-basis env)]
-      (doseq [k [:api :spread :flat]]
-        (is (contains? db k) (str ":date-basis missing key " k)))))
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [{:for-pay 100.0}] false)
+            db  (:date-basis env)]
+        (doseq [k [:api :spread :flat]]
+          (is (contains? db k) (str ":date-basis missing key " k))))))
 
   (testing ":completeness is :full when rows are all-api and not preliminary"
     ;; finance/date-basis-split on rows with only :api source → {:api 1.0 :spread 0.0 :flat 0.0}
-    ;; flat < 0.2 and preliminary?=false → :full
+    ;; flat < 0.2 and preliminary?=false and non-zero monetary → :full
     (with-redefs [analitica.domain.finance/date-basis-split
                   (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
-      (let [env (basis-envelope-fn [:dummy-row] false)]
+      (let [env (basis-envelope-fn [{:for-pay 100.0}] false)]
         (is (= :full (:completeness env))))))
 
   (testing ":completeness is :estimated when flat fraction >= 0.2"
     (with-redefs [analitica.domain.finance/date-basis-split
                   (fn [& _] {:api 0.7 :spread 0.1 :flat 0.2})]
-      (let [env (basis-envelope-fn [:dummy-row] false)]
+      (let [env (basis-envelope-fn [{:for-pay 100.0}] false)]
         (is (= :estimated (:completeness env))))))
 
   (testing ":completeness is :estimated when preliminary? is true regardless of flat"
     (with-redefs [analitica.domain.finance/date-basis-split
                   (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
-      (let [env (basis-envelope-fn [:dummy-row] true)]
+      (let [env (basis-envelope-fn [{:for-pay 100.0}] true)]
         (is (= :estimated (:completeness env)))))))
+
+;; LT3 — new tests for :empty completeness
+
+(deftest basis-envelope-zero-forpay-is-empty
+  (testing "empty rows (no for-pay) → :empty, not :full"
+    ;; This is the lie we're fixing: before LT3, empty rows returned :full because
+    ;; date-basis-split returns all-zeros → flat=0.0 < 0.2 → :else :full.
+    ;; The honest answer is :empty (window has no monetary data at all).
+    (let [env (basis-envelope-fn [] false)]
+      (is (= :empty (:completeness env))
+          "empty rows must yield :completeness :empty, not :full")))
+
+  (testing "rows with all for-pay = 0 → :empty"
+    (let [rows [{:for-pay 0.0 :operation "sale"} {:for-pay 0.0 :operation "return"}]
+          env  (basis-envelope-fn rows false)]
+      (is (= :empty (:completeness env))
+          "zero-monetary rows must yield :completeness :empty")))
+
+  (testing ":empty wins even when preliminary?=true (no data at all)"
+    (let [env (basis-envelope-fn [] true)]
+      (is (= :empty (:completeness env))
+          ":empty beats preliminary? — there's literally no monetary data"))))
+
+(deftest basis-envelope-still-full-when-real
+  (testing "rows with real for-pay and low flat fraction → :full"
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [{:for-pay 1500.0}] false)]
+        (is (= :full (:completeness env))
+            "real data with api-only source must be :full"))))
+
+  (testing "rows with real for-pay + flat>=0.2 → :estimated (not :empty)"
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 0.5 :spread 0.3 :flat 0.2})]
+      (let [env (basis-envelope-fn [{:for-pay 1500.0}] false)]
+        (is (= :estimated (:completeness env))
+            "real data with high flat fraction must be :estimated"))))
+
+  (testing "snake_case :for_pay key is honoured for monetary check"
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [{:for_pay 200.0}] false)]
+        (is (= :full (:completeness env))
+            "snake_case :for_pay must count as monetary data")))))
 
 (deftest ^:integration pnl-basis-contract-test
   ;; FR-P4.1: pnl-handler response must carry basis-contract at envelope level.
@@ -1177,11 +1228,11 @@
         (doseq [k [:api :spread :flat]]
           (is (contains? db k) (str "pnl :date-basis missing key " k))))))
 
-  (testing "pnl response carries :completeness in #{:full :estimated}"
+  (testing "pnl response carries :completeness in #{:empty :full :estimated}"
     (let [{:keys [body]} (do-get "/api/v1/marker/pnl")]
       (is (contains? body :completeness) "pnl response missing :completeness (FR-P4.1)")
-      (is (contains? #{:full :estimated} (:completeness body))
-          "pnl :completeness must be :full or :estimated"))))
+      (is (contains? #{:empty :full :estimated} (:completeness body))
+          "pnl :completeness must be :empty, :full, or :estimated"))))
 
 (deftest ^:integration sku-list-basis-contract-test
   ;; FR-P4.1: sku-list-handler response must carry basis-contract at envelope level.
@@ -1193,11 +1244,11 @@
         (doseq [k [:api :spread :flat]]
           (is (contains? db k) (str "sku-list :date-basis missing key " k))))))
 
-  (testing "sku-list response carries :completeness in #{:full :estimated}"
+  (testing "sku-list response carries :completeness in #{:empty :full :estimated}"
     (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")]
       (is (contains? body :completeness) "sku-list response missing :completeness (FR-P4.1)")
-      (is (contains? #{:full :estimated} (:completeness body))
-          "sku-list :completeness must be :full or :estimated"))))
+      (is (contains? #{:empty :full :estimated} (:completeness body))
+          "sku-list :completeness must be :empty, :full, or :estimated"))))
 
 (deftest ^:integration sku-detail-basis-contract-test
   ;; FR-P4.1: sku-detail-handler response must carry basis-contract at envelope level.
@@ -1209,11 +1260,11 @@
         (doseq [k [:api :spread :flat]]
           (is (contains? db k) (str "sku-detail :date-basis missing key " k))))))
 
-  (testing "sku-detail response carries :completeness in #{:full :estimated}"
+  (testing "sku-detail response carries :completeness in #{:empty :full :estimated}"
     (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
       (is (contains? body :completeness) "sku-detail response missing :completeness (FR-P4.1)")
-      (is (contains? #{:full :estimated} (:completeness body))
-          "sku-detail :completeness must be :full or :estimated"))))
+      (is (contains? #{:empty :full :estimated} (:completeness body))
+          "sku-detail :completeness must be :empty, :full, or :estimated"))))
 
 ;; ---------------------------------------------------------------------------
 ;; LT2 — mp_commission wiring (pure, no DB)
@@ -1331,3 +1382,54 @@
             (is (= -150.0 (:commission sku))
                 (str "sku-detail :commission must normalize positive Ozon mp-commission "
                      "(150.0) to -150.0. Got: " (:commission sku)))))))))
+
+;; ---------------------------------------------------------------------------
+;; LT3 — sku-list-empty-window-not-full (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+(deftest sku-list-empty-window-not-full
+  (testing "sku-list on a zero-finance window returns :completeness :empty, not :full"
+    ;; Before LT3 fix: load-finance returns [] → basis-envelope → flat=0.0 → :full (lie).
+    ;; After LT3 fix: empty monetary sum → :empty.
+    (with-redefs
+      [load-finance-var                                   (fn [& _] [])
+       analitica.domain.sales/fetch-sales                 (fn [& _] [])
+       analitica.domain.stock/fetch-stocks                (fn [& _] [])
+       analitica.domain.pnl/ad-spend-by-article           (fn [& _] {})
+       analitica.db/query                                  (fn [& _] [{:n 0}])]
+      (let [resp (marker-api/sku-list-handler {:params {}})]
+        (is (map? resp) "sku-list-handler returned a map")
+        (is (= [] (:skus resp)) "empty finance → empty skus")
+        (is (= :empty (:completeness resp))
+            (str "empty window must have :completeness :empty, got: "
+                 (:completeness resp)))))))
+
+;; ---------------------------------------------------------------------------
+;; LT3 — reports-handler-carries-envelope (pure, no DB)
+;; ---------------------------------------------------------------------------
+
+(def ^:private report-data-var #'analitica.web.api.report/report-data)
+
+(deftest reports-handler-carries-envelope
+  (testing "reports-handler 200 body carries :completeness :date-basis :preliminary? from basis-envelope"
+    (with-redefs
+      [load-finance-var   (fn [& _] [])
+       report-data-var    (fn [& _] {:rows [] :totals {}})]
+      (let [resp (marker-api/reports-handler
+                   {:request-method :get
+                    :params {:type "finance"}
+                    :headers {}})]
+        (is (= 200 (:status resp)) "reports-handler must return 200")
+        (is (contains? (:body resp) :completeness)
+            "reports 200 body must carry :completeness")
+        (is (contains? (:body resp) :date-basis)
+            "reports 200 body must carry :date-basis")
+        (is (contains? (:body resp) :preliminary?)
+            "reports 200 body must carry :preliminary?")
+        (is (= :empty (:completeness (:body resp)))
+            "empty finance window → :completeness :empty on reports"))))
+
+  (testing "reports-handler 400 body does NOT need envelope"
+    (let [resp (marker-api/reports-handler
+                 {:request-method :get :params {:type "nonsense"} :headers {}})]
+      (is (= 400 (:status resp))))))

@@ -257,23 +257,36 @@
   (when (and (< window-days 28) (>= (double (or (:flat fin-basis) 0.0)) 0.2))
     :flat-heavy-subperiod))
 
+(defn- empty-finance?
+  "True when the monetary sum of |for-pay| across `rows` is zero.
+   Mirrors the `amt` fn inside finance/date-basis-split (tolerant of both
+   :for-pay and :for_pay key spellings). Used as the :empty guard in
+   basis-envelope and the sku-list/pnl/sku-detail call sites."
+  [rows]
+  (let [amt (fn [r] (Math/abs (double (or (:for-pay r) (:for_pay r) 0.0))))]
+    (zero? (reduce + 0.0 (map amt rows)))))
+
 (defn basis-envelope
   "Return the basis-contract fragment {:date-basis ... :completeness ...}
    for any finance handler response envelope.
 
-   Mirrors the pulse-summary logic (specs/010 P0-A Part A):
-     - :date-basis  = finance/date-basis-split over `rows`
-     - :completeness = :estimated when preliminary? OR flat >= 0.2, else :full
+   Completeness decision tree (LT3, specs/010 P0-A):
+     1. zero monetary sum        → :empty      (no data; window not yet published
+                                                or genuinely no sales)
+     2. preliminary? is true     → :estimated  (at least one MP says «preliminary»)
+     3. flat fraction >= 0.2     → :estimated  (day-level meaning is a guess)
+     4. else                     → :full
 
    Pass preliminary? as false when the handler has no per-MP preliminary
    signal (sku-list) — completeness falls back to flat-threshold only."
   [rows preliminary?]
   (let [fin-basis    (finance/date-basis-split rows)
         completeness (cond
+                       (empty-finance? rows)      :empty
                        preliminary?               :estimated
                        (>= (:flat fin-basis) 0.2) :estimated
                        :else                      :full)]
-    {:date-basis  fin-basis
+    {:date-basis   fin-basis
      :completeness completeness}))
 
 ;; ---------------------------------------------------------------------------
@@ -1532,19 +1545,28 @@
                                               :article     article
                                               :compare     (compare-flag params))
               schema      (rs/get-schema rtype)
-              compare-blk (:compare data)]
+              compare-blk (:compare data)
+              ;; LT3: compute honesty envelope (single source of truth).
+              ;; One extra load-finance call; reports don't expose raw finance
+              ;; rows from report-data, so we fetch separately.
+              fin-env     (load-finance period mp1)
+              pnl-env     (compute-pnl  fin-env period mp1)
+              env         (basis-envelope fin-env (boolean (:preliminary? pnl-env)))]
           {:status 200
-           :body   (cond-> {:report-type rtype
-                            :columns     (vec (:columns schema))
-                            :rows        (vec (:rows data))
-                            :totals      (or (:totals data) {})
-                            :schema      (select-keys schema
-                                                      [:id :title :rows-mode
-                                                       :supports-compare?
-                                                       :supports-period?
-                                                       :supports-marketplace?
-                                                       :tabs :presets :kpi
-                                                       :drill-down :chart])}
+           :body   (cond-> {:report-type  rtype
+                            :columns      (vec (:columns schema))
+                            :rows         (vec (:rows data))
+                            :totals       (or (:totals data) {})
+                            :schema       (select-keys schema
+                                                       [:id :title :rows-mode
+                                                        :supports-compare?
+                                                        :supports-period?
+                                                        :supports-marketplace?
+                                                        :tabs :presets :kpi
+                                                        :drill-down :chart])
+                            :completeness (:completeness env)
+                            :date-basis   (:date-basis   env)
+                            :preliminary? (boolean (:preliminary? pnl-env))}
                      compare-blk (assoc :compare {:rows   (vec (:rows compare-blk))
                                                   :totals (or (:totals compare-blk) {})}))})))
     (catch Exception e
