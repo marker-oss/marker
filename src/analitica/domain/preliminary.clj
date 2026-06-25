@@ -170,6 +170,13 @@
    the original map unchanged or one with `:revenue` replaced and
    `:revenue-source` / `:preliminary?` / `:preliminary-as-of` set.
 
+   LT5 honesty: when the overlay fires AND canonical commission/COGS are
+   absent (zero), stamps `:cost-source :preliminary-missing` and
+   `:preliminary-cost-fields #{:cogs :commission}` on the result.
+   Logistics/storage that ARE published remain real (no flag).
+   The domain pnl-result numbers stay numeric (0, not nil) — nil is
+   applied only in the presentation/envelope layer (marker.clj cost-line).
+
    Caller opt-in. P&L / digest / per-MP cards should call this; raw
    exports / audit-internal flows should not (they need the canonical
    number, even if it's 0)."
@@ -178,11 +185,24 @@
            (= :ozon marketplace)
            (map? period) (:from period) (:to period))
     (if-let [prelim (ozon-preliminary-totals period)]
-      (assoc pnl-result
-             :revenue           (:revenue prelim)
-             :revenue-source    :preliminary
-             :preliminary?      true
-             :preliminary-as-of (:as-of prelim)
-             :preliminary-pending-periods (:pending-periods prelim))
+      (let [base (assoc pnl-result
+                        :revenue           (:revenue prelim)
+                        :revenue-source    :preliminary
+                        :preliminary?      true
+                        :preliminary-as-of (:as-of prelim)
+                        :preliminary-pending-periods (:pending-periods prelim))
+            ;; Commission and COGS are absent in a hollow Ozon realization
+            ;; window — zero here means "not published", not a real zero.
+            ;; Stamp a marker so the presentation layer can render
+            ;; "нет данных" rather than fabricating profit from partial costs.
+            commission-absent? (zero? (or (:mp-commission pnl-result) 0))
+            cogs-absent?       (zero? (or (:cogs pnl-result) 0))]
+        (if (or commission-absent? cogs-absent?)
+          (assoc base
+                 :cost-source            :preliminary-missing
+                 :preliminary-cost-fields (cond-> #{}
+                                            cogs-absent?       (conj :cogs)
+                                            commission-absent? (conj :commission)))
+          base))
       pnl-result)
     pnl-result))

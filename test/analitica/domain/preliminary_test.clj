@@ -203,4 +203,45 @@
       (let [states (p/ozon-monthly-realization-states "2026-04-01" "2026-06-30")]
         (is (= 3 (count states)))
         (is (every? #(#{:settled :preliminary :missing} (:state %)) states))
-        (is (every? #(re-matches #"\d{4}-\d{2}" (:month %)) states)))))))
+        (is (every? #(re-matches #"\d{4}-\d{2}" (:month %)) states))))))
+
+;; ---------------------------------------------------------------------------
+;; LT5 — maybe-overlay-preliminary marks commission/COGS as missing
+;; ---------------------------------------------------------------------------
+
+(deftest preliminary-marks-commission-cogs-missing
+  (testing "when overlay fires and canonical commission/COGS are absent (zero),
+            result carries :cost-source :preliminary-missing and
+            :preliminary-cost-fields #{:cogs :commission}"
+    (with-redefs [db/query (constantly apr-cf-rows)]
+      (let [r (p/maybe-overlay-preliminary
+                ;; hollow row: revenue=0, commission=0, cogs=0, but logistics/storage present
+                {:revenue 0 :mp-commission 0 :cogs 0 :logistics 3200.0 :storage 800.0}
+                {:period apr-period :marketplace :ozon})]
+        (is (= :preliminary-missing (:cost-source r))
+            "should stamp :cost-source :preliminary-missing")
+        (is (= #{:cogs :commission} (:preliminary-cost-fields r))
+            "should list the two missing cost fields")
+        ;; Logistics and storage stay numeric — they ARE published
+        (is (= 3200.0 (:logistics r)) "logistics must remain real")
+        (is (= 800.0  (:storage r))   "storage must remain real")
+        ;; revenue overlay still fires
+        (is (= :preliminary (:revenue-source r)))
+        (is (true? (:preliminary? r))))))
+
+  (testing "when commission IS present (non-zero), do not flag as missing"
+    (with-redefs [db/query (constantly apr-cf-rows)]
+      (let [r (p/maybe-overlay-preliminary
+                {:revenue 0 :mp-commission 12000.0 :cogs 5000.0 :logistics 3200.0}
+                {:period apr-period :marketplace :ozon})]
+        (is (nil? (:cost-source r))
+            "should NOT stamp :cost-source when costs are present")
+        (is (nil? (:preliminary-cost-fields r))
+            "should NOT set :preliminary-cost-fields when costs are present"))))
+
+  (testing "when overlay does NOT fire (revenue already positive), no cost marker"
+    (let [r (p/maybe-overlay-preliminary
+              {:revenue 281835.0 :mp-commission 0 :cogs 0}
+              {:period apr-period :marketplace :ozon})]
+      (is (nil? (:cost-source r)))
+      (is (nil? (:preliminary-cost-fields r)))))))

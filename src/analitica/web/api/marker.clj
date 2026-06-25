@@ -222,12 +222,24 @@
 
 (defn- cost-line
   "Build a cost-breakdown line with consistent shape.
-   :source is :none when cur is zero (nothing to attribute)."
-  [cur prev source as-of]
-  {:value     (math/round2 (or cur 0))
-   :delta-pct (math/pct-delta (or cur 0) (or prev 0))
-   :source    (if (and source (pos? (or cur 0))) source :none)
-   :as-of     as-of})
+   :source is :none when cur is zero (nothing to attribute).
+
+   5-arg arity (missing? = true): LT5 honesty path for costs that are
+   absent in a preliminary Ozon window (commission/COGS not yet published).
+   Returns {:value nil :source :preliminary-missing :delta-pct nil :as-of as-of}.
+   The nil value signals «нет данных» to the UI — never to be summed into totals."
+  ([cur prev source as-of]
+   {:value     (math/round2 (or cur 0))
+    :delta-pct (math/pct-delta (or cur 0) (or prev 0))
+    :source    (if (and source (pos? (or cur 0))) source :none)
+    :as-of     as-of})
+  ([_cur _prev _source as-of missing?]
+   (if missing?
+     {:value     nil
+      :delta-pct nil
+      :source    :preliminary-missing
+      :as-of     as-of}
+     (cost-line _cur _prev _source as-of))))
 
 (defn- sum-other-costs
   "Storage + acceptance + penalties + deduction + additional."
@@ -709,17 +721,27 @@
           ;; ROAS/ДРР return nil → UI renders «—» (avoids 7-digit ROAS
           ;; from 0.25 ₽ ad-stats artefacts; fixes Bugs #4+#5).
           ad-cur      (or (:ad-spend pnl-cur) 0.0)
-          ad-cost-src (:ad-cost-source pnl-cur)]
+          ad-cost-src (:ad-cost-source pnl-cur)
+
+          ;; LT5 honesty: Ozon preliminary window may have logistics/storage
+          ;; published but commission/COGS absent (realization not yet out).
+          ;; When stamped by maybe-overlay-preliminary, do NOT fabricate
+          ;; a partial-cost profit/margin or surface a false zero.
+          ;; Domain pnl-result keeps numeric 0 (safe for sum-total-costs/
+          ;; what-if/exports); nil is applied ONLY here in presentation.
+          cost-missing? (= :preliminary-missing (:cost-source pnl-cur))]
 
       {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
                                         (assoc :date-basis fin-basis :completeness fin-completeness
                                                :basis-note (basis-note fin-basis window-days)
                                                :spark-source :sales))
-                         :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
-                                        (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
-                                                          revenue-src
-                                                          :none)
+                         :profit    (-> (build-kpi (when-not cost-missing? (:net-profit pnl-cur))
+                                                   (:net-profit pnl-prev) [])
+                                        (assoc :source (cond
+                                                          cost-missing?                              :preliminary-missing
+                                                          (pos? (or (:net-profit pnl-cur) 0.0))     revenue-src
+                                                          :else                                      :none)
                                                :as-of revenue-as-of
                                                :date-basis fin-basis
                                                :completeness fin-completeness
@@ -748,14 +770,17 @@
                                      :spark     []
                                      :source    returned-src
                                      :as-of     nil}
-                         :margin    {:value     (or (:margin-net pnl-cur) 0.0)
-                                     :delta-pct (math/pct-delta
-                                                  (or (:margin-net pnl-cur) 0.0)
-                                                  (or (:margin-net pnl-prev) 0.0))
+                         :margin    {:value     (when-not cost-missing?
+                                                  (or (:margin-net pnl-cur) 0.0))
+                                     :delta-pct (when-not cost-missing?
+                                                  (math/pct-delta
+                                                    (or (:margin-net pnl-cur) 0.0)
+                                                    (or (:margin-net pnl-prev) 0.0)))
                                      :spark     []
-                                     :source    (if (pos? (or (:margin-net pnl-cur) 0.0))
-                                                  revenue-src
-                                                  :none)
+                                     :source    (cond
+                                                  cost-missing?                              :preliminary-missing
+                                                  (pos? (or (:margin-net pnl-cur) 0.0))     revenue-src
+                                                  :else                                      :none)
                                      :as-of     revenue-as-of
                                      :date-basis fin-basis
                                      :completeness fin-completeness
@@ -820,12 +845,23 @@
                                        :spark     []
                                        :source    revenue-src
                                        :as-of     revenue-as-of}}
-       :costs           {:cogs       (cost-line (:cogs         pnl-cur) (:cogs         pnl-prev) revenue-src revenue-as-of)
-                        :commission (cost-line (:mp-commission pnl-cur) (:mp-commission pnl-prev) revenue-src revenue-as-of)
+       ;; LT5: when cost-missing? (Ozon preliminary, commission/COGS unpublished),
+       ;; render :cogs/:commission with nil value + :preliminary-missing source.
+       ;; :logistics/:ads/:other ARE published in the realization window → stay real.
+       ;; :total is also :preliminary-missing (incomplete; lists :known-components).
+       ;; Domain sum-total-costs/what-if/exports continue to use numeric 0 from pnl-cur.
+       :costs           {:cogs       (cost-line (:cogs         pnl-cur) (:cogs         pnl-prev) revenue-src revenue-as-of cost-missing?)
+                        :commission (cost-line (:mp-commission pnl-cur) (:mp-commission pnl-prev) revenue-src revenue-as-of cost-missing?)
                         :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
                         :ads        (cost-line (:ad-spend  pnl-cur) (:ad-spend  pnl-prev) revenue-src revenue-as-of)
                         :other      (cost-line (sum-other-costs pnl-cur) (sum-other-costs pnl-prev) revenue-src revenue-as-of)
-                        :total      (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of)}
+                        :total      (if cost-missing?
+                                      {:value            nil
+                                       :delta-pct        nil
+                                       :source           :preliminary-missing
+                                       :as-of            revenue-as-of
+                                       :known-components [:logistics :ads :other]}
+                                      (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of))}
        :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
                          :month-fact (math/round2 rev-cur)
                          :projection projection}

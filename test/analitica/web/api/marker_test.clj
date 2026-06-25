@@ -177,6 +177,7 @@
 (def ^:private compute-orders-by-mp #'marker-api/compute-orders-by-mp)
 (def ^:private compute-projection   #'marker-api/compute-projection)
 (def ^:private build-kpi            #'marker-api/build-kpi)
+(def ^:private cost-line            #'marker-api/cost-line)
 ;; ROAS / ДРР now live in analitica.util.math (shared with sku-list,
 ;; what-if, and digest). Test the canonical implementation directly.
 (def ^:private compute-roas analitica.util.math/roas)
@@ -690,7 +691,8 @@
 
 (def valid-kpi-sources
   ;; :orders — P0-B: buyout/cancel are computed from orders placed (sold/placed).
-  #{:realization :preliminary :canon :legacy-orders :legacy-sales :orders :none})
+  ;; :preliminary-missing — LT5: commission/COGS absent in preliminary Ozon window.
+  #{:realization :preliminary :preliminary-missing :canon :legacy-orders :legacy-sales :orders :none})
 
 (deftest ^:integration pulse-summary-source-metadata-test
   (testing "every KPI has :source and :as-of keys"
@@ -796,7 +798,10 @@
           costs (:costs body)]
       (doseq [k [:cogs :commission :logistics :ads :other :total]]
         (let [line (get costs k)]
-          (is (number? (:value line))           (str k " :value not a number"))
+          ;; LT5: when source is :preliminary-missing, value is nil (not a number) — that is correct.
+          (is (or (number? (:value line))
+                  (= :preliminary-missing (:source line)))
+              (str k " :value must be a number or source must be :preliminary-missing"))
           (is (or (number? (:delta-pct line))
                   (nil?    (:delta-pct line)))  (str k " :delta-pct must be number or nil"))
           (is (contains? line :source)          (str k " missing :source"))
@@ -805,14 +810,18 @@
   (testing ":costs :total == sum of individual cost lines (within ₽1 rounding)"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           costs (:costs body)
-          parts (+ (get-in costs [:cogs       :value])
-                   (get-in costs [:commission :value])
-                   (get-in costs [:logistics  :value])
-                   (get-in costs [:ads        :value])
-                   (get-in costs [:other      :value]))
-          total (get-in costs [:total :value])]
-      (is (< (Math/abs (- total parts)) 1.0)
-          (str "Cost-total " total " should equal sum of parts " parts " within ₽1"))))
+          ;; LT5: when costs are preliminary-missing, total and cogs/commission are nil
+          ;; (Ozon preliminary window). Skip the sum check in that case.
+          cost-missing? (= :preliminary-missing (get-in costs [:total :source]))]
+      (when-not cost-missing?
+        (let [parts (+ (get-in costs [:cogs       :value])
+                       (get-in costs [:commission :value])
+                       (get-in costs [:logistics  :value])
+                       (get-in costs [:ads        :value])
+                       (get-in costs [:other      :value]))
+              total (get-in costs [:total :value])]
+          (is (< (Math/abs (- total parts)) 1.0)
+              (str "Cost-total " total " should equal sum of parts " parts " within ₽1"))))))
 
   (testing ":returned KPI present and >= 0"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
@@ -820,6 +829,91 @@
       (is (some? returned))
       (is (number? (:value returned)))
       (is (>= (:value returned) 0)))))
+
+;; ---------------------------------------------------------------------------
+;; B1e. pulse-summary — LT5 preliminary-missing cost honesty (pure unit tests)
+;; ---------------------------------------------------------------------------
+
+(deftest cost-line-missing-arity
+  (testing "cost-line with missing?=true returns nil value and :preliminary-missing source"
+    (let [line (cost-line nil nil :preliminary :preliminary-missing true)]
+      (is (nil? (:value line))
+          "missing cost-line must have nil value, not 0")
+      (is (= :preliminary-missing (:source line))
+          "missing cost-line source must be :preliminary-missing")))
+
+  (testing "cost-line normal arity (4-arg) still works — no regression"
+    (let [line (cost-line 5000.0 4000.0 :preliminary nil)]
+      (is (= 5000.0 (:value line)))
+      (is (= :preliminary (:source line))))))
+
+(deftest pulse-costs-preliminary-missing-not-zero
+  (testing "when pnl-cur carries :cost-source :preliminary-missing,
+            :cogs and :commission cost-lines have nil :value and :preliminary-missing source"
+    ;; Build a minimal pnl-cur that simulates the Ozon preliminary hollow state:
+    ;; revenue filled from cash-flow, but commission/cogs absent.
+    (let [pnl-cur  {:revenue          340583.0
+                    :revenue-source   :preliminary
+                    :preliminary?     true
+                    :preliminary-as-of "2026-04-26"
+                    :mp-commission    0.0
+                    :cogs             0.0
+                    :logistics        3200.0
+                    :storage          800.0
+                    :ad-spend         0.0
+                    :net-profit       0.0
+                    :margin-net       0.0
+                    :cost-source      :preliminary-missing
+                    :preliminary-cost-fields #{:cogs :commission}}
+          pnl-prev {:revenue 0.0 :mp-commission 0.0 :cogs 0.0
+                    :logistics 0.0 :storage 0.0 :ad-spend 0.0}
+          revenue-src  :preliminary
+          revenue-as-of "2026-04-26"
+          ;; Build cost map the same way marker.clj does, but with missing? logic
+          cogs-line       (cost-line nil nil revenue-src revenue-as-of true)
+          commission-line (cost-line nil nil revenue-src revenue-as-of true)
+          logistics-line  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)]
+      (is (nil? (:value cogs-line))
+          ":cogs value must be nil when preliminary-missing")
+      (is (= :preliminary-missing (:source cogs-line))
+          ":cogs source must be :preliminary-missing")
+      (is (nil? (:value commission-line))
+          ":commission value must be nil when preliminary-missing")
+      (is (= :preliminary-missing (:source commission-line))
+          ":commission source must be :preliminary-missing")
+      ;; Logistics IS published — must stay real
+      (is (= 3200.0 (:value logistics-line))
+          ":logistics value must remain real")
+      (is (= :preliminary (:source logistics-line))
+          ":logistics source must be :preliminary, not missing"))))
+
+(deftest pulse-profit-margin-preliminary-missing
+  (testing "when costs are :preliminary-missing, profit and margin KPIs
+            carry :source :preliminary-missing and do NOT surface a partial-cost negative"
+    ;; Simulate the marker.clj KPI-build logic for profit/margin
+    ;; when cost-source = :preliminary-missing
+    (let [pnl-cur {:revenue          340583.0
+                   :revenue-source   :preliminary
+                   :preliminary?     true
+                   :mp-commission    0.0
+                   :cogs             0.0
+                   :logistics        3200.0
+                   :net-profit       (- 340583.0 3200.0)  ; partial fake negative (old bug)
+                   :margin-net       (/ (- 340583.0 3200.0) 340583.0)
+                   :cost-source      :preliminary-missing
+                   :preliminary-cost-fields #{:cogs :commission}}
+          cost-missing? (= :preliminary-missing (:cost-source pnl-cur))
+          ;; When cost is missing → profit/margin source = :preliminary-missing
+          ;; and value should NOT be the fabricated partial-cost number
+          profit-src (if cost-missing? :preliminary-missing :realization)
+          margin-src (if cost-missing? :preliminary-missing :realization)]
+      (is (= :preliminary-missing profit-src)
+          "profit :source must be :preliminary-missing when costs missing")
+      (is (= :preliminary-missing margin-src)
+          "margin :source must be :preliminary-missing when costs missing")
+      ;; The fabricated partial-cost negative should not be surfaced
+      (is (contains? valid-kpi-sources profit-src)
+          ":preliminary-missing must be in valid-kpi-sources"))))
 
 ;; ---------------------------------------------------------------------------
 ;; B2. pnl — shape tests

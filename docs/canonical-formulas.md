@@ -3845,3 +3845,77 @@ flag = (profit > 0) AND (days_to_break_even < 30) AND (future_storage_cost > pro
 ---
 
 - Формулы в коде: [src/analitica/domain/finance.clj](../src/analitica/domain/finance.clj), [src/analitica/domain/pnl.clj](../src/analitica/domain/pnl.clj), [src/analitica/domain/unit_economics.clj](../src/analitica/domain/unit_economics.clj), [src/analitica/domain/losses.clj](../src/analitica/domain/losses.clj).
+
+---
+
+## KPI Source / Completeness Vocabulary
+
+Every KPI tile and cost-line in the Pulse/P&L responses carries a `:source`
+keyword describing where the value came from.  The closed valid set is
+enforced by `valid-kpi-sources` in `marker_test.clj`.
+
+### Source.1 — Closed `:source` vocabulary
+
+| `:source` value         | Meaning |
+|-------------------------|---------|
+| `:realization`          | Value comes from the canonical `finance` table (Ozon `/v2/finance/realization`, WB settlement, YM report). Settled and authoritative. |
+| `:preliminary`          | Value comes from a cash-flow substitute (Ozon `/v1/finance/cash-flow-statement`). Revenue is real but unconfirmed; realization not yet published. |
+| `:preliminary-missing`  | The metric cannot be computed at all in this preliminary window: the underlying cost data (commission, COGS) is absent — not zero — because the realization report has not been published yet. UI must render «нет данных», never a fabricated zero or partial-cost negative. See §Source.4. |
+| `:canon`                | Value sourced from the canonical `item_events` log (Phase 5e+). |
+| `:legacy-orders`        | Fallback from the `orders` table when canon is empty. |
+| `:legacy-sales`         | Fallback from the `sales` table when PnL is still 0. |
+| `:orders`               | Derived from placed-order counts (buyout/cancel KPIs; P0-B). |
+| `:none`                 | No data source had a value. UI renders «—». |
+
+### Source.2 — Completeness vocabulary (`:completeness` key on envelopes)
+
+| Value        | Meaning |
+|--------------|---------|
+| `:full`      | Finance rows cover the period with day-level accuracy (all `:api` event_date_source). |
+| `:estimated` | At least one preliminary source OR flat-distributed rows (≥20% `:flat` fraction). Day-level meaning is uncertain; period totals are accurate. |
+| `:empty`     | No monetary data for the period. |
+
+### Source.3 — Nil-safety contract (LT5)
+
+`:preliminary-missing` values are `nil` **only in the presentation/envelope layer**
+(`marker.clj` cost-line, KPI map).  The domain layer (`pnl/calculate`,
+`sum-total-costs`, what-if, exports) always sees numeric `0` from `pnl-cur`.
+This prevents NPE in arithmetic downstream.
+
+The stamping happens in `preliminary/maybe-overlay-preliminary` which adds:
+- `:cost-source :preliminary-missing`
+- `:preliminary-cost-fields #{:cogs :commission}`
+
+`marker.clj` reads these flags and routes `:cogs`/`:commission` cost-lines
+through the 5-arg `cost-line` arity, emitting `{:value nil :source :preliminary-missing}`.
+`:logistics`/`:ads`/`:other` are published in the realization window and remain real.
+`:costs :total` also becomes `{:value nil :source :preliminary-missing :known-components [:logistics :ads :other]}`.
+
+### Source.4 — Why `:preliminary-missing`, not `0`
+
+Ozon publishes `/v2/finance/realization` monthly with a multi-week delay.
+During this window the `finance` table has commission=0 and cogs=0, but
+logistics/storage are populated.  Before LT5, `profit = revenue − logistics`
+produced a fabricated negative (e.g. −28 936 ₽) displayed under an «≈» badge.
+That is more misleading than «нет данных» because:
+
+1. It implies the seller is losing money, which may be false.
+2. The partial-cost sum has no economic meaning until commission/COGS arrive.
+3. Zero commission is indistinguishable from a genuine 0%-commission event.
+
+**Rule:** when the preliminary overlay fires AND canonical commission/COGS are
+absent, the presentation layer emits `nil` + `:preliminary-missing`, never a
+fabricated value.  Revenue (from cash-flow) remains shown.
+
+### Source.5 — Verification
+
+- `preliminary-marks-commission-cogs-missing` (`preliminary_test.clj`) — pure unit;
+  asserts stamp on hollow Ozon pnl-result, no stamp when costs are present.
+- `cost-line-missing-arity` (`marker_test.clj`) — pure unit; asserts 5-arg
+  `cost-line` returns `{:value nil :source :preliminary-missing}`.
+- `pulse-costs-preliminary-missing-not-zero` (`marker_test.clj`) — pure unit;
+  asserts `:cogs`/`:commission` nil, `:logistics` real.
+- `pulse-profit-margin-preliminary-missing` (`marker_test.clj`) — pure unit;
+  asserts profit/margin `:source :preliminary-missing` when costs missing.
+- `valid-kpi-sources` set in `marker_test.clj` includes `:preliminary-missing`.
+- Regression: `clojure -M:test` зелёный (1181 tests, 0 failures) 2026-06-25.
