@@ -58,6 +58,6 @@
   (testing "Union of both maps appears in :per-article"
     (let [recon (recon/reconcile
                   {:pnl-by-article    {"A" 10.0 "B" 20.0}
-                   :payout-by-article {"B" 18.0 "C" 5.0}})]
-      (let [arts (set (map :article (:per-article recon)))]
-        (is (= #{"A" "B" "C"} arts))))))
+                   :payout-by-article {"B" 18.0 "C" 5.0}})
+          arts  (set (map :article (:per-article recon)))]
+      (is (= #{"A" "B" "C"} arts)))))

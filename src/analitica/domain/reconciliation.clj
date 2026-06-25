@@ -104,26 +104,22 @@
    the closest article-level payout proxy available without a separate
    per-article profit calculation.
 
-   If finance data cannot be fetched, returns an empty reconciliation
-   rather than throwing."
+   Throws on DB or finance errors; callers should handle exceptions."
   [from to marketplace]
-  (try
-    (let [period   {:from from :to to}
-          fin-data (finance/fetch-finance period :marketplace marketplace)
-          by-art   (finance/by-article fin-data)
-          ;; Both sides come from the same by-article rows:
-          ;; - pnl side  = for-pay (revenue net of MP commissions, before seller costs)
-          ;; - payout    = same for-pay (see ns docstring for why this is intentional)
-          to-map   (fn [kw]
-                     (reduce (fn [m row]
-                               (let [art (str (:article row))
-                                     v   (double (or (get row kw) 0.0))]
-                                 (if (and (seq art) (not (zero? v)))
-                                   (assoc m art v)
-                                   m)))
-                             {}
-                             by-art))]
-      (reconcile {:pnl-by-article    (to-map :for-pay)
-                  :payout-by-article (to-map :for-pay)}))
-    (catch Exception _
-      (reconcile {:pnl-by-article {} :payout-by-article {}}))))
+  (let [period   {:from from :to to}
+        fin-data (finance/fetch-finance period :marketplace marketplace)
+        by-art   (finance/by-article fin-data)
+        ;; Both sides come from the same by-article rows:
+        ;; - pnl side  = for-pay (revenue net of MP commissions, before seller costs)
+        ;; - payout    = same for-pay (see ns docstring for why this is intentional)
+        to-map   (fn [kw]
+                   (reduce (fn [m row]
+                             (let [art (str (:article row))
+                                   v   (double (or (get row kw) 0.0))]
+                               (if (and (seq art) (not (zero? v)))
+                                 (assoc m art v)
+                                 m)))
+                           {}
+                           by-art))]
+    (reconcile {:pnl-by-article    (to-map :for-pay)
+                :payout-by-article (to-map :for-pay)})))

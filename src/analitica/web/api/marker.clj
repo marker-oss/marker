@@ -28,7 +28,8 @@
             [analitica.web.api.charts     :as charts]
             [analitica.web.api.report     :as report]
             [analitica.web.report-schemas :as rs]
-            [clojure.string               :as str]))
+            [clojure.string               :as str]
+            [com.brunobonacci.mulog       :as mu]))
 
 ;; ---------------------------------------------------------------------------
 ;; Parameter parsing helpers
@@ -1594,5 +1595,8 @@
       {:status 200
        :body   (reconciliation/pnl-vs-payout (:from period) (:to period) mp1)})
     (catch Exception e
+      (mu/log ::reconciliation-error
+              :error-message (.getMessage e)
+              :error-type    (type e))
       {:status 500
        :body   {:error (.getMessage e)}})))
