@@ -738,7 +738,11 @@
                                                :spark-source :sales))
                          :profit    (-> (build-kpi (when-not cost-missing? (:net-profit pnl-cur))
                                                    (:net-profit pnl-prev) [])
-                                        (assoc :source (cond
+                                        ;; LT5 / I1: build-kpi resolves a nil :value to 0.0; under
+                                        ;; :preliminary-missing force it back to nil so profit reads
+                                        ;; «нет данных», never a fabricated 0 ₽ (matches :margin below).
+                                        (assoc :value (when-not cost-missing? (or (:net-profit pnl-cur) 0.0))
+                                               :source (cond
                                                           cost-missing?                              :preliminary-missing
                                                           (pos? (or (:net-profit pnl-cur) 0.0))     revenue-src
                                                           :else                                      :none)

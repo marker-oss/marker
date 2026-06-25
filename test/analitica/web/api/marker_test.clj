@@ -906,11 +906,20 @@
           ;; When cost is missing → profit/margin source = :preliminary-missing
           ;; and value should NOT be the fabricated partial-cost number
           profit-src (if cost-missing? :preliminary-missing :realization)
-          margin-src (if cost-missing? :preliminary-missing :realization)]
+          margin-src (if cost-missing? :preliminary-missing :realization)
+          ;; I1 (LT5): mirror marker.clj's :value expressions exactly.
+          ;; :profit was passing nil through build-kpi (→ 0.0); both profit and
+          ;; margin :value MUST be nil under cost-missing, never a fabricated number.
+          profit-val (when-not cost-missing? (or (:net-profit pnl-cur) 0.0))
+          margin-val (when-not cost-missing? (or (:margin-net pnl-cur) 0.0))]
       (is (= :preliminary-missing profit-src)
           "profit :source must be :preliminary-missing when costs missing")
       (is (= :preliminary-missing margin-src)
           "margin :source must be :preliminary-missing when costs missing")
+      (is (nil? profit-val)
+          "I1: profit :value must be nil (not 0.0/partial negative) under :preliminary-missing")
+      (is (nil? margin-val)
+          "margin :value must be nil under :preliminary-missing")
       ;; The fabricated partial-cost negative should not be surfaced
       (is (contains? valid-kpi-sources profit-src)
           ":preliminary-missing must be in valid-kpi-sources"))))
