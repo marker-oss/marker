@@ -14,6 +14,7 @@
             [marker.state.subs   :as subs]
             [marker.state.events :as events]
             [marker.ui.icons     :refer [icon]]
+            [marker.ui.basis     :refer [coverage-banner]]
             [marker.util.format  :as fmt]))
 
 (def ^:private report-titles
@@ -367,16 +368,27 @@
             rows          (or (:rows    data) [])
             totals        (or (:totals  data) {})
             compare-rows  (get-in data [:compare :rows])
-            rows-mode     (get-in data [:schema :rows-mode])]
+            rows-mode     (get-in data [:schema :rows-mode])
+            completeness  (:completeness data)
+            empty?        (= :empty completeness)]
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner {:message error-msg :on-retry retry!}))
+
+           ;; LT3: honesty banner from the backend envelope.
+           ($ coverage-banner {:completeness completeness
+                               :date-basis   (:date-basis data)
+                               :preliminary? (:preliminary? data)})
 
            ;; Totals/KPI row
            ($ totals-block {:columns columns :totals totals})
 
            ;; Main table — only render when rows-mode != :none
            (cond
+             ;; LT3: no monetary data at all → empty-state, never a zero-row grid.
+             empty?
+             ($ empty-state {:title title})
+
              (= rows-mode :none)
              ($ :section {:class "card section-card"}
                 ($ :div {:class "section-head"}

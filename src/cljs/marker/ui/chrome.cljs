@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [marker.ui.icons :refer [icon]]
+            [marker.ui.basis :as basis]
             [marker.mock     :as mock]
             [marker.api      :as api]
             [marker.state.db :as db]
@@ -84,12 +85,34 @@
 
 ;; ============= Topbar =============
 
+(defui coverage-chip
+  "Topbar honesty chip — declares the data-coverage of the active page.
+   Props: :coverage {:completeness #{:empty :full :estimated} :date-basis map
+                     :preliminary? bool}.
+   Hidden (renders nothing) when coverage is nil — i.e. the page has no
+   finance envelope. Reuses tokens.css .chip + .badge-neutral/.badge-warning
+   only; the basis-tooltip is the title. LT3 / specs/010 P0-A."
+  [{:keys [coverage]}]
+  (when coverage
+    (let [completeness (:completeness coverage)
+          preliminary? (:preliminary? coverage)
+          label        (basis/coverage-label completeness preliminary?)
+          badge-cls    (basis/coverage-badge-class completeness preliminary?)
+          ;; The chip carries the same date-basis composition tooltip the KPI
+          ;; tiles use — reuse the single source of truth.
+          tip          (basis/basis-tooltip coverage)]
+      ($ :span {:class (str "chip " badge-cls)
+                :title (or tip "Покрытие данными за выбранный период")
+                :style {:cursor "help"}}
+         label))))
+
 (defui topbar
   "Top application bar.
    Props: :crumbs (vec of strings), :on-search (fn), :on-theme (fn),
           :theme (\"light\"|\"dark\"), :on-sidebar-toggle (fn), :on-sync (fn),
-          :on-tweaks (fn) — opens the tweaks panel."
-  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync on-tweaks]}]
+          :on-tweaks (fn) — opens the tweaks panel,
+          :coverage (map | nil) — active-page honesty envelope for the chip."
+  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync on-tweaks coverage]}]
   ($ :div {:class "topbar"}
      ($ :button {:class    "icon-btn"
                  :title    "Свернуть"
@@ -106,6 +129,7 @@
                 ($ :a {:href "#"} c))))
          crumbs))
      ($ :div {:class "spacer"})
+     ($ coverage-chip {:coverage coverage})
      ($ :button {:class    "search-trigger"
                  :on-click on-search}
         ($ icon {:name :search :size 14})

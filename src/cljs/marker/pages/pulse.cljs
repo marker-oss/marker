@@ -14,6 +14,12 @@
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
+            ;; LT3: honesty markers live in marker.ui.basis (single source of
+            ;; truth). prelim-badge/basis-tooltip/flat-heavy?/format-date-short
+            ;; were private here — now shared.
+            [marker.ui.basis       :refer [coverage-banner prelim-badge
+                                           basis-tooltip flat-heavy?
+                                           format-date-short]]
             [marker.util.format    :as fmt]
             [clojure.string        :as str]))
 
@@ -51,23 +57,8 @@
   [v fmt-fn]
   (if (nil? v) "—" (fmt-fn v)))
 
-(defn- flat-heavy?
-  "True when more than 20% of this KPI's value is flat-distributed
-   (no day-level meaning). Mirrors backend's :flat-heavy-subperiod note."
-  [kpi]
-  (> (or (:flat (:date-basis kpi)) 0) 0.2))
-
-(defn- prelim-badge
-  "Badge string for a KPI tile whose value is an ESTIMATE — either a
-   preliminary source (Ozon cash-flow overlay), a date-basis flagged
-   :estimated, or a materially flat-distributed (>20%) finance slice
-   (P0-A Part A / FR-P1.2).  All mean a sub-period of this number has
-   weak day-level meaning."
-  [kpi]
-  (when (or (= :preliminary (:source kpi))
-            (= :estimated   (:completeness kpi))
-            (flat-heavy? kpi))
-    "≈"))
+;; flat-heavy? / prelim-badge / basis-tooltip / format-date-short moved to
+;; marker.ui.basis (LT3 — shared honesty markers). Referred above.
 
 (defn- ad-cost-missing?
   "True when this KPI's profit/margin was computed with NO ad-cost data
@@ -82,42 +73,6 @@
   [kpi]
   (when (ad-cost-missing? kpi)
     "данные о рекламе отсутствуют"))
-
-(defn- pct-str [x] (str (js/Math.round (* 100 (or x 0))) "%"))
-
-(defn- basis-tooltip
-  "Human tooltip describing a KPI's date-basis composition.
-   - When no realization rows exist (:source :none / empty basis) → an
-     'реализация отсутствует' / preliminary note (FR-P1.4).
-   - Otherwise the verbose Russian breakdown PLUS a compact
-     'api X% · spread Y% · flat Z%' line (FR-P1.2).
-   - Appends the flat-heavy sub-month note when :basis-note is set."
-  [kpi]
-  (when-let [b (:date-basis kpi)]
-    (let [sum  (+ (or (:api b) 0) (or (:spread b) 0) (or (:flat b) 0))
-          note (when (= :flat-heavy-subperiod (:basis-note kpi))
-                 "частичный месяц — реализация не разрешена по дням")
-          body (cond
-                 ;; No realization rows at all.
-                 (zero? sum)
-                 (if (= :none (:source kpi))
-                   "Реализация отсутствует: realization-отчёт ещё не опубликован"
-                   "Предварительная оценка: realization-отчёт ещё не опубликован")
-
-                 :else
-                 (str "Основа значения: "
-                      (pct-str (:flat b))   " равномерно распределено (без дневного смысла), "
-                      (pct-str (:spread b)) " по продажам, "
-                      (pct-str (:api b))    " фактические даты"
-                      "\n(api " (pct-str (:api b))
-                      " · spread " (pct-str (:spread b))
-                      " · flat " (pct-str (:flat b)) ")"))]
-      (str body (when note (str "\n" note))))))
-
-(defn- format-date-short
-  "Truncate ISO date/datetime to YYYY-MM-DD for compact display."
-  [iso]
-  (when iso (subs (str iso) 0 10)))
 
 ;; ---------------------------------------------------------------------------
 ;; Alert card

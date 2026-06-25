@@ -292,7 +292,11 @@
           ckey (cache-key :sku-list fs)
           hit  (get-in db [:marker/cache ckey])]
       (if hit
-        {:db (assoc db :marker/sku-list-data hit :marker/sku-list-loading? false)}
+        ;; hit is the full response map (LT3 cache change). Re-derive the
+        ;; vector + envelope so a cache hit matches a fresh load.
+        {:db (assoc db :marker/sku-list-data     (:skus hit)
+                       :marker/sku-list-envelope (select-keys hit [:completeness :date-basis :preliminary?])
+                       :marker/sku-list-loading? false)}
         {:db         (assoc db :marker/sku-list-loading? true)
          :http-xhrio (api/get-xhrio
                        (api/build-url sku-list-url (api/build-params fs))
@@ -301,12 +305,18 @@
 
 (rf/reg-event-fx ::sku-list-data-loaded
   (fn [{:keys [db]} [_ ckey data]]
-    {:db (-> db
-             (assoc :marker/sku-list-data    (:skus data)
-                    :marker/sku-list-loading? false)
-             (assoc-in [:marker/cache ckey] (:skus data))
-             (update :marker/api-errors dissoc sku-list-url))
-     :fx [[:dispatch [::refresh-finished :success]]]}))
+    ;; sku-list-data holds just the :skus vector (every consumer expects a
+    ;; vector). LT3: stash the honesty envelope separately so the coverage
+    ;; banner/chip can read it without changing the vector contract. Cache the
+    ;; whole response so a cache hit can re-derive both.
+    (let [env (select-keys data [:completeness :date-basis :preliminary?])]
+      {:db (-> db
+               (assoc :marker/sku-list-data     (:skus data)
+                      :marker/sku-list-envelope env
+                      :marker/sku-list-loading? false)
+               (assoc-in [:marker/cache ckey] data)
+               (update :marker/api-errors dissoc sku-list-url))
+       :fx [[:dispatch [::refresh-finished :success]]]})))
 
 (rf/reg-event-fx ::sku-list-load-failed
   (fn [{:keys [db]} [_ failure]]

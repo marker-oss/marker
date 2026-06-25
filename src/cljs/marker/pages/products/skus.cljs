@@ -10,6 +10,7 @@
             [marker.state.events :as events]
             [marker.ui.chrome    :refer [delta mp-badge sparkline]]
             [marker.ui.icons     :refer [icon]]
+            [marker.ui.basis     :refer [coverage-banner]]
             [marker.util.format  :as fmt]))
 
 (defn- safe-num [v] (if (and (some? v) (not (js/isNaN v))) v 0))
@@ -172,6 +173,7 @@
         period      (use-subscribe [::subs/period])
         compare?    (use-subscribe [::subs/compare])
         skus-raw    (use-subscribe [::subs/sku-list-data])
+        envelope    (use-subscribe [::subs/sku-list-envelope])
         loading?    (use-subscribe [::subs/sku-list-loading?])
         api-errors  (use-subscribe [::subs/api-errors])
         error-msg   (get-in api-errors ["/api/v1/marker/sku-list" :message])
@@ -202,13 +204,25 @@
             visible (filterv (fn [s]
                                (or (empty? mps)
                                    (some (set mps) (:mp s))))
-                             skus)]
+                             skus)
+            empty?  (= :empty (:completeness envelope))]
 
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner {:message  error-msg
                               :on-retry #(do (rf/dispatch [::events/clear-cache])
                                               (rf/dispatch [::events/load-sku-list fs]))}))
+           ;; LT3: honesty banner from the backend envelope.
+           ($ coverage-banner {:completeness (:completeness envelope)
+                               :date-basis   (:date-basis envelope)
+                               :preliminary? (:preliminary? envelope)})
+           (if empty?
+             ;; No-data window: show empty-state instead of an empty grid that
+             ;; reads like a real (but empty) catalogue.
+             ($ :section {:class "card section-card"}
+                ($ :div {:style {:text-align "center" :padding "48px 24px"
+                                 :color "var(--color-fg-muted)" :font-size "14px"}}
+                   "За выбранный период нет данных по товарам."))
            ($ :section {:class "card section-card"}
               ($ :div {:class "section-head"}
                  ($ :div
@@ -241,4 +255,4 @@
                                  :gap                   "14px"}}
                    (for [s visible]
                      ($ sku-card {:key (:id s) :sku s})))
-                ($ sku-list {:visible visible}))))))))
+                ($ sku-list {:visible visible})))))))))

@@ -10,6 +10,7 @@
             [marker.state.events :as events]
             [marker.ui.chrome    :refer [delta mp-badge]]
             [marker.ui.icons     :refer [icon]]
+            [marker.ui.basis     :refer [coverage-banner]]
             [marker.util.format  :as fmt]))
 
 ;; ---------------------------------------------------------------------------
@@ -339,13 +340,27 @@
                             (rf/dispatch [::events/load-pnl fs]))}))
 
       :else
-      (let [rows     (or (:rows data) [])
-            sku-rows (or (:sku-detail data) [])]
+      (let [rows         (or (:rows data) [])
+            sku-rows     (or (:sku-detail data) [])
+            completeness (:completeness data)
+            empty?       (= :empty completeness)]
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner
                 {:message  error-msg
                  :on-retry #(do (rf/dispatch [::events/clear-cache])
                                 (rf/dispatch [::events/load-pnl fs]))}))
-           ($ rows-table {:compare? compare? :rows rows})
-           ($ sku-table   {:compare? compare? :sku-rows sku-rows}))))))
+           ;; LT3: honesty banner from the backend envelope.
+           ($ coverage-banner {:completeness completeness
+                               :date-basis   (:date-basis data)
+                               :preliminary? (:preliminary? data)})
+           ;; On a no-data window, show the empty-state INSTEAD of an
+           ;; all-zero P&L table that would look like real (zero) numbers.
+           (if empty?
+             ($ :section {:class "card section-card"}
+                ($ :div {:style {:text-align "center" :padding "48px 24px"
+                                 :color "var(--color-fg-muted)" :font-size "14px"}}
+                   "За выбранный период нет финансовых данных для P&L."))
+             ($ :<> {}
+                ($ rows-table {:compare? compare? :rows rows})
+                ($ sku-table   {:compare? compare? :sku-rows sku-rows}))))))))

@@ -133,7 +133,8 @@
         density     (use-subscribe [::subs/density])
         sync-st     (use-subscribe [::subs/sync-state])
         cmdk-open?  (use-subscribe [::subs/cmdk-open])
-        sheet-sku   (use-subscribe [::subs/sheet-sku])]
+        sheet-sku   (use-subscribe [::subs/sheet-sku])
+        coverage    (use-subscribe [::subs/active-coverage])]
 
     ;; --- Apply tweaks to documentElement ---
     (use-effect
@@ -181,7 +182,8 @@
                         :theme             theme
                         :on-sidebar-toggle #(rf/dispatch [::events/toggle-sidebar])
                         :on-sync           #(rf/dispatch [::events/sync-and-refresh])
-                        :on-tweaks         #(rf/dispatch [::events/toggle-tweaks])})
+                        :on-tweaks         #(rf/dispatch [::events/toggle-tweaks])
+                        :coverage          coverage})
 
              ;; Sync banner
              (when sync-st

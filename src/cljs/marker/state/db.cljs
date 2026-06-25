@@ -24,6 +24,7 @@
    :marker/pnl-data          nil
    :marker/pnl-loading?      false
    :marker/sku-list-data     nil
+   :marker/sku-list-envelope nil   ; LT3: honesty envelope, separate from the :skus vector
    :marker/sku-list-loading? false
    :marker/sku-detail-data   {}    ; map of {sku-id {:data <map> :loading? <bool>}}
 

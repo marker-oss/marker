@@ -70,6 +70,11 @@
 (rf/reg-sub ::sku-list-data
   (fn [db _] (:marker/sku-list-data db)))
 
+;; LT3: honesty envelope for sku-list (stashed separately because
+;; ::sku-list-data is contractually just the :skus vector).
+(rf/reg-sub ::sku-list-envelope
+  (fn [db _] (:marker/sku-list-envelope db)))
+
 (rf/reg-sub ::sku-list-loading?
   (fn [db _] (:marker/sku-list-loading? db)))
 
@@ -87,6 +92,31 @@
 
 (rf/reg-sub ::api-errors
   (fn [db _] (:marker/api-errors db)))
+
+;; ---------------------------------------------------------------------------
+;; LT3: active-coverage — honesty envelope for the CURRENTLY active page.
+;; Drives the topbar coverage chip. Picks {:completeness :date-basis
+;; :preliminary?} from whichever page-data slice matches the active page:
+;;   :pulse            → pulse-data (top-level envelope)
+;;   [:finance :pnl]   → pnl-data
+;;   [:products :skus] → sku-list-envelope
+;; Pages without a finance envelope (sync/settings/other tabs) → nil → the
+;; chip hides itself.
+;; ---------------------------------------------------------------------------
+(rf/reg-sub ::active-coverage
+  :<- [::page]
+  :<- [::pulse-data]
+  :<- [::pnl-data]
+  :<- [::sku-list-envelope]
+  (fn [[page pulse-data pnl-data sku-env] _]
+    (let [pick (fn [m]
+                 (when (and m (contains? m :completeness))
+                   (select-keys m [:completeness :date-basis :preliminary?])))]
+      (cond
+        (= page :pulse)              (pick pulse-data)
+        (= page [:finance :pnl])     (pick pnl-data)
+        (= page [:products :skus])   (pick sku-env)
+        :else                         nil))))
 
 ;; P4 (FR-P4.6): reconciliation — P&L vs payout per-article
 (rf/reg-sub ::reconciliation-data
