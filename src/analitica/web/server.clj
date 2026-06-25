@@ -1316,6 +1316,7 @@
   (GET  "/api/v1/marker/sku-list"          req {:status 200 :body (marker-api/sku-list-handler req)})
   (GET  "/api/v1/marker/sku-detail/:sku-id" req {:status 200 :body (marker-api/sku-detail-handler req)})
   (GET  "/api/v1/marker/unit-baseline"      req {:status 200 :body (marker-api/unit-baseline-handler req)})
+  (GET  "/api/v1/marker/reconciliation"    req (marker-api/reconciliation-handler req))
   (POST "/api/v1/marker/what-if-recalc"    req (marker-api/what-if-handler req))
 
   ;; Phase 9 — generic schema-driven reports endpoint.

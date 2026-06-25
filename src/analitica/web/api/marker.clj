@@ -13,9 +13,10 @@
    Every handler returns a plain Clojure map; the wrap-transit-response
    middleware (registered in server.clj) encodes it as transit-json when the
    client sends Accept: application/transit+json."
-  (:require [analitica.domain.finance     :as finance]
-            [analitica.domain.pnl         :as pnl]
-            [analitica.domain.preliminary :as prelim]
+  (:require [analitica.domain.finance         :as finance]
+            [analitica.domain.pnl             :as pnl]
+            [analitica.domain.preliminary     :as prelim]
+            [analitica.domain.reconciliation  :as reconciliation]
             [analitica.domain.sales       :as sales]
             [analitica.domain.stock       :as stock]
             [analitica.domain.buyout      :as buyout]
@@ -1563,6 +1564,35 @@
          :body   (charts/report-chart-data report-type period
                                            :marketplace mp1
                                            :compare     compare-kw)}))
+    (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))
+
+;; ---------------------------------------------------------------------------
+;; B6. reconciliation (FR-P4.6)
+;; ---------------------------------------------------------------------------
+
+(defn reconciliation-handler
+  "Handler for GET /api/v1/marker/reconciliation
+
+   Query params:
+     from        YYYY-MM-DD (required; falls back to last-30-days default)
+     to          YYYY-MM-DD (required; falls back to last-30-days default)
+     mp          single marketplace keyword: wb | ozon | ym (optional; nil = all MPs)
+
+   Returns:
+     {:pnl-total    double
+      :payout-total double
+      :delta        double   ; payout − pnl
+      :per-article  [{:article :pnl :payout :delta} ...]}"
+  [request]
+  (try
+    (let [params  (:params request)
+          period  (parse-period-params params)
+          mp1     (let [mps (parse-mp-param params)]
+                    (when (and mps (= 1 (count mps))) (first mps)))]
+      {:status 200
+       :body   (reconciliation/pnl-vs-payout (:from period) (:to period) mp1)})
     (catch Exception e
       {:status 500
        :body   {:error (.getMessage e)}})))
