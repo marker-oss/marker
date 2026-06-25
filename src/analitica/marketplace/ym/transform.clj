@@ -387,6 +387,7 @@
     (mapv (fn [item]
             (let [shop-sku    (get item :shopSku)
                   buyer-price (price-by-type (get item :prices []) "BUYER")
+                  mp-price    (price-by-type (get item :prices []) "MARKETPLACE")
                   qty         (or (get item :count) 1)
                   op-string   (classify-item-operation order item)
                   op-kind     (ym-operation-kind op-string)
@@ -442,7 +443,17 @@
                :additional-payment nil
                :deduction          nil
                :acquiring-fee      acquiring
-               :ad-cost            ad-commission}))
+               :ad-cost            ad-commission
+               ;; FR-P4.5: flag rows where revenue basis (MARKETPLACE price)
+               ;; and payout basis (BUYER price) differ beyond rounding.
+               ;; When only one price entry is present comparison is impossible
+               ;; — treat as no mismatch (false). Do NOT change any monetary
+               ;; value; this flag is advisory only.
+               :price-basis-mismatch?
+               (boolean
+                (when (and buyer-price mp-price)
+                  (> (Math/abs (- (double buyer-price) (double mp-price)))
+                     0.01)))}))
           items)))
 
 (defn ->finance-from-order-stats

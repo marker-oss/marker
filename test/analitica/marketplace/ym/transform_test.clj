@@ -304,3 +304,55 @@
       (is (nil? (:total-price (first out))))
       (is (nil? (:for-pay (first out)))
           "No MARKETPLACE price → nil for-pay; never silently 0"))))
+
+;; ---------------------------------------------------------------------------
+;; FR-P4.5: price-basis-mismatch? flag
+;;
+;; YM revenue uses the MARKETPLACE price (shown to customer) while for-pay
+;; uses the BUYER price minus commissions. When they differ beyond rounding,
+;; the margin denominator (MARKETPLACE) and numerator (BUYER-based) are on
+;; different bases, overstating seller economics. We flag — never reconcile.
+;; ---------------------------------------------------------------------------
+
+(deftest price-basis-mismatch-flagged-when-buyer-differs-from-marketplace
+  (testing "BUYER total 800 ≠ MARKETPLACE total 1000 → :price-basis-mismatch? true"
+    (let [order {:id 10 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU1" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 800.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (true? (:price-basis-mismatch? row))
+          "MARKETPLACE 1000 ≠ BUYER 800 → flagged"))))
+
+(deftest price-basis-mismatch-false-when-prices-equal
+  (testing "BUYER total 1000 = MARKETPLACE total 1000 → :price-basis-mismatch? false"
+    (let [order {:id 11 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU2" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 1000.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "equal prices → no mismatch"))))
+
+(deftest price-basis-mismatch-false-when-marketplace-absent
+  (testing "Only BUYER price present (no MARKETPLACE entry) → :price-basis-mismatch? false"
+    (let [order {:id 12 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU3" :count 1
+                          :prices [{:type "BUYER" :total 900.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "missing MARKETPLACE → cannot compare → no flag"))))
+
+(deftest price-basis-mismatch-false-within-epsilon
+  (testing "BUYER 1000.005 vs MARKETPLACE 1000.0 — within 0.01 epsilon → false"
+    (let [order {:id 13 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU4" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 1000.005}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "difference 0.005 < epsilon 0.01 → no flag"))))
