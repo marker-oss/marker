@@ -17,8 +17,9 @@
               {:id :unit-table :label "Юнит-эк (таблица)"}
               {:id :returns    :label "Возвраты"}
               {:id :losses     :label "Потери"}
-              {:id :finance    :label "Финансовый отчёт"}
-              {:id :plan-fact  :label "План/Факт"}]
+              {:id :finance        :label "Финансовый отчёт"}
+              {:id :reconciliation :label "Сверка"}
+              {:id :plan-fact      :label "План/Факт"}]
    :products [{:id :skus        :label "SKU-список"}
               {:id :stocks      :label "Склады"}
               {:id :abc         :label "ABC"}

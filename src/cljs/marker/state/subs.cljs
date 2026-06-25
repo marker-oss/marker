@@ -88,6 +88,13 @@
 (rf/reg-sub ::api-errors
   (fn [db _] (:marker/api-errors db)))
 
+;; P4 (FR-P4.6): reconciliation — P&L vs payout per-article
+(rf/reg-sub ::reconciliation-data
+  (fn [db _] (:marker/reconciliation-data db)))
+
+(rf/reg-sub ::reconciliation-loading?
+  (fn [db _] (:marker/reconciliation-loading? db)))
+
 ;; ---------------------------------------------------------------------------
 ;; Phase 9: Generic reports — keyed by report-type keyword
 ;; ---------------------------------------------------------------------------

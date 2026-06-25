@@ -109,6 +109,9 @@
               ord-kpi   (:orders kpis-raw)
               mar-kpi   (:margin kpis-raw)
               ads-kpi   (:ads kpis-raw)
+              ;; FR-P4.2: макс-ДРР (рекламный потолок) + over-ceiling flag.
+              maxdrr-kpi (:max-drr-pct kpis-raw)
+              over-ceiling? (:over-ceiling? sku)
 
               spark     (or (:revenue-30d sku) [])
               plan-fact (or (:plan-fact sku) {})
@@ -131,6 +134,11 @@
                           :d nil}
                          {:l "Реклама"
                           :v (fmt/format-rub (safe-num (:value ads-kpi)))
+                          :d nil}
+                         {:l "Макс-ДРР"
+                          :v (if (some? (:value maxdrr-kpi))
+                               (fmt/format-pct (:value maxdrr-kpi))
+                               "—")
                           :d nil}]]
           ($ :<> {}
              ;; Header
@@ -142,7 +150,12 @@
                                         :color     "var(--color-fg-muted)"}}
                          (:id sku))
                       (for [m (:mp sku)]
-                        ($ mp-badge {:key (name m) :mp m})))
+                        ($ mp-badge {:key (name m) :mp m}))
+                      ;; FR-P4.2: red flag when actual ДРР breaches the ceiling.
+                      (when over-ceiling?
+                        ($ :span {:class "badge badge-danger"
+                                  :title "Фактический ДРР выше предельного — реклама в убыток"}
+                           "ДРР над потолком")))
                    ($ :div {:style {:font-size "18px"
                                     :font-weight 600
                                     :margin-top "4px"}}

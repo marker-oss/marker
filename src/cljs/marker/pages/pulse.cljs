@@ -75,6 +75,14 @@
   [kpi]
   (= :missing (:ad-cost-source kpi)))
 
+(defn- ad-data-missing-text
+  "FR-P4.3: when ROAS / ДРР was computed with NO ad-cost data
+   (`:ad-cost-source = :missing`), the value is meaningless — render an
+   honest «нет данных» phrase instead of a real-looking 0/— number."
+  [kpi]
+  (when (ad-cost-missing? kpi)
+    "данные о рекламе отсутствуют"))
+
 (defn- pct-str [x] (str (js/Math.round (* 100 (or x 0))) "%"))
 
 (defn- basis-tooltip
@@ -529,6 +537,14 @@
         non-return (:non-return k)
         roas      (:roas k)
         drr       (:drr k)
+        drr-ceiling (:drr-ceiling k)
+        ;; FR-P4.2: actual ДРР is over the break-even ceiling when both are
+        ;; present and drr > ceiling. The dedicated drr-ceiling-card renders
+        ;; headroom; here we only need the over-ceiling flag + ceiling sub-text.
+        drr-val      (:value drr)
+        ceiling-val  (:value drr-ceiling)
+        over-ceiling? (boolean (and (some? drr-val) (some? ceiling-val)
+                                    (> drr-val ceiling-val)))
         ;; Conversion = purchases/orders × 100. Shown as sub-text on the
         ;; orders card. Hidden when orders=0 (would divide by zero).
         order-cnt (safe-num (:value orders))
@@ -617,16 +633,27 @@
                  :sub       "от доставленных"
                  :badge     (prelim-badge non-return)}
                 {:label     "ROAS"
-                 :value     (or-ndash (:value roas) fmt/format-mul)
+                 :value     (or (ad-data-missing-text roas)
+                                (or-ndash (:value roas) fmt/format-mul))
                  :delta     (:delta-pct roas)
                  :sub       "WoW"
                  :badge     (prelim-badge roas)}
                 {:label     "ДРР"
-                 :value     (or-ndash (:value drr) fmt/format-pct)
+                 :value     (or (ad-data-missing-text drr)
+                                (or-ndash (:value drr) fmt/format-pct))
                  :delta     (:delta-pct drr)
-                 :sub       "WoW"
+                 :sub       (cond
+                              (some? ceiling-val)
+                              (str "макс. " (fmt/format-pct ceiling-val))
+                              :else "WoW")
                  :inverted? true
-                 :badge     (prelim-badge drr)}]
+                 :badge     (prelim-badge drr)
+                 ;; FR-P4.2: visibly flag when actual ДРР breaches the ceiling.
+                 :warn-badge       (when over-ceiling? "над потолком")
+                 :warn-badge-title (when over-ceiling?
+                                     (str "ДРР выше предельного "
+                                          (fmt/format-pct ceiling-val)
+                                          " — реклама съедает прибыль"))}]
         ;; orders/purchases excluded: backend always returns :canon or :legacy-* for
         ;; those — they cannot be :preliminary, so they don't trigger the footnote.
         any-preliminary? (some #(or (= :preliminary (:source %))
@@ -671,6 +698,69 @@
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "6px" :font-size "12px"}}
             "Реклама не загружена — прибыль и маржа показаны как верхняя граница")))))
+
+;; ---------------------------------------------------------------------------
+;; ДРР-ceiling card (FR-P4.2 / FR-P4.3)
+;; ---------------------------------------------------------------------------
+
+(defui ^:private drr-ceiling-card [{:keys [kpis]}]
+  (let [k        (or kpis {})
+        drr      (:drr k)
+        ceiling  (:drr-ceiling k)
+        drr-val  (:value drr)
+        ceil-val (:value ceiling)
+        ;; FR-P4.3: ad-cost missing → ДРР is meaningless, show honest copy.
+        missing? (ad-cost-missing? drr)
+        over?    (boolean (and (some? drr-val) (some? ceil-val)
+                               (> drr-val ceil-val)))
+        headroom (when (and (some? drr-val) (some? ceil-val))
+                   (- ceil-val drr-val))]
+    ($ :section {:class "card section-card"}
+       ($ :div {:class "section-head"}
+          ($ :div
+             ($ :h3 {:class "section-title"} "Рекламный потолок (макс-ДРР)")
+             ($ :div {:class "section-subtitle"}
+                "предельная доля рекламных расходов до нулевой прибыли"))
+          (cond
+            missing? ($ :span {:class "badge badge-neutral"} "нет данных о рекламе")
+            over?    ($ :span {:class "badge badge-danger"} "⚠ над потолком")
+            (some? headroom) ($ :span {:class "badge badge-success"} "в пределах")))
+       (if missing?
+         ($ :div {:style {:color "var(--color-fg-muted)" :font-size "13px" :padding "10px 2px"}}
+            "Данные о рекламе отсутствуют — фактический ДРР и запас до потолка рассчитать нельзя. "
+            "Загрузите рекламную статистику маркетплейса.")
+         ($ :div {:style {:display "flex" :flex-wrap "wrap" :gap "28px" :padding "6px 2px"}}
+            ;; Actual ДРР — red when over ceiling.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Фактический ДРР")
+               ($ :div {:style {:font-size   "28px"
+                                :font-weight 700
+                                :color       (if over?
+                                               "var(--color-delta-negative)"
+                                               "var(--color-fg-primary)")}}
+                  (or-ndash drr-val fmt/format-pct)))
+            ;; Ceiling.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Потолок (макс-ДРР)")
+               ($ :div {:style {:font-size "28px" :font-weight 700}}
+                  (or-ndash ceil-val fmt/format-pct)))
+            ;; Headroom — запас до потолка.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Запас до потолка")
+               ($ :div {:style {:font-size   "28px"
+                                :font-weight 700
+                                :color       (cond
+                                               (nil? headroom) "inherit"
+                                               (neg? headroom) "var(--color-delta-negative)"
+                                               :else           "var(--color-delta-positive)")}}
+                  (if (some? headroom)
+                    (str (when (pos? headroom) "+") (fmt/format-pct headroom))
+                    "—")))))
+       (when over?
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "8px" :font-size "12px"
+                          :color "var(--color-delta-negative)"}}
+            "Фактический ДРР превысил предельный — реклама работает в убыток по марже")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Cost breakdown section
@@ -904,6 +994,9 @@
                            :kpis              kpis
                            :preliminary?      preliminary?
                            :preliminary-as-of prelim-as-of})
+
+           ;; ДРР-ceiling card (actual vs макс-ДРР + headroom)
+           ($ drr-ceiling-card {:kpis kpis})
 
            ;; Cost breakdown
            ($ cost-breakdown-section {:costs (:costs data)})

@@ -315,6 +315,44 @@
           [:dispatch [::refresh-finished :failure]]]}))
 
 ;; ---------------------------------------------------------------------------
+;; P4 (FR-P4.6): Reconciliation — P&L vs payout per-article
+;; ---------------------------------------------------------------------------
+
+(def ^:private reconciliation-url "/api/v1/marker/reconciliation")
+
+(rf/reg-event-fx ::load-reconciliation
+  (fn [{:keys [db]} [_ filter-state]]
+    (let [fs   (or filter-state
+                   {:mp-filter (:marker/mp-filter db)
+                    :period    (:marker/period    db)
+                    :compare   (:marker/compare   db)})
+          ckey (cache-key :reconciliation fs)
+          hit  (get-in db [:marker/cache ckey])]
+      (if hit
+        {:db (assoc db :marker/reconciliation-data hit
+                       :marker/reconciliation-loading? false)}
+        {:db         (assoc db :marker/reconciliation-loading? true)
+         :http-xhrio (api/get-xhrio
+                       (api/build-url reconciliation-url (api/build-params fs))
+                       [::reconciliation-loaded ckey]
+                       [::reconciliation-load-failed])}))))
+
+(rf/reg-event-fx ::reconciliation-loaded
+  (fn [{:keys [db]} [_ ckey data]]
+    {:db (-> db
+             (assoc :marker/reconciliation-data    data
+                    :marker/reconciliation-loading? false)
+             (assoc-in [:marker/cache ckey] data)
+             (update :marker/api-errors dissoc reconciliation-url))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
+
+(rf/reg-event-fx ::reconciliation-load-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db (assoc db :marker/reconciliation-loading? false)
+     :fx [[:dispatch [::api-error reconciliation-url failure]]
+          [:dispatch [::refresh-finished :failure]]]}))
+
+;; ---------------------------------------------------------------------------
 ;; Phase 8: SKU detail (keyed by sku-id inside :marker/sku-detail-data map)
 ;; ---------------------------------------------------------------------------
 

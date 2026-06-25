@@ -14,7 +14,8 @@
             [marker.router        :as router]
             [marker.pages.pnl     :as pnl]
             [marker.pages.unit    :as unit]
-            [marker.pages.reports :as reports]))
+            [marker.pages.reports :as reports]
+            [marker.pages.reconciliation :as reconciliation]))
 
 (defui ^:private placeholder-tab [{:keys [title]}]
   ($ :div {:class "page-content"}
@@ -42,5 +43,6 @@
          :returns    ($ reports/report {:type :returns})
          :losses     ($ reports/report {:type :losses})
          :finance    ($ reports/report {:type :finance})
+         :reconciliation ($ reconciliation/reconciliation {})
          :plan-fact  ($ placeholder-tab {:title "План/Факт"})
          ($ pnl/pnl {})))))
