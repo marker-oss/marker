@@ -159,4 +159,48 @@
             expected-orders (+ (* 114328.0 (/ 5.0 7.0))
                                 (* 107479.0 (/ 2.0 7.0)))]
         (is (< (Math/abs (- expected-orders (:gross-orders r))) 0.01)
-            (str "expected ≈" expected-orders " got " (:gross-orders r)))))))
+            (str "expected ≈" expected-orders " got " (:gross-orders r))))))
+
+;; ---------------------------------------------------------------------------
+;; ozon-monthly-realization-states — pure classifier helper
+;; ---------------------------------------------------------------------------
+
+(deftest classify-months-pure-all-states
+  (testing "pure helper returns settled/preliminary/missing per month"
+    ;; April has finance rows (settled), May has only cash-flow (preliminary),
+    ;; June has neither (missing).
+    (let [finance-counts  {"2026-04" 3 "2026-05" 0 "2026-06" 0}
+          cashflow-months #{"2026-05"}
+          result (p/classify-months ["2026-04" "2026-05" "2026-06"]
+                                    finance-counts
+                                    cashflow-months)]
+      (is (= 3 (count result)))
+      (is (= {:month "2026-04" :state :settled}     (nth result 0)))
+      (is (= {:month "2026-05" :state :preliminary} (nth result 1)))
+      (is (= {:month "2026-06" :state :missing}     (nth result 2))))))
+
+(deftest classify-months-pure-all-settled
+  (testing "all settled when every month has finance rows"
+    (let [result (p/classify-months ["2026-04" "2026-05"]
+                                    {"2026-04" 5 "2026-05" 2}
+                                    #{})]
+      (is (every? #(= :settled (:state %)) result)))))
+
+(deftest classify-months-pure-empty-range
+  (testing "empty month list returns empty vector"
+    (is (= [] (p/classify-months [] {} #{})))))
+
+;; ---------------------------------------------------------------------------
+;; ozon-monthly-realization-states — DB-backed public fn (shape test)
+;; ---------------------------------------------------------------------------
+
+(deftest ozon-monthly-realization-states-classify
+  (testing "each month classified settled|preliminary|missing"
+    ;; Stub db/query: first call (finance count) returns 0 rows for each
+    ;; month; second call (cashflow overlap) returns empty rows.
+    ;; Result: all :missing — but shape (3 months, valid :state) is verified.
+    (with-redefs [db/query (constantly [])]
+      (let [states (p/ozon-monthly-realization-states "2026-04-01" "2026-06-30")]
+        (is (= 3 (count states)))
+        (is (every? #(#{:settled :preliminary :missing} (:state %)) states))
+        (is (every? #(re-matches #"\d{4}-\d{2}" (:month %)) states)))))))
