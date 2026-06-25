@@ -105,10 +105,10 @@
     ;; :trends totals keys come from matching row :metric strings — only :revenue-current
     ;; and :orders-current are guaranteed (profit row is absent from compare-periods output).
     (let [period {:from "2026-04-01" :to "2026-04-30"}
-          ;; types that now must have :totals populated (LT1 scope)
-          lt1-types [:sales :abc :returns :buyout :stock :geo]
-          ;; include pre-existing types to verify no regression
-          all-types [:finance :ue :pnl :sales :abc :returns :buyout :stock :geo]]
+          ;; LT1-scope types (sales/abc/returns/buyout/stock/geo/trends) plus the
+          ;; pre-existing finance/ue/pnl to verify no regression. :trends is safe
+          ;; to include: contains? passes on nil-valued keys (e.g. :profit-current).
+          all-types [:finance :ue :pnl :sales :abc :returns :buyout :stock :geo :trends]]
       (doseq [rt all-types]
         (let [schema (rs/get-schema rt)
               kpi-keys (mapv :key (:kpi schema))
