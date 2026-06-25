@@ -152,3 +152,46 @@
       (is (contains? result :datasets))
       (is (empty? (:labels result)))
       (is (empty? (:datasets result))))))
+
+;; ---------------------------------------------------------------------------
+;; LT4 — trends chart threads period + marketplace (BUG A fix)
+;; ---------------------------------------------------------------------------
+
+(deftest trends-chart-threads-period-and-mp
+  "The :trends chart case must pass period + :marketplace into trends/wow.
+   Before LT4, charts.clj:254-255 called (trends/wow) with NO args — period
+   and marketplace were silently ignored. This test verifies the args reach
+   the domain function."
+  (let [calls   (atom [])
+        period  {:from "2026-06-01" :to "2026-06-07"}
+        ws-var  (resolve 'analitica.domain.trends/weekly-sales)]
+    (with-redefs-fn {ws-var (fn [from to & {:keys [marketplace]}]
+                               (swap! calls conj {:from from :to to :mp marketplace})
+                               [])}
+      (fn []
+        (charts/report-chart-data :trends period :marketplace :ozon)
+        (testing "weekly-sales was called (trends path executed)"
+          (is (pos? (count @calls))))
+        (testing "period from=2026-06-01 was forwarded to weekly-sales"
+          (is (some #(= "2026-06-01" (:from %)) @calls)))
+        (testing "marketplace :ozon was forwarded to weekly-sales"
+          (is (some #(= :ozon (:mp %)) @calls)))))))
+
+(deftest trends-chart-differs-by-mp
+  "Calling :trends chart for :wb vs :ozon must produce different marketplace
+   args to weekly-sales — the chart must NOT be byte-identical across MPs."
+  (let [wb-calls   (atom [])
+        ozon-calls (atom [])
+        ws-var     (resolve 'analitica.domain.trends/weekly-sales)]
+    (with-redefs-fn {ws-var (fn [_from _to & {:keys [marketplace]}]
+                               ;; route to the right atom by mp
+                               (when (= :wb   marketplace) (swap! wb-calls   conj marketplace))
+                               (when (= :ozon marketplace) (swap! ozon-calls conj marketplace))
+                               [])}
+      (fn []
+        (charts/report-chart-data :trends {:from "2026-06-01" :to "2026-06-07"} :marketplace :wb)
+        (charts/report-chart-data :trends {:from "2026-06-01" :to "2026-06-07"} :marketplace :ozon)
+        (testing "WB call routed :wb marketplace to weekly-sales"
+          (is (pos? (count @wb-calls))))
+        (testing "Ozon call routed :ozon marketplace to weekly-sales"
+          (is (pos? (count @ozon-calls))))))))

@@ -231,18 +231,18 @@
             rows (geography/by-region region-data)]
         {:rows (vec rows) :totals (geo-totals rows)})
 
-      ;; Trends report
+      ;; Trends report — LT4: thread `period` so wow/mom respect the picker
       :trends
       (case (or trend-type :wow)
-        :wow   (let [rows (vec (trends/wow :marketplace marketplace))]
+        :wow   (let [rows (vec (trends/wow period :marketplace marketplace))]
                  {:rows rows :totals (trends-totals rows)})
-        :mom   (let [rows (vec (trends/mom :marketplace marketplace))]
+        :mom   (let [rows (vec (trends/mom period :marketplace marketplace))]
                  {:rows rows :totals (trends-totals rows)})
         :daily (let [rows (vec (trends/daily period :marketplace marketplace))]
                  ;; daily rows have :day/:sales/:returns/:revenue — no :metric key,
                  ;; so trends-totals returns {:revenue-current nil :orders-current nil :profit-current nil}
                  {:rows rows :totals (trends-totals rows)})
-        (let [rows (vec (trends/wow :marketplace marketplace))]
+        (let [rows (vec (trends/wow period :marketplace marketplace))]
           {:rows rows :totals (trends-totals rows)}))
 
       ;; Unknown report type

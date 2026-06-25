@@ -159,9 +159,33 @@
           (range days))))
 
 (defn- revenue-spark
-  "30-element daily revenue list for the period."
+  "Daily revenue list for the period (one element per day).
+   Sourced from sales rows — legacy fallback when finance rows are unavailable."
   [sales-data from to]
   (let [by-day (sales-by-day-map sales-data)
+        dates  (date-range-seq from to)]
+    (mapv #(double (get by-day % 0.0)) dates)))
+
+(defn- realization-revenue-spark
+  "Daily for_pay spark derived from already-fetched finance rows.
+
+   LT4 (BUG B): aligns the Pulse chart basis with :month-fact. The
+   headline rev-cur comes from pnl/calculate over fin-cur (realization
+   rows); the chart must use the same rows so chart-total ≈ month-fact.
+
+   Groups fin-cur by event_date (first 10 chars), sums for_pay. Falls
+   back to 0.0 for days with no finance rows. When fin-cur is empty,
+   returns a zero-filled vector of (period-length) elements."
+  [fin-cur from to]
+  (let [by-day (->> fin-cur
+                    (group-by (fn [r]
+                                (let [d (or (:event_date r) (:event-date r) "")]
+                                  (if (>= (count d) 10) (subs d 0 10) d))))
+                    (into {} (map (fn [[d rows]]
+                                    [d (reduce + 0.0
+                                               (map (fn [r]
+                                                      (or (:for-pay r) (:for_pay r) 0.0))
+                                                    rows))]))))
         dates  (date-range-seq from to)]
     (mapv #(double (get by-day % 0.0)) dates)))
 
@@ -533,13 +557,22 @@
                            vec)
 
           ;; Sparks
-          ;;   rev-spark    — daily revenue from sales (currency)
+          ;;   rev-spark    — daily revenue spark for :revenue-30d chart (LT4 BUG B:
+          ;;                  sourced from finance rows so chart-total ≈ :month-fact).
+          ;;                  When finance is empty (no data yet) falls back to the
+          ;;                  sales-table spark so the chart is never blank on a live
+          ;;                  window that has sales but not yet realization.
           ;;   purch-spark  — daily settled-purchase count (sales rows of type :sale)
           ;;   ord-spark    — daily orders count from the orders table
           ;; The :orders and :purchases KPI cards each get their own spark
           ;; — they are different counters and previously both received
           ;; purch-spark, hiding the order-vs-purchase delta visually.
-          rev-spark   (revenue-spark sales-cur from to)
+          real-spark  (realization-revenue-spark fin-cur from to)
+          rev-spark   (if (every? zero? real-spark)
+                        ;; Finance rows absent or all-zero: fall back to sales spark
+                        ;; so the chart still shows something on a fresh window.
+                        (revenue-spark sales-cur from to)
+                        real-spark)
           purch-spark (orders-spark  sales-cur from to)
           ord-spark   (orders-count-spark from to mp1)
 

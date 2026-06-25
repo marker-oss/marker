@@ -313,8 +313,8 @@
                   (geo/export-excel period export :marketplace mp)
                   (geo/report period :marketplace mp))
       "trends"  (trends/daily period :marketplace mp)
-      "wow"     (trends/wow :marketplace mp)
-      "mom"     (trends/mom :marketplace mp)
+      "wow"     (trends/wow period :marketplace mp)
+      "mom"     (trends/mom period :marketplace mp)
       "buyout"  (if export
                   (buyout/export-excel period export :marketplace mp)
                   (buyout/report period :marketplace mp))

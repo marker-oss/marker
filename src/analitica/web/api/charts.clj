@@ -2,6 +2,7 @@
   (:require [analitica.domain.sales :as sales]
             [analitica.domain.finance :as finance]
             [analitica.domain.pnl :as pnl]
+            [analitica.domain.trends :as trends]
             [analitica.util.time :as t]
             [analitica.util.period :as period]))
 
@@ -249,18 +250,14 @@
          :datasets [{:label "% выкупа"
                      :data data}]})
       
-      ;; Trends: grouped bar chart - WoW and MoM
+      ;; Trends: single period-vs-previous bar chart (LT4: period + marketplace forwarded)
       :trends
-      (let [wow-data ((requiring-resolve 'analitica.domain.trends/wow))
-            mom-data ((requiring-resolve 'analitica.domain.trends/mom))
-            labels (mapv :metric wow-data)
-            wow-values (mapv :change-pct wow-data)
-            mom-values (mapv :change-pct mom-data)]
+      (let [data   (trends/wow period :marketplace marketplace)
+            labels (mapv :metric data)
+            values (mapv :change-pct data)]
         {:labels labels
-         :datasets [{:label "WoW %"
-                     :data wow-values}
-                    {:label "MoM %"
-                     :data mom-values}]})
+         :datasets [{:label "Изм.% к предыдущему периоду"
+                     :data values}]})
       
       ;; Default: empty chart
       {:labels []

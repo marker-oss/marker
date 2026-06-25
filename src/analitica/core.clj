@@ -122,8 +122,8 @@
   (stock/risk 14)                       -- out-of-stock risk
   (pnl/report :last-30-days)            -- P&L report
   (geo/report :last-30-days)            -- geography of sales
-  (trends/wow)                          -- week-over-week
-  (trends/mom)                          -- month-over-month
+  (trends/wow :last-7-days)             -- period vs prev equal period (7-day default)
+  (trends/mom :last-30-days)            -- period vs prev equal period (30-day default)
   (trends/daily :last-30-days)          -- daily dynamics
   (buyout/report :last-30-days)         -- buyout rate analysis
   (ads/overview :last-7-days :source :api)  -- sales funnel

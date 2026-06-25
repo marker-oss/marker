@@ -224,6 +224,69 @@
             (is (= days (sort days)))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Trends.1 (LT4) — wow respects :marketplace filter (forwarded to BOTH windows)
+;; ---------------------------------------------------------------------------
+
+(deftest wow-respects-marketplace-filter
+  "wow must forward :marketplace to weekly-sales for BOTH the current and
+   previous windows. Before LT4 it passed :marketplace but derived windows
+   from (t/today), so the filter had no effect on the period (it still ran
+   on today-relative dates regardless of the picker). This test verifies the
+   kwarg reaches the stub on both calls."
+  (let [calls    (atom [])
+        ws-var   (resolve 'analitica.domain.trends/weekly-sales)]
+    (with-redefs-fn {ws-var (fn [from to & {:keys [marketplace]}]
+                               (swap! calls conj {:from from :to to :mp marketplace})
+                               [])}
+      (fn []
+        (trends/wow {:from "2026-06-01" :to "2026-06-07"} :marketplace :wb)
+        (let [mps (map :mp @calls)]
+          (testing "weekly-sales called at least twice (cur + prev window)"
+            (is (>= (count @calls) 2)))
+          (testing "ALL weekly-sales calls forward :marketplace :wb"
+            (is (every? #(= :wb %) mps))))))))
+
+(deftest wow-uses-selected-period-not-today
+  "wow must derive cur-window from the supplied period, not from (t/today).
+   Previous window must be the equal-length span immediately preceding cur."
+  (let [calls  (atom [])
+        ws-var (resolve 'analitica.domain.trends/weekly-sales)]
+    (with-redefs-fn {ws-var (fn [from to & _opts]
+                               (swap! calls conj {:from from :to to})
+                               [])}
+      (fn []
+        (trends/wow {:from "2026-06-01" :to "2026-06-07"})
+        (let [froms (set (map :from @calls))
+              tos   (set (map :to   @calls))]
+          (testing "cur-start = 2026-06-01 appears in a call"
+            (is (contains? froms "2026-06-01")))
+          (testing "cur-end = 2026-06-07 appears in a call"
+            (is (contains? tos "2026-06-07")))
+          (testing "prev-end = 2026-05-31 (day before cur-start) appears in a call"
+            (is (contains? tos "2026-05-31")))
+          (testing "prev-start = 2026-05-25 (7-day span before cur) appears in a call"
+            (is (contains? froms "2026-05-25"))))))))
+
+(deftest mom-respects-period-and-mp
+  "mom must forward both period windows and :marketplace exactly like wow."
+  (let [calls  (atom [])
+        ws-var (resolve 'analitica.domain.trends/weekly-sales)]
+    (with-redefs-fn {ws-var (fn [from to & {:keys [marketplace]}]
+                               (swap! calls conj {:from from :to to :mp marketplace})
+                               [])}
+      (fn []
+        (trends/mom {:from "2026-05-01" :to "2026-05-30"} :marketplace :ozon)
+        (let [mps (map :mp @calls)]
+          (testing "at least two weekly-sales calls (cur + prev)"
+            (is (>= (count @calls) 2)))
+          (testing "ALL calls forward :marketplace :ozon"
+            (is (every? #(= :ozon %) mps)))
+          (testing "cur-start = 2026-05-01 appears"
+            (is (some #(= "2026-05-01" (:from %)) @calls)))
+          (testing "prev-end = 2026-04-30 (day before 2026-05-01) appears"
+            (is (some #(= "2026-04-30" (:to %)) @calls))))))))
+
+;; ---------------------------------------------------------------------------
 ;; Trends.2 — SQL row shape uses string type, not keyword (guard test)
 ;; ---------------------------------------------------------------------------
 

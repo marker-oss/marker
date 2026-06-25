@@ -1553,3 +1553,79 @@
     (let [resp (marker-api/reports-handler
                  {:request-method :get :params {:type "nonsense"} :headers {}})]
       (is (= 400 (:status resp))))))
+
+;; ---------------------------------------------------------------------------
+;; LT4 (BUG B) — Pulse Plan/Fact headline must match chart basis
+;; :month-fact comes from realization-based pnl rev-cur;
+;; :revenue-30d (the chart spark) must also be realization-based so that
+;;   (reduce + (:revenue-30d charts)) ≈ (:month-fact forecast).
+;; Before LT4, :revenue-30d used revenue-spark (sales table) while
+;; :month-fact used pnl revenue (finance table) — ~6× mismatch.
+;; ---------------------------------------------------------------------------
+
+(deftest pulse-plan-fact-headline-matches-chart-basis
+  "When pnl revenue is non-zero, the chart :revenue-30d daily series must
+   sum to approximately :month-fact (same realization basis, ±1 ₽ rounding).
+   We stub finance/fetch-finance + pnl/calculate to return a controlled
+   revenue of 10 000 ₽ and verify the chart spark sums to that same total."
+  (let [period-map {:from "2026-06-01" :to "2026-06-07"}
+        rev-total  10000.0
+        ;; Distribute 10 000 evenly over 7 days
+        daily-val  (/ rev-total 7)
+        fin-rows   (for [i (range 7)]
+                     {:for-pay daily-val
+                      :event_date (str "2026-06-0" (inc i))
+                      :marketplace "wb"
+                      :type "realization"})
+        fin-rows   (vec fin-rows)]
+    (with-redefs [analitica.domain.finance/fetch-finance
+                  (fn [_period & _opts] fin-rows)
+                  analitica.domain.pnl/calculate
+                  (fn [_data & _opts]
+                    {:revenue       rev-total
+                     :net-profit    2000.0
+                     :gross-profit  3000.0
+                     :margin-net    20.0
+                     :ad-spend      0.0
+                     :cogs          0.0
+                     :logistics     0.0
+                     :for-pay       rev-total
+                     :sales-qty     70
+                     :returns-qty   0
+                     :buyout-rate   100.0
+                     :avg-check     143.0})
+                  analitica.domain.pnl/load-cf-adjustments
+                  (fn [& _] nil)
+                  analitica.domain.sales/fetch-sales
+                  (fn [& _] [])
+                  analitica.domain.stock/fetch-stocks
+                  (fn [& _] [])
+                  analitica.domain.buyout/analyze
+                  (fn [& _] [])
+                  analitica.domain.buyout/aggregate
+                  (fn [& _] {:buyout-orders-rate nil :cancel-rate nil
+                              :non-return-rate nil :placed 0 :sold 0 :returned 0})
+                  analitica.alerts/detect-alerts
+                  (fn [& _] [])
+                  analitica.alerts/freshness-data
+                  (fn [] {:wb nil :ozon nil :ym nil})
+                  analitica.canonical.events.query/units-ordered
+                  (fn [& _] 0)
+                  analitica.canonical.events.query/units-delivered
+                  (fn [& _] 0)
+                  analitica.db/orders-by-article
+                  (fn [& _] [])]
+      (let [req  {:params {:from "2026-06-01" :to "2026-06-07" :mp "wb"}}
+            resp (marker-api/pulse-summary req)
+            month-fact  (get-in resp [:forecast :month-fact])
+            rev-30d     (get-in resp [:charts   :revenue-30d])
+            chart-total (when (seq rev-30d) (reduce + rev-30d))]
+        (testing ":forecast :month-fact is the pnl revenue (10 000 ₽)"
+          (is (= (analitica.util.math/round2 rev-total) month-fact)))
+        (testing ":charts :revenue-30d is a non-empty vector"
+          (is (vector? rev-30d))
+          (is (pos? (count rev-30d))))
+        (testing ":revenue-30d sums to ≈ :month-fact (same realization basis, ±1 rounding)"
+          (is (some? chart-total))
+          (is (< (Math/abs (- (double month-fact) (double chart-total))) 1.0)
+              (str "Expected chart-total≈" month-fact " but got " chart-total)))))))

@@ -3437,9 +3437,18 @@ The dual-key `or` fallback reads whichever is present.
 
 **Source file:** `src/analitica/domain/trends.clj`
 
-**Purpose:** Provide temporal comparison views — week-over-week (WoW),
-month-over-month (MoM), and per-day dynamics (`daily`) — for sales and returns
-across all marketplaces. Aggregation is performed in-SQL, not in-memory.
+**Purpose:** Provide temporal comparison views — selected-period-vs-preceding
+equal period (`wow`, `mom`) and per-day dynamics (`daily`) — for sales and
+returns across all marketplaces. Aggregation is performed in-SQL, not in-memory.
+
+**LT4 change (2026-06-25):** `wow` and `mom` are now period-aware. Both accept
+`[period & {:keys [marketplace]}]`. The previous hardcoded `(t/today)` windows
+have been replaced with a single _«выбранный период vs предыдущий равный период»_
+comparison: the current window is the selected period; the previous window is
+the equal-length span ending the day before cur-start. This makes the chart and
+table agree on period + marketplace, and collapses the redundant WoW/MoM dual-bar
+into a single series. Callers that previously used no args now pass `nil` (which
+triggers the same 7-day / 30-day fallback as before).
 
 ---
 
@@ -3520,38 +3529,43 @@ This divergence means:
 
 ---
 
-### Trends.3 — `wow` window (today−7 / today−14)
+### Trends.3 — `wow` window (LT4: period-relative, 7-day fallback)
+
+`wow` accepts `[period & {:keys [marketplace]}]`.
 
 ```
-cur-start  = today − 7
-cur-end    = today
-prev-start = today − 14
-prev-end   = today − 7        ← same as cur-start
+cur-start  = period :from  (or today − 6 when nil)
+cur-end    = period :to    (or today when nil)
+prev-end   = cur-start − 1 day
+prev-start = prev-end − (n_days − 1)       ; n_days = cur-end − cur-start + 1
 ```
 
-`wow` calls `weekly-sales` twice, then passes results to `compare-periods`.
+`wow` calls `weekly-sales` twice (once per window), then passes results to
+`compare-periods`. `:marketplace` is forwarded to **both** calls.
 
-**Pivot-day double-count quirk:** `prev-end = cur-start = days-ago(7)`.
-The pivot day is included in **both** periods (the `WHERE date >=` and
-`date <=` clauses are both inclusive). On typical multi-day windows this
-is a minor double-count (1 day out of 7); it does not materially distort
-the ratio, but the canon records it honestly. A strict partition would use
-`cur-start = days-ago(6)` for one side, but the code does not do this.
+**Partition is strict:** `prev-end = cur-start − 1` so there is no overlap
+between the two windows (the old pivot-day double-count is eliminated by LT4).
+
+**Nil-period fallback:** when `period` is `nil`, the window resolves to the
+last 7 days ending today (same behaviour as the pre-LT4 no-arg call).
 
 ---
 
-### Trends.4 — `mom` window (today−30 / today−60)
+### Trends.4 — `mom` window (LT4: period-relative, 30-day fallback)
+
+Same algorithm as §Trends.3. `mom` accepts `[period & {:keys [marketplace]}]`.
 
 ```
-cur-start  = today − 30
-cur-end    = today
-prev-start = today − 60
-prev-end   = today − 30       ← same as cur-start
+cur-start  = period :from  (or today − 29 when nil)
+cur-end    = period :to    (or today when nil)
+prev-end   = cur-start − 1 day
+prev-start = prev-end − (n_days − 1)
 ```
 
-Same structure as WoW (§Trends.3), 30-day windows instead of 7-day.
-The same pivot-day double-count quirk applies: the day at `today − 30`
-is counted in both current and previous windows.
+`:marketplace` forwarded to both `weekly-sales` calls.
+
+**Nil-period fallback:** when `period` is `nil`, the window resolves to the
+last 30 days ending today (same behaviour as the pre-LT4 no-arg call).
 
 ---
 
