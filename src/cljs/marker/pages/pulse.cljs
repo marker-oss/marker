@@ -19,7 +19,10 @@
             ;; were private here — now shared.
             [marker.ui.basis       :refer [prelim-badge
                                            basis-tooltip flat-heavy?
-                                           format-date-short]]
+                                           format-date-short
+                                           preliminary-missing?
+                                           preliminary-missing-text
+                                           preliminary-missing-tooltip]]
             [marker.util.format    :as fmt]
             [clojure.string        :as str]))
 
@@ -519,14 +522,17 @@
                  :badge       (prelim-badge rev)
                  :badge-title (basis-tooltip rev)}
                 {:label       "Чистая прибыль"
-                 :value       (if (= :none (:source profit))
-                                none-text
-                                (fmt/format-rub (safe-num (:value profit))))
-                 :delta       (:delta-pct profit)
+                 :value       (cond
+                                (preliminary-missing? profit) preliminary-missing-text
+                                (= :none (:source profit))    none-text
+                                :else (fmt/format-rub (safe-num (:value profit))))
+                 :delta       (when-not (preliminary-missing? profit) (:delta-pct profit))
                  :spark       (safe-spark (:spark profit))
                  :sub         "WoW"
-                 :badge       (prelim-badge profit)
-                 :badge-title (basis-tooltip profit)
+                 :badge       (if (preliminary-missing? profit) "≈" (prelim-badge profit))
+                 :badge-title (if (preliminary-missing? profit)
+                                preliminary-missing-tooltip
+                                (basis-tooltip profit))
                  :warn-badge       (when (ad-cost-missing? profit) "реклама не загружена")
                  :warn-badge-title "Реклама не загружена — прибыль завышена"}
                 {:label     "Заказано"
@@ -557,13 +563,16 @@
                  :badge     (prelim-badge returned)
                  :inverted? true}
                 {:label       "Маржа"
-                 :value       (if (= :none (:source margin))
-                                none-text
-                                (fmt/format-pct (safe-num (:value margin))))
-                 :delta       (:delta-pct margin)
+                 :value       (cond
+                                (preliminary-missing? margin) preliminary-missing-text
+                                (= :none (:source margin))    none-text
+                                :else (fmt/format-pct (safe-num (:value margin))))
+                 :delta       (when-not (preliminary-missing? margin) (:delta-pct margin))
                  :sub         "WoW"
-                 :badge       (prelim-badge margin)
-                 :badge-title (basis-tooltip margin)
+                 :badge       (if (preliminary-missing? margin) "≈" (prelim-badge margin))
+                 :badge-title (if (preliminary-missing? margin)
+                                preliminary-missing-tooltip
+                                (basis-tooltip margin))
                  :warn-badge       (when (ad-cost-missing? margin) "реклама не загружена")
                  :warn-badge-title "Реклама не загружена — маржа завышена"}
                 {:label     "Средний чек"
@@ -614,7 +623,11 @@
         any-preliminary? (some #(or (= :preliminary (:source %))
                                     (= :estimated (:completeness %))
                                     (flat-heavy? %))
-                               [rev profit margin check buyout roas drr])]
+                               [rev profit margin check buyout roas drr])
+        ;; LT5: profit/margin carry :preliminary-missing when Ozon's preliminary
+        ;; window has revenue (cash-flow) but commission/COGS are not yet published.
+        cost-missing?    (or (preliminary-missing? profit)
+                             (preliminary-missing? margin))]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
@@ -649,6 +662,10 @@
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "12px" :font-size "12px"}}
             "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП"))
+       (when cost-missing?
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "6px" :font-size "12px"}}
+            "Прибыль, маржа и часть расходов недоступны за предварительный период (не ноль) — комиссия и себестоимость появятся после публикации realization-отчёта Ozon"))
        (when (or (ad-cost-missing? profit) (ad-cost-missing? margin))
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "6px" :font-size "12px"}}
@@ -733,10 +750,13 @@
           ($ :h3 {:class "section-title"} "Расходы периода"))
        ($ :div {:class "cost-breakdown" :style {:display "flex" :flex-direction "column" :gap "8px"}}
           (for [{:keys [k label]} rows
-                :let [line (get c k)
-                      v    (safe-num (:value line))
-                      src  (:source line)
-                      pct  (:delta-pct line)]]
+                :let [line     (get c k)
+                      src      (:source line)
+                      missing? (preliminary-missing? line)
+                      ;; LT5: guard nil — never coerce a :preliminary-missing
+                      ;; cost to 0 ₽; render the honest «нет данных» text.
+                      v        (safe-num (:value line))
+                      pct      (:delta-pct line)]]
             ($ :div {:key   (name k)
                      :style {:display         "flex"
                              :justify-content "space-between"
@@ -745,30 +765,51 @@
                              :border-bottom   "1px solid var(--color-border-subtle)"}}
                ($ :span {:style {:color "var(--color-fg-secondary)"}}
                   label
-                  (when (= :preliminary src)
+                  (cond
+                    missing?
+                    ($ :span {:class "badge badge-warning"
+                              :title preliminary-missing-tooltip
+                              :style {:margin-left "6px" :cursor "help"}} "≈")
+                    (= :preliminary src)
                     ($ :span {:style {:margin-left "6px"}} "≈")))
-               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
-                  ($ :span {:style {:font-weight 500}}
-                     (fmt/format-rub v))
-                  (when (and pct (not (js/isNaN pct)))
-                    ($ delta {:pct pct :inverted true})))))
+               (if missing?
+                 ($ :span {:title preliminary-missing-tooltip
+                           :style {:color "var(--color-fg-muted)" :cursor "help"
+                                   :font-size "12px"}}
+                    preliminary-missing-text)
+                 ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                    ($ :span {:style {:font-weight 500}}
+                       (fmt/format-rub v))
+                    (when (and pct (not (js/isNaN pct)))
+                      ($ delta {:pct pct :inverted true}))))))
           ;; Total row (bold, no border-bottom)
-          (let [total (get c :total)
-                tv    (safe-num (:value total))
-                tsrc  (:source total)
-                tpct  (:delta-pct total)]
+          (let [total     (get c :total)
+                tsrc      (:source total)
+                tmissing? (preliminary-missing? total)
+                tv        (safe-num (:value total))
+                tpct      (:delta-pct total)]
             ($ :div {:style {:display         "flex"
                              :justify-content "space-between"
                              :align-items     "baseline"
                              :padding         "12px 0 4px 0"
                              :font-weight     600}}
                ($ :span "Итого расходов"
-                  (when (= :preliminary tsrc)
+                  (cond
+                    tmissing?
+                    ($ :span {:class "badge badge-warning"
+                              :title preliminary-missing-tooltip
+                              :style {:margin-left "6px" :cursor "help"}} "≈")
+                    (= :preliminary tsrc)
                     ($ :span {:style {:margin-left "6px"}} "≈")))
-               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
-                  ($ :span (fmt/format-rub tv))
-                  (when (and tpct (not (js/isNaN tpct)))
-                    ($ delta {:pct tpct :inverted true})))))))))
+               (if tmissing?
+                 ($ :span {:title preliminary-missing-tooltip
+                           :style {:color "var(--color-fg-muted)" :cursor "help"
+                                   :font-weight 500 :font-size "12px"}}
+                    preliminary-missing-text)
+                 ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                    ($ :span (fmt/format-rub tv))
+                    (when (and tpct (not (js/isNaN tpct)))
+                      ($ delta {:pct tpct :inverted true}))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Loading skeleton helpers
@@ -890,7 +931,11 @@
             rev-prev-spark (safe-spark (:revenue-prev-30d charts))
             orders-by-mp   (or (:orders-by-mp charts) {})
             preliminary?   (boolean (:preliminary? data))
-            prelim-as-of   (:preliminary-as-of data)]
+            prelim-as-of   (:preliminary-as-of data)
+            ;; LT5: Ozon preliminary windows publish revenue (cash-flow) but not
+            ;; commission/COGS — profit/margin then carry :preliminary-missing.
+            cost-missing?  (or (preliminary-missing? (:profit kpis))
+                               (preliminary-missing? (:margin kpis)))]
         ($ :div {:class "page-content"}
 
            ;; Error banner overlay (data available but stale load failed)
@@ -921,7 +966,13 @@
                       "Часть выручки рассчитана из cash-flow Ozon, пока не опубликован realization-отчёт. "
                       "Цифры уточнятся после его выхода"
                       (when prelim-as-of (str " (последняя точка: " (format-date-short prelim-as-of) ")"))
-                      "."))))
+                      ".")
+                   ;; LT5: when commission/COGS are structurally absent, profit/margin
+                   ;; and part of costs are «нет данных» — NOT zero. Make that explicit.
+                   (when cost-missing?
+                     ($ :div {:style {:margin-top "6px"}}
+                        "Комиссия, себестоимость, прибыль и маржа за этот период недоступны (не ноль) — "
+                        "появятся после публикации realization-отчёта Ozon.")))))
 
            ;; Cost-coverage warning — when registered cost-prices cover
            ;; less than 90% of articles with sales, profit / margin are

@@ -43,6 +43,28 @@
             (flat-heavy? kpi))
     "≈"))
 
+;; ---------------------------------------------------------------------------
+;; LT5 — :preliminary-missing honesty state.
+;; Ozon preliminary windows publish logistics/storage but NOT commission/COGS
+;; (the realization-отчёт is not out yet). Such cost lines and the profit/margin
+;; KPIs that depend on them carry {:value nil :source :preliminary-missing}.
+;; This is DISTINCT from :none «реализация отсутствует» (no source at all):
+;; here revenue IS known (preliminary cash-flow) but the cost side is not.
+;; ---------------------------------------------------------------------------
+
+(def preliminary-missing-text
+  "Honest value-cell text for a :preliminary-missing line — never a number, never 0 ₽."
+  "нет данных (предварительный период)")
+
+(def preliminary-missing-tooltip
+  "Hover tooltip explaining why a :preliminary-missing value is unavailable."
+  "Комиссия и себестоимость недоступны до публикации realization-отчёта Ozon; выручка предварительная по cash-flow")
+
+(defn preliminary-missing?
+  "True when this KPI / cost-line is in the LT5 :preliminary-missing state."
+  [m]
+  (= :preliminary-missing (:source m)))
+
 (defn basis-tooltip
   "Human tooltip describing a KPI's date-basis composition.
    - When no realization rows exist (:source :none / empty basis) → an
