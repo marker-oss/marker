@@ -7,7 +7,7 @@
    0.0.  The view therefore carries an explicit caption: the сверка becomes
    meaningful only once real payout/выплаты data is loaded.  We do NOT imply
    the zeros mean «идеально сошлось»."
-  (:require [uix.core :refer [$ defui use-state use-memo use-effect]]
+  (:require [uix.core :refer [$ defui use-effect]]
             [uix.re-frame :refer [use-subscribe]]
             [re-frame.core :as rf]
             [marker.state.subs   :as subs]

@@ -266,7 +266,7 @@
      - :completeness = :estimated when preliminary? OR flat >= 0.2, else :full
 
    Pass preliminary? as false when the handler has no per-MP preliminary
-   signal (sku-list, sku-detail) — completeness falls back to flat-threshold only."
+   signal (sku-list) — completeness falls back to flat-threshold only."
   [rows preliminary?]
   (let [fin-basis    (finance/date-basis-split rows)
         completeness (cond
@@ -1290,7 +1290,7 @@
             np-val        (or (:net-profit pnl-cur) 0.0)
             max-drr-pct   (math/percentage (+ np-val ads-val) (if (pos? rev-val) rev-val 1.0))
             drr-pct       (math/percentage ads-val (if (pos? rev-val) rev-val 1.0))
-            over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))
+            over-ceiling? (boolean (and (pos? rev-val) max-drr-pct drr-pct (> drr-pct max-drr-pct)))
             basis-env     (basis-envelope fin-art (boolean (:preliminary? pnl-cur)))]
       {:id       sku-id
        :name     subject

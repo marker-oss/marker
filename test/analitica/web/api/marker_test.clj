@@ -1142,10 +1142,10 @@
       (is (contains? env :completeness))))
 
   (testing ":date-basis has :api :spread :flat fraction keys"
-    (let [env (basis-envelope-fn [] false)]
-      (let [db (:date-basis env)]
-        (doseq [k [:api :spread :flat]]
-          (is (contains? db k) (str ":date-basis missing key " k))))))
+    (let [env (basis-envelope-fn [] false)
+          db  (:date-basis env)]
+      (doseq [k [:api :spread :flat]]
+        (is (contains? db k) (str ":date-basis missing key " k)))))
 
   (testing ":completeness is :full when rows are all-api and not preliminary"
     ;; finance/date-basis-split on rows with only :api source → {:api 1.0 :spread 0.0 :flat 0.0}
