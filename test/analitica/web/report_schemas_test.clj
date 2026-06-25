@@ -1,8 +1,15 @@
 (ns analitica.web.report-schemas-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.set :as set]
+            [analitica.db :as db]
             [analitica.web.report-schemas :as rs]
+            [analitica.web.api.report :as report]
             [analitica.domain.unit-economics :as ue]))
+
+(use-fixtures :once
+  (fn [f]
+    (db/init!)
+    (f)))
 
 (deftest schema-registry-test
   (testing "schema exists for :ue"
@@ -86,3 +93,28 @@
         (when-not (= :none (:rows-mode s))
           (is (>= (count (:columns s)) 2)
               (str rt " should have >= 2 columns")))))))
+
+;; ---------------------------------------------------------------------------
+;; LT1 contract test: every schema :kpi key must appear in live :totals
+;; ---------------------------------------------------------------------------
+
+(deftest ^:integration kpi-keys-have-comparable-totals
+  (testing "every schema :kpi :key appears in live :totals for all report types with a :kpi block"
+    ;; :losses is excluded — its compute-report branch is a separate task (no rows yet).
+    ;; :pnl and :finance/:ue already had :totals before this task.
+    ;; :trends totals keys come from matching row :metric strings — only :revenue-current
+    ;; and :orders-current are guaranteed (profit row is absent from compare-periods output).
+    (let [period {:from "2026-04-01" :to "2026-04-30"}
+          ;; types that now must have :totals populated (LT1 scope)
+          lt1-types [:sales :abc :returns :buyout :stock :geo]
+          ;; include pre-existing types to verify no regression
+          all-types [:finance :ue :pnl :sales :abc :returns :buyout :stock :geo]]
+      (doseq [rt all-types]
+        (let [schema (rs/get-schema rt)
+              kpi-keys (mapv :key (:kpi schema))
+              result (report/report-data rt period :marketplace :ozon)
+              totals (:totals result)]
+          (is (map? totals) (str rt ": :totals must be a map"))
+          (doseq [k kpi-keys]
+            (is (contains? totals k)
+                (str rt ": schema :kpi key " k " is missing from :totals"))))))))
