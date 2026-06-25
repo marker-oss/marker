@@ -130,14 +130,22 @@
      (when sub
        ($ :div {:class "kpi-sub"} sub))))
 
-(defui ^:private totals-block [{:keys [columns totals]}]
-  ;; Render numeric totals as KPI tiles.
-  (let [num-cols (filterv (fn [{:keys [format group]}]
-                            (and (not= group :identity)
-                                 (#{:money :rub :int :pct :mul :percent} format)))
-                          columns)
-        ;; Show only columns that have a non-nil totals entry.
-        shown    (filterv #(some? (get totals (:key %))) num-cols)]
+(defn kpi-tiles-shown
+  "Pure tile-selection: given a schema :kpi vector and a backend :totals map,
+   return the kpi specs that have a non-nil backing number in totals.
+   Honest — a kpi key absent from totals, or present with a nil value, is
+   dropped (no tile without a real number). Caps at 6."
+  [kpi totals]
+  (->> kpi
+       (filterv #(some? (get totals (:key %))))
+       (take 6)
+       vec))
+
+(defui ^:private totals-block [{:keys [kpi totals]}]
+  ;; Render schema :kpi entries as KPI tiles. Keys come from the schema :kpi
+  ;; block (e.g. :total-revenue) which matches the backend :totals keys —
+  ;; unlike column keys (:revenue) which do not.
+  (let [shown (kpi-tiles-shown kpi totals)]
     (when (seq shown)
       ($ :section {:class "card section-card"
                    :style {:margin-bottom "12px"}}
@@ -145,10 +153,10 @@
                   :style {:display "grid"
                           :grid-template-columns "repeat(auto-fit, minmax(160px, 1fr))"
                           :gap "12px"}}
-            (for [col (take 6 shown)]
-              ($ kpi-tile {:key   (name (:key col))
-                           :label (:title col)
-                           :value (format-cell col (get totals (:key col)))})))))))
+            (for [spec shown]
+              ($ kpi-tile {:key   (name (:key spec))
+                           :label (:title spec)
+                           :value (format-cell spec (get totals (:key spec)))})))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Table
@@ -367,6 +375,7 @@
       (let [columns       (or (:columns data) [])
             rows          (or (:rows    data) [])
             totals        (or (:totals  data) {})
+            kpi           (get-in data [:schema :kpi])
             compare-rows  (get-in data [:compare :rows])
             rows-mode     (get-in data [:schema :rows-mode])
             completeness  (:completeness data)
@@ -381,7 +390,7 @@
                                :preliminary? (:preliminary? data)})
 
            ;; Totals/KPI row
-           ($ totals-block {:columns columns :totals totals})
+           ($ totals-block {:kpi kpi :totals totals})
 
            ;; Main table — only render when rows-mode != :none
            (cond
