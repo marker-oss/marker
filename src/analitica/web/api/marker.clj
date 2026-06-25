@@ -1068,7 +1068,7 @@
                               :mp         [(keyword (or (:marketplace a) :wb))]
                               :revenue    (or (:revenue a) 0.0)
                               :cogs       (or (:total-cost a) 0.0)
-                              :commission (or (:mp-commission a) 0.0)
+                              :commission (- (Math/abs (double (or (:mp-commission a) 0.0))))
                               :ads        (or (get ads-by-art art) 0.0)
                               :net        (or (:for-pay a) 0.0)}))
                          by-art)]

@@ -1301,4 +1301,33 @@
           (when sku
             (is (= -150.0 (:commission sku))
                 (str "sku-detail :commission must use :mp-commission (-150.0), "
-                     "not :deduction (10.0). Got: " (:commission sku)))))))))
+                     "not :deduction (10.0). Got: " (:commission sku))))))))
+
+  (testing "sku-detail :commission normalizes Ozon/YM positive mp-commission to negative"
+    ;; Ozon/YM store commission as a positive raw sum in finance rows; sku-detail must
+    ;; negate it to match P&L convention.  Input :mp-commission 150.0 → expected -150.0.
+    (let [finance-row {:marketplace :ozon :rrd-id 2
+                       :date-from "2026-04-01" :date-to "2026-04-30"
+                       :event-date "2026-04-15"
+                       :article "OZON-SKU" :operation "sale" :quantity 1
+                       :retail-amount 1000.0 :retail-price 1000.0
+                       :for-pay 850.0 :mp-commission 150.0 :wb-reward 0.0
+                       :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+                       :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+                       :additional-payment 0.0 :ad-cost 0.0}]
+      (with-redefs
+        [load-finance-var                          (fn [& _] [finance-row])
+         analitica.domain.finance/fetch-finance    (fn [& _] [finance-row])
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+         with-prelim-var                           (fn [pnl & _] pnl)
+         analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+         analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+         analitica.db/query                        (fn [& _] [{:n 0}])]
+        (let [resp (marker-api/pnl-handler {:params {}})
+              sku  (first (:sku-detail resp))]
+          (is (map? resp) "pnl-handler returned a map")
+          (is (some? sku) "sku-detail must be non-empty for the Ozon fixture row")
+          (when sku
+            (is (= -150.0 (:commission sku))
+                (str "sku-detail :commission must normalize positive Ozon mp-commission "
+                     "(150.0) to -150.0. Got: " (:commission sku)))))))))
