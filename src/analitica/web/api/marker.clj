@@ -257,6 +257,25 @@
   (when (and (< window-days 28) (>= (double (or (:flat fin-basis) 0.0)) 0.2))
     :flat-heavy-subperiod))
 
+(defn basis-envelope
+  "Return the basis-contract fragment {:date-basis ... :completeness ...}
+   for any finance handler response envelope.
+
+   Mirrors the pulse-summary logic (specs/010 P0-A Part A):
+     - :date-basis  = finance/date-basis-split over `rows`
+     - :completeness = :estimated when preliminary? OR flat >= 0.2, else :full
+
+   Pass preliminary? as false when the handler has no per-MP preliminary
+   signal (sku-list, sku-detail) — completeness falls back to flat-threshold only."
+  [rows preliminary?]
+  (let [fin-basis    (finance/date-basis-split rows)
+        completeness (cond
+                       preliminary?               :estimated
+                       (>= (:flat fin-basis) 0.2) :estimated
+                       :else                      :full)]
+    {:date-basis  fin-basis
+     :completeness completeness}))
+
 ;; ---------------------------------------------------------------------------
 
 (defn- build-kpi
@@ -1052,10 +1071,11 @@
                               :ads        (or (get ads-by-art art) 0.0)
                               :net        (or (:for-pay a) 0.0)}))
                          by-art)]
-      {:rows              rows
-       :sku-detail        sku-det
-       :preliminary?      (boolean (:preliminary? pnl-cur))
-       :preliminary-as-of (:preliminary-as-of pnl-cur)})
+      (merge {:rows              rows
+              :sku-detail        sku-det
+              :preliminary?      (boolean (:preliminary? pnl-cur))
+              :preliminary-as-of (:preliminary-as-of pnl-cur)}
+             (basis-envelope fin-cur (boolean (:preliminary? pnl-cur)))))
     (catch Exception e
       {:rows [] :sku-detail [] :error (.getMessage e)})))
 
@@ -1167,7 +1187,8 @@
                        true   (drop offset)
                        limit  (take limit)
                        true   vec)]
-      {:skus skus-paged})
+      (merge {:skus skus-paged}
+             (basis-envelope fin-cur false)))
     (catch Exception e
       {:skus [] :error (.getMessage e)})))
 
@@ -1264,12 +1285,13 @@
                        (filterv some? [(some-> mp1 keyword) :wb])
                        [:wb])]
 
-      (let [rev-val      (or (:revenue pnl-cur) 0.0)
-            ads-val      (or (:ad-spend pnl-cur) 0.0)
-            np-val       (or (:net-profit pnl-cur) 0.0)
-            max-drr-pct  (math/percentage (+ np-val ads-val) (if (pos? rev-val) rev-val 1.0))
-            drr-pct      (math/percentage ads-val (if (pos? rev-val) rev-val 1.0))
-            over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
+      (let [rev-val       (or (:revenue pnl-cur) 0.0)
+            ads-val       (or (:ad-spend pnl-cur) 0.0)
+            np-val        (or (:net-profit pnl-cur) 0.0)
+            max-drr-pct   (math/percentage (+ np-val ads-val) (if (pos? rev-val) rev-val 1.0))
+            drr-pct       (math/percentage ads-val (if (pos? rev-val) rev-val 1.0))
+            over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))
+            basis-env     (basis-envelope fin-art (boolean (:preliminary? pnl-cur)))]
       {:id       sku-id
        :name     subject
        :nm-id    nm-id
@@ -1289,7 +1311,9 @@
                       :fact       (math/round2 (or (:revenue pnl-cur) 0.0))
                       :projection proj}
        :stocks-by-mp (if (seq stk-by-mp) stk-by-mp [])
-       :preliminary? (boolean (:preliminary? pnl-cur))}))
+       :preliminary? (boolean (:preliminary? pnl-cur))
+       :date-basis   (:date-basis   basis-env)
+       :completeness (:completeness basis-env)}))
     (catch Exception e
       {:id    (get-in request [:params :sku-id] "")
        :error (.getMessage e)})))

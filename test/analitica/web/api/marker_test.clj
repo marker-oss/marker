@@ -1119,3 +1119,98 @@
           ":drr-ceiling must carry a :value key")
       (is (or (nil? (:value dc)) (number? (:value dc)))
           ":drr-ceiling :value must be a number or nil"))))
+
+;; ---------------------------------------------------------------------------
+;; FR-P4.1 — basis-contract envelope on pnl / sku-list / sku-detail
+;; ---------------------------------------------------------------------------
+;;
+;; Every finance handler must emit {:date-basis {:api f :spread f :flat f}
+;;                                  :completeness #{:full :estimated}}
+;; at the top level of its response map.
+;;
+;; Pure test: basis-envelope helper semantics (no DB).
+;; Integration tests: shape contract on the three handlers.
+
+(def ^:private basis-envelope-fn #'marker-api/basis-envelope)
+
+(deftest basis-envelope-pure
+  (testing "basis-envelope returns :date-basis and :completeness keys"
+    (let [rows [] ; empty rows → all zeros → :full
+          env  (basis-envelope-fn rows false)]
+      (is (map? env))
+      (is (contains? env :date-basis))
+      (is (contains? env :completeness))))
+
+  (testing ":date-basis has :api :spread :flat fraction keys"
+    (let [env (basis-envelope-fn [] false)]
+      (let [db (:date-basis env)]
+        (doseq [k [:api :spread :flat]]
+          (is (contains? db k) (str ":date-basis missing key " k))))))
+
+  (testing ":completeness is :full when rows are all-api and not preliminary"
+    ;; finance/date-basis-split on rows with only :api source → {:api 1.0 :spread 0.0 :flat 0.0}
+    ;; flat < 0.2 and preliminary?=false → :full
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [:dummy-row] false)]
+        (is (= :full (:completeness env))))))
+
+  (testing ":completeness is :estimated when flat fraction >= 0.2"
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 0.7 :spread 0.1 :flat 0.2})]
+      (let [env (basis-envelope-fn [:dummy-row] false)]
+        (is (= :estimated (:completeness env))))))
+
+  (testing ":completeness is :estimated when preliminary? is true regardless of flat"
+    (with-redefs [analitica.domain.finance/date-basis-split
+                  (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [env (basis-envelope-fn [:dummy-row] true)]
+        (is (= :estimated (:completeness env)))))))
+
+(deftest ^:integration pnl-basis-contract-test
+  ;; FR-P4.1: pnl-handler response must carry basis-contract at envelope level.
+  (testing "pnl response carries :date-basis map with :api/:spread/:flat"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pnl")]
+      (is (contains? body :date-basis) "pnl response missing :date-basis (FR-P4.1)")
+      (let [db (:date-basis body)]
+        (is (map? db))
+        (doseq [k [:api :spread :flat]]
+          (is (contains? db k) (str "pnl :date-basis missing key " k))))))
+
+  (testing "pnl response carries :completeness in #{:full :estimated}"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pnl")]
+      (is (contains? body :completeness) "pnl response missing :completeness (FR-P4.1)")
+      (is (contains? #{:full :estimated} (:completeness body))
+          "pnl :completeness must be :full or :estimated"))))
+
+(deftest ^:integration sku-list-basis-contract-test
+  ;; FR-P4.1: sku-list-handler response must carry basis-contract at envelope level.
+  (testing "sku-list response carries :date-basis map with :api/:spread/:flat"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")]
+      (is (contains? body :date-basis) "sku-list response missing :date-basis (FR-P4.1)")
+      (let [db (:date-basis body)]
+        (is (map? db))
+        (doseq [k [:api :spread :flat]]
+          (is (contains? db k) (str "sku-list :date-basis missing key " k))))))
+
+  (testing "sku-list response carries :completeness in #{:full :estimated}"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-list")]
+      (is (contains? body :completeness) "sku-list response missing :completeness (FR-P4.1)")
+      (is (contains? #{:full :estimated} (:completeness body))
+          "sku-list :completeness must be :full or :estimated"))))
+
+(deftest ^:integration sku-detail-basis-contract-test
+  ;; FR-P4.1: sku-detail-handler response must carry basis-contract at envelope level.
+  (testing "sku-detail response carries :date-basis map with :api/:spread/:flat"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
+      (is (contains? body :date-basis) "sku-detail response missing :date-basis (FR-P4.1)")
+      (let [db (:date-basis body)]
+        (is (map? db))
+        (doseq [k [:api :spread :flat]]
+          (is (contains? db k) (str "sku-detail :date-basis missing key " k))))))
+
+  (testing "sku-detail response carries :completeness in #{:full :estimated}"
+    (let [{:keys [body]} (do-get "/api/v1/marker/sku-detail/SKU-TEST")]
+      (is (contains? body :completeness) "sku-detail response missing :completeness (FR-P4.1)")
+      (is (contains? #{:full :estimated} (:completeness body))
+          "sku-detail :completeness must be :full or :estimated"))))
