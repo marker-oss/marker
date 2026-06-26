@@ -307,6 +307,11 @@
   (let [articles (by-article finance-data)]
     {:total-revenue     (math/round2 (reduce + 0.0 (map :revenue articles)))
      :total-wb-reward   (math/round2 (reduce + 0.0 (map :wb-reward articles)))
+     ;; :total-mp-commission = real marketplace commission (Σ :mp-commission over
+     ;; sales lines). Distinct from :total-wb-reward (ppvz_reward = PVZ pickup
+     ;; income). Aggregated like :total-logistics so the sign convention matches
+     ;; its sibling cost fields in finance breakdowns.
+     :total-mp-commission (math/round2 (reduce + 0.0 (map :mp-commission articles)))
      :total-acquiring   (math/round2 (reduce + 0.0 (map :acquiring articles)))
      :total-spp         (math/round2 (reduce + 0.0 (map :spp-amount articles)))
      :total-logistics   (math/round2 (reduce + 0.0 (map :logistics articles)))
