@@ -19,6 +19,19 @@
     (/ (double a) (double b))
     0.0))
 
+(defn unit-qty
+  "Canonical unit count for a sales/finance row when Σ-weighting by quantity.
+   A row with no `:quantity` is one unit (WB rows carry no quantity and are
+   1 unit/row), so a missing quantity coalesces to 1. This is the single
+   source for the `(or (:quantity row) 1)` convention used wherever a metric
+   sums units rather than rows (avg-price denominator, mp-share weighting —
+   spec 014 FR-002/FR-003/FR-011). Guarantees WB zero-regression: on a
+   quantity-less set, Σ unit-qty == row count, so the metric is unchanged.
+   NOTE: COGS (FR-004) deliberately uses `(or (:quantity row) 0)`, not this —
+   a service/unknown row contributes 0 cost-units, not 1."
+  [row]
+  (or (:quantity row) 1))
+
 (defn pct-delta
   "Percentage change from `previous` to `current`. Returns 0.0 when
    previous is nil or zero. Rounded to 2 dp."
