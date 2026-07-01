@@ -516,3 +516,109 @@
           "finance table must survive 2× init! with bot tables added")
       (is (seq (table-col-info ds "monthly_plans"))
           "monthly_plans must survive 2× init!"))))
+
+;; ---------------------------------------------------------------------------
+;; T008/T009 (spec 019-treasury-ledger) — treasury_* tables + indexes
+;;   treasury_accounts / treasury_counterparties / treasury_operations /
+;;   treasury_auto_rules / treasury_obligations
+;; All additive CREATE TABLE IF NOT EXISTS. Money columns are TEXT
+;; (decimal-string "0.00"), NOT REAL — this is the whole point of the ledger
+;; path (FR-019). data-model.md §5.
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-tables
+  ["treasury_accounts" "treasury_counterparties" "treasury_operations"
+   "treasury_auto_rules" "treasury_obligations"])
+
+(deftest spec-019-treasury-tables-exist
+  (testing "spec 019 T009: all 5 treasury_* tables created by init! with a single-column id PK"
+    (let [ds (db/init!)]
+      (doseq [t treasury-tables]
+        (let [info (table-info ds t)]
+          (is (seq info) (str t " table must exist after init!"))
+          (is (= ["id"] (pk-columns info))
+              (str t " PRIMARY KEY = (id)")))))))
+
+(deftest spec-019-treasury-accounts-columns
+  (testing "spec 019: treasury_accounts columns"
+    (let [ds   (db/init!)
+          info (table-info ds "treasury_accounts")
+          cols (set (map :name info))]
+      (doseq [c ["id" "name" "marketplace" "kind" "currency" "archived_at" "created_at"]]
+        (is (contains? cols c) (str "treasury_accounts missing column: " c))))))
+
+(deftest spec-019-treasury-counterparties-columns
+  (testing "spec 019: treasury_counterparties columns"
+    (let [ds   (db/init!)
+          info (table-info ds "treasury_counterparties")
+          cols (set (map :name info))]
+      (doseq [c ["id" "name" "kind" "archived_at" "created_at"]]
+        (is (contains? cols c) (str "treasury_counterparties missing column: " c))))))
+
+(deftest spec-019-treasury-operations-columns-money-is-text
+  (testing "spec 019: treasury_operations columns present; amount is TEXT (NOT REAL) — FR-019"
+    (let [ds   (db/init!)
+          info (table-info ds "treasury_operations")
+          cols (set (map :name info))]
+      (doseq [c ["id" "op_date" "amount" "currency" "direction" "account_id"
+                 "transfer_account_id" "counterparty_id" "category"
+                 "category_source" "applied_rule_id" "confirmed" "regular"
+                 "description" "source" "created_at"]]
+        (is (contains? cols c) (str "treasury_operations missing column: " c)))
+      (is (= "TEXT" (:type (find-column info "amount")))
+          "treasury_operations.amount MUST be TEXT (decimal-string), never REAL (FR-019)"))))
+
+(deftest spec-019-treasury-auto-rules-columns
+  (testing "spec 019: treasury_auto_rules columns"
+    (let [ds   (db/init!)
+          info (table-info ds "treasury_auto_rules")
+          cols (set (map :name info))]
+      (doseq [c ["id" "match_field" "match_op" "match_value" "category"
+                 "priority" "enabled" "created_at"]]
+        (is (contains? cols c) (str "treasury_auto_rules missing column: " c))))))
+
+(deftest spec-019-treasury-obligations-columns-money-is-text
+  (testing "spec 019: treasury_obligations columns; amount + remaining_amount are TEXT (FR-019)"
+    (let [ds   (db/init!)
+          info (table-info ds "treasury_obligations")
+          cols (set (map :name info))]
+      (doseq [c ["id" "direction" "amount" "remaining_amount" "currency"
+                 "counterparty_id" "issue_date" "due_date"
+                 "settled_operation_id" "confirmed" "created_at"]]
+        (is (contains? cols c) (str "treasury_obligations missing column: " c)))
+      (is (= "TEXT" (:type (find-column info "amount")))
+          "treasury_obligations.amount MUST be TEXT (decimal-string), never REAL")
+      (is (= "TEXT" (:type (find-column info "remaining_amount")))
+          "treasury_obligations.remaining_amount MUST be TEXT (decimal-string), never REAL"))))
+
+(deftest spec-019-treasury-indexes-exist
+  (testing "spec 019 T009: treasury indexes exist after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "idx_treasury_op_acc_date"))
+      (is (index-exists? ds "idx_treasury_op_category"))
+      (is (index-exists? ds "idx_treasury_op_confirmed"))
+      (is (index-exists? ds "idx_treasury_obl_due")))))
+
+(deftest spec-019-treasury-idempotent-and-nondestructive
+  (testing "spec 019: 2× init! does not throw; each treasury table present exactly once"
+    (db/init!)
+    (let [ds (db/init!)]
+      (doseq [t treasury-tables]
+        (is (= 1 (count (jdbc/execute! ds
+                          ["SELECT name FROM sqlite_master WHERE type='table' AND name=?" t]
+                          {:builder-fn rs/as-unqualified-maps})))
+            (str t " present exactly once after 2× init!")))))
+  (testing "spec 019 (P5/SC-008): treasury migration does NOT touch analytics tables"
+    (let [ds (db/init!)]
+      ;; cash_flow_periods (seed source for treasury) must survive unchanged —
+      ;; still REAL columns, not converted to TEXT.
+      (is (seq (table-info ds "cash_flow_periods"))
+          "cash_flow_periods must survive treasury migration (seed source, P&L.6)")
+      (is (= "REAL" (:type (find-column (table-info ds "cash_flow_periods") "orders_amount")))
+          "cash_flow_periods.orders_amount stays REAL — analytics path is FROZEN (SC-008)")
+      (is (seq (table-info ds "finance")) "finance table must survive treasury migration")
+      (is (seq (table-info ds "sales"))   "sales table must survive treasury migration")
+      ;; 015 opex taxonomy source must survive (shared taxonomy, §3.A)
+      (is (seq (table-info ds "opex_rows")) "opex_rows must survive treasury migration")
+      (is (seq (table-info ds "opex_auto_rules"))
+          "opex_auto_rules must survive treasury migration (015 classification seed, §3.A)"))))

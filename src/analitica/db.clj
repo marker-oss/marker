@@ -547,7 +547,80 @@
       note           TEXT,
       created_at     TEXT NOT NULL DEFAULT (datetime('now'))
     )"
-   "CREATE INDEX IF NOT EXISTS idx_opex_auto_active ON opex_auto_rules(effective_from, effective_to)"])
+   "CREATE INDEX IF NOT EXISTS idx_opex_auto_active ON opex_auto_rules(effective_from, effective_to)"
+
+   ;; ── Treasury ledger (spec 019) — ДДС / ДЗ-КЗ / реестр операций ──────────
+   ;; Money columns are TEXT (decimal-string "0.00"), NOT REAL — the whole
+   ;; point of the precise ledger path (FR-019). All additive
+   ;; CREATE TABLE/INDEX IF NOT EXISTS: idempotent, non-destructive (P5).
+   ;; Reuses the 015 category taxonomy (slug string in operations.category /
+   ;; auto_rules.category — one shared taxonomy, §3.A). data-model.md §5.
+   "CREATE TABLE IF NOT EXISTS treasury_accounts (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      marketplace  TEXT,
+      kind         TEXT,
+      currency     TEXT NOT NULL DEFAULT 'RUB',
+      archived_at  TEXT,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_counterparties (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      kind         TEXT,
+      archived_at  TEXT,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_operations (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      op_date             TEXT NOT NULL,
+      amount              TEXT NOT NULL,               -- decimal-string \"0.00\" (FR-019)
+      currency            TEXT NOT NULL DEFAULT 'RUB',
+      direction           TEXT NOT NULL,               -- income|expense|transfer
+      account_id          INTEGER NOT NULL,
+      transfer_account_id INTEGER,
+      counterparty_id     INTEGER,
+      category            TEXT,                         -- taxonomy slug (§3.A); NULL ⇒ uncategorised
+      category_source     TEXT,                         -- manual|rule|seed
+      applied_rule_id     INTEGER,
+      confirmed           INTEGER NOT NULL DEFAULT 1,   -- 1=actual, 0=planned
+      regular             INTEGER NOT NULL DEFAULT 0,
+      description         TEXT,
+      source              TEXT,                         -- manual|seed:cash_flow_periods|ingest:<mp>
+      created_at          TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_auto_rules (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_field  TEXT NOT NULL,                       -- counterparty|account|description
+      match_op     TEXT NOT NULL,                       -- equals|contains
+      match_value  TEXT NOT NULL,
+      category     TEXT NOT NULL,                        -- target slug (§3.A)
+      priority     INTEGER NOT NULL DEFAULT 100,         -- lower = higher precedence
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_obligations (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      direction            TEXT NOT NULL,               -- receivable|payable
+      amount               TEXT NOT NULL,               -- decimal-string (FR-019)
+      remaining_amount     TEXT NOT NULL,               -- decimal-string; 0.00 ⇒ settled
+      currency             TEXT NOT NULL DEFAULT 'RUB',
+      counterparty_id      INTEGER,
+      issue_date           TEXT,
+      due_date             TEXT NOT NULL,
+      settled_operation_id INTEGER,
+      confirmed            INTEGER NOT NULL DEFAULT 1,
+      created_at           TEXT NOT NULL
+    )"
+
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_acc_date ON treasury_operations(account_id, op_date)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_category ON treasury_operations(category)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_confirmed ON treasury_operations(confirmed, op_date)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_obl_due ON treasury_obligations(direction, due_date)"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
@@ -1274,3 +1347,226 @@
   (when (seq pairs)
     (insert-batch! :ozon_sku_map [:sku :offer_id]
                    (mapv (fn [[sku offer-id]] [sku offer-id]) pairs))))
+
+;; ---------------------------------------------------------------------------
+;; Treasury ledger — low-level CRUD (spec 019, T010).
+;;
+;; Money columns are TEXT decimal-strings (\"0.00\", FR-019). This layer NEVER
+;; parses money into a number — it reads/writes the raw string; parsing to
+;; BigDecimal happens ONLY in the domain via analitica.util.math/d. Booleans
+;; are stored as SQLite INTEGER 0/1 and returned as 0/1 (domain coerces).
+;; Soft-archive (R11/FR-026) is a helper here (sets archived_at, no cascade).
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-last-rowid
+  (keyword "last_insert_rowid()"))
+
+(defn- treasury-insert!
+  "INSERT a single row map (kebab keys → snake columns) into `table`.
+   Returns the new row id. Columns are passed as-is (caller supplies snake-case
+   column keywords)."
+  [table columns row]
+  (let [cols (mapv name columns)
+        sql  (str "INSERT INTO " (name table) " (" (clojure.string/join "," cols) ") "
+                  "VALUES (" (clojure.string/join "," (repeat (count cols) "?")) ")")
+        res  (jdbc/execute-one! (ds) (into [sql] (map #(get row %) columns))
+                                {:return-keys true})]
+    (get res treasury-last-rowid)))
+
+(defn treasury-insert-account!
+  "Insert a treasury_accounts row. `row` keys: :name :marketplace :kind
+   :currency :created-at. Returns new id."
+  [row]
+  (treasury-insert! :treasury_accounts
+                    [:name :marketplace :kind :currency :created_at]
+                    {:name        (:name row)
+                     :marketplace (:marketplace row)
+                     :kind        (:kind row)
+                     :currency    (:currency row)
+                     :created_at  (:created-at row)}))
+
+(defn treasury-list-accounts
+  "Return treasury_accounts rows as kebab maps (money/strings raw). When
+   `include-archived?` is false, archived accounts are excluded."
+  [include-archived?]
+  (query [(str "SELECT id, name, marketplace, kind, currency, archived_at, created_at
+                  FROM treasury_accounts"
+               (when-not include-archived? " WHERE archived_at IS NULL")
+               " ORDER BY id")]))
+
+(defn treasury-account-op-count
+  "Count operations referencing `account-id` as source or transfer target."
+  [account-id]
+  (-> (query ["SELECT COUNT(*) AS n FROM treasury_operations
+                WHERE account_id = ? OR transfer_account_id = ?"
+              account-id account-id])
+      first :n))
+
+(defn treasury-delete-account!
+  "Hard-delete account `id`."
+  [id]
+  (execute! ["DELETE FROM treasury_accounts WHERE id = ?" id]))
+
+(defn treasury-archive-account!
+  "Soft-archive account `id` (set archived_at)."
+  [id ts]
+  (execute! ["UPDATE treasury_accounts SET archived_at = ? WHERE id = ?" ts id]))
+
+(defn treasury-insert-counterparty!
+  "Insert a treasury_counterparties row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_counterparties
+                    [:name :kind :created_at]
+                    {:name       (:name row)
+                     :kind       (:kind row)
+                     :created_at (:created-at row)}))
+
+(defn treasury-list-counterparties
+  "Return treasury_counterparties rows as kebab maps, each with :operation-count."
+  [include-archived?]
+  (query [(str "SELECT c.id, c.name, c.kind, c.archived_at, c.created_at,
+                       (SELECT COUNT(*) FROM treasury_operations o
+                          WHERE o.counterparty_id = c.id) AS operation_count
+                  FROM treasury_counterparties c"
+               (when-not include-archived? " WHERE c.archived_at IS NULL")
+               " ORDER BY c.id")]))
+
+(defn treasury-counterparty-op-count
+  [counterparty-id]
+  (-> (query ["SELECT COUNT(*) AS n FROM treasury_operations WHERE counterparty_id = ?"
+              counterparty-id])
+      first :n))
+
+(defn treasury-delete-counterparty!
+  [id]
+  (execute! ["DELETE FROM treasury_counterparties WHERE id = ?" id]))
+
+(defn treasury-archive-counterparty!
+  [id ts]
+  (execute! ["UPDATE treasury_counterparties SET archived_at = ? WHERE id = ?" ts id]))
+
+(def ^:private treasury-operation-columns
+  [:op_date :amount :currency :direction :account_id :transfer_account_id
+   :counterparty_id :category :category_source :applied_rule_id
+   :confirmed :regular :description :source :created_at])
+
+(defn treasury-insert-operation!
+  "Insert a treasury_operations row. `row` uses kebab keys; :amount is a raw
+   \"0.00\" string; :direction/:category-source are stored as plain strings;
+   :confirmed/:regular are stored as 0/1. Returns new id."
+  [row]
+  (treasury-insert! :treasury_operations
+                    treasury-operation-columns
+                    {:op_date             (:op-date row)
+                     :amount              (:amount row)
+                     :currency            (:currency row)
+                     :direction           (:direction row)
+                     :account_id          (:account-id row)
+                     :transfer_account_id (:transfer-account-id row)
+                     :counterparty_id     (:counterparty-id row)
+                     :category            (:category row)
+                     :category_source     (:category-source row)
+                     :applied_rule_id     (:applied-rule-id row)
+                     :confirmed           (:confirmed row)
+                     :regular             (:regular row)
+                     :description         (:description row)
+                     :source              (:source row)
+                     :created_at          (:created-at row)}))
+
+(defn treasury-get-operation
+  "Return a single treasury_operations row by id as a kebab map (raw strings)."
+  [id]
+  (first (query ["SELECT * FROM treasury_operations WHERE id = ?" id])))
+
+(defn treasury-update-operation!
+  "Update selected columns of operation `id`. `set-map` uses snake-case column
+   keywords → values. No-op when empty."
+  [id set-map]
+  (when (seq set-map)
+    (let [cols   (keys set-map)
+          assign (clojure.string/join ", " (map #(str (name %) " = ?") cols))
+          params (into (mapv #(get set-map %) cols) [id])]
+      (execute! (into [(str "UPDATE treasury_operations SET " assign " WHERE id = ?")]
+                      params)))))
+
+(defn treasury-query-operations
+  "Return treasury_operations rows (kebab maps, raw strings) for the given
+   WHERE clause + params. `where` is a SQL fragment WITHOUT the WHERE keyword
+   (may be empty). Ordered by op_date DESC, id DESC (newest-first)."
+  [where params]
+  (query (into [(str "SELECT * FROM treasury_operations"
+                     (when (seq where) (str " WHERE " where))
+                     " ORDER BY op_date DESC, id DESC")]
+               params)))
+
+;; ---------------------------------------------------------------------------
+;; Treasury auto-rules CRUD
+;; ---------------------------------------------------------------------------
+
+(defn treasury-insert-auto-rule!
+  "Insert a treasury_auto_rules row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_auto_rules
+                    [:match_field :match_op :match_value :category :priority :enabled :created_at]
+                    {:match_field  (:match-field row)
+                     :match_op     (:match-op row)
+                     :match_value  (:match-value row)
+                     :category     (:category row)
+                     :priority     (:priority row)
+                     :enabled      (if (:enabled row) 1 0)
+                     :created_at   (:created-at row)}))
+
+(defn treasury-list-auto-rules
+  "Return all treasury_auto_rules rows, ordered by priority ASC, id ASC
+   (the classifier precedence order)."
+  []
+  (query ["SELECT id, match_field, match_op, match_value, category, priority, enabled, created_at
+             FROM treasury_auto_rules
+            ORDER BY priority ASC, id ASC"]))
+
+;; ---------------------------------------------------------------------------
+;; Treasury obligations CRUD
+;; ---------------------------------------------------------------------------
+
+(defn treasury-insert-obligation!
+  "Insert a treasury_obligations row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_obligations
+                    [:direction :amount :remaining_amount :currency
+                     :counterparty_id :issue_date :due_date
+                     :settled_operation_id :confirmed :created_at]
+                    {:direction             (:direction row)
+                     :amount                (:amount row)
+                     :remaining_amount      (:remaining-amount row)
+                     :currency              (:currency row)
+                     :counterparty_id       (:counterparty-id row)
+                     :issue_date            (:issue-date row)
+                     :due_date              (:due-date row)
+                     :settled_operation_id  (:settled-operation-id row)
+                     :confirmed             (if (:confirmed row) 1 0)
+                     :created_at            (:created-at row)}))
+
+(defn treasury-get-obligation
+  "Return a single treasury_obligations row by id."
+  [id]
+  (first (query ["SELECT * FROM treasury_obligations WHERE id = ?" id])))
+
+(defn treasury-update-obligation!
+  "Update selected columns of obligation `id`. `set-map` uses snake-case column
+   keywords → values."
+  [id set-map]
+  (when (seq set-map)
+    (let [cols   (keys set-map)
+          assign (clojure.string/join ", " (map #(str (name %) " = ?") cols))
+          params (into (mapv #(get set-map %) cols) [id])]
+      (execute! (into [(str "UPDATE treasury_obligations SET " assign " WHERE id = ?")]
+                      params)))))
+
+(defn treasury-query-obligations
+  "Return treasury_obligations rows for the given WHERE clause + params.
+   `where` may be empty. Ordered by due_date ASC, id ASC."
+  [where params]
+  (query (into [(str "SELECT * FROM treasury_obligations"
+                     (when (seq where) (str " WHERE " where))
+                     " ORDER BY due_date ASC, id ASC")]
+               params)))
