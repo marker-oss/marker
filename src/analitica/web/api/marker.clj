@@ -84,23 +84,44 @@
 (defn- compute-pnl
   "Compute P&L for fin-data over period-map.
    Accepts an optional cf-adjustments map (from pnl/load-cf-adjustments);
-   when supplied, pnl/calculate adds the P&L.6 cf-* / adjusted-* fields."
+   when supplied, pnl/calculate adds the P&L.6 cf-* / adjusted-* fields.
+
+   015 T039: the 5-arity also threads an optional `management` block (from
+   pnl/load-management-adjustments) as :management to pnl/calculate, so the
+   result carries the management-layer keys (:tax :vat :opex :profit …). When
+   `management` is nil the output is byte-for-byte identical to the pre-015
+   result (SC-006 / INV-4); the management keys simply aren't emitted."
   ([fin-data period-map marketplace]
-   (compute-pnl fin-data period-map marketplace nil))
+   (compute-pnl fin-data period-map marketplace nil nil))
   ([fin-data period-map marketplace cf-adjustments]
+   (compute-pnl fin-data period-map marketplace cf-adjustments nil))
+  ([fin-data period-map marketplace cf-adjustments management]
    (try
      (apply pnl/calculate
             fin-data
             (cond-> [:marketplace marketplace
                      :from        (:from period-map)
                      :to          (:to  period-map)]
-              cf-adjustments (conj :cf-adjustments cf-adjustments)))
+              cf-adjustments (conj :cf-adjustments cf-adjustments)
+              management     (conj :management management)))
      (catch Exception _
        {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
         :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
         :sales-qty 0 :returns-qty 0
         :non-return-rate 0.0 :buyout-rate 0.0  ; FR-008: :non-return-rate canonical; :buyout-rate alias
         :avg-check 0.0}))))
+
+;; ---------------------------------------------------------------------------
+;; 015 T039 — management-layer keys forwarded verbatim into the pnl-handler
+;; response envelope. These are exactly the keys pnl/calculate emits when a
+;; :management block is supplied (contracts/tax-opex-api.md §3). Absent from
+;; the response when management is inert-nil (they simply aren't in pnl-cur).
+;; ---------------------------------------------------------------------------
+
+(def ^:private management-response-keys
+  [:management-configured? :tax-base :tax :vat :opex :opex-by-category
+   :profit :profit-without-expense :management-margin :margin-without-expense
+   :management-zero-reason])
 
 (defn- with-prelim
   "Apply Ozon preliminary overlay to a pnl-result.
@@ -1156,16 +1177,21 @@
 
           fin-cur  (load-finance period mp1)
           fin-prev (load-finance prev   mp1)
-          pnl-cur  (compute-pnl fin-cur  period mp1)
           pnl-prev (compute-pnl fin-prev prev   mp1)
 
-          cf-adj   (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
+          ;; 015 T039: assemble the generalised management block (cf + OPEX +
+          ;; tax-config) for the current window. :cf carries the Ozon cash-flow
+          ;; adjustments (nil for WB/YM) — this SUPERSEDES the standalone
+          ;; load-cf-adjustments call; the :cf key is the same map. When no
+          ;; tax/opex is configured, :configured? is false and the management
+          ;; keys are inert (profit == net-profit, FR-016).
+          mgmt-blk (try (pnl/load-management-adjustments (:from period) (:to period) mp1)
                         (catch Exception _ nil))
-          ;; Recompute with CF adjustments when available (adds P&L.6 cf-*/adjusted-* fields).
-          ;; pnl/calculate accepts :cf-adjustments; compute-pnl 4-arity passes it through.
-          pnl-cur  (if cf-adj
-                     (compute-pnl fin-cur period mp1 cf-adj)
-                     pnl-cur)
+          cf-adj   (:cf mgmt-blk)
+          ;; Current-period P&L WITH cf-adjustments AND the management layer.
+          ;; pnl/calculate accepts :cf-adjustments + :management; compute-pnl
+          ;; 5-arity passes both through.
+          pnl-cur  (compute-pnl fin-cur period mp1 cf-adj mgmt-blk)
 
           ;; Apply preliminary overlay so Ozon shows a meaningful number
           ;; while realization is delayed. Per-MP=:ozon swaps revenue
@@ -1212,7 +1238,12 @@
               :sku-detail        sku-det
               :preliminary?      (boolean (:preliminary? pnl-cur))
               :preliminary-as-of (:preliminary-as-of pnl-cur)}
-             (basis-envelope fin-cur (boolean (:preliminary? pnl-cur)))))
+             (basis-envelope fin-cur (boolean (:preliminary? pnl-cur)))
+             ;; 015 T039: surface the management-layer keys (tax/opex/profit …)
+             ;; at the response top level (contract §3). Only the keys actually
+             ;; present on pnl-cur are copied — when management is inert-nil
+             ;; none exist and the response is byte-identical to pre-015.
+             (select-keys pnl-cur management-response-keys)))
     (catch Exception e
       {:rows [] :sku-detail [] :error (.getMessage e)})))
 
@@ -1732,6 +1763,25 @@
                                               :compare     (compare-flag params))
               schema      (rs/get-schema rtype)
               compare-blk (:compare data)
+              ;; ── 016 US5 — user-metric constructor ──
+              ;; Merge saved user-metric descriptors into :columns and compute
+              ;; each row's value via eval-user-metric BEFORE returning (i.e.
+              ;; before any client-side sort/filter/pagination), so a user
+              ;; metric renders / sorts / filters exactly like a built-in column.
+              ;; Additive: when no user metrics exist, columns/rows are unchanged.
+              ;; Fetch the metrics ONCE: descriptors (for :columns) come from
+              ;; user-metric->descriptor; row values come from the metric's
+              ;; :slug + :formula via eval-user-metric.
+              user-metrics (try (rs/fetch-user-metrics) (catch Exception _ []))
+              user-descs   (mapv rs/user-metric->descriptor user-metrics)
+              enrich-user  (fn [rows]
+                             (if (seq user-metrics)
+                               (mapv (fn [row]
+                                       (reduce (fn [r {:keys [slug formula]}]
+                                                 (assoc r slug (rs/eval-user-metric formula row)))
+                                               row user-metrics))
+                                     rows)
+                               rows))
               ;; LT3: compute honesty envelope (single source of truth).
               ;; One extra load-finance call; reports don't expose raw finance
               ;; rows from report-data, so we fetch separately.
@@ -1740,8 +1790,8 @@
               env         (basis-envelope fin-env (boolean (:preliminary? pnl-env)))]
           {:status 200
            :body   (cond-> {:report-type  rtype
-                            :columns      (vec (:columns schema))
-                            :rows         (vec (:rows data))
+                            :columns      (into (vec (:columns schema)) user-descs)
+                            :rows         (enrich-user (vec (:rows data)))
                             :totals       (or (:totals data) {})
                             :schema       (select-keys schema
                                                        [:id :title :rows-mode
@@ -1753,7 +1803,7 @@
                             :completeness (:completeness env)
                             :date-basis   (:date-basis   env)
                             :preliminary? (boolean (:preliminary? pnl-env))}
-                     compare-blk (assoc :compare {:rows   (vec (:rows compare-blk))
+                     compare-blk (assoc :compare {:rows   (enrich-user (vec (:rows compare-blk)))
                                                   :totals (or (:totals compare-blk) {})}))})))
     (catch Exception e
       {:status 500

@@ -15,7 +15,9 @@
    (eval-user-metric) + validation (valid-formula?) + descriptor emission
    (user-metric->descriptor). It is a pure AST interpreter; runtime code
    evaluation of user input is deliberately never used — sandboxing via EDN-spec."
-  (:require [malli.core :as m]))
+  (:require [malli.core :as m]
+            [clojure.edn :as edn]
+            [analitica.db :as db]))
 
 ;; ---------------------------------------------------------------------------
 ;; T004 — Malli schemas for column descriptor (§3.C contract, OWNED by 016)
@@ -250,6 +252,93 @@
   [descriptor]
   (when (m/validate ColumnDescriptor descriptor)
     descriptor))
+
+;; ---------------------------------------------------------------------------
+;; US5 persistence (016 §8.2) — user_metrics store over analitica.db.
+;;
+;; The formula is a SAFE EDN-AST; it is stored as its (pr-str …) form and read
+;; back with edn/read-string. save-user-metric! rejects any formula that fails
+;; valid-formula? BEFORE touching the DB — the closed grammar is the only thing
+;; that ever reaches persistence, so an unsafe/unknown-slug formula never lands.
+;; ---------------------------------------------------------------------------
+
+(defn- parse-formula
+  "Coerce a formula value to an EDN AST. Already-parsed (vector/keyword/number)
+   passes through; a string is read via edn/read-string (safe — no eval)."
+  [formula]
+  (if (string? formula)
+    (edn/read-string formula)
+    formula))
+
+(defn- row->user-metric
+  "Map a user_metrics DB row (unqualified kebab keys) to a UserMetric map,
+   parsing the stored formula string back into an EDN AST and re-keywording
+   the enum/flag columns."
+  [row]
+  (cond-> {:id      (:id row)
+           :slug    (keyword (:slug row))
+           :name    (:name row)
+           :formula (edn/read-string (:formula row))}
+    (some? (:suffix row))      (assoc :suffix (keyword (:suffix row)))
+    (some? (:filter-type row)) (assoc :filterType (keyword (:filter-type row)))
+    (some? (:positive-if-grow row)) (assoc :positiveIfGrow
+                                           (= 1 (:positive-if-grow row)))
+    (some? (:basis row))       (assoc :basis (:basis row))))
+
+(defn fetch-user-metrics
+  "Return all saved user metrics as UserMetric maps (formula = EDN AST),
+   ordered by id."
+  []
+  (->> (db/query ["SELECT id, slug, name, formula, suffix, filter_type,
+                          positive_if_grow, basis
+                   FROM user_metrics ORDER BY id"])
+       (mapv row->user-metric)))
+
+(defn save-user-metric!
+  "Validate + persist a user metric. `metric` is a UserMetric-shaped map; its
+   :formula may be an EDN AST or an EDN string (parsed here). Rejects (throws)
+   any formula that fails valid-formula? — the closed grammar is the security
+   boundary (VR-u2). Upserts on slug. Returns {:id n}."
+  [metric]
+  (let [formula (parse-formula (:formula metric))]
+    (when-not (valid-formula? formula)
+      (throw (ex-info "Invalid user-metric formula (not a safe EDN-AST over canonical slugs)"
+                      {:formula formula})))
+    (let [slug   (name (:slug metric))
+          suffix (some-> (:suffix metric) name)
+          ftype  (some-> (or (:filterType metric) (:filter-type metric)) name)
+          pig    (:positiveIfGrow metric)
+          basis  (:basis metric)]
+      (db/execute!
+        ["INSERT INTO user_metrics
+            (slug, name, formula, suffix, filter_type, positive_if_grow, basis, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT (slug)
+          DO UPDATE SET name             = excluded.name,
+                        formula          = excluded.formula,
+                        suffix           = excluded.suffix,
+                        filter_type      = excluded.filter_type,
+                        positive_if_grow = excluded.positive_if_grow,
+                        basis            = excluded.basis"
+         slug (:name metric) (pr-str formula) suffix ftype
+         (cond (true? pig) 1 (false? pig) 0 :else nil)
+         basis])
+      (let [id (-> (db/query ["SELECT id FROM user_metrics WHERE slug = ?" slug])
+                   first :id)]
+        {:id id}))))
+
+(defn delete-user-metric!
+  "Delete a user metric by id (no-op if absent)."
+  [id]
+  (db/execute! ["DELETE FROM user_metrics WHERE id = ?" id])
+  {:ok true})
+
+(defn user-metrics->descriptors
+  "Map every saved user metric to a ColumnDescriptor via user-metric->descriptor.
+   These merge into a report's :columns and render through the SAME US1 path as
+   built-in columns (table/KPI/bot) — no special-casing."
+  []
+  (mapv user-metric->descriptor (fetch-user-metrics)))
 
 ;; ---------------------------------------------------------------------------
 ;; Report schemas

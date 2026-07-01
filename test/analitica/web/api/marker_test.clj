@@ -1558,6 +1558,180 @@
                      "(150.0) to -150.0. Got: " (:commission sku)))))))))
 
 ;; ---------------------------------------------------------------------------
+;; 015 T039 — pnl-handler wires the :management block (tax/opex layer)
+;;
+;; The handler assembles the management block via pnl/load-management-adjustments
+;; and passes it as :management to pnl/calculate, so the response carries the
+;; §3 management keys. Configured vs inert are asserted with mocked finance +
+;; management block (deterministic, no live DB dependency).
+;; ---------------------------------------------------------------------------
+
+;; Shared fixture finance row for the T039 handler tests:
+;;   1 WB sale, for_pay 830, revenue 1000, cogs 0 (no cost basis) → net-profit
+;;   equals for_pay (no ad, no cogs). Chosen so tax base (=for_pay) is obvious.
+(def ^:private t039-finance-row
+  {:marketplace :wb :rrd-id 1
+   :date-from "2026-04-01" :date-to "2026-04-30"
+   :event-date "2026-04-15"
+   :article "MGMT-SKU" :operation "sale" :quantity 1
+   :retail-amount 1000.0 :retail-price 1000.0
+   :for-pay 830.0 :mp-commission 0.0 :wb-reward 0.0
+   :delivery-cost 0.0 :storage-fee 0.0 :acceptance 0.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+   :additional-payment 0.0 :ad-cost 0.0})
+
+(deftest pnl-handler-emits-management-keys-when-configured
+  (testing "pnl-handler wires load-management-adjustments → management keys present, configured? true"
+    (with-redefs
+      [load-finance-var                          (fn [& _] [t039-finance-row])
+       analitica.domain.finance/fetch-finance    (fn [& _] [t039-finance-row])
+       analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+       with-prelim-var                           (fn [pnl & _] pnl)
+       analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+       analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+       ;; Configured management block: УСН-income 6% + 100 OPEX.
+       analitica.domain.pnl/load-management-adjustments
+       (fn [& _] {:cf               nil
+                  :opex             100.0
+                  :opex-by-category {"rent" 100.0}
+                  :tax-config       {:taxation-type       :usn-income
+                                     :usn-rate            0.06
+                                     :vat-rate            0.0
+                                     :official-cost-price true}
+                  :configured?      true})
+       analitica.db/query                        (fn [& _] [{:n 0}])]
+      (let [resp (marker-api/pnl-handler {:params {}})]
+        (is (map? resp) "pnl-handler returned a map")
+        ;; Contract §3: the response is enriched with management keys at top level.
+        (is (true? (:management-configured? resp)) ":management-configured? true")
+        (doseq [k [:tax :tax-base :vat :opex :opex-by-category :profit
+                   :profit-without-expense :management-margin
+                   :margin-without-expense :management-zero-reason]]
+          (is (contains? resp k) (str "management key " k " must be present")))
+        ;; net-profit = for_pay − cogs − ad = 830 (cogs=0, ad=0).
+        ;; tax-base = for_pay = 830; tax = round2(830 × 0.06) = 49.8.
+        (is (= 830.0 (:tax-base resp)) "tax-base = for_pay")
+        (is (= 49.8 (:tax resp)) "tax = 830 × 0.06")
+        ;; profit = net − opex − tax = 830 − 100 − 49.8 = 680.2
+        (is (= 680.2 (:profit resp))
+            (str "management profit = net − opex − tax = 830 − 100 − 49.8. Got "
+                 (:profit resp)))
+        (is (= 780.2 (:profit-without-expense resp))
+            "profit-without-expense = net − (tax + vat) = 830 − 49.8")))))
+
+(deftest pnl-handler-management-inert-when-not-configured
+  (testing "pnl-handler with unconfigured management → configured? false, profit == net-profit"
+    (with-redefs
+      [load-finance-var                          (fn [& _] [t039-finance-row])
+       analitica.domain.finance/fetch-finance    (fn [& _] [t039-finance-row])
+       analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+       with-prelim-var                           (fn [pnl & _] pnl)
+       analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+       analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+       ;; Inert management block: no tax-config, 0 opex.
+       analitica.domain.pnl/load-management-adjustments
+       (fn [& _] {:cf               nil
+                  :opex             0.0
+                  :opex-by-category {}
+                  :tax-config       nil
+                  :configured?      false})
+       analitica.db/query                        (fn [& _] [{:n 0}])]
+      (let [resp (marker-api/pnl-handler {:params {}})
+            net-row (some #(when (= :net-profit (:key %)) %) (:rows resp))]
+        (is (map? resp) "pnl-handler returned a map")
+        (is (false? (:management-configured? resp)) ":management-configured? false when inert")
+        (is (contains? resp :profit) ":profit still emitted (inert)")
+        (is (= (:cur net-row) (:profit resp))
+            "inert: management :profit must equal :net-profit (byte-identical, FR-016)")))))
+
+;; compute-pnl unit: management block passed → management keys present on result
+(deftest compute-pnl-passes-management-block-through
+  (testing "compute-pnl 5-arity forwards :management to pnl/calculate"
+    ;; Mock ad-spend-by-article → {} so no live-DB ad-spend leaks into net-profit;
+    ;; assert the INV-1/INV-2 relationships hold over whatever net-profit results.
+    (with-redefs [analitica.domain.finance/fetch-finance (fn [& _] [t039-finance-row])
+                  analitica.domain.pnl/ad-spend-by-article (fn [& _] {})]
+      (let [mgmt {:cf nil :opex 100.0 :opex-by-category {"rent" 100.0}
+                  :tax-config {:taxation-type :usn-income :usn-rate 0.06
+                               :vat-rate 0.0 :official-cost-price true}
+                  :configured? true}
+            result ((deref compute-pnl-var)
+                    [t039-finance-row] {:from "2026-04-01" :to "2026-04-30"} :wb nil mgmt)
+            net    (:net-profit result)
+            tax    (:tax result)
+            vat    (:vat result)
+            opex   (:opex result)]
+        (is (true? (:management-configured? result)) ":management-configured? true")
+        (is (contains? result :tax) ":tax present")
+        (is (contains? result :vat) ":vat present")
+        (is (contains? result :opex) ":opex present")
+        (is (contains? result :profit) ":profit present")
+        (is (contains? result :profit-without-expense) ":profit-without-expense present")
+        (is (contains? result :management-margin) ":management-margin present")
+        (is (contains? result :management-zero-reason) ":management-zero-reason present")
+        (is (= 100.0 opex) ":opex forwarded from the management block")
+        ;; INV-1: profit = round2(net − opex − (tax + vat))
+        (is (= (analitica.util.math/round2 (- net opex tax vat)) (:profit result))
+            "INV-1: profit = net − opex − (tax + vat)")
+        ;; INV-2: profit-without-expense = round2(net − (tax + vat))
+        (is (= (analitica.util.math/round2 (- net tax vat)) (:profit-without-expense result))
+            "INV-2: profit-without-expense = net − (tax + vat)")))))
+
+;; ---------------------------------------------------------------------------
+;; 016 US5 — reports-handler merges user-metric descriptors into :columns and
+;; computes each row's user-metric value via eval-user-metric before returning.
+;; ---------------------------------------------------------------------------
+
+(deftest reports-handler-merges-user-metric-columns-and-values
+  (testing "user-metric descriptors are appended to :columns and each row carries the computed value"
+    (let [;; A saved user metric: revenue-per-order = revenue / orders.
+          user-metric {:slug :rev-per-order :name "Выручка/заказ"
+                       :formula [:/ :revenue :orders]
+                       :suffix :rub :filterType :number-range :positiveIfGrow true
+                       :basis "gross realisation per order"}
+          ;; Two rows: one with orders>0, one with orders=0 (div-by-0 → nil).
+          rows        [{:article "A1" :revenue 1000.0 :orders 4}
+                       {:article "A2" :revenue 500.0  :orders 0}]]
+      (with-redefs
+        [analitica.web.api.report/report-data
+         (fn [& _] {:rows rows :totals {}})
+         analitica.web.report-schemas/fetch-user-metrics (fn [] [user-metric])
+         load-finance-var                          (fn [& _] [])
+         compute-pnl-var                           (fn [& _] {})
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+        (let [resp (marker-api/reports-handler {:params {:type "ue"}})
+              body (:body resp)
+              cols (:columns body)
+              out  (:rows body)
+              by-a (into {} (map (juxt :article identity)) out)]
+          (is (= 200 (:status resp)))
+          ;; Descriptor merged into columns
+          (is (some #(= :rev-per-order (:key %)) cols)
+              "user-metric descriptor must be appended to :columns")
+          (is (true? (:user-defined? (some #(when (= :rev-per-order (:key %)) %) cols)))
+              "merged column is flagged :user-defined?")
+          ;; Row values computed via eval-user-metric
+          (is (= 250.0 (get-in by-a ["A1" :rev-per-order]))
+              "A1: 1000 / 4 = 250")
+          (is (nil? (get-in by-a ["A2" :rev-per-order]))
+              "A2: division by zero → nil (N/A discipline)"))))))
+
+(deftest reports-handler-no-user-metrics-is-inert
+  (testing "with no user metrics, :columns and :rows are byte-identical to base (additive-only)"
+    (let [rows [{:article "A1" :revenue 1000.0 :orders 4}]]
+      (with-redefs
+        [analitica.web.api.report/report-data
+         (fn [& _] {:rows rows :totals {}})
+         analitica.web.report-schemas/fetch-user-metrics (fn [] [])
+         load-finance-var                          (fn [& _] [])
+         compute-pnl-var                           (fn [& _] {})
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+        (let [resp (marker-api/reports-handler {:params {:type "ue"}})
+              out  (:rows (:body resp))]
+          (is (= 200 (:status resp)))
+          (is (= rows out) "rows unchanged when no user metrics exist"))))))
+
+;; ---------------------------------------------------------------------------
 ;; 016-US3 — pnl-handler emits the layered waterfall block
 ;; ---------------------------------------------------------------------------
 

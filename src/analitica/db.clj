@@ -549,6 +549,23 @@
     )"
    "CREATE INDEX IF NOT EXISTS idx_opex_auto_active ON opex_auto_rules(effective_from, effective_to)"
 
+   ;; spec 016 US5 — user-defined metric constructor (persistence).
+   ;; :formula is a SAFE EDN-AST stored as its pr-str form (parsed back with
+   ;; edn/read-string on read). All additive; validated at save via valid-formula?.
+   "CREATE TABLE IF NOT EXISTS user_metrics (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug              TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      formula           TEXT NOT NULL,          -- pr-str of the EDN-AST
+      suffix            TEXT,                   -- Suffix enum name (rub|pct|qty|days|ratio)
+      filter_type       TEXT,                   -- FilterType enum name (text-contains|number-range)
+      positive_if_grow  INTEGER,                -- 1=profit-like, 0=cost-like, NULL=neutral
+      basis             TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(slug)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_user_metrics_slug ON user_metrics(slug)"
+
    ;; ── Treasury ledger (spec 019) — ДДС / ДЗ-КЗ / реестр операций ──────────
    ;; Money columns are TEXT (decimal-string "0.00"), NOT REAL — the whole
    ;; point of the precise ledger path (FR-019). All additive
