@@ -96,7 +96,9 @@
      (catch Exception _
        {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
         :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
-        :sales-qty 0 :returns-qty 0 :buyout-rate 0.0 :avg-check 0.0}))))
+        :sales-qty 0 :returns-qty 0
+        :non-return-rate 0.0 :buyout-rate 0.0  ; FR-008: :non-return-rate canonical; :buyout-rate alias
+        :avg-check 0.0}))))
 
 (defn- with-prelim
   "Apply Ozon preliminary overlay to a pnl-result.

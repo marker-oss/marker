@@ -35,7 +35,7 @@
     {:key :subject     :title "Категория" :group :identity :format :text :default-visible? false}
     {:key :sales-qty   :title "Продажи"  :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true :delta-supported? true}
     {:key :returns-qty :title "Возвраты" :group :ue1 :format :int :canon-anchor "UE.1" :default-visible? true}
-    {:key :buyout-rate :title "% выкупа" :group :ue1 :format :pct :canon-anchor "UE.1" :default-visible? true}
+    {:key :non-return-rate :title "Доля невозвратов" :group :ue1 :format :pct :canon-anchor "UE.1" :default-visible? true}
     {:key :revenue     :title "Выручка"  :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? true :delta-supported? true}
     {:key :wb-reward   :title "wb-reward" :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? false}
     {:key :logistics   :title "Логистика" :group :ue2 :format :rub :canon-anchor "UE.2" :default-visible? false}
@@ -60,11 +60,11 @@
     {:key :profit-per-unit :title "Прибыль/ед" :group :per-unit :format :rub :canon-anchor "UE.6" :default-visible? false}]
 
    :column-presets
-   {:basic       [:article :brand :sales-qty :revenue :profit :margin-pct :buyout-rate]
+   {:basic       [:article :brand :sales-qty :revenue :profit :margin-pct :non-return-rate]
     :full        :all
     :per-unit    [:article :revenue-per-unit :cost-per-unit :logistics-per-unit
                   :storage-per-unit :payout-per-unit :profit-per-unit]
-    :percentages [:article :margin-pct :wb-cost-pct :cogs-pct :drr-pct :buyout-rate]}
+    :percentages [:article :margin-pct :wb-cost-pct :cogs-pct :drr-pct :non-return-rate]}
 
    :chart
    {:type :bar :title "Топ артикулов по прибыли" :x :article :y :profit :limit 20}})
@@ -189,9 +189,9 @@
    :tabs [:table :chart :drawer]
    :kpi [{:key :total-ordered :title "Заказано" :format :int}
          {:key :total-bought :title "Выкуплено" :format :int}
-         {:key :avg-buyout-rate :title "% выкупа" :format :pct}]
-   ;; :buyout-rate (legacy, sales-only) is kept default-visible alongside the
-   ;; new :true-buyout-rate (sold/placed). The cancel-rate column surfaces
+         {:key :avg-buyout-rate :title "Доля невозвратов" :format :pct}]
+   ;; :non-return-rate (sales-only: sold/ops, FR-008 canonical name) is kept default-visible
+   ;; alongside :true-buyout-rate (sold/placed). The cancel-rate column surfaces
    ;; the gap between the two — see canonical-formulas.md §Buyout.7.
    :columns [{:key :article          :title "Артикул"      :group :identity :format :text :default-visible? true :linkable? true}
              {:key :placed           :title "Заказано"     :group :volume   :format :int  :default-visible? true}
@@ -200,7 +200,7 @@
              {:key :returned         :title "Возвращено"   :group :volume   :format :int  :default-visible? true}
              {:key :ordered          :title "Операций"     :group :volume   :format :int  :default-visible? false}
              {:key :true-buyout-rate :title "% выкупа (от заказов)" :group :pct :format :pct :default-visible? true}
-             {:key :buyout-rate      :title "% выкупа (от операций)" :group :pct :format :pct :default-visible? true}
+             {:key :non-return-rate  :title "Доля невозвратов" :group :pct :format :pct :default-visible? true}
              {:key :cancel-rate      :title "% отмен"      :group :pct      :format :pct  :default-visible? true}]
    :column-groups {:identity {:title "Identity"} :volume {:title "Объём"} :pct {:title "%"}}
    :chart {:type :bar :title "Выкуп по артикулам" :x :article :y :true-buyout-rate :limit 20}})

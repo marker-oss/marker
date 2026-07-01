@@ -7,17 +7,22 @@
             [analitica.util.math :as math]))
 
 (defn analyze
-  "Per-article buyout rate from sales data. §Buyout.1, §Buyout.7.
+  "Per-article non-return rate from sales data. §Buyout.1, §Buyout.7.
 
-   Legacy formula: buyout-rate = math/percentage(sold, sold+returned).
-   Output rows sorted ascending by :buyout-rate (worst first — riskiest articles at top).
+   Formula: non-return-rate = math/percentage(sold, sold+returned+refused).
+   Output rows sorted ascending by :non-return-rate (worst first — riskiest articles at top).
 
-   Field note: :ordered = sold + returned (total unit operations). It is NOT
+   FR-008 rename: the metric was previously called :buyout-rate. The canonical
+   key is now :non-return-rate / \"Доля невозвратов\". Both keys are emitted in
+   every row (:non-return-rate and :buyout-rate) for one release-cycle backward
+   compatibility. New code should prefer :non-return-rate.
+
+   :non-return-rate is nil when :ordered = 0 (math/percentage returns nil on
+   zero denominator). Callers must handle nil before arithmetic. See §Buyout.6.4.
+
+   Field note: :ordered = sold + returned + refused (total unit operations). It is NOT
    orders placed on the marketplace — that data lives in the `orders` table.
    The misleading name is a deferred breaking-change; see §Buyout.6.1.
-
-   :buyout-rate is nil when :ordered = 0 (math/percentage returns nil on
-   zero denominator). Callers must handle nil before arithmetic. See §Buyout.6.4.
 
    Optional kwargs:
      :marketplace          — keyword to scope `sales/fetch-sales`. Without it,
@@ -47,10 +52,13 @@
                                               ;; new code can prefer the unambiguous name.
                                               :ordered     total
                                               :total-ops   total
-                                              :bought      sold
-                                              :returned    rets
-                                              :refused     refused
-                                              :buyout-rate (math/percentage sold total)}
+                                              :bought          sold
+                                              :returned        rets
+                                              :refused         refused
+                                              ;; FR-008 rename: canonical key is :non-return-rate.
+                                              ;; :buyout-rate kept as deprecated alias for one release cycle.
+                                              :non-return-rate (math/percentage sold total)
+                                              :buyout-rate     (math/percentage sold total)}
                                    o         (get orders-by-article art)
                                    placed    (when o (or (:placed o) 0))]
                                (cond-> row
@@ -58,7 +66,7 @@
                                                :cancelled        (or (:cancelled o) 0)
                                                :cancel-rate      (math/percentage (or (:cancelled o) 0) placed)
                                                :true-buyout-rate (math/percentage sold placed))))))
-                      (sort-by :buyout-rate))]
+                      (sort-by :non-return-rate))]
     by-art))
 
 (defn aggregate
@@ -92,7 +100,7 @@
         total-o (reduce + 0 (map :ordered data))
         total-b (reduce + 0 (map :bought data))
         total-r (reduce + 0 (map :returned data))
-        low     (filter #(and (>= (:ordered %) 3) (< (or (:buyout-rate %) 100) 70)) data)]
+        low     (filter #(and (>= (:ordered %) 3) (< (or (:non-return-rate %) (:buyout-rate %) 100) 70)) data)]
 
     (table/print-summary
      "АНАЛИЗ ВЫКУПА"
@@ -105,14 +113,14 @@
     (if (seq low)
       (table/print-table
        [[:article "Артикул"] [:subject "Предмет"] [:ordered "Операций"]
-        [:bought "Выкуп"] [:returned "Возврат"] [:buyout-rate "% выкупа"]]
+        [:bought "Выкуп"] [:returned "Возврат"] [:non-return-rate "Доля невозвратов"]]
        low)
       (println "  Все артикулы с хорошим выкупом."))
 
     (println "\n── Топ-20 по количеству операций ──")
     (table/print-table
      [[:article "Артикул"] [:ordered "Операций"] [:bought "Выкуп"]
-      [:returned "Возврат"] [:buyout-rate "% выкупа"]]
+      [:returned "Возврат"] [:non-return-rate "Доля невозвратов"]]
      (->> data (sort-by :ordered >) (take 20)))
 
     data))
@@ -121,5 +129,5 @@
   (let [data (analyze period)]
     (export/to-excel path "Buyout rate"
       [[:article "Article"] [:subject "Subject"] [:ordered "Total ops"]
-       [:bought "Bought"] [:returned "Returned"] [:buyout-rate "Buyout %"]]
+       [:bought "Bought"] [:returned "Returned"] [:non-return-rate "Доля невозвратов"]]
       data)))

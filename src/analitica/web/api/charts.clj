@@ -242,12 +242,12 @@
             ;; Take articles with at least 3 operations, sorted by buyout rate
             filtered (->> buyout-data
                           (filter #(>= (:ordered %) 3))
-                          (sort-by :buyout-rate)
+                          (sort-by (fn [b] (or (:non-return-rate b) (:buyout-rate b))))
                           (take 20))
             labels (mapv :article filtered)
-            data (mapv :buyout-rate filtered)]
+            data (mapv (fn [b] (or (:non-return-rate b) (:buyout-rate b))) filtered)]
         {:labels labels
-         :datasets [{:label "% выкупа"
+         :datasets [{:label "Доля невозвратов"
                      :data data}]})
       
       ;; Trends: single period-vs-previous bar chart (LT4: period + marketplace forwarded)

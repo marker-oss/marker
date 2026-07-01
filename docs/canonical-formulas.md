@@ -160,10 +160,14 @@ account_services := из cash_flow_periods (Ozon) ИЛИ из finance-строк
 #### 3.8. COGS (себестоимость)
 
 ```
-cogs := SUM(cost_price.get(article, barcode) × quantity) для operation=sale
+net_sold := max(0, sales_qty − returns_qty)
+cogs := cost_price.get(article, barcode) × net_sold
 ```
+
+- Basis (P6): COGS charges on **NET units delivered and kept** — `max(0, sold − returned)`. Gross sold would overcount cost for returned items; the seller bears no procurement cost for goods that come back.
 - Источник: таблица `cost_prices` (ingest из 1С CSV).
 - Если цены нет — считается `0`, метрики с `cogs` возвращают degraded-результат; в отчёте предупреждение.
+- `max(0, …)` prevents negative COGS when returns exceed sales in the period (net-return scenario).
 
 #### 3.9. Ad-spend (реклама)
 
@@ -206,13 +210,18 @@ net_profit := gross_profit − ad_spend_total − tax
 #### 3.12. Производные метрики
 
 ```
-margin_gross_pct := gross_profit / revenue × 100
-margin_net_pct   := net_profit   / revenue × 100
-cogs_pct         := cogs         / revenue × 100
-drr_pct          := ad_spend     / revenue × 100       — "ДРР"
-buyout_rate_pct  := sales_qty    / (sales_qty + returns_qty) × 100
-avg_check        := revenue      / sales_qty
-profit_per_sale  := net_profit   / (sales_qty − returns_qty)     — прибыль на успешную доставку
+margin_gross_pct  := gross_profit / revenue × 100
+margin_net_pct    := net_profit   / revenue × 100
+cogs_pct          := cogs         / revenue × 100
+drr_pct           := ad_spend     / revenue × 100       — "ДРР"
+non_return_rate   := sales_qty    / (sales_qty + returns_qty + refusals_qty) × 100
+                     — "Доля невозвратов" (sales-only; WB refusals with saleID prefix "D" counted in denominator)
+                     — :buyout-rate is a one-cycle deprecated alias for backward compat
+avg_check         := revenue      / SUM(quantity WHERE operation_kind = :sale)
+                     — denominator = Σ units (quantity, coalesce nil→1), not row count
+roi               := (for_pay − cogs) / cogs × 100
+                     — ROI = net payout over cost (basis: for-pay as net MP settlement, cogs as procurement cost)
+profit_per_sale   := net_profit   / (sales_qty − returns_qty)     — прибыль на успешную доставку
 ```
 
 Все `%`-метрики возвращают `nil` при делении на 0 (см. `util.math/percentage`).
@@ -321,7 +330,7 @@ Service / adjustment строки **не входят** в эти суммы —
 | `gross_profit` | всё выше, кроме ad | `cash_flow_periods` (для Ozon) |
 | `net_profit` | gross_profit + ad_spend | — |
 | `margin_*`, `*_pct` | соответствующий базовый + `revenue` | — |
-| `buyout_rate` | `quantity`, `operation` | — |
+| `non_return_rate` (`:buyout-rate` deprecated alias) | `quantity`, `operation` | — |
 
 ---
 
@@ -747,33 +756,53 @@ clamped denominator on a fixture with 5 sales / 2 returns / known totals.
 
 ### UE.7 — Percentage metrics
 
-**Members:** `:buyout-rate`, `:margin-pct`, `:wb-cost-pct`, `:cogs-pct`,
-`:logistics-pct`, `:drr-pct`.
+**Members:** `:non-return-rate` (`:buyout-rate` — deprecated alias, one-cycle
+compat), `:margin-pct`, `:wb-cost-pct`, `:cogs-pct`,
+`:logistics-pct`, `:drr-pct`, `:max-drr-pct`.
 
 **Formula**
 
 ```
-buyout-rate[a]  := sales-qty / ops × 100               (via math/percentage)
-margin-pct[a]   := profit / revenue × 100
-wb-cost-pct[a]  := total-wb-costs / revenue × 100
-cogs-pct[a]     := total-cost / revenue × 100
-logistics-pct[a]:= logistics / revenue × 100
-drr-pct[a]      := ad-spend / revenue × 100
+non-return-rate[a] := sales-qty / ops × 100             (via math/percentage)
+                      — "Доля невозвратов": share of delivered units the buyer kept.
+                      — :buyout-rate is a deprecated alias emitted alongside for one release cycle.
+margin-pct[a]      := profit / revenue × 100
+wb-cost-pct[a]     := total-wb-costs / revenue × 100
+cogs-pct[a]        := total-cost / revenue × 100
+logistics-pct[a]   := logistics / revenue × 100
+drr-pct[a]         := ad-spend / revenue × 100
+max-drr-pct[a]     := (for-pay − total-cost − logistics − storage − penalties − acceptance)
+                       / revenue × 100
+                      — maximum feasible ad-spend rate before the article breaks even.
+                      — numerator = for-pay minus all variable non-ad costs (COGS, logistics,
+                        storage, penalties, acceptance). Ad budget cannot exceed this without
+                        producing a loss.
+                      — basis (P6): revenue and for-pay values unchanged; this is a derived
+                        planning metric only.
 ```
 
 **Economic justification.**
 
-- `buyout-rate` = conversion of ordered to kept. Core marketplace KPI.
+- `non-return-rate` ("Доля невозвратов") = share of dispatched units the buyer
+  kept. This is a **sales-only** metric (denominator = sales events + return
+  events from the `sales` table), distinct from the order-based
+  `:true-buyout-rate` (sold / placed-orders) in §Buyout.7. Renamed from
+  `:buyout-rate` in batch 014 because "выкуп" implies an order-placement
+  funnel, which this metric does not measure.
 - `margin-pct` = operational margin (post all direct costs and ads).
 - `*-pct` share-of-revenue metrics isolate where margin leaks go.
 - `drr-pct` ("ДРР" — доля рекламных расходов) — marketing spend as %
   revenue, standard Russian marketplace KPI.
+- `max-drr-pct` ("Макс. ДРР") — planning ceiling: how much of revenue could
+  theoretically be spent on ads before the article reaches zero profit. Useful
+  for bid-strategy tooling. The numerator covers all variable costs that must
+  be covered first; ad-spend is the residual.
 
 **Inputs.** All derive from UE.1 counts + UE.2 monetary + UE.3/4 totals.
 
 **Edge cases.**
 
-- `ops = 0` → `buyout-rate = nil` (division by zero handled in
+- `ops = 0` → `non-return-rate = nil` (division by zero handled in
   `math/percentage`).
 - `revenue = 0` → all `*-pct` metrics = nil (meaningful: no denominator).
 - Clamps in UE.1 do not leak here — `percentage` uses raw counts.
@@ -830,18 +859,20 @@ tolerance.
 ### UE.9 — Summary derived metrics
 
 **Members:** `:margin-pct`, `:wb-cost-pct`, `:cogs-pct`, `:drr-pct`,
-`:profit-per-sale`, `:avg-check`, summary `:buyout-rate`.
+`:profit-per-sale`, `:avg-check`, summary `:non-return-rate`
+(`:buyout-rate` — deprecated alias, one-cycle compat).
 
 **Formula**
 
 ```
-margin-pct     := total-profit / total-revenue × 100
-wb-cost-pct    := total-wb-costs / total-revenue × 100
-cogs-pct       := total-cost / total-revenue × 100
-drr-pct        := total-ad-spend / total-revenue × 100
-profit-per-sale:= total-profit / net-qty             ← net-qty = sales-qty − returns-qty (NOT clamped at summary level)
-avg-check      := total-revenue / sales-qty
-buyout-rate    := sales-qty / (sales-qty + returns-qty) × 100
+margin-pct       := total-profit / total-revenue × 100
+wb-cost-pct      := total-wb-costs / total-revenue × 100
+cogs-pct         := total-cost / total-revenue × 100
+drr-pct          := total-ad-spend / total-revenue × 100
+profit-per-sale  := total-profit / net-qty            ← net-qty = sales-qty − returns-qty (NOT clamped at summary level)
+avg-check        := total-revenue / sales-qty
+non-return-rate  := sales-qty / (sales-qty + returns-qty) × 100
+                    — "Доля невозвратов" (see UE.7); :buyout-rate is a deprecated alias
 ```
 
 where summary `sales-qty`, `returns-qty` are non-clamped sums across all
@@ -861,7 +892,7 @@ period had more returns than sales (a legitimate business state).
 - `net-qty ≤ 0` at summary → `profit-per-sale` via `safe-div` → 0. This
   is a LOSS-dominated period — the metric becomes uninformative but
   doesn't crash.
-- `sales-qty = 0` → `avg-check = 0`, `buyout-rate = nil`.
+- `sales-qty = 0` → `avg-check = 0`, `non-return-rate = nil`.
 - `total-revenue = 0` → all `*-pct` = nil.
 
 **Verification.** `unit_economics_canon_test.clj` › `group-9-summary-derived`:
@@ -1156,19 +1187,21 @@ profits to revenue.
 
 ### P&L.5 — Quantity and per-event derivatives
 
-**Members:** `:sales-qty`, `:returns-qty`, `:buyout-rate`, `:avg-check`,
+**Members:** `:sales-qty`, `:returns-qty`, `:non-return-rate`
+(`:buyout-rate` — deprecated alias, one-cycle compat), `:avg-check`,
 `:profit-per-sale`, `:articles`.
 
 **Formula**
 
 ```
-sales-qty   := SUM(article.sales-qty)
-returns-qty := SUM(article.returns-qty)
-net-qty     := sales-qty − returns-qty       (NOT clamped at summary level)
-buyout-rate := sales-qty / (sales-qty + returns-qty) × 100
-avg-check   := revenue   / sales-qty
-profit-per-sale := net-profit / net-qty
-articles    := count of distinct articles in the period
+sales-qty        := SUM(article.sales-qty)
+returns-qty      := SUM(article.returns-qty)
+net-qty          := sales-qty − returns-qty       (NOT clamped at summary level)
+non-return-rate  := sales-qty / (sales-qty + returns-qty) × 100
+                    — "Доля невозвратов"; :buyout-rate is a deprecated alias
+avg-check        := revenue   / sales-qty
+profit-per-sale  := net-profit / net-qty
+articles         := count of distinct articles in the period
 ```
 
 **Economic justification.** Identical to UE.9 derivations — P&L is UE
@@ -1180,7 +1213,7 @@ degenerate case, same as UE.
 
 **Edge cases.**
 
-- `sales-qty = 0` → `avg-check = 0`, `buyout-rate = nil`.
+- `sales-qty = 0` → `avg-check = 0`, `non-return-rate = nil`.
 - More returns than sales (net-qty ≤ 0) → `profit-per-sale = 0` via
   safe-div clamp.
 - `:articles` counts articles in by-article after UE's grouping — zero
@@ -1837,9 +1870,14 @@ uses the gross buyer price (`finished-price`) for market-shelf intuition.
 
 ```
 avg-price(group-items) :=
-  round2(SUM(row.finished-price over sale-rows) / count(sale-rows))
-  using math/safe-div → 0 when count = 0
+  round2(SUM(row.finished-price × (or row.quantity 1) over sale-rows)
+         / SUM(or row.quantity 1 over sale-rows))
+  using math/safe-div → 0 when denominator = 0
 ```
+
+Denominator is **Σ units** (sum of `:quantity`, coalescing `nil` → 1), not
+row count. This correctly weights multi-unit lines: a row with `quantity=3`
+contributes 3 units to the denominator, not 1.
 
 **Economic justification.** "Typical shelf price after applied promo
 discount" — the price the buyer actually paid, not the net amount the seller
@@ -1847,14 +1885,19 @@ received after MP commission. This is the seller-intuitive market metric for
 pricing analysis. Using `:for-pay` instead would give "typical net per unit",
 which belongs in the UE / P&L view.
 
-**Inputs.** `:finished-price` field on `:sale`-type rows only. Return rows
-are excluded because a return cancels the original transaction — including
-its price in the average would dilute the "what buyers currently pay" signal.
+**Inputs.** `:finished-price` and `:quantity` fields on `:sale`-type rows
+only. Return rows are excluded because a return cancels the original
+transaction — including its price in the average would dilute the "what
+buyers currently pay" signal.
 
 **Edge cases.**
 
 - Zero sales in group → `safe-div` returns `0`; `round2(0) = 0`.
 - `:finished-price` nil on a row → `(or (:finished-price %) 0)` coerce to 0.
+- `:quantity` nil on a row → coalesced to 1 (single-unit fallback).
+- Multi-unit rows (`:quantity` > 1): each unit contributes the same
+  `:finished-price` — the row represents one sale event, but at multiple
+  units. Weight by quantity to preserve the per-unit average.
 
 **Verification.** `sales_canon_test.clj` › `avg-price-uses-finished-not-forpay`.
 
@@ -3008,18 +3051,28 @@ these fields are not used by Returns).
 
 **Source file:** `src/analitica/domain/buyout.clj`
 **Test file:** `test/analitica/domain/buyout_canon_test.clj`
-**Purpose:** Per-article buyout rate and low-buyout detection — the operational efficiency complement to §Returns.
+**Purpose:** Per-article non-return rate and low-non-return detection — the operational efficiency complement to §Returns.
 
 ---
 
-### Buyout.1 — `analyze` per-article buyout rate
+### Buyout.1 — `analyze` per-article non-return rate
+
+**Canonical metric name:** `:non-return-rate` ("Доля невозвратов")
+**Deprecated alias (one-cycle compat):** `:buyout-rate`
 
 **Formula:**
 
 ```
-buyout-rate = math/percentage(sold, sold + returned)
-            = round2(sold / (sold + returned) × 100)
+non-return-rate = math/percentage(sold, sold + returned + refusals)
+               = round2(sold / (sold + returned + refusals) × 100)
 ```
+
+Where:
+- `sold` = count of `:sale` events
+- `returned` = count of `:return` events (post-delivery returns)
+- `refusals` = count of WB-specific refusal events (saleID prefix "D" — buyer refused at pickup point before completing delivery). For Ozon and YM, refusals are already mapped to `:return` events and are included via `returned`.
+
+**Ozon operation note:** `OperationAgentDeliveredToCustomerCanceled` is treated as a `:return` event (buyer rejected delivery). It is counted in `returned` and included in the denominator, consistent with the non-return definition.
 
 **Output fields per article row:**
 
@@ -3027,12 +3080,13 @@ buyout-rate = math/percentage(sold, sold + returned)
 |---|---|---|
 | `:article` | string | Seller SKU / article code |
 | `:subject` | string | Product category / subject (display only) |
-| `:ordered` | integer | **Total operations** = sold + returned. **NAMING CAVEAT:** `:ordered` is a misnomer. It is NOT orders placed by buyers on the marketplace. It is the total unit-event count (sales + returns) in the period. True order intent lives in the `orders` table. Renaming is a breaking change and is deferred — see Buyout.6.1. |
+| `:ordered` | integer | **Total operations** = sold + returned + refusals. **NAMING CAVEAT:** `:ordered` is a misnomer. It is NOT orders placed by buyers on the marketplace. It is the total unit-event count (sales + returns + refusals) in the period. True order intent lives in the `orders` table. Renaming is a breaking change and is deferred — see Buyout.6.1. |
 | `:bought` | integer | Count of `:sale` events (units sold / picked up) |
-| `:returned` | integer | Count of `:return` events (units returned) |
-| `:buyout-rate` | double or nil | `math/percentage(bought, ordered)`. `nil` when `ordered = 0` (no events for the article in the period). |
+| `:returned` | integer | Count of `:return` events (units returned or refused) |
+| `:non-return-rate` | double or nil | `math/percentage(bought, ordered)`. `nil` when `ordered = 0` (no events for the article in the period). |
+| `:buyout-rate` | double or nil | **Deprecated alias** — same value as `:non-return-rate`. Emitted alongside for one release cycle. Do not use in new consumers. |
 
-**Sort:** Ascending by `:buyout-rate` (lowest buyout = riskiest articles first). This is the **opposite** of most other reports which sort descending. Intentional for operator UX — worst performers surface at the top. Callers and UI consumers must be aware.
+**Sort:** Ascending by `:non-return-rate` (lowest = riskiest articles first). This is the **opposite** of most other reports which sort descending. Intentional for operator UX — worst performers surface at the top. Callers and UI consumers must be aware.
 
 ---
 
@@ -3041,16 +3095,16 @@ buyout-rate = math/percentage(sold, sold + returned)
 **Arithmetic identity:**
 
 ```
-buyout-rate + return-rate = 100   (for any article with ordered > 0)
+non-return-rate + return-rate = 100   (for any article with ordered > 0)
 ```
 
-Both rates share the same denominator (`ordered = sold + returned`) and complementary numerators (`bought` vs `returned`), so they sum to exactly 100.0 for any article with at least one operation.
+Both rates share the same denominator (`ordered = sold + returned + refusals`) and complementary numerators (`bought` vs `returned + refusals`), so they sum to exactly 100.0 for any article with at least one operation.
 
 **Economic framing:**
-- **Buyout-rate** = "operational efficiency" signal. A high buyout-rate means most delivered items are kept — good logistics, accurate product description, correct sizing info.
-- **Return-rate** = "quality / expectation" signal. A high return-rate means buyers are dissatisfied post-delivery or cancelled — descriptions mislead, sizing wrong, product defective.
+- **Non-return-rate** ("Доля невозвратов") = "operational efficiency" signal. A high non-return-rate means most delivered items are kept — good logistics, accurate product description, correct sizing info. This is a **sales-only** metric: it only sees events that reached the `sales` table (deliveries and returns/refusals). It does not count orders cancelled before delivery — for that, see the order-based `:true-buyout-rate` in §Buyout.7.
+- **Return-rate** = "quality / expectation" signal. A high return-rate means buyers are dissatisfied post-delivery or refused — descriptions mislead, sizing wrong, product defective.
 
-The two metrics are complementary but operators frame them differently: §Returns ranks articles by worst return-rate (descending) to find problem items; §Buyout ranks by worst buyout-rate (ascending, same ordering intent) to find efficiency gaps. They are the same underlying data viewed through different operator questions.
+The two metrics are complementary but operators frame them differently: §Returns ranks articles by worst return-rate (descending) to find problem items; §Buyout ranks by worst non-return-rate (ascending, same ordering intent) to find efficiency gaps. They are the same underlying data viewed through different operator questions.
 
 ---
 
@@ -3064,20 +3118,20 @@ The `report` function (not `analyze`) computes period-level totals and filters:
 total-o = SUM(:ordered)   over all articles
 total-b = SUM(:bought)    over all articles
 total-r = SUM(:returned)  over all articles
-overall-buyout-rate = math/percentage(total-b, total-o)
+overall-non-return-rate = math/percentage(total-b, total-o)
 ```
 
-**Low-buyout filter (`:low` slice):**
+**Low-non-return filter (`:low` slice):**
 
 ```
 low = filter articles where:
   (:ordered %) >= 3
-  AND (or (:buyout-rate %) 100) < 70
+  AND (or (:non-return-rate %) 100) < 70
 ```
 
-Threshold: `ordered ≥ 3` (minimum volume to avoid noisy single-event articles) AND `buyout-rate < 70%`.
+Threshold: `ordered ≥ 3` (minimum volume to avoid noisy single-event articles) AND `non-return-rate < 70%`.
 
-**`(or buyout-rate 100)` guard:** Articles with `ordered = 0` have `buyout-rate = nil` (from `math/percentage`). The `(or nil 100)` evaluates to `100`, so zero-operation articles are treated as "100% buyout" and are **not** flagged as low. This is a "no data = no concern" convention. Callers using `analyze` output directly and applying their own threshold must handle `nil` buyout-rate themselves.
+**`(or non-return-rate 100)` guard:** Articles with `ordered = 0` have `non-return-rate = nil` (from `math/percentage`). The `(or nil 100)` evaluates to `100`, so zero-operation articles are treated as "100% non-return" and are **not** flagged as low. This is a "no data = no concern" convention. Callers using `analyze` output directly and applying their own threshold must handle `nil` non-return-rate themselves.
 
 **Top-20 by volume:** `report` also prints the top-20 articles by `:ordered` descending (for volume monitoring), but does not return this slice — it returns the full `analyze` output.
 
@@ -3092,8 +3146,8 @@ Data flows as:
 sales/fetch-sales(period)
   → [sale/return rows]
   → group-by :article
-  → compute {sold, rets, total, buyout-rate} per article
-  → sort-by :buyout-rate ascending
+  → compute {sold, rets, total, non-return-rate} per article
+  → sort-by :non-return-rate ascending
 ```
 
 No marketplace filter at the `analyze` level. The caller controls data scope via the `period` argument passed to `sales/fetch-sales`. Multi-marketplace installations will see all MPs' rows mixed in one result unless the ingest pipeline separates them at DB level.
@@ -3116,25 +3170,27 @@ All three marketplaces are covered. Each populates `:sale` and `:return` rows vi
 
 | Marketplace | `:type :sale` | `:type :return` | Buyout semantics |
 |---|---|---|---|
-| Wildberries (WB) | ✅ | ✅ | Returns happen post-delivery (buyer refuses at pickup or returns after receipt). Low buyout-rate = logistics / expectation issue. |
+| Wildberries (WB) | ✅ | ✅ | Returns and refusals (saleID prefix "D") happen post-dispatch. Low non-return-rate = logistics / expectation issue. |
 | Ozon | ✅ | ✅ | Returns include both rejection-in-delivery and post-delivery returns. Buyout-rate aggregates both categories without distinction. |
-| Яндекс Маркет (YM) | ✅ | ✅ | **Cancellations are mapped to `:return` type.** Item-level `itemStatus = REJECTED` and order-level `CANCELLED_*` statuses are ingested as `:return` rows. YM buyout-rate is therefore **depressed by cancellations** (higher "return" count → lower buyout-rate). |
+| Яндекс Маркет (YM) | ✅ | ✅ | **Cancellations are mapped to `:return` type.** Item-level `itemStatus = REJECTED` and order-level `CANCELLED_*` statuses are ingested as `:return` rows. YM non-return-rate is therefore **depressed by cancellations** (higher "return" count → lower non-return-rate). |
 
-**Cross-MP comparability warning:** YM bundles cancellations into the `:return` count, while WB and Ozon do not. This means WB buyout-rate and YM buyout-rate are **not apples-to-apples** when compared in a mixed-MP dataset. Operators comparing across marketplaces must be aware of this definitional difference.
+**Cross-MP comparability warning:** YM bundles cancellations into the `:return` count, while WB and Ozon do not. This means WB non-return-rate and YM non-return-rate are **not apples-to-apples** when compared in a mixed-MP dataset. Operators comparing across marketplaces must be aware of this definitional difference.
 
 ---
 
 ### Buyout.6 — Known gaps and quirks
 
-1. **`:ordered` field naming** — `:ordered` means "total operations (sold + returned)" not "orders placed by buyers". The `orders` table tracks actual order-level intent. Renaming `:ordered` to `:total-ops` would be a breaking change across `report`, `export-excel`, CLI output, and any downstream consumers. Deferred until a major API revision.
+1. **`:ordered` field naming** — `:ordered` means "total operations (sold + returned + refusals)" not "orders placed by buyers". The `orders` table tracks actual order-level intent. Renaming `:ordered` to `:total-ops` would be a breaking change across `report`, `export-excel`, CLI output, and any downstream consumers. Deferred until a major API revision.
 
-2. **Cross-MP cancellation skew (YM)** — YM cancellations inflate the `:returned` count and depress buyout-rate (see Buyout.5). Cross-marketplace buyout-rate comparison is misleading without normalisation. The current implementation does not separate cancellations from genuine returns.
+2. **Cross-MP cancellation skew (YM)** — YM cancellations inflate the `:returned` count and depress non-return-rate (see Buyout.5). Cross-marketplace non-return-rate comparison is misleading without normalisation. The current implementation does not separate cancellations from genuine returns.
 
-3. **Hardcoded `low` threshold** — `ordered ≥ 3` and `buyout-rate < 70` are hardcoded in `report`. If product management wants tunable thresholds (e.g. per-category, per-MP, or operator-configured), the thresholds must be plumbed through as arguments to `report`.
+3. **Hardcoded `low` threshold** — `ordered ≥ 3` and `non-return-rate < 70` are hardcoded in `report`. If product management wants tunable thresholds (e.g. per-category, per-MP, or operator-configured), the thresholds must be plumbed through as arguments to `report`.
 
-4. **`nil` buyout-rate for zero-operation articles** — `math/percentage(0, 0) = nil`. The `(or buyout-rate 100)` guard in the `low` filter prevents false positives. Callers using `analyze` output directly must handle `nil` themselves — arithmetic on `nil` will throw.
+4. **`nil` non-return-rate for zero-operation articles** — `math/percentage(0, 0) = nil`. The `(or non-return-rate 100)` guard in the `low` filter prevents false positives. Callers using `analyze` output directly must handle `nil` themselves — arithmetic on `nil` will throw.
 
-5. **Sort ascending in `analyze` (worst first)** — `sort-by :buyout-rate` with default ascending order puts `nil` values first (Clojure sorts `nil` before numbers). Articles with `ordered = 0` (nil buyout-rate) will appear at the very top of the `analyze` result. The `report` layer implicitly excludes them from the `low` filter via the `(or 100)` guard, but they remain in the returned seq.
+5. **Sort ascending in `analyze` (worst first)** — `sort-by :non-return-rate` with default ascending order puts `nil` values first (Clojure sorts `nil` before numbers). Articles with `ordered = 0` (nil non-return-rate) will appear at the very top of the `analyze` result. The `report` layer implicitly excludes them from the `low` filter via the `(or 100)` guard, but they remain in the returned seq.
+
+6. **`:buyout-rate` rename (batch 014)** — the metric was renamed from `:buyout-rate` to `:non-return-rate` because "% выкупа" implies an order-funnel conversion (placed → delivered), while this metric only sees post-dispatch events (delivered vs returned). Producers emit both keys for one release cycle. New consumers must read `:non-return-rate`; the `:buyout-rate` alias will be removed in the following release.
 
 ---
 
@@ -3151,11 +3207,11 @@ cancel-rate    := math/percentage(cancelled, placed)
 true-buyout-rate := math/percentage(sold, placed)
 ```
 
-**Economic justification.** §Buyout.1's `buyout-rate` only sees events that
-landed in the `sales` table — sales (delivered, paid out) and returns (post-
-delivery refusals). Orders cancelled before delivery never reach `sales`.
+**Economic justification.** §Buyout.1's `non-return-rate` only sees events that
+landed in the `sales` table — sales (delivered, paid out) and returns/refusals
+(post-dispatch). Orders cancelled before delivery never reach `sales`.
 For WB this is dramatic: ~50% of placed orders are cancelled before the
-seller sees them, so the legacy buyout rate (90% on average) hides the
+seller sees them, so the sales-only non-return-rate (90% on average) hides the
 true conversion rate (~35-45%). The orders-aware true-buyout-rate uses
 `orders.placed` as denominator and surfaces this gap.
 
@@ -3192,18 +3248,20 @@ each MP's status taxonomy via `analitica.domain.order-status/canonicalize`
 
 - Every Buyout.N group has a corresponding `deftest` in
   `test/analitica/domain/buyout_canon_test.clj`.
-- Fixture: 5 articles with known sale/return distributions:
-  - Article A: 8 sales + 2 returns → buyout-rate = 80.0%
-  - Article B: 3 sales + 3 returns → buyout-rate = 50.0% (low: ordered=6, rate<70)
-  - Article C: 10 sales + 0 returns → buyout-rate = 100.0%
-  - Article D: 1 sale + 0 returns → buyout-rate = 100.0% (NOT low: ordered=1 < 3)
-  - Article E: 1 sale + 4 returns → buyout-rate = 20.0% (low: ordered=5, rate<70)
-- `analyze-computes-buyout-rate` — verifies A=80%, B=50%, C=100% (§Buyout.1).
+- Fixture: 5 articles with known sale/return/refusal distributions:
+  - Article A: 8 sales + 2 returns → non-return-rate = 80.0%
+  - Article B: 3 sales + 3 returns → non-return-rate = 50.0% (low: ordered=6, rate<70)
+  - Article C: 10 sales + 0 returns → non-return-rate = 100.0%
+  - Article D: 1 sale + 0 returns → non-return-rate = 100.0% (NOT low: ordered=1 < 3)
+  - Article E: 1 sale + 4 returns → non-return-rate = 20.0% (low: ordered=5, rate<70)
+- `analyze-computes-non-return-rate` — verifies A=80%, B=50%, C=100% (§Buyout.1).
+  Also asserts `:buyout-rate` alias equals `:non-return-rate` on same rows.
 - `analyze-sorts-ascending-worst-first` — E(20%) sorts first (§Buyout.1 sort).
-- `buyout-plus-return-equals-100-algebraically` — for each article, `buyout-rate + (100 − buyout-rate) = 100` (§Buyout.2 identity).
+- `non-return-plus-return-equals-100-algebraically` — for each article,
+  `non-return-rate + (100 − non-return-rate) = 100` (§Buyout.2 identity).
 - `ordered-is-total-ops-not-orders` — asserts `:ordered = :bought + :returned` (§Buyout.6.1 naming guard).
 - `report-low-filter-threshold` — B and E appear in low, D does not (§Buyout.3 filter).
-- `nil-buyout-rate-excluded-from-low` — zero-op article has nil buyout-rate, is not flagged low (§Buyout.3 guard, §Buyout.6.4).
+- `nil-non-return-rate-excluded-from-low` — zero-op article has nil non-return-rate, is not flagged low (§Buyout.3 guard, §Buyout.6.4).
 - `empty-input-returns-empty` — `analyze` on empty sales → empty seq (§Buyout.1 edge case).
 - Regression coverage: `clojure -M:test` green on full suite.
 

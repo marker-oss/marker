@@ -148,7 +148,8 @@
                                       :cost-per-unit      cost-per-unit
                                       :payout-per-unit    payout-per-unit
                                       :profit-per-unit    profit-per-unit
-                                      :buyout-rate        buyout-rate
+                                      :non-return-rate    buyout-rate
+                                      :buyout-rate        buyout-rate  ; deprecated alias — remove after one release
                                       :margin-pct         margin-pct
                                       :wb-cost-pct        wb-cost-pct
                                       :cogs-pct           cogs-pct
@@ -283,7 +284,7 @@
 
     (println "\n── Топ-20 по прибыли (на единицу) ──")
     (table/print-table
-     [[:article "Артикул"] [:sales-qty "Прод"] [:buyout-rate "Выкуп%"]
+     [[:article "Артикул"] [:sales-qty "Прод"] [:non-return-rate "Доля невозвратов"]
       [:revenue-per-unit "Цена"] [:cost-per-unit "Себ/шт"]
       [:reward-per-unit "Ком/шт"] [:logistics-per-op "Log/op"] [:logistics-per-unit "Log/buy"]
       [:storage-per-unit "Скл/шт"] [:payout-per-unit "Выпл/шт"]
@@ -296,7 +297,7 @@
     (let [losers (filter #(neg? (:profit %)) ue-data)]
       (if (seq losers)
         (table/print-table
-         [[:article "Артикул"] [:sales-qty "Прод"] [:buyout-rate "Выкуп%"]
+         [[:article "Артикул"] [:sales-qty "Прод"] [:non-return-rate "Доля невозвратов"]
           [:revenue-per-unit "Цена"] [:cost-per-unit "Себ/шт"]
           [:logistics-per-op "Log/op"] [:logistics-per-unit "Log/buy"] [:payout-per-unit "Выпл/шт"]
           [:profit-per-unit "Приб/шт"] [:margin-pct "Маржа%"]]
@@ -305,7 +306,7 @@
 
     (println "\n── Где больше всего теряем (% издержек МП от выручки) ──")
     (table/print-table
-     [[:article "Артикул"] [:sales-qty "Прод"] [:buyout-rate "Выкуп%"] [:revenue "Выручка"]
+     [[:article "Артикул"] [:sales-qty "Прод"] [:non-return-rate "Доля невозвратов"] [:revenue "Выручка"]
       [:total-wb-costs "Издержки МП"] [:wb-cost-pct "МП%"]
       [:logistics-pct "Лог%"] [:total-cost "Себест"] [:profit "Прибыль"]]
      (->> ue-data
@@ -322,7 +323,7 @@
 (def ^:private ue-export-cols
   [[:article "Article"]
    [:brand "Brand"] [:subject "Subject"]
-   [:sales-qty "Sales"] [:buyout-rate "Buyout %"] [:returns-qty "Returns"]
+   [:sales-qty "Sales"] [:non-return-rate "Non-return %"] [:returns-qty "Returns"]
    [:revenue "Revenue"] [:revenue-per-unit "Price/unit"]
    [:cost-per-unit "COGS/unit"] [:total-cost "COGS total"] [:cogs-pct "COGS%"]
    [:wb-reward "PVZ Reimbursement"] [:reward-per-unit "PVZ Reimb/unit"]
@@ -367,11 +368,11 @@
      {:metric "Avg check"      :value (:avg-check summary)}
      {:metric "Sales qty"      :value sales-qty}
      {:metric "Returns qty"    :value returns-qty}
-     {:metric "Buyout %"       :value buyout-rate}]))
+     {:metric "Доля невозвратов" :value buyout-rate}]))
 
 (def ^:private losers-cols
   [[:article "Article"] [:brand "Brand"] [:subject "Subject"]
-   [:sales-qty "Sales"] [:returns-qty "Returns"] [:buyout-rate "Buyout %"]
+   [:sales-qty "Sales"] [:returns-qty "Returns"] [:non-return-rate "Non-return %"]
    [:revenue "Revenue"] [:revenue-per-unit "Price/unit"]
    [:cost-per-unit "COGS/unit"] [:total-cost "COGS total"]
    [:logistics "Logistics"] [:logistics-per-unit "Logistics/buyout"]
@@ -380,7 +381,7 @@
 
 (def ^:private wb-costs-cols
   [[:article "Article"] [:brand "Brand"]
-   [:sales-qty "Sales"] [:buyout-rate "Buyout %"] [:revenue "Revenue"]
+   [:sales-qty "Sales"] [:non-return-rate "Non-return %"] [:revenue "Revenue"]
    [:wb-reward "PVZ Reimbursement"] [:logistics "Logistics"] [:storage "Storage"]
    [:acceptance "Acceptance"] [:penalties "Penalties"] [:acquiring "Acquiring"]
    [:deduction "Deduction"]

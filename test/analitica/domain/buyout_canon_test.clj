@@ -277,3 +277,60 @@
               "refused must be 0 when no :refusal rows present")
           (is (= 66.67 (:buyout-rate g))
               "buyout-rate = 2/(2+1) = 66.67, unchanged from before"))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-008 — :non-return-rate canonical key + :buyout-rate alias co-present
+;; ---------------------------------------------------------------------------
+
+(deftest non-return-rate-key-renamed
+  ;; FR-008 contract: analyze rows carry BOTH :non-return-rate (canonical) and
+  ;; :buyout-rate (deprecated alias) with the same numeric value.
+  ;; Sort and filter must work on :non-return-rate.
+  (with-redefs [sales/fetch-sales (fn [_period & _opts] fx)]
+    (let [rows (buyout/analyze [:last-7-days])
+          a    (find-article rows "A")
+          b    (find-article rows "B")
+          e    (find-article rows "E")]
+
+      (testing "each row carries :non-return-rate (canonical key)"
+        (doseq [row rows]
+          (is (contains? row :non-return-rate)
+              (str "Article " (:article row) " missing :non-return-rate"))))
+
+      (testing "each row carries :buyout-rate (deprecated alias)"
+        (doseq [row rows]
+          (is (contains? row :buyout-rate)
+              (str "Article " (:article row) " missing :buyout-rate alias"))))
+
+      (testing ":non-return-rate and :buyout-rate have identical numeric values"
+        (doseq [row rows]
+          (is (= (:non-return-rate row) (:buyout-rate row))
+              (str "Article " (:article row)
+                   ": :non-return-rate=" (:non-return-rate row)
+                   " != :buyout-rate=" (:buyout-rate row)))))
+
+      (testing "Article A: :non-return-rate = 80.0"
+        (is (= 80.0 (:non-return-rate a))))
+
+      (testing "Article B: :non-return-rate = 50.0"
+        (is (= 50.0 (:non-return-rate b))))
+
+      (testing "Article E: :non-return-rate = 20.0"
+        (is (= 20.0 (:non-return-rate e))))
+
+      (testing "rows are sorted ascending by :non-return-rate (first = E = 20.0)"
+        (is (= "E" (:article (first rows)))))
+
+      (testing "sort by :non-return-rate gives same order as sort by :buyout-rate (values are identical)"
+        (let [by-nrr (map :article (sort-by :non-return-rate rows))
+              by-br  (map :article (sort-by :buyout-rate rows))]
+          (is (= by-nrr by-br))))
+
+      (testing "alias-aware filter (or :non-return-rate :buyout-rate) works for low-rate detection"
+        (let [low (filter #(and (>= (:ordered %) 3)
+                               (< (or (:non-return-rate %) (:buyout-rate %) 100) 70))
+                          rows)
+              low-articles (set (map :article low))]
+          (is (contains? low-articles "B") "B (50%) should be in low")
+          (is (contains? low-articles "E") "E (20%) should be in low")
+          (is (= 2 (count low)) "exactly 2 articles flagged low"))))))

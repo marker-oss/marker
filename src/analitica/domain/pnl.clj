@@ -285,7 +285,10 @@
        :margin-net    (math/percentage net-profit revenue)
        :sales-qty     sales-qty
        :returns-qty   returns-qty
-       :buyout-rate   (math/percentage sales-qty (+ sales-qty returns-qty))
+       ;; FR-008 rename: canonical key is :non-return-rate.
+       ;; :buyout-rate kept as deprecated alias for one release cycle.
+       :non-return-rate (math/percentage sales-qty (+ sales-qty returns-qty))
+       :buyout-rate     (math/percentage sales-qty (+ sales-qty returns-qty))
        :avg-check     (math/round2 (math/safe-div revenue sales-qty))
        :profit-per-sale (math/round2 (math/safe-div net-profit net-qty))
        :articles      (count by-art)}
@@ -376,7 +379,7 @@
               ["ПОКАЗАТЕЛИ" nil]
               ["  Продажи"              (:sales-qty pnl)]
               ["  Возвраты"             (:returns-qty pnl)]
-              ["  % выкупа"             (str (:buyout-rate pnl) "%")]
+              ["  Доля невозвратов"      (str (:non-return-rate pnl) "%")]
               ["  Средний чек"          (:avg-check pnl)]
               ["  Прибыль на продажу"   (:profit-per-sale pnl)]
               ["  Артикулов"            (:articles pnl)]])))
@@ -436,7 +439,7 @@
                       (into [{:line "" :amount nil}
                              {:line "Sales qty"         :amount (:sales-qty pnl)}
                              {:line "Returns qty"       :amount (:returns-qty pnl)}
-                             {:line "Buyout rate %"     :amount (:buyout-rate pnl)}
+                             {:line "Доля невозвратов"  :amount (:non-return-rate pnl)}
                              {:line "Avg check"         :amount (:avg-check pnl)}
                              {:line "Profit per sale"   :amount (:profit-per-sale pnl)}]))]
     (export/to-excel path "PnL" [[:line "Line"] [:amount "Amount RUB"]] pnl-rows)))
