@@ -39,9 +39,10 @@
   ;; RFC-14: :quantity is always ≥ 0. Direction is encoded by :type
   ;; (:sale / :return / :other). Same convention as canonical SalesRow.
   ;; RFC-15: :for-pay is always ≥ 0; sign through :type.
-  (let [is-return? (and (:saleID raw) (.startsWith (str (:saleID raw)) "R"))
-        is-sale?   (and (:saleID raw) (.startsWith (str (:saleID raw)) "S"))
-        raw-pay    (:forPay raw)]
+  (let [is-return?  (and (:saleID raw) (.startsWith (str (:saleID raw)) "R"))
+        is-sale?    (and (:saleID raw) (.startsWith (str (:saleID raw)) "S"))
+        is-refusal? (and (:saleID raw) (.startsWith (str (:saleID raw)) "D"))
+        raw-pay     (:forPay raw)]
     {:marketplace     :wb
      :sale-id         (str (:saleID raw))
      :date            (:date raw)
@@ -66,9 +67,10 @@
      :is-return       is-return?
      :is-storno       (= 1 (:IsStorno raw))
      :type            (cond
-                        is-return? :return
-                        is-sale?   :sale
-                        :else      :other)}))
+                        is-return?  :return
+                        is-sale?    :sale
+                        is-refusal? :refusal
+                        :else       :other)}))
 
 (defn ->sales [raw-list]
   (mapv ->sale raw-list))

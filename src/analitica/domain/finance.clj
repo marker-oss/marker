@@ -154,14 +154,17 @@
   [article lines storage-by-article]
   (let [sales-lines  (filter sale-row? lines)
         return-lines (filter return-row? lines)
-        ;; Linear in quantity: cost-per-unit × units. The previous
-        ;; `(max 1 (or quantity 1))` clamp silently overstated cogs by
-        ;; 30× for spread rows (quantity = 1/30 → floored to 1). It also
-        ;; charged a unit cost for service rows where quantity = 0/nil.
-        ;; See finance-cogs-test for regression coverage.
-        total-cost   (reduce + 0.0
-                       (map #(* (line-cost %) (or (:quantity %) 0))
-                            sales-lines))
+        ;; FR-004 net-of-returns COGS: cost-per-unit × max(0, sold−returned).
+        ;; The previous formula charged cost on gross sold units (returns ignored).
+        ;; The even-older `(max 1 (or quantity 1))` clamp before that overstated
+        ;; by 30× for spread rows (quantity = 1/30 → floored to 1) and fabricated
+        ;; cogs for service rows where quantity = 0/nil.
+        ;; See finance-cogs-test for full regression coverage.
+        cost-per-unit (if (seq sales-lines) (line-cost (first sales-lines)) 0.0)
+        sales-qty    (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
+        returns-qty  (reduce + 0 (map #(or (:quantity %) 0) return-lines))
+        net-units    (max 0 (- sales-qty returns-qty))
+        total-cost   (* cost-per-unit net-units)
         ;; First non-nil :marketplace wins; cross-MP article collisions
         ;; (rare but possible per Sales.7.3) collapse to whichever MP
         ;; appears first in the row order. Caller should disambiguate
@@ -260,15 +263,16 @@
        (map (fn [[[article barcode] lines]]
               (let [sales-lines  (filter sale-row? lines)
                     return-lines (filter return-row? lines)
-                    ;; Linear in quantity: cost-per-unit × units. The previous
-                    ;; `(max 1 (or quantity 1))` clamp silently overstated cogs
-                    ;; by 30× for Ozon spread rows (quantity = 1/30 → floored
-                    ;; to 1) and fabricated cogs for service rows where
-                    ;; quantity = 0/nil. Mirrors the by-article fix in commit
-                    ;; 2f8bd50; see by-sku-cogs-* tests in finance-cogs-test.
-                    total-cost   (reduce + 0.0
-                                   (map #(* (line-cost %) (or (:quantity %) 0))
-                                        sales-lines))]
+                    ;; FR-004 net-of-returns COGS: cost-per-unit × max(0, sold−returned).
+                    ;; Mirrors the by-article fix; the previous formula charged cost on
+                    ;; gross sold units (returns ignored). The even-older `(max 1 qty)`
+                    ;; clamp before that overstated by 30× for Ozon spread rows.
+                    ;; See by-sku-cogs-* tests in finance-cogs-test for regression coverage.
+                    sku-cost-per-unit (if (seq sales-lines) (line-cost (first sales-lines)) 0.0)
+                    sku-sales-qty     (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
+                    sku-returns-qty   (reduce + 0 (map #(or (:quantity %) 0) return-lines))
+                    sku-net-units     (max 0 (- sku-sales-qty sku-returns-qty))
+                    total-cost        (* sku-cost-per-unit sku-net-units)]
                 {:article     article
                  :barcode     barcode
                  :tech-size   (when (and size-map barcode) (get size-map barcode))

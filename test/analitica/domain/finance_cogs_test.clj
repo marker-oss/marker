@@ -162,3 +162,131 @@
           row  (first (finance/by-sku rows))]
       (testing "by-sku: integer qty=3 with cost=250 → total-cost = 750"
         (is (= 750.0 (:total-cost row)))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-004: COGS must be charged on NET (sold - returned) units, not gross sold
+;; ---------------------------------------------------------------------------
+
+(deftest cogs-net-subtracts-returned-units
+  ;; cost-per-unit=100, sold-qty=5, returned-qty=2 → net=3 → total-cost=300
+  ;; before-would-be 500.0 (gross: 100*5, returns ignored)
+  (with-redefs [cost-price/get-price (fn [_article _barcode] 100.0)]
+    (let [rows [{:marketplace :ozon :rrd-id 1
+                 :article "FR004" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-10"}
+                {:marketplace :ozon :rrd-id 2
+                 :article "FR004" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-11"}
+                {:marketplace :ozon :rrd-id 3
+                 :article "FR004" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-12"}
+                {:marketplace :ozon :rrd-id 4
+                 :article "FR004" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-13"}
+                {:marketplace :ozon :rrd-id 5
+                 :article "FR004" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-14"}
+                {:marketplace :ozon :rrd-id 6
+                 :article "FR004" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-20"}
+                {:marketplace :ozon :rrd-id 7
+                 :article "FR004" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-21"}]
+          row (first (finance/by-article rows))]
+      (testing "article-row: sold=5 returned=2 → net=3 → total-cost = 300.0 (before-would-be 500.0)"
+        (is (= 300.0 (:total-cost row))
+            (str "Expected 300.0 (100*3 net units). Got " (:total-cost row)
+                 " — if 500.0, returns are not being subtracted from COGS."))))))
+
+(deftest cogs-net-clamps-at-zero-on-all-returns
+  ;; sold-qty=2, returned-qty=5 → net=max(0,-3)=0 → total-cost=0.0 (never negative)
+  ;; before-would-be 200.0 (gross: 100*2, returns ignored)
+  (with-redefs [cost-price/get-price (fn [_article _barcode] 100.0)]
+    (let [rows [{:marketplace :ozon :rrd-id 1
+                 :article "FR004B" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-10"}
+                {:marketplace :ozon :rrd-id 2
+                 :article "FR004B" :operation "sale" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-11"}
+                {:marketplace :ozon :rrd-id 3
+                 :article "FR004B" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-15"}
+                {:marketplace :ozon :rrd-id 4
+                 :article "FR004B" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-16"}
+                {:marketplace :ozon :rrd-id 5
+                 :article "FR004B" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-17"}
+                {:marketplace :ozon :rrd-id 6
+                 :article "FR004B" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-18"}
+                {:marketplace :ozon :rrd-id 7
+                 :article "FR004B" :operation "return" :quantity 1
+                 :retail-amount 200.0 :for-pay 160.0
+                 :date-from "2026-04-01" :date-to "2026-04-30"
+                 :event-date "2026-04-19"}]
+          row (first (finance/by-article rows))]
+      (testing "article-row: sold=2 returned=5 → net clamped to 0 → total-cost = 0.0"
+        (is (= 0.0 (:total-cost row))
+            (str "Expected 0.0 (clamped: returns > sales). Got " (:total-cost row)
+                 " — COGS must never be negative."))))))
+
+(deftest cogs-p7-per-article-sum-equals-period-total
+  ;; P7 consistency: Σ per-article :total-cost over by-article == period :total-cost from totals.
+  ;; Two articles: A (sold=3, returned=1, cost=100 → net=2 → cost=200)
+  ;;               B (sold=4, returned=0, cost=50  → net=4 → cost=200)
+  ;; Expected period total-cost = 400.0
+  (with-redefs [cost-price/get-price (fn [article _barcode]
+                                       (case article
+                                         "A-P7" 100.0
+                                         "B-P7" 50.0
+                                         0.0))]
+    (let [rows [{:marketplace :ozon :rrd-id 1  :article "A-P7" :operation "sale"   :quantity 1 :retail-amount 300.0 :for-pay 240.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-05"}
+                {:marketplace :ozon :rrd-id 2  :article "A-P7" :operation "sale"   :quantity 1 :retail-amount 300.0 :for-pay 240.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-06"}
+                {:marketplace :ozon :rrd-id 3  :article "A-P7" :operation "sale"   :quantity 1 :retail-amount 300.0 :for-pay 240.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-07"}
+                {:marketplace :ozon :rrd-id 4  :article "A-P7" :operation "return" :quantity 1 :retail-amount 300.0 :for-pay 240.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-20"}
+                {:marketplace :ozon :rrd-id 5  :article "B-P7" :operation "sale"   :quantity 1 :retail-amount 150.0 :for-pay 120.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-05"}
+                {:marketplace :ozon :rrd-id 6  :article "B-P7" :operation "sale"   :quantity 1 :retail-amount 150.0 :for-pay 120.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-06"}
+                {:marketplace :ozon :rrd-id 7  :article "B-P7" :operation "sale"   :quantity 1 :retail-amount 150.0 :for-pay 120.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-07"}
+                {:marketplace :ozon :rrd-id 8  :article "B-P7" :operation "sale"   :quantity 1 :retail-amount 150.0 :for-pay 120.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-08"}]
+          articles         (finance/by-article rows)
+          per-article-sum  (reduce + 0.0 (map :total-cost articles))
+          ;; totals does not emit :total-cost directly; P7 is: Σ per-article == Σ by-article
+          ;; (the period rollup is computed identically from the same by-article result)
+          a-row            (first (filter #(= "A-P7" (:article %)) articles))
+          b-row            (first (filter #(= "B-P7" (:article %)) articles))]
+      (testing "A: sold=3 returned=1 → net=2 → total-cost = 200.0"
+        (is (= 200.0 (:total-cost a-row))
+            (str "A expected 200.0, got " (:total-cost a-row))))
+      (testing "B: sold=4 returned=0 → net=4 → total-cost = 200.0"
+        (is (= 200.0 (:total-cost b-row))
+            (str "B expected 200.0, got " (:total-cost b-row))))
+      (testing "P7: Σ per-article :total-cost = 400.0"
+        (is (= 400.0 per-article-sum)
+            (str "Expected 400.0, got " per-article-sum))))))

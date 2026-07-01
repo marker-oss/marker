@@ -125,3 +125,57 @@
   (testing "Posting with no products array: zero rows (degenerate Ozon edge case)"
     (let [out (transform/->sales [(assoc delivered-posting :products [])])]
       (is (empty? out)))))
+
+;; ---------------------------------------------------------------------------
+;; FR-007 — OperationAgentDeliveredToCustomerCanceled must be a return
+;; ---------------------------------------------------------------------------
+
+(deftest delivered-canceled-is-return
+  ;; before-would-be "sale"
+  (testing "OperationAgentDeliveredToCustomerCanceled normalizes to \"return\", not \"sale\""
+    (is (= "return"
+           (#'analitica.marketplace.ozon.transform/normalize-ozon-operation
+            "OperationAgentDeliveredToCustomerCanceled")))))
+
+(def ^:private canceled-op-raw
+  "Minimal raw Ozon finance transaction for a Canceled delivery."
+  {:operation_id   "op-canceled-1"
+   :operation_type "OperationAgentDeliveredToCustomerCanceled"
+   :operation_date "2026-04-10 00:00:00"
+   :amount         -1500.0
+   :accruals_for_sale 1500.0
+   :sale_commission -200.0
+   :delivery_charge 0
+   :items          [{:sku 111 :quantity 1}]
+   :services       []
+   :type           "transaction"})
+
+(def ^:private client-return-op-raw
+  "Minimal raw Ozon finance transaction for a ClientReturnAgentOperation."
+  {:operation_id   "op-return-2"
+   :operation_type "ClientReturnAgentOperation"
+   :operation_date "2026-04-11 00:00:00"
+   :amount         -1500.0
+   :accruals_for_sale 1500.0
+   :sale_commission -200.0
+   :delivery_charge 0
+   :items          [{:sku 111 :quantity 1}]
+   :services       []
+   :type           "transaction"})
+
+(deftest canceled-no-double-count-with-return
+  ;; Verify that one Canceled op → one return line, and a separate
+  ;; ClientReturnAgentOperation (different operation_id) → its own return line.
+  ;; Neither is dropped, merged, or produces a sale line. No double-counting.
+  (testing "two distinct raw ops each produce exactly one return finance-line"
+    (let [sku-map {111 "ART-001"}
+          lines   (transform/->finance-report
+                   [canceled-op-raw client-return-op-raw]
+                   sku-map)]
+      (is (= 2 (count lines))
+          "two ops → two finance lines, no merging")
+      (is (every? #(= "return" (:operation %)) lines)
+          "both lines must be :operation \"return\"")
+      (is (= #{"op-canceled-1" "op-return-2"}
+             (set (map :rrd-id lines)))
+          "each line carries its own distinct rrd-id (operation_id), no merging"))))

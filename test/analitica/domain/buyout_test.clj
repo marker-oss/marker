@@ -89,7 +89,7 @@
     (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-orders)]
       (let [rows (buyout/analyze [:last-7-days])
             a    (first (filter #(= "A" (:article %)) rows))]
-        (is (= #{:article :subject :ordered :total-ops :bought :returned :buyout-rate}
+        (is (= #{:article :subject :ordered :total-ops :bought :returned :refused :buyout-rate}
                (set (keys a)))
             "Backward-compat: legacy :ordered + canonical :total-ops alias both present (§Buyout.6.1)")))))
 

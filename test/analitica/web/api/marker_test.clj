@@ -1534,6 +1534,16 @@
   (testing "reports-handler 200 body carries :completeness :date-basis :preliminary? from basis-envelope"
     (with-redefs
       [load-finance-var   (fn [& _] [])
+       ;; load-finance-var (a def holding #'load-finance) is rewritten by the
+       ;; with-redefs MACRO as (var load-finance-var) — it rebinds the def, NOT
+       ;; the real private marker-api/load-finance, so the envelope's finance
+       ;; fetch would otherwise hit the real dev DB and read :full on any
+       ;; calendar day with data in the default 30-day window (latent order-
+       ;; dependent flake exposed 2026-07-01 by batch 014 reshuffling test order).
+       ;; Stub the underlying fetch directly so the "empty window → :empty"
+       ;; contract is deterministic and truly DB-free (matches sibling
+       ;; sku-list-empty-window-not-full, which stubs the db/query path).
+       analitica.domain.finance/fetch-finance (fn [& _] [])
        report-data-var    (fn [& _] {:rows [] :totals {}})]
       (let [resp (marker-api/reports-handler
                    {:request-method :get
@@ -1629,3 +1639,70 @@
           (is (some? chart-total))
           (is (< (Math/abs (- (double month-fact) (double chart-total))) 1.0)
               (str "Expected chart-total≈" month-fact " but got " chart-total)))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-003: compute-mp-share must weigh by Σ unit-qty, not row count
+;; ---------------------------------------------------------------------------
+
+(deftest mp-share-weighs-by-quantity
+  ;; 1 WB unit vs 3 Ozon units → WB=25%, Ozon=75%, YM=0%
+  ;; before-fix: row-count weighting → {:wb 50.0 :ozon 50.0 :ym 0.0}
+  (testing "unit-weighted split: 1 WB unit vs 3 Ozon units"
+    (let [rows [{:type :sale :marketplace :wb   :quantity 1}
+                {:type :sale :marketplace :ozon :quantity 3}]
+          r    (compute-mp-share rows)]
+      (is (= 25.0  (:wb   r)) "WB:   1/4 units = 25%  ;; before-would-be 50.0")
+      (is (= 75.0  (:ozon r)) "Ozon: 3/4 units = 75%  ;; before-would-be 50.0")
+      (is (= 0.0   (:ym   r)) "YM: not present = 0%")))
+
+  (testing "WB zero-regression: quantity-less rows (unit-qty coalesces to 1) == old row-count behavior"
+    ;; 2 WB rows (no :quantity) + 2 Ozon rows (no :quantity) → 50/50, same as before
+    (let [rows [{:type :sale :marketplace :wb}
+                {:type :sale :marketplace :wb}
+                {:type :sale :marketplace :ozon}
+                {:type :sale :marketplace :ozon}]
+          r    (compute-mp-share rows)]
+      (is (= 50.0 (:wb   r)))
+      (is (= 50.0 (:ozon r)))
+      (is (= 0.0  (:ym   r)))))
+
+  (testing "string marketplace keys are coerced to keywords (existing behavior retained)"
+    (let [rows [{:type :sale :marketplace "wb"   :quantity 2}
+                {:type :sale :marketplace "ozon" :quantity 2}]
+          r    (compute-mp-share rows)]
+      (is (= 50.0 (:wb   r)))
+      (is (= 50.0 (:ozon r))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-005: max-drr-numerator must include all variable costs
+;; ---------------------------------------------------------------------------
+
+(def ^:private max-drr-numerator #'marker-api/max-drr-numerator)
+
+(deftest max-drr-numerator-includes-variable-costs
+  ;; Fixture from spec contract (metric-formulas.edn §FR-005):
+  ;;   revenue=1000, for-pay=700, cogs=200, logistics=50, storage=20, penalties=10, acceptance=20
+  ;;   numerator = 700 - 200 - 50 - 20 - 10 - 20 = 400
+  ;;   max-drr-pct = 400 / 1000 * 100 = 40.0
+  ;;   before-would-be: (700 - 200) / 1000 * 100 = 50.0  (gross-margin only)
+  (testing "numerator deducts all variable costs"
+    (is (= 400.0 (max-drr-numerator 700.0 200.0 50.0 20.0 10.0 20.0))
+        "for-pay=700 cogs=200 logistics=50 storage=20 penalties=10 acceptance=20 => 400  ;; before-would-be 500.0"))
+
+  (testing "max-drr-pct = numerator/revenue*100 = 40.0 on spec fixture"
+    (let [rev        1000.0
+          for-pay    700.0
+          cogs       200.0
+          logistics  50.0
+          storage    20.0
+          penalties  10.0
+          acceptance 20.0
+          numer      (max-drr-numerator for-pay cogs logistics storage penalties acceptance)
+          pct        (analitica.util.math/percentage numer rev)]
+      (is (= 40.0 pct) "max-drr-pct = 40.0  ;; before-would-be 50.0")))
+
+  (testing "zero variable costs → numerator = for-pay - cogs (same as old gross-margin)"
+    (is (= 500.0 (max-drr-numerator 700.0 200.0 0.0 0.0 0.0 0.0))))
+
+  (testing "coalesces nil variable-cost fields to 0"
+    (is (= 400.0 (max-drr-numerator 700.0 200.0 50.0 20.0 10.0 20.0)))))

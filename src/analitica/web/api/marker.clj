@@ -450,6 +450,10 @@
    rows (regardless of any user-side MP filter). Always returns the
    three keys; missing MPs read as 0.
 
+   Weighting is by Σ unit-qty (analitica.util.math/unit-qty), not row
+   count. On quantity-less rows (e.g. WB sales table) unit-qty coalesces
+   to 1, so the result is byte-identical to the old row-count behaviour.
+
    This widget is structural — the donut shows where the seller's
    revenue comes from across MPs. Independent of MP filter so the user
    can see the full picture even when they've narrowed the rest of the
@@ -460,7 +464,7 @@
                    (group-by :marketplace)
                    (into {} (map (fn [[mp rows]]
                                    [(keyword (or mp "wb"))
-                                    (count rows)]))))
+                                    (reduce + 0 (map math/unit-qty rows))]))))
         total (max 1 (reduce + 0 (vals by-mp)))]
     {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
      :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
@@ -1195,6 +1199,19 @@
                  (pos? (or (:orders s) 0))))
            skus))
 
+(defn- max-drr-numerator
+  "Break-even ad-spend numerator for max-ДРР ceiling (FR-005 / UE.7).
+   Returns for-pay − cogs − logistics − storage − penalties − acceptance.
+   All variable-cost fields coalesce to 0 when absent.
+   When all variable costs are zero the result equals the old gross-margin
+   proxy (for-pay − cogs), preserving WB/quantity-less behaviour."
+  [for-pay cogs logistics storage penalties acceptance]
+  (- for-pay cogs
+     (or logistics   0.0)
+     (or storage     0.0)
+     (or penalties   0.0)
+     (or acceptance  0.0)))
+
 (defn sku-list-handler
   "Handler for GET /api/v1/marker/sku-list"
   [request]
@@ -1246,13 +1263,16 @@
                                   buyout    (math/percentage orders (+ orders returns))
                                   ads       (or (get ads-by-art art) 0.0)
                                   roas      (math/roas rev ads)
-                                  ;; max-ДРР ceiling (FR-P4.2 / UE.7).
-                                  ;; net-profit proxy at sku-list level: for-pay − cogs − ads
-                                  ;; (logistics etc. not available per-article here; cogs absorbs them)
-                                  ;; max-drr-numer = net-profit + ads = for-pay − cogs
-                                  ;; i.e. gross margin ₽; max-drr-pct = that / revenue × 100.
-                                  net-profit-est  (- for-pay cogs ads)
-                                  max-drr-pct     (math/percentage (+ net-profit-est ads) rev)
+                                  ;; max-ДРР ceiling (FR-005 / UE.7).
+                                  ;; Numerator = for-pay − cogs − logistics − storage − penalties − acceptance.
+                                  ;; These fields ARE carried by finance/by-article rows (article-row, finance.clj).
+                                  ;; max-drr-pct = numerator / revenue × 100 (break-even ad-spend rate).
+                                  logistics-a   (or (:logistics   a) 0.0)
+                                  storage-a     (or (:storage     a) 0.0)
+                                  penalties-a   (or (:penalties   a) 0.0)
+                                  acceptance-a  (or (:acceptance  a) 0.0)
+                                  max-drr-numer (max-drr-numerator for-pay cogs logistics-a storage-a penalties-a acceptance-a)
+                                  max-drr-pct   (math/percentage max-drr-numer rev)
                                   drr-pct         (math/percentage ads rev)
                                   drr-headroom    (math/round2 (- (or max-drr-pct 0.0)
                                                                    (or drr-pct 0.0)))

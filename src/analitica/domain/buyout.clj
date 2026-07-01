@@ -35,7 +35,8 @@
                       (map (fn [[art items]]
                              (let [sold      (count (filter #(= :sale (:type %)) items))
                                    rets      (count (filter #(= :return (:type %)) items))
-                                   total     (+ sold rets)
+                                   refused   (count (filter #(= :refusal (:type %)) items))
+                                   total     (+ sold rets refused)
                                    row       {:article     art
                                               :subject     (:subject (first items))
                                               ;; :ordered is the legacy name; per §Buyout.6.1 the
@@ -48,6 +49,7 @@
                                               :total-ops   total
                                               :bought      sold
                                               :returned    rets
+                                              :refused     refused
                                               :buyout-rate (math/percentage sold total)}
                                    o         (get orders-by-article art)
                                    placed    (when o (or (:placed o) 0))]
@@ -71,14 +73,16 @@
   [rows]
   (let [sold      (reduce + 0 (map #(or (:bought %) 0) rows))
         returned  (reduce + 0 (map #(or (:returned %) 0) rows))
+        refused   (reduce + 0 (map #(or (:refused %) 0) rows))
         placed    (reduce + 0 (map #(or (:placed %) 0) rows))
         cancelled (reduce + 0 (map #(or (:cancelled %) 0) rows))]
     {:sold               sold
      :returned           returned
+     :refused            refused
      :placed             placed
      :cancelled          cancelled
      :buyout-orders-rate (math/percentage sold placed)
-     :non-return-rate    (math/percentage sold (+ sold returned))
+     :non-return-rate    (math/percentage sold (+ sold returned refused))
      :cancel-rate        (math/percentage cancelled placed)}))
 
 (defn report

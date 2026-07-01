@@ -100,8 +100,8 @@
         (is (= 1000.0 (:revenue s))))
       (testing ":margin-pct = (1000-500)/1000 × 100 = 50.0"
         (is (< (Math/abs (- 50.0 (:margin-pct s))) 0.01)))
-      (testing ":roi = 1000/500 = 2.0"
-        (is (< (Math/abs (- 2.0 (:roi s))) 0.01))))))
+      (testing ":roi = (800-500)/500*100 = 60.0 (net-profit/cogs*100)"
+        (is (< (Math/abs (- 60.0 (:roi s))) 0.01))))))
 
 (deftest sku-summary-fractional-quantity-spread-row
   (testing "Ozon spread row qty=1/30 should not 30× cogs"
@@ -168,8 +168,8 @@
       (is (= 600.0 (- (:revenue s) (:cogs s))))
       ;; margin = (1000-400)/1000 * 100 = 60%
       (is (< (Math/abs (- 60.0 (:margin-pct s))) 0.01))
-      ;; roi = 1000/400 = 2.5
-      (is (< (Math/abs (- 2.5 (:roi s))) 0.01)))))
+      ;; roi = (800-400)/400*100 = 100.0 (net-profit/cogs*100)
+      (is (< (Math/abs (- 100.0 (:roi s))) 0.01)))))
 
 (deftest sku-summary-recent-ops
   (testing "recent-ops at most 10 rows, newest first"
@@ -212,3 +212,30 @@
     (let [s (sku/sku-summary "NONE" nil nil)]
       (is (map? s))
       (is (= 0 (:sales-count s))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-001: ROI = (for-pay - cogs) / cogs * 100
+;; ---------------------------------------------------------------------------
+
+(deftest roi-is-net-profit-over-cost
+  (testing "roi = (for-pay - cogs) / cogs * 100"
+    ;; revenue=1000, for-pay=800, cogs=500 => (800-500)/500*100 = 60.0
+    ;; before-would-be (revenue/cogs) = 1000/500 = 2.0 (no *100, markup not ROI)
+    (insert-finance! {:article "ROI-001" :marketplace :wb :rrd-id 901
+                      :quantity 1 :retail 1000.0 :pay 800.0
+                      :event-date "2026-04-15"})
+    (insert-cost-price! "ROI-001" 500.0)
+    (let [s (sku/sku-summary "ROI-001" "2026-04-01" "2026-04-30")]
+      (is (< (Math/abs (- 60.0 (:roi s))) 0.01)
+          (str "expected 60.0 got " (:roi s))))))
+
+(deftest roi-zero-cost-no-divide
+  (testing "roi = 0.0 when cogs = 0 (no cost-price seeded), no exception"
+    ;; cogs=0.0 => guarded => 0.0; before-would-be same guard, so this pins behaviour
+    (insert-finance! {:article "ROI-002" :marketplace :wb :rrd-id 902
+                      :quantity 1 :retail 1000.0 :pay 800.0
+                      :event-date "2026-04-15"})
+    ;; intentionally no insert-cost-price! => cogs = 0.0
+    (let [s (sku/sku-summary "ROI-002" "2026-04-01" "2026-04-30")]
+      (is (= 0.0 (:roi s))
+          (str "expected 0.0 got " (:roi s))))))

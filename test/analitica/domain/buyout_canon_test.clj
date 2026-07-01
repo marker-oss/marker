@@ -228,3 +228,52 @@
         (is (empty? rows)))
       (testing "result has zero elements"
         (is (= 0 (count rows)))))))
+
+;; ---------------------------------------------------------------------------
+;; §FR-006 — refusals counted in buyout (non-return) denominator
+;; ---------------------------------------------------------------------------
+
+(deftest refusals-counted-in-non-return-denom
+  ;; Contract: 3 sale + 1 return + 1 refusal for one article
+  ;; non-return rate (analyze :buyout-rate) = 3/(3+1+1) = 60.0
+  ;; before-would-be 75.0  (refusal was invisible, denom was 3+1=4)
+  (let [fx-refusal [{:type :sale    :article "F" :subject "shoes"}
+                    {:type :sale    :article "F" :subject "shoes"}
+                    {:type :sale    :article "F" :subject "shoes"}
+                    {:type :return  :article "F" :subject "shoes"}
+                    {:type :refusal :article "F" :subject "shoes"}]]
+    (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-refusal)]
+      (let [rows (buyout/analyze [:last-7-days])
+            f    (first (filter #(= "F" (:article %)) rows))]
+
+        (testing "analyze row carries :refused count"
+          (is (= 1 (:refused f))
+              ":refused must equal count of :refusal type items"))
+
+        (testing "analyze :buyout-rate uses enlarged denominator (sold / (sold+returned+refused))"
+          (is (= 60.0 (:buyout-rate f))
+              ;; 3/(3+1+1) = 60.0  ;; before-would-be 75.0
+              "buyout-rate must be 60.0 with refusal in denom, not 75.0"))
+
+        (testing "analyze :ordered includes refused in total ops"
+          (is (= 5 (:ordered f))
+              "ordered = sold+returned+refused = 5"))
+
+        (testing "aggregate :non-return-rate includes refused in denominator"
+          (let [agg (buyout/aggregate rows)]
+            (is (= 60.0 (:non-return-rate agg))
+                ;; 3/(3+1+1) = 60.0  ;; before-would-be 75.0
+                "aggregate non-return-rate must be 60.0 with refusal counted"))))))
+
+  (testing "no-refusal rows: refused=0, totals unchanged (WB zero-regression)"
+    ;; Pure :sale + :return with no :refusal — refused must be 0 and metrics unchanged
+    (let [fx-no-refusal [{:type :sale   :article "G" :subject "bags"}
+                         {:type :sale   :article "G" :subject "bags"}
+                         {:type :return :article "G" :subject "bags"}]]
+      (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-no-refusal)]
+        (let [rows (buyout/analyze [:last-7-days])
+              g    (first rows)]
+          (is (= 0 (:refused g))
+              "refused must be 0 when no :refusal rows present")
+          (is (= 66.67 (:buyout-rate g))
+              "buyout-rate = 2/(2+1) = 66.67, unchanged from before"))))))

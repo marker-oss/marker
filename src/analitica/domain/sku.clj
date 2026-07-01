@@ -15,7 +15,7 @@
      :revenue        double    ; sum of finance.retail_amount on sale rows (gross retail)
      :cogs           double    ; sum of cost_price × quantity on sale rows (linear)
      :margin-pct     double    ; (revenue - cogs) / revenue * 100, 0 if no revenue
-     :roi            double    ; revenue / cogs, 0 if no cogs
+     :roi            double    ; net profit ÷ cost-of-sales × 100, 0 if no cogs
      :daily-revenue  [{:date str :revenue double}]  ; one row per day, sales-derived
      :recent-ops     [{:date str :type str :marketplace str :amount double}]}"
   (:require [analitica.db :as db]
@@ -95,12 +95,13 @@
         sales-count   (long (or (:sales-qty   agg) 0))
         returns-count (long (or (:returns-qty agg) 0))
         revenue       (or (:revenue    agg) 0.0)
+        for-pay       (or (:for-pay    agg) 0.0)
         cogs          (or (:total-cost agg) 0.0)
         margin-pct    (if (pos? revenue)
                         (* 100.0 (/ (- revenue cogs) revenue))
                         0.0)
         roi           (if (pos? cogs)
-                        (/ revenue cogs)
+                        (* 100.0 (/ (- for-pay cogs) cogs))
                         0.0)
         ;; Sales-derived: nm-id, sparkline, recent operation log.
         rows          (fetch-sales-rows article from' to' marketplace)
