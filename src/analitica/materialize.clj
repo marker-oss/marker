@@ -181,6 +181,7 @@
 (declare materialize-ozon-orphan-services!)
 (declare materialize-wb-ad-stats!)
 (declare materialize-wb-ad-cost!)
+(declare materialize-ozon-ad-cost!)
 
 (defn respread-ozon-finance!
   "D1 step 4: read all currently-stored Ozon finance rows that overlap
@@ -259,6 +260,13 @@
           (let [{:keys [orphan-aggregates]} (materialize-ozon-services! [from to])]
             (materialize-ozon-orphan-services! [from to] orphan-aggregates)))
         (respread-ozon-finance! from to)
+        ;; Spec 011 US2 (T031): Ozon Performance ad_cost. Runs AFTER respread so
+        ;; the finance rows it SETs ad_cost on are the final daily children.
+        ;; Gated on raw :ad_performance presence → strictly additive no-op when
+        ;; advertising was never ingested (FR-005): no creds / outage leaves the
+        ;; period without ad_performance raw, so ad_cost stays whatever it was.
+        (when (seq (db/get-raw-range "ozon" :ad_performance from to))
+          (materialize-ozon-ad-cost! from to))
         ((requiring-resolve 'analitica.canonical.events.materialize/materialize-ozon-events!)
          from to)
         cnt)

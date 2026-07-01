@@ -237,6 +237,8 @@
       :prices  (ingest/ingest! :prices  :marketplace mp)
       :regions  (ingest/ingest! :regions  :period period :marketplace mp)
       :cashflow (ingest/ingest! :cashflow :period period :marketplace mp)
+      :ad-stats (ingest/ingest! :ad-stats :period period :marketplace mp)
+      :ad_stats (ingest/ingest! :ad-stats :period period :marketplace mp)
       (println "Unknown ingest target:" (first args)))))
 
 (defn- handle-materialize [args opts]
