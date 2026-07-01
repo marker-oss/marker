@@ -388,3 +388,131 @@
                         ["SELECT name FROM sqlite_master WHERE type='table' AND name='opex_rows'"]
                         {:builder-fn rs/as-unqualified-maps})))
           "opex_rows present exactly once after 2× init!"))))
+
+;; ---------------------------------------------------------------------------
+;; T004 (spec 017) — bot_subscriptions + bot_deliveries tables
+;;                   + monthly_plans.sku additive migration
+;; ---------------------------------------------------------------------------
+
+(deftest spec-017-bot-subscriptions-table-exists
+  (testing "spec 017: bot_subscriptions table created by init! with all required columns"
+    (let [ds   (db/init!)
+          info (table-col-info ds "bot_subscriptions")
+          cols (set (map :name info))]
+      (is (seq info) "bot_subscriptions table must exist after init!")
+      (doseq [c ["id" "chat_id" "label" "cadences" "metrics"
+                 "show_movers" "marketplace" "gate_when_empty"
+                 "status" "created_at" "updated_at"]]
+        (is (contains? cols c) (str "bot_subscriptions missing column: " c)))))
+  (testing "spec 017: bot_subscriptions UNIQUE(chat_id) constraint present"
+    (let [ds (db/init!)]
+      ;; Insert one row, then insert duplicate chat_id — must throw a unique constraint violation
+      (jdbc/execute! ds ["INSERT INTO bot_subscriptions
+                            (chat_id, cadences, metrics, show_movers, marketplace,
+                             gate_when_empty, status, created_at, updated_at)
+                          VALUES (?,?,?,?,?,?,?,?,?)"
+                         "chat-999" "daily" "" 1 "all" "skip" "active"
+                         "2026-07-01T00:00:00" "2026-07-01T00:00:00"])
+      (is (thrown? Exception
+            (jdbc/execute! ds ["INSERT INTO bot_subscriptions
+                                  (chat_id, cadences, metrics, show_movers, marketplace,
+                                   gate_when_empty, status, created_at, updated_at)
+                                VALUES (?,?,?,?,?,?,?,?,?)"
+                               "chat-999" "daily" "" 1 "all" "skip" "active"
+                               "2026-07-01T00:00:00" "2026-07-01T00:00:00"]))
+          "UNIQUE(chat_id) must reject duplicate chat_id"))))
+
+(deftest spec-017-bot-subscriptions-index-exists
+  (testing "spec 017: idx_bot_subs_status index exists after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "idx_bot_subs_status")
+          "idx_bot_subs_status index on bot_subscriptions(status) must exist"))))
+
+(deftest spec-017-bot-deliveries-table-exists
+  (testing "spec 017: bot_deliveries table created by init! with all required columns"
+    (let [ds   (db/init!)
+          info (table-col-info ds "bot_deliveries")
+          cols (set (map :name info))]
+      (is (seq info) "bot_deliveries table must exist after init!")
+      (doseq [c ["id" "chat_id" "cadence" "period" "outcome"
+                 "detail" "fail_count" "sent_at"]]
+        (is (contains? cols c) (str "bot_deliveries missing column: " c)))))
+  (testing "spec 017: bot_deliveries UNIQUE(chat_id,cadence,period) constraint present"
+    (let [ds (db/init!)]
+      (jdbc/execute! ds ["INSERT INTO bot_deliveries
+                            (chat_id, cadence, period, outcome, fail_count, sent_at)
+                          VALUES (?,?,?,?,?,?)"
+                         "chat-1" "daily" "2026-06-30" "delivered" 0 "2026-07-01T08:00:00"])
+      (is (thrown? Exception
+            (jdbc/execute! ds ["INSERT INTO bot_deliveries
+                                  (chat_id, cadence, period, outcome, fail_count, sent_at)
+                                VALUES (?,?,?,?,?,?)"
+                               "chat-1" "daily" "2026-06-30" "delivered" 0 "2026-07-01T09:00:00"]))
+          "UNIQUE(chat_id,cadence,period) must reject duplicate delivery key"))))
+
+(deftest spec-017-bot-deliveries-index-exists
+  (testing "spec 017: idx_bot_deliv_lookup index exists after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "idx_bot_deliv_lookup")
+          "idx_bot_deliv_lookup index on bot_deliveries must exist"))))
+
+(deftest spec-017-monthly-plans-sku-column-exists
+  (testing "spec 017: monthly_plans.sku column present after init! with TEXT type and DEFAULT ''"
+    (let [ds   (db/init!)
+          info (table-col-info ds "monthly_plans")
+          col  (find-column info "sku")]
+      (is (some? col) "monthly_plans.sku column must exist after init!")
+      (is (= "TEXT" (:type col)) "monthly_plans.sku must be TEXT")
+      ;; SQLite stores default '' as '' or as empty-quoted string
+      (let [dflt (:dflt_value col)]
+        (is (or (= "''" dflt) (= "" dflt))
+            (str "monthly_plans.sku default must be '' (got " (pr-str dflt) ")")))))
+  (testing "spec 017: existing monthly_plans rows survive sku migration with sku=''"
+    (let [pre-ds (jdbc/get-datasource {:dbtype "sqlite" :dbname *test-db-path*})]
+      ;; Create monthly_plans WITHOUT sku, insert a row, then run init!
+      (jdbc/execute! pre-ds
+        ["CREATE TABLE IF NOT EXISTS monthly_plans (
+            period_month TEXT NOT NULL,
+            marketplace  TEXT NOT NULL,
+            metric       TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (period_month, marketplace, metric)
+          )"])
+      (jdbc/execute! pre-ds
+        ["INSERT INTO monthly_plans (period_month, marketplace, metric, target_value)
+          VALUES (?,?,?,?)"
+         "2026-06" "wb" "revenue" 500000.0])
+      (let [ds  (db/init!)
+            row (-> (jdbc/execute! ds
+                      ["SELECT period_month, marketplace, metric, target_value, sku
+                        FROM monthly_plans
+                        WHERE period_month = ? AND marketplace = ? AND metric = ?"
+                       "2026-06" "wb" "revenue"]
+                      {:builder-fn rs/as-unqualified-maps})
+                    first)]
+        (is (some? row) "pre-existing monthly_plans row must still be present")
+        (is (= 500000.0 (:target_value row)) "target_value must be unchanged")
+        (is (= "" (:sku row)) "pre-existing row must have sku='' after migration")))))
+
+(deftest spec-017-monthly-plans-sku-index-exists
+  (testing "spec 017: uq_monthly_plans_sku unique index exists after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "uq_monthly_plans_sku")
+          "uq_monthly_plans_sku unique index on monthly_plans(period_month,marketplace,metric,sku) must exist"))))
+
+(deftest spec-017-init!-idempotent-bot-tables
+  (testing "spec 017: double init! does not throw; bot tables and sku column present after 2× runs"
+    (db/init!)
+    (let [ds (db/init!)]
+      (is (seq (table-col-info ds "bot_subscriptions"))
+          "bot_subscriptions present after 2× init!")
+      (is (seq (table-col-info ds "bot_deliveries"))
+          "bot_deliveries present after 2× init!")
+      (is (some? (find-column (table-col-info ds "monthly_plans") "sku"))
+          "monthly_plans.sku present after 2× init!")
+      ;; Existing non-bot tables must survive
+      (is (seq (table-col-info ds "finance"))
+          "finance table must survive 2× init! with bot tables added")
+      (is (seq (table-col-info ds "monthly_plans"))
+          "monthly_plans must survive 2× init!"))))

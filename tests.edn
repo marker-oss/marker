@@ -5,6 +5,7 @@
           ;; branch (loading them raises ClassNotFound / FileNotFound).
           ;; schema.performance-test → spec 001 (registry/validator)
           ;; Once the production ns lands, remove the corresponding exclusion.
+          ;; bot.* exclusion removed: spec 017 US1-US3 production vars now shipped.
           :ns-patterns ["^(?!.*schema\\.performance-test$).*-test$"]
           ;; Skip tests tagged ^:integration by default. These require an
           ;; isolated test database (ANALITICA_DB=test-analitica.db) and

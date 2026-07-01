@@ -435,13 +435,18 @@
       updated_at      TEXT NOT NULL
     )"
 
+   ;; spec 017 US4: sku column added ('' = MP-level aggregate, backward compat).
+   ;; Fresh DDL uses 4-column PK covering the sku dimension. Existing prod DBs
+   ;; are migrated via ALTER TABLE + uq_monthly_plans_sku UNIQUE index (see init!
+   ;; migration block). CREATE UNIQUE INDEX is idempotent via IF NOT EXISTS.
    "CREATE TABLE IF NOT EXISTS monthly_plans (
       period_month TEXT NOT NULL,
       marketplace  TEXT NOT NULL,
       metric       TEXT NOT NULL,
+      sku          TEXT NOT NULL DEFAULT '',
       target_value REAL NOT NULL,
       updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (period_month, marketplace, metric)
+      PRIMARY KEY (period_month, marketplace, metric, sku)
     )"
    "CREATE INDEX IF NOT EXISTS idx_monthly_plans_period
       ON monthly_plans(period_month)"
@@ -499,6 +504,37 @@
    "CREATE INDEX IF NOT EXISTS idx_opex_period ON opex_rows(period_month)"
    "CREATE INDEX IF NOT EXISTS idx_opex_period_mp ON opex_rows(period_month, marketplace)"
    "CREATE UNIQUE INDEX IF NOT EXISTS idx_opex_rule_period ON opex_rows(rule_id, period_month) WHERE rule_id IS NOT NULL"
+
+   ;; spec 017 — Telegram digest bot: per-chat subscription registry
+   "CREATE TABLE IF NOT EXISTS bot_subscriptions (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id         TEXT    NOT NULL,
+      label           TEXT,
+      cadences        TEXT    NOT NULL DEFAULT 'daily',
+      metrics         TEXT    NOT NULL DEFAULT '',
+      show_movers     INTEGER NOT NULL DEFAULT 1,
+      marketplace     TEXT    NOT NULL DEFAULT 'all',
+      gate_when_empty TEXT    NOT NULL DEFAULT 'skip',
+      status          TEXT    NOT NULL DEFAULT 'active',
+      created_at      TEXT    NOT NULL,
+      updated_at      TEXT    NOT NULL,
+      UNIQUE(chat_id)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_bot_subs_status ON bot_subscriptions(status)"
+
+   ;; spec 017 — per-(chat,cadence,period) delivery audit + idempotency gate
+   "CREATE TABLE IF NOT EXISTS bot_deliveries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id    TEXT    NOT NULL,
+      cadence    TEXT    NOT NULL,
+      period     TEXT    NOT NULL,
+      outcome    TEXT    NOT NULL,
+      detail     TEXT,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      sent_at    TEXT    NOT NULL,
+      UNIQUE(chat_id, cadence, period)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_bot_deliv_lookup ON bot_deliveries(chat_id, cadence, period)"
 
    "CREATE TABLE IF NOT EXISTS opex_auto_rules (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -886,6 +922,19 @@
                      ["INSERT OR IGNORE INTO sync_schedule (id, created_at, updated_at)
                        VALUES (1, ?, ?)"
                       now-str now-str]))
+    ;; spec 017 — per-SKU plan targets: add monthly_plans.sku column if absent.
+    ;; sku='' (DEFAULT) = existing MP-level aggregate — all existing rows keep
+    ;; their meaning without backfill. SQLite cannot alter the PRIMARY KEY via
+    ;; ALTER, so a UNIQUE index covers the 4-dimension upsert key instead.
+    ;; Idempotent via PRAGMA check; additive (P5 — no destructive changes).
+    (let [info    (jdbc/execute! ds ["PRAGMA table_info('monthly_plans')"]
+                                  {:builder-fn rs/as-unqualified-maps})
+          has-sku? (some #(= "sku" (:name %)) info)]
+      (when-not has-sku?
+        (jdbc/execute! ds ["ALTER TABLE monthly_plans ADD COLUMN sku TEXT NOT NULL DEFAULT ''"])
+        (println "Migration: monthly_plans.sku column added (spec 017)")))
+    (jdbc/execute! ds ["CREATE UNIQUE INDEX IF NOT EXISTS uq_monthly_plans_sku
+                        ON monthly_plans(period_month, marketplace, metric, sku)"])
     (println "SQLite database initialized: analitica.db (WAL mode enabled)")
     ds))
 
