@@ -693,6 +693,51 @@
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN event_date_source
                             TEXT NOT NULL DEFAULT 'api'"])
         (println "Migration: finance.event_date_source column added")))
+    ;; Spec 011-ozon-performance-ads (§2.1/§2.2): advertising canon tables.
+    ;; Both are NEW, additive tables — CREATE TABLE IF NOT EXISTS only, no
+    ;; ALTER/DROP on existing product tables (P5). The shared §3.B ad-canon
+    ;; (011 = first producer, 018 = owner of the definition) lands in
+    ;; `ad_spend`; `ad_campaign_stats` holds per-campaign/per-day raw stats
+    ;; for the P1 efficiency report. Idempotent via IF NOT EXISTS.
+    ;;
+    ;; NOTE (§2.1): campaign_id / article are nullable, and SQLite treats NULL
+    ;; PK components as DISTINCT — so a bare INSERT OR REPLACE is NOT idempotent
+    ;; for account-level (NULL,NULL) rows. Re-materialize MUST use the
+    ;; DELETE(marketplace,period) → INSERT pattern (respread-ozon-finance!) to
+    ;; dedup those rows; see delete-ad-spend! / materialize-ozon-ad-cost!.
+    (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS ad_spend (
+                          marketplace        TEXT    NOT NULL,
+                          event_date         TEXT    NOT NULL,
+                          campaign_id        TEXT,
+                          campaign_type      TEXT,
+                          article            TEXT,
+                          sku                TEXT,
+                          spend              REAL    NOT NULL DEFAULT 0,
+                          bonus_spend        REAL    NOT NULL DEFAULT 0,
+                          attribution_source TEXT    NOT NULL DEFAULT 'api',
+                          basis              TEXT,
+                          synced_at          TEXT    NOT NULL,
+                          PRIMARY KEY (marketplace, event_date, campaign_id, article)
+                        )"])
+    (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_ad_spend_lookup
+                        ON ad_spend(marketplace, event_date)"])
+    (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS ad_campaign_stats (
+                          marketplace     TEXT    NOT NULL,
+                          campaign_id     TEXT    NOT NULL,
+                          campaign_type   TEXT,
+                          campaign_name   TEXT,
+                          stat_date       TEXT    NOT NULL,
+                          views           INTEGER NOT NULL DEFAULT 0,
+                          clicks          INTEGER NOT NULL DEFAULT 0,
+                          add_to_cart     INTEGER NOT NULL DEFAULT 0,
+                          orders          INTEGER NOT NULL DEFAULT 0,
+                          orders_revenue  REAL    NOT NULL DEFAULT 0,
+                          spend           REAL    NOT NULL DEFAULT 0,
+                          bonus_spend     REAL    NOT NULL DEFAULT 0,
+                          synced_at       TEXT    NOT NULL,
+                          PRIMARY KEY (marketplace, campaign_id, stat_date)
+                        )"])
+    (println "Migration: ad_spend / ad_campaign_stats tables ensured")
     ;; Phase 4 (2026-05-05): split Ozon delivery_cost into separate cost
     ;; columns so finance rows align row-by-row with LK Накопления columns
     ;; «Логистика» / «Обратная логистика» / «Обработка отправления».
@@ -919,6 +964,75 @@
                 params (into [sql] (mapcat identity chunk))]
             (jdbc/execute! tx params))))
       (count rows))))
+
+;; ---------------------------------------------------------------------------
+;; Advertising canon helpers (spec 011-ozon-performance-ads §2.1/§2.2)
+;;
+;; `ad_spend` feeds finance.ad_cost; `ad_campaign_stats` feeds the P1
+;; efficiency report. Both use natural-key PKs → INSERT OR REPLACE via
+;; `insert-batch!`. Because `ad_spend` has nullable PK components (SQLite
+;; treats NULL PK parts as distinct), account-level rows are NOT deduped by
+;; INSERT OR REPLACE — re-materialize MUST DELETE the (marketplace, period)
+;; window first (delete-ad-spend!) then INSERT (materialize.clj pattern).
+;; ---------------------------------------------------------------------------
+
+(def ^:private ad-spend-columns
+  [:marketplace :event-date :campaign-id :campaign-type :article :sku
+   :spend :bonus-spend :attribution-source :basis :synced-at])
+
+(defn insert-ad-spend!
+  "Insert attributed ad-spend rows (§3.B canon). Each row is a map with
+   kebab keys matching `ad-spend-columns`. INSERT OR REPLACE on the natural
+   PK (marketplace, event_date, campaign_id, article)."
+  [rows]
+  (insert-batch! :ad_spend
+                 [:marketplace :event_date :campaign_id :campaign_type
+                  :article :sku :spend :bonus_spend :attribution_source
+                  :basis :synced_at]
+                 (mapv (fn [r] (mapv r ad-spend-columns)) rows)))
+
+(defn delete-ad-spend!
+  "Delete every ad_spend row for `marketplace` whose event_date falls in
+   [from..to]. Called before re-INSERT so account-level (NULL,NULL) rows do
+   not accumulate on re-materialize (idempotency contract, data-model §2.1)."
+  [marketplace from to]
+  (execute! ["DELETE FROM ad_spend
+              WHERE marketplace = ? AND event_date >= ? AND event_date <= ?"
+             (name marketplace) from to]))
+
+(defn get-ad-spend
+  "Return ad_spend rows for `marketplace` with event_date in [from..to],
+   as kebab maps ordered by event_date, article."
+  [marketplace from to]
+  (query ["SELECT * FROM ad_spend
+           WHERE marketplace = ? AND event_date >= ? AND event_date <= ?
+           ORDER BY event_date, article"
+          (name marketplace) from to]))
+
+(def ^:private ad-campaign-stats-columns
+  [:marketplace :campaign-id :campaign-type :campaign-name :stat-date
+   :views :clicks :add-to-cart :orders :orders-revenue :spend :bonus-spend
+   :synced-at])
+
+(defn insert-ad-campaign-stats!
+  "Insert per-campaign/per-day stat rows (§2.2). PK (marketplace,
+   campaign_id, stat_date) is fully NOT NULL → INSERT OR REPLACE is
+   idempotent for reruns."
+  [rows]
+  (insert-batch! :ad_campaign_stats
+                 [:marketplace :campaign_id :campaign_type :campaign_name
+                  :stat_date :views :clicks :add_to_cart :orders
+                  :orders_revenue :spend :bonus_spend :synced_at]
+                 (mapv (fn [r] (mapv r ad-campaign-stats-columns)) rows)))
+
+(defn get-ad-campaign-stats
+  "Return ad_campaign_stats rows for `marketplace` with stat_date in
+   [from..to], as kebab maps ordered by campaign_id, stat_date."
+  [marketplace from to]
+  (query ["SELECT * FROM ad_campaign_stats
+           WHERE marketplace = ? AND stat_date >= ? AND stat_date <= ?
+           ORDER BY campaign_id, stat_date"
+          (name marketplace) from to]))
 
 ;; ---------------------------------------------------------------------------
 ;; Raw data helpers

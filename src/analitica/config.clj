@@ -99,6 +99,24 @@
 (defn ozon-config []
   (get-in (config) [:marketplaces :ozon]))
 
+(defn ozon-performance-config
+  "Ozon Performance (advertising) credentials, or nil when the feature is
+   not configured.
+
+   Spec 011-ozon-performance-ads / FR-005: the advertising subsystem is
+   OPT-IN and activates only when BOTH `:client-id` and `:client-secret`
+   are present (and non-blank) under [:marketplaces :ozon :performance].
+   A partial credential (e.g. an unresolved `#prop` resolving to nil/\"\")
+   is treated as NOT configured → nil, so the feature stays off rather than
+   half-booting. `core/register-marketplaces!` builds `OzonPerfClient` only
+   when this returns non-nil."
+  []
+  (let [{:keys [client-id client-secret]}
+        (get-in (config) [:marketplaces :ozon :performance])
+        present? (fn [v] (and (string? v) (seq v)))]
+    (when (and (present? client-id) (present? client-secret))
+      {:client-id client-id :client-secret client-secret})))
+
 (defn ym-config []
   (get-in (config) [:marketplaces :ym]))
 

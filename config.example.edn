@@ -9,7 +9,13 @@
 
   :ozon {:client-id  "your-ozon-client-id"
          :api-key    "your-ozon-api-key"
-         :rate-limits {:default 60}}
+         :rate-limits {:default 60}
+         ;; Ozon Performance (advertising) creds — optional; absence disables ads.
+         ;; Distinct host + OAuth (api-performance.ozon.ru). Needs BOTH parts;
+         ;; a partial credential leaves the feature off (FR-005). Use #prop
+         ;; (NOT #env): .env values load as JVM system properties.
+         :performance {:client-id     #prop OZON_PERF_CLIENT_ID
+                       :client-secret #prop OZON_PERF_CLIENT_SECRET}}
 
   :ym {:oauth-token "your-ym-oauth-token"
        :campaign-id "your-ym-campaign-id"

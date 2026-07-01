@@ -209,3 +209,118 @@
                 (= 0.0 (:ad_cost row)))
             (str "pre-existing row should have ad_cost=0 (got "
                  (pr-str (:ad_cost row)) ")"))))))
+
+;; ---------------------------------------------------------------------------
+;; T004 (spec 011-ozon-performance-ads) — new advertising canon tables
+;;   ad_spend            (attributed spend → feeds finance.ad_cost)
+;;   ad_campaign_stats   (per-campaign/per-day raw efficiency data)
+;; Both are additive CREATE TABLE IF NOT EXISTS migrations (P5 — no ALTER on
+;; existing product tables). See data-model.md §2.1 / §2.2.
+;; ---------------------------------------------------------------------------
+
+(defn- table-info
+  "Return PRAGMA table_info(<table>) rows as a vector of unqualified maps."
+  [ds table]
+  (jdbc/execute! ds [(str "PRAGMA table_info(" table ")")]
+                 {:builder-fn rs/as-unqualified-maps}))
+
+(defn- pk-columns
+  "Return the set of column names participating in the PRIMARY KEY, in
+   declared order (PRAGMA table_info :pk is the 1-based position within
+   the PK, 0 = not part of it)."
+  [info]
+  (->> info
+       (filter #(pos? (or (:pk %) 0)))
+       (sort-by :pk)
+       (mapv :name)))
+
+(deftest init!-creates-ad-spend-table
+  (testing "spec 011 §2.1: ad_spend table exists with the canonical columns + PK"
+    (let [ds        (db/init!)
+          info      (table-info ds "ad_spend")
+          col-names (set (map :name info))]
+      (is (seq info) "ad_spend table must exist after init!")
+      (doseq [c ["marketplace" "event_date" "campaign_id" "campaign_type"
+                 "article" "sku" "spend" "bonus_spend" "attribution_source"
+                 "basis" "synced_at"]]
+        (is (contains? col-names c) (str "ad_spend column missing: " c)))
+      (is (= ["marketplace" "event_date" "campaign_id" "article"]
+             (pk-columns info))
+          "ad_spend PRIMARY KEY = (marketplace, event_date, campaign_id, article)")
+      (is (= "REAL" (:type (find-column info "spend"))))
+      (is (= "REAL" (:type (find-column info "bonus_spend")))))))
+
+(deftest init!-creates-ad-campaign-stats-table
+  (testing "spec 011 §2.2: ad_campaign_stats table exists with columns + PK"
+    (let [ds        (db/init!)
+          info      (table-info ds "ad_campaign_stats")
+          col-names (set (map :name info))]
+      (is (seq info) "ad_campaign_stats table must exist after init!")
+      (doseq [c ["marketplace" "campaign_id" "campaign_type" "campaign_name"
+                 "stat_date" "views" "clicks" "add_to_cart" "orders"
+                 "orders_revenue" "spend" "bonus_spend" "synced_at"]]
+        (is (contains? col-names c) (str "ad_campaign_stats column missing: " c)))
+      (is (= ["marketplace" "campaign_id" "stat_date"]
+             (pk-columns info))
+          "ad_campaign_stats PRIMARY KEY = (marketplace, campaign_id, stat_date)"))))
+
+(deftest init!-ad-tables-are-idempotent
+  (testing "spec 011: double init! creates each ad table exactly once, no throw"
+    (db/init!)
+    (let [ds (db/init!)]
+      (is (seq (table-info ds "ad_spend")) "ad_spend still present after 2× init!")
+      (is (seq (table-info ds "ad_campaign_stats"))
+          "ad_campaign_stats still present after 2× init!"))))
+
+(deftest init!-preserves-existing-finance-columns
+  (testing "spec 011: adding ad tables does NOT drop existing finance columns
+            (ad_cost / event_date_source must survive — no ALTER regression)"
+    (let [ds   (db/init!)
+          info (finance-column-info ds)]
+      (is (some? (find-column info "ad_cost"))
+          "finance.ad_cost must still exist alongside new ad tables")
+      (is (some? (find-column info "event_date_source"))
+          "finance.event_date_source must still exist alongside new ad tables"))))
+
+;; ---------------------------------------------------------------------------
+;; T007 (spec 011) — ad_spend / ad_campaign_stats DB helpers
+;; ---------------------------------------------------------------------------
+
+(deftest ad-spend-insert-delete-get-roundtrip
+  (testing "spec 011 §2.1: insert-ad-spend! → get-ad-spend → delete-ad-spend!"
+    (db/init!)
+    (let [rows [{:marketplace "ozon" :event-date "2026-04-15"
+                 :campaign-id "78901" :campaign-type "SEARCH_PROMO"
+                 :article "ABC-123" :sku "12345678"
+                 :spend 1234.56 :bonus-spend 100.0
+                 :attribution-source "api"
+                 :basis "test" :synced-at "2026-04-30T00:00:00"}
+                {:marketplace "ozon" :event-date "2026-04-16"
+                 :campaign-id nil :campaign-type nil
+                 :article nil :sku nil
+                 :spend 50.0 :bonus-spend 0.0
+                 :attribution-source "spread"
+                 :basis "test" :synced-at "2026-04-30T00:00:00"}]]
+      (db/insert-ad-spend! rows)
+      (let [got (db/get-ad-spend "ozon" "2026-04-01" "2026-04-30")]
+        (is (= 2 (count got)) "both ad_spend rows retrievable by mp+period"))
+      ;; period-scoped delete removes only Ozon rows in the window
+      (db/delete-ad-spend! "ozon" "2026-04-01" "2026-04-30")
+      (is (= 0 (count (db/get-ad-spend "ozon" "2026-04-01" "2026-04-30")))
+          "delete-ad-spend! clears the window (re-materialize semantics)"))))
+
+(deftest ad-campaign-stats-insert-get-roundtrip
+  (testing "spec 011 §2.2: insert-ad-campaign-stats! → get-ad-campaign-stats,
+            natural-key PK folds a re-insert (INSERT OR REPLACE, idempotent)"
+    (db/init!)
+    (let [row {:marketplace "ozon" :campaign-id "78901"
+               :campaign-type "SEARCH_PROMO" :campaign-name "Autumn"
+               :stat-date "2026-04-15" :views 1200 :clicks 48
+               :add-to-cart 10 :orders 6 :orders-revenue 9000.0
+               :spend 1234.56 :bonus-spend 100.0
+               :synced-at "2026-04-30T00:00:00"}]
+      (db/insert-ad-campaign-stats! [row])
+      (db/insert-ad-campaign-stats! [row]) ;; re-insert same PK
+      (let [got (db/get-ad-campaign-stats "ozon" "2026-04-01" "2026-04-30")]
+        (is (= 1 (count got)) "PK (marketplace, campaign_id, stat_date) dedups reruns")
+        (is (= 1200 (:views (first got))))))))
