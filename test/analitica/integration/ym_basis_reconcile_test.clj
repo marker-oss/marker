@@ -134,6 +134,59 @@
                " (" gross-matches "/" n ")")))))
 
 ;; ===========================================================================
+;; Adversarial R4 — reconcile through the REAL production aggregator.
+;;
+;; The bespoke `aggregate-by-article` above computes net-sales = Σsale − Σreturn.
+;; Production `finance/by-article` computes :net-sales = Σ sales-lines ONLY and
+;; :revenue (gross) = Σ retail-amount over sales-lines. So the numbers the SPA
+;; actually ships come from by-article, NOT the bespoke aggregator. This test
+;; drives the SAME raw slice through `finance/by-article` and reconciles the
+;; SHIPPED :net-sales / :revenue against the TS anchor — covering the numbers
+;; the customer sees, not a test-only convention. cost-price/get-price is
+;; redef'd to 0 so by-article does not touch the cost atom.
+;;
+;; Convention note: by-article's :net-sales = TS `sales` corresponds to the
+;; SALES-ONLY sum (no return netting), which is the convention TS `sales`
+;; reflects for the majority of active SKUs in the partial slice.
+;; ===========================================================================
+
+(defn- by-article-overlap
+  "Overlap join computed through production finance/by-article (the shipped
+   aggregator), keyed by :article, restricted to TS-active SKUs."
+  []
+  (let [rows   (transform/->finance-from-order-stats @ym-raw)
+        ba     (finance/by-article rows)
+        by-art (into {} (map (juxt :article identity) ba))
+        ts-map (into {} (map (juxt :article identity) @ts-skus))]
+    (for [[article r] by-art
+          :let [ts (get ts-map article)]
+          :when (and ts (or (pos? (double (or (:realisation ts) 0)))
+                            (pos? (double (or (:sales ts) 0)))))]
+      {:article        article
+       :our-net        (double (:net-sales r))     ; Σ sales-lines only (by-article)
+       :our-gross      (double (:revenue r))       ; Σ retail-amount over sales-lines
+       :ts-sales       (double (:sales ts))
+       :ts-realisation (double (:realisation ts))})))
+
+(deftest by-article-reconciles-shipped-numbers
+  (testing "production finance/by-article net-sales/revenue reconcile to TS anchor (the SHIPPED numbers)"
+    (with-redefs [cost-price/get-price (fn [_article _barcode] 0.0)]
+      (let [ov (by-article-overlap)
+            n  (count ov)
+            net-matches   (count (filter #(within-tolerance? (:our-net %) (:ts-sales %)) ov))
+            gross-matches (count (filter #(within-tolerance? (:our-gross %) (:ts-realisation %)) ov))
+            net-rate      (if (pos? n) (/ (double net-matches) n) 0.0)
+            gross-rate    (if (pos? n) (/ (double gross-matches) n) 0.0)]
+        (is (>= n 20)
+            (str "by-article overlap SKUs = " n " (need ≥20 to be non-vacuous)"))
+        (is (>= net-rate 0.60)
+            (str "SHIPPED net-sales (by-article) match rate "
+                 (format "%.1f%%" (* 100.0 net-rate)) " (" net-matches "/" n ") — expected ≥60%"))
+        (is (>= gross-rate 0.50)
+            (str "SHIPPED revenue/gross (by-article) match rate "
+                 (format "%.1f%%" (* 100.0 gross-rate)) " (" gross-matches "/" n ") — expected ≥50%"))))))
+
+;; ===========================================================================
 ;; T020 (US2) — WB/Ozon no-regression guard.
 ;;
 ;; The :net-sales aggregation added to domain/finance/by-article must NOT

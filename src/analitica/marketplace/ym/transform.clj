@@ -283,17 +283,31 @@
    (which is only a per-item proxy) and NOT cashback (YANDEX_CASHBACK is already
    reflected in the buyer price, so it must not be re-added to gross).
 
-   Dedup rule (v1 default = `first`, data-model §4 — do NOT change silently):
-   group by (:type :operationType), take the FIRST entry per group (YM emits
-   logically-identical accruals more than once, e.g. 4 ACCRUAL on one item),
-   then sum ACCRUAL(+) / DEDUCTION(−) across the SUBSIDY-type groups only.
+   Dedup rule (v1, data-model §4 — do NOT change the FINANCIAL semantics
+   silently): group by (:type :operationType) and take ONE representative per
+   group (YM emits logically-identical accruals more than once, e.g. 4 ACCRUAL
+   on one item), then sum ACCRUAL(+) / DEDUCTION(−) across the SUBSIDY-type
+   groups only.
+
+   ORDER-INDEPENDENCE (adversarial R3): a group can carry entries with DIFFERENT
+   amounts (observed in real data). `(first grp)` on the raw group would then be
+   order-dependent — the same subsidies in a different order would yield a
+   different bridge. We therefore sort each group by amount ascending and take
+   the MIN (the deterministic, conservative representative: the min never
+   over-inflates gross). This is deterministic regardless of input order. If
+   real data shows groups whose intra-group amounts diverge materially, escalate
+   to the owner (first/last/min/max is a financial decision) — do NOT change it
+   silently. The min choice is pinned by `dedup-subsidies-order-independent`.
 
    Returns the net SUBSIDY accrual amount (0.0 when none)."
   [subsidies]
   (->> subsidies
        (filter #(= "SUBSIDY" (:type %)))          ; cashback excluded from gross bridge
        (group-by (juxt :type :operationType))
-       (map (fn [[_ grp]] (first grp)))           ; v1: first-per-group (data-model §4)
+       ;; Order-independent representative: sort the group by amount asc and take
+       ;; the min (deterministic; conservative — never over-inflates gross).
+       (map (fn [[_ grp]]
+              (apply min-key #(double (or (:amount %) 0)) grp)))
        (reduce (fn [acc s]
                  (let [a (double (or (:amount s) 0))]
                    (+ acc (case (:operationType s)
@@ -326,12 +340,20 @@
                            payout (subsidy is not extra seller cash).
   - commissions[].actual = what YM will debit later.
 
-  Bases produced:
+  Bases produced (⚠️ NO ×qty in the code — see below):
 
-      :net-sales     = BUYER × qty                    (net, == TS `sales`)
-      :retail-price  = BUYER + subsidy (per-unit)      (gross per-unit)
-      :retail-amount = (BUYER + subsidy) × qty         (gross, == TS `realisation`)
-      for-pay        = BUYER − Σ(non-ad commissions)   (subsidy NOT added)
+      :net-sales     = BUYER line-total                (net, == TS `sales`)
+      :retail-price  = BUYER line-total + subsidy-per-item   (gross, per line)
+      :retail-amount = BUYER line-total + subsidy-per-item   (gross, == TS `realisation`)
+      for-pay        = BUYER line-total − Σ(non-ad commissions)  (subsidy NOT added)
+
+  ⚠️ ×qty TRAP — DO NOT \"fix\" this by multiplying by qty. `price-by-type`
+  returns the YM `:total`, which is ALREADY the LINE total (price × count) for
+  that item. The code therefore uses the line total directly and adds the
+  per-item subsidy slice ONCE — it does NOT multiply by qty again. Multiplying
+  would double-apply the quantity. (`count>1` is an UNVERIFIED assumption: 0
+  items with count>1 in real April data, so :total == :costPerItem there; the
+  `multi-count-qty-applied-once` test guards against a future double-apply.)
 
   for-pay aligns with WB's ppvz_for_pay / Ozon realization — netto to seller
   after fees. AUCTION_PROMOTION stays in :ad-cost (FR-009), out of for-pay.
@@ -414,6 +436,11 @@
         ;; price) and returns the net accrual. Split per-item like commissions.
         subsidies       (get order :subsidies [])
         subsidy-net     (dedup-subsidies subsidies)
+        ;; R5 FLOOR: `(max 0.0 subsidy-net)` clamps a NET-NEGATIVE subsidy (a
+        ;; SUBSIDY DEDUCTION exceeding its ACCRUAL — e.g. a subsidy claw-back on
+        ;; a return) to 0. Effect: gross = BUYER (the negative subsidy is NOT
+        ;; subtracted from gross, so gross never dips below net). Intentional —
+        ;; pinned by `net-negative-subsidy-floored-to-zero-in-gross`.
         subsidy-per-item (/ (max 0.0 subsidy-net) n-items)]
     (mapv (fn [item]
             (let [shop-sku    (get item :shopSku)
