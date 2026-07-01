@@ -49,7 +49,16 @@
 (defprotocol PerformanceApi
   (-token        [this]            "Return a valid Bearer access-token string (cached).")
   (-list-campaigns [this]          "Return [Campaign …] (the :list vector).")
-  (-daily-stats  [this campaign-ids from to] "Return [DailyStatRow …] (the :rows vector)."))
+  (-daily-stats  [this campaign-ids from to] "Return [DailyStatRow …] (the :rows vector).")
+  ;; Async statistics report (P1 / US3) — create → poll → download, same
+  ;; pattern as the Ozon Seller storage-report. READ-ONLY (create-report is a
+  ;; read-side async request, not a campaign write).
+  (-create-statistics-report [this campaign-ids from to]
+    "POST /api/client/statistics (groupBy DATE) → the report UUID string.")
+  (-statistics-status [this uuid]
+    "GET /api/client/statistics/{UUID} → status map, e.g. {:state \"OK\"}.")
+  (-download-statistics-report [this uuid]
+    "GET /api/client/statistics/report?UUID= → {:rows [StatisticsReportRow …]}."))
 
 ;; ---------------------------------------------------------------------------
 ;; Token cache — atom holding {:token … :expires-at <epoch-ms>}.
@@ -85,7 +94,7 @@
 ;; OzonPerfClient
 ;; ---------------------------------------------------------------------------
 
-(declare do-authed-request)
+(declare do-authed-request do-authed-body-request)
 
 (defrecord OzonPerfClient [client-id client-secret token-cache rate-limits]
   PerformanceApi
@@ -101,7 +110,24 @@
       (:rows (do-authed-request this :get path
                                 {:campaignId (vec campaign-ids)
                                  :dateFrom   from
-                                 :dateTo     to})))))
+                                 :dateTo     to}))))
+
+  (-create-statistics-report [this campaign-ids from to]
+    (let [{:keys [path]} (:stat-create endpoints)]
+      ;; POST body (not query params) — do-authed-body-request carries the JSON.
+      (:UUID (do-authed-body-request this :post path
+                                     {:campaigns (vec campaign-ids)
+                                      :from      from
+                                      :to        to
+                                      :groupBy   "DATE"}))))
+
+  (-statistics-status [this uuid]
+    (let [{:keys [path]} (:stat-status endpoints)]
+      (do-authed-request this :get (str path uuid) nil)))
+
+  (-download-statistics-report [this uuid]
+    (let [{:keys [path]} (:stat-download endpoints)]
+      (do-authed-request this :get path {:UUID uuid}))))
 
 (defn- do-authed-request
   "Issue an authorized request, transparently refreshing the Bearer token
@@ -120,6 +146,27 @@
       (catch clojure.lang.ExceptionInfo e
         (if (= :unauthorized (:type (ex-data e)))
           ;; Expired/invalid token → force a single refresh, then retry once.
+          (do (mu/log ::performance-token-refresh :path path)
+              (reset! (:token-cache client) nil)
+              (do-req (-token client)))
+          (throw e))))))
+
+(defn- do-authed-body-request
+  "Like do-authed-request but sends a JSON BODY (for the POST create-report
+   read-side request), transparently refreshing the Bearer token once on 401."
+  [client method path body]
+  (let [do-req (fn [tok]
+                 (http/request
+                   {:method        method
+                    :url           (str host path)
+                    :extra-headers {"Authorization" (str "Bearer " tok)}
+                    :body          body
+                    :limiter-key   :ozon/performance
+                    :limiter-rpm   60}))]
+    (try
+      (do-req (-token client))
+      (catch clojure.lang.ExceptionInfo e
+        (if (= :unauthorized (:type (ex-data e)))
           (do (mu/log ::performance-token-refresh :path path)
               (reset! (:token-cache client) nil)
               (do-req (-token client)))
@@ -145,10 +192,17 @@
   PerformanceApi
   (-token [_] (get-in data [:token :access_token] "stub-token"))
   (-list-campaigns [_] (:campaigns data))
-  (-daily-stats [_ _campaign-ids _from _to] (:daily-rows data)))
+  (-daily-stats [_ _campaign-ids _from _to] (:daily-rows data))
+  ;; Async report: create returns a fixed UUID, status is always OK, download
+  ;; serves the fixture :report-rows. Lets US3 ingest run without the network.
+  (-create-statistics-report [_ _campaign-ids _from _to]
+    (get data :report-uuid "stub-report-uuid"))
+  (-statistics-status [_ _uuid] (get data :report-status {:state "OK"}))
+  (-download-statistics-report [_ _uuid] {:rows (:report-rows data)}))
 
 (defn stub-client
   "Create a StubPerfClient serving the given fixture data:
-     {:token {:access_token …} :campaigns [..] :daily-rows [..]}."
+     {:token {:access_token …} :campaigns [..] :daily-rows [..]
+      :report-uuid \"…\" :report-status {:state \"OK\"} :report-rows [..]}."
   [data]
   (->StubPerfClient data))

@@ -48,6 +48,46 @@
                    (reg/lookup :ozon/performance-statistics-report) resp)]
       (is (= :ok (:result/status result))))))
 
+(deftest statistics-report-per-sku-rows-resolve-to-api
+  (testing "per-SKU rows in the async statistics report resolve to :api
+            attribution when the SKU maps to an article (T033 / US3)"
+    (let [resp         (load-fixture "statistics-report.json")
+          rows         (:rows resp)
+          sku->article {"12345678" "ABC-123"}
+          ad-spend     (perf-transform/statistics-rows->ad-spend
+                         rows sku->article {:synced-at "2026-05-01T00:00:00"
+                                            :campaign-id "78901"
+                                            :campaign-type "SKU"})]
+      (is (seq ad-spend) "the per-SKU report produced ad_spend rows")
+      (is (every? #(= :api (:attribution-source %)) ad-spend)
+          "every per-SKU row is :api attribution (direct per-product)")
+      (is (every? #(= "ABC-123" (:article %)) ad-spend)
+          "SKU 12345678 resolved to article ABC-123 via the sku→article map")
+      ;; Σ per-SKU spend == Σ fixture moneySpent (410 + 200 = 610.00), exactly.
+      (is (= 61000 (Math/round (* 100.0 (reduce + 0.0 (map :spend ad-spend)))))
+          "Σ ad_spend.spend == Σ report moneySpent (610.00)"))))
+
+(deftest statistics-rows->ad-campaign-stats-shape
+  (testing "the async report rows aggregate into per-campaign/per-day
+            ad_campaign_stats carrying every efficiency counter (T037)"
+    (let [resp  (load-fixture "statistics-report.json")
+          stats (perf-transform/statistics-rows->ad-campaign-stats
+                  (:rows resp) {:marketplace :ozon
+                                :campaign-id "78901"
+                                :campaign-type "SKU"
+                                :campaign-name "Search promo"})]
+      (is (= 2 (count stats)) "one stat row per (campaign, day)")
+      (let [s (first stats)]
+        (is (= :ozon (:marketplace s)))
+        (is (= "78901" (:campaign-id s)))
+        (is (contains? s :views))
+        (is (contains? s :clicks))
+        (is (contains? s :add-to-cart))
+        (is (contains? s :orders))
+        (is (contains? s :orders-revenue))
+        (is (contains? s :spend))
+        (is (contains? s :bonus-spend))))))
+
 (deftest broken-row-critical-missing-key
   (testing "a daily row missing the REQUIRED campaignId (:id) is a critical
             violation that validate! throws on — proving the schema is enforced

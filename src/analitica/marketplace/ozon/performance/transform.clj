@@ -299,3 +299,84 @@
       (mapv (fn [{:keys [date spend bonus]}]
               (mk-row nil date spend bonus))
             days))))
+
+;; ===========================================================================
+;; T037 — async statistics-report transforms (US3, P1).
+;;
+;; The async report (create → poll → download) yields per-SKU rows where the
+;; campaign type reports a product breakdown. Two derivations, both pure:
+;;
+;;   statistics-rows->ad-spend         — per-SKU rows → :api ad_spend rows
+;;       (REFINES the campaign-level :spread from the P0 daily path: where the
+;;       async report gives a SKU breakdown, the article's spend is now DIRECT
+;;       per-SKU (:api) instead of revenue-weighted. Σ still == the source total
+;;       because the report rows carry the exact per-SKU moneySpent.)
+;;
+;;   statistics-rows->ad-campaign-stats — per-(campaign,day) efficiency counters
+;;       (views/clicks/add-to-cart/orders/orders-revenue/spend/bonus-spend) for
+;;       the ad_campaign_stats table (FR-013) that the US3 efficiency report
+;;       reads.
+;; ===========================================================================
+
+(defn statistics-rows->ad-spend
+  "Per-SKU async-report rows → §3.B ad_spend rows with :api attribution.
+
+   `sku->article` resolves a SKU to its article (ozon_sku_map; keys normalised
+   to string, as in attribute-daily-rows). `opts`:
+     :synced-at     — ISO timestamp stamped on each row.
+     :campaign-id   — the campaign the report was requested for (report rows
+                      carry :sku/:date but not the campaign id).
+     :campaign-type — advObjectType, stamped on each row (optional).
+
+   Only rows whose :sku resolves to an article become :api ad_spend rows — a
+   row with no/unmapped :sku is dropped here (it belongs to the campaign-level
+   :spread path from the P0 daily ingest, which already covered it). Every
+   emitted row is `:api` with :spend == the report's moneySpent for that
+   (sku, day) — so Σ == the per-SKU report total EXACTLY."
+  [rows sku->article {:keys [synced-at campaign-id campaign-type]}]
+  (let [sku-idx (into {} (map (fn [[k v]] [(str k) v]) sku->article))]
+    (->> rows
+         (keep (fn [{:keys [date sku moneySpent bonusSpent]}]
+                 (when-let [article (when sku (get sku-idx (str sku)))]
+                   {:marketplace        :ozon
+                    :event-date         date
+                    :campaign-id        campaign-id
+                    :campaign-type      campaign-type
+                    :article            article
+                    :sku                sku
+                    :spend              (math/round2 (money moneySpent))
+                    :bonus-spend        (math/round2 (money bonusSpent))
+                    :attribution-source :api
+                    :basis              spend-basis})))
+         vec)))
+
+(defn statistics-rows->ad-campaign-stats
+  "Aggregate async-report rows into per-(campaign, day) `ad_campaign_stats`
+   rows (§2.2 / FR-013). `meta` supplies campaign identity the report rows lack:
+     :marketplace (default :ozon) :campaign-id :campaign-type :campaign-name.
+
+   One output row per distinct :date, summing views/clicks/add-to-cart/orders
+   and orders-revenue/spend/bonus-spend for that day. Counters absent on a row
+   coalesce to 0 (the report always carries the full counter set — this is the
+   full stat-set the P0 daily path did not). Returns rows ordered by :stat-date."
+  [rows {:keys [marketplace campaign-id campaign-type campaign-name]
+         :or {marketplace :ozon}}]
+  (->> rows
+       (group-by :date)
+       (map (fn [[date day-rows]]
+              (let [int-sum (fn [k] (long (reduce (fn [a r] (+ a (long (or (get r k) 0)))) 0 day-rows)))
+                    num-sum (fn [k] (reduce (fn [a r] (+ a (money (get r k)))) 0.0 day-rows))]
+                {:marketplace    marketplace
+                 :campaign-id    campaign-id
+                 :campaign-type  campaign-type
+                 :campaign-name  campaign-name
+                 :stat-date      date
+                 :views          (int-sum :views)
+                 :clicks         (int-sum :clicks)
+                 :add-to-cart    (int-sum :addToCart)   ;; opt; 0 if absent (P0 never collected it)
+                 :orders         (int-sum :orders)
+                 :orders-revenue (math/round2 (num-sum :ordersMoney))
+                 :spend          (math/round2 (num-sum :moneySpent))
+                 :bonus-spend    (math/round2 (num-sum :bonusSpent))})))
+       (sort-by :stat-date)
+       vec))
