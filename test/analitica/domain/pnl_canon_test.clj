@@ -4,6 +4,8 @@
    Every deftest maps to one P&L.N block in the canon. If canon changes,
    this file changes in lockstep."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [analitica.domain.pnl :as pnl]
             [analitica.domain.tax :as tax]
             [analitica.domain.opex :as opex]
@@ -608,3 +610,162 @@
 
     (db/execute! ["DELETE FROM opex_rows"])
     (db/execute! ["DELETE FROM tax_config"])))
+
+;; ---------------------------------------------------------------------------
+;; P&L.Waterfall — spec 016 US3 (data-model §4 / contracts/waterfall-response.edn)
+;;
+;; The waterfall is a PURE fn over pnl/calculate output — it re-composes the
+;; already-computed frozen aggregates onto a GROSS top-line (:revenue), never
+;; recomputing revenue/gross/net. §0.1 LOCKED design:
+;;   sales          = :revenue (GROSS realisation, NOT for_pay)
+;;   directExpenses = commission (VISIBLE) + cogs + logistics + storage
+;;                    + penalties + acceptance + deduction − additional (Доплаты, credit)
+;;   grossMargin    = sales − directExpenses == pnl :gross-profit (to the kopeck)
+;;   advertising    = :ad-spend (distinct line)
+;;   EBITDA         = grossMargin − advertising − operatingExpenses
+;;   netProfit      = EBITDA − tax == pnl :net-profit (opex=tax=0 pre-015)
+;; ---------------------------------------------------------------------------
+
+(def waterfall-fx
+  "Per-MP finance rows for the waterfall kopeck invariants (non-zero :additional)."
+  (delay (edn/read-string (slurp (io/resource "fixtures/pnl-waterfall-2026-05.edn")))))
+
+(defn- wf-line
+  "Fetch a single waterfall line by :key from a waterfall result."
+  [wf k]
+  (first (filter #(= k (:key %)) (:waterfall wf))))
+
+(defn- direct-expense-children
+  "The drilldown children lines of the :direct-expenses layer (excludes the
+   :direct-expenses roll-up line itself)."
+  [wf]
+  (let [child-keys (set (:children (wf-line wf :direct-expenses)))]
+    (filter #(and (= :direct-expense (:layer %))
+                  (contains? child-keys (:key %))
+                  (not= :direct-expenses (:key %)))
+            (:waterfall wf))))
+
+;; VR-w1 / SC-005 — netProfit == pnl/calculate :net-profit to the kopeck, all 3 MPs.
+(deftest waterfall-net-profit-reconciles-to-pnl
+  (testing "VR-w1/SC-005: waterfall netProfit == pnl :net-profit to the kopeck (WB/Ozon/YM)"
+    (doseq [mp [:wb :ozon :ym]]
+      (let [rows (get @waterfall-fx mp)
+            p    (pnl/calculate rows :marketplace mp :from "2026-05-01" :to "2026-05-31")
+            wf   (pnl/waterfall p)
+            np   (:amount (wf-line wf :net-profit))]
+        (is (= (:net-profit p) np)
+            (str "marketplace " mp ": waterfall netProfit must equal pnl :net-profit"))))))
+
+;; VR-w2 — Σ direct-expense children == direct-expenses (commission counted once).
+;; VR-w3 — grossMargin == pnl :gross-profit (GROSS − explicit commission reproduces
+;;         the for_pay-based gross). Fixture has non-zero :additional so a missing/
+;;         misnamed credit (the old :compensation child) fails.
+(deftest waterfall-direct-expense-composition
+  (testing "VR-w2: Σ direct-expense children == direct-expenses (all 3 MPs)"
+    (doseq [mp [:wb :ozon :ym]]
+      (let [rows (get @waterfall-fx mp)
+            p    (pnl/calculate rows :marketplace mp :from "2026-05-01" :to "2026-05-31")
+            wf   (pnl/waterfall p)
+            de   (:amount (wf-line wf :direct-expenses))
+            sum  (math/round2 (reduce + 0.0 (map :amount (direct-expense-children wf))))]
+        (is (= de sum)
+            (str "marketplace " mp ": Σ children must equal direct-expenses (commission once)")))))
+  (testing "VR-w3: grossMargin == pnl :gross-profit (all 3 MPs, non-zero :additional)"
+    (doseq [mp [:wb :ozon :ym]]
+      (let [rows (get @waterfall-fx mp)
+            p    (pnl/calculate rows :marketplace mp :from "2026-05-01" :to "2026-05-31")
+            wf   (pnl/waterfall p)
+            gm   (:amount (wf-line wf :gross-margin))]
+        (is (pos? (:additional p))
+            (str "marketplace " mp ": fixture must have non-zero :additional (VR-w3 guard)"))
+        (is (= (:gross-profit p) gm)
+            (str "marketplace " mp ": grossMargin must equal pnl :gross-profit")))))
+  (testing "VR-w3: :additional child is a CREDIT (positive amount, reduces directExpenses)"
+    (let [rows (get @waterfall-fx :ozon)
+          p    (pnl/calculate rows :marketplace :ozon :from "2026-05-01" :to "2026-05-31")
+          wf   (pnl/waterfall p)
+          add  (wf-line wf :additional)]
+      (is (some? add) ":additional must be a visible direct-expense child")
+      (is (pos? (:amount add)) ":additional (Доплаты) is a credit → positive amount")
+      (is (nil? (wf-line wf :compensation))
+          ":compensation must NOT be a waterfall child (it is the cf layer, not gross_profit)")))
+  (testing "VR-w2: commission is a VISIBLE child line and sales − directExpenses closes"
+    (let [rows (get @waterfall-fx :wb)
+          p    (pnl/calculate rows :marketplace :wb :from "2026-05-01" :to "2026-05-31")
+          wf   (pnl/waterfall p)
+          comm (wf-line wf :mp-commission)
+          sales (:amount (wf-line wf :sales))
+          de   (:amount (wf-line wf :direct-expenses))
+          gm   (:amount (wf-line wf :gross-margin))]
+      (is (some? comm) "commission must be a visible direct-expense child")
+      (is (neg? (:amount comm)) "commission is an expense → negative amount")
+      (is (= (:revenue p) sales) "sales line == GROSS :revenue")
+      (is (= gm (math/round2 (+ sales de)))
+          "grossMargin == sales + directExpenses (directExpenses negative)"))))
+
+;; VR-w4 — with opex=tax=0 (015 not landed) EBITDA == grossMargin − advertising and
+;;         netProfit == EBITDA, no error.
+(deftest waterfall-ebitda-pre-management
+  (testing "VR-w4/FR-020: opex=tax=0 ⇒ EBITDA == grossMargin − advertising, netProfit == EBITDA"
+    (doseq [mp [:wb :ozon :ym]]
+      (let [rows (get @waterfall-fx mp)
+            p    (pnl/calculate rows :marketplace mp :from "2026-05-01" :to "2026-05-31")
+            wf   (pnl/waterfall p)               ; NO :management ⇒ opex/tax layers render 0
+            gm   (:amount (wf-line wf :gross-margin))
+            adv  (:amount (wf-line wf :advertising))
+            opex (:amount (wf-line wf :operating-expenses))
+            ebit (:amount (wf-line wf :ebitda))
+            tax  (:amount (wf-line wf :tax))
+            np   (:amount (wf-line wf :net-profit))]
+        (is (= 0.0 opex) (str mp ": operatingExpenses renders 0 pre-015"))
+        (is (= 0.0 tax)  (str mp ": tax renders 0 pre-015"))
+        (is (= ebit (math/round2 (+ gm adv)))
+            (str mp ": EBITDA == grossMargin − advertising (advertising negative)"))
+        (is (= np ebit) (str mp ": netProfit == EBITDA when opex=tax=0"))))))
+
+;; VR-w5 — a line with no comparison value renders delta-pct = nil (neutral), NOT ±100%.
+(deftest waterfall-no-comparison-neutral-delta
+  (testing "VR-w5/FR-026: no comparison ⇒ :delta-pct nil (neutral), not ±100%"
+    (let [rows (get @waterfall-fx :wb)
+          p    (pnl/calculate rows :marketplace :wb :from "2026-05-01" :to "2026-05-31")
+          ;; No comparison arg supplied ⇒ every line's delta must be nil/absent.
+          wf   (pnl/waterfall p)]
+      (doseq [line (:waterfall wf)]
+        (is (nil? (:delta-pct line))
+            (str (:key line) ": delta-pct must be nil when no comparison period"))
+        (is (nil? (:delta line))
+            (str (:key line) ": delta must be nil when no comparison period")))))
+  (testing "VR-w5: with comparison, a line whose prior value is 0 ⇒ delta-pct nil (not ±100%)"
+    (let [rows     (get @waterfall-fx :wb)
+          p        (pnl/calculate rows :marketplace :wb :from "2026-05-01" :to "2026-05-31")
+          ;; Comparison pnl with zero net-profit / zero prior for the ad line.
+          zero-p   (pnl/calculate [] :marketplace :wb :from "2026-04-01" :to "2026-04-30")
+          wf       (pnl/waterfall p :comparison zero-p)
+          adv      (wf-line wf :advertising)]
+      ;; advertising prior = 0 ⇒ pct is undefined ⇒ nil (neutral), never ±100%.
+      (is (nil? (:delta-pct adv))
+          "advertising delta-pct must be nil when prior value is 0 (neutral, not ±100%)"))))
+
+;; Management layers (015 present on this branch): when :management is supplied,
+;; operatingExpenses/tax read the seam; netProfit still ties to pnl.
+(deftest waterfall-management-layers
+  (testing "FR-020/FR-021: with :management seam, opex/tax layers read the 015 values"
+    (let [rows (get @waterfall-fx :ozon)
+          mgmt {:tax-config       {:year 2026 :month 5 :taxation-type :usn-income
+                                   :usn-rate 0.06 :vat-rate 0.0 :official-cost-price true}
+                :opex             500.0
+                :opex-by-category {"rent" 500.0}
+                :cf               nil
+                :configured?      true}
+          p    (pnl/calculate rows :marketplace :ozon
+                              :from "2026-05-01" :to "2026-05-31"
+                              :management mgmt)
+          wf   (pnl/waterfall p)
+          opex (:amount (wf-line wf :operating-expenses))
+          tax  (:amount (wf-line wf :tax))
+          np   (:amount (wf-line wf :net-profit))]
+      (is (= (- (:opex p)) opex) "operatingExpenses line == −:opex from management seam")
+      (is (= (- (+ (:tax p) (:vat p))) tax) "tax line == −(:tax + :vat) from seam")
+      ;; netProfit == 015 management :profit (= net − opex − tax − vat)
+      (is (= (:profit p) np)
+          "netProfit == 015 management :profit when management present"))))

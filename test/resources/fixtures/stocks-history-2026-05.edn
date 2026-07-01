@@ -1,0 +1,101 @@
+;; Fixture for 016-US2 capitalization / coverage-aware GMROI / turnover.
+;; Period: 2026-05-01 .. 2026-05-31 (31 days).
+;;
+;; Two SKU (data-model §2/§3 + contracts/stock-capitalization.edn):
+;;   "3452/Бежевый" — partial coverage (stock collected only SOME days of May),
+;;                    HAS a cost-price → cap-by-cost + GMROI applicable.
+;;   "9981/Чёрный"  — all-uncovered (NO stocks_history collected rows),
+;;                    NO cost-price → cap-by-cost + GMROI :not-applicable.
+;;
+;; Shapes match the runtime tables (kebab, as db/query returns):
+;;   :stocks         — current snapshot (carries :quantity-full incl. in-transit)
+;;   :stocks-history — per-day snapshots (carry :quantity; PK snapshot_date,mp,article,warehouse)
+;;   :cost-prices    — {article -> unit-cost-basis}  (cost+fulfilment+VAT scalar)
+;;   :sales          — period sale rows (each carries :quantity; :type :sale)
+;;   :period         — {:from :to :days}
+;;   :net-profit     — {article -> MP-level net profit for the period}
+;;   :expected       — precomputed invariant targets (kopeck-exact)
+
+{:period {:from "2026-05-01" :to "2026-05-31" :days 31}
+
+ ;; ── current stock (ties to stock/totals :total-full) ──
+ :stocks
+ [{:marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино"
+   :quantity 100 :quantity-full 100 :in-way-to 20 :in-way-from 0}
+  {:marketplace "wb" :article "3452/Бежевый" :warehouse "in-transit"
+   :quantity 0   :quantity-full 20  :in-way-to 20 :in-way-from 0}
+  {:marketplace "wb" :article "9981/Чёрный"  :warehouse "FBO-Тула"
+   :quantity 40  :quantity-full 40  :in-way-to 0  :in-way-from 0}]
+
+ ;; ── cost prices (one SKU with, one without) ──
+ ;; unit-cost-basis 590.00 for 3452; 9981 absent → nil basis → N/A
+ :cost-prices {"3452/Бежевый" 590.00}
+
+ ;; ── per-day stocks_history snapshots (COVERED days only for 3452) ──
+ ;; 3452: collected on 22 of 31 days (partial coverage). qty varies day to day.
+ ;;   9 days (2026-05-01..2026-05-09) have NO history row → uncovered.
+ ;;   22 days (2026-05-10..2026-05-31) each have one row → covered.
+ ;;   Every covered-day quantity is 120 EXCEPT one deliberate zero-stock day
+ ;;   (2026-05-15 qty=0) so a toggle-test can drop/keep it.
+ ;; 9981: ZERO history rows → all-uncovered.
+ :stocks-history
+ [{:snapshot-date "2026-05-10" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-11" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-12" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-13" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-14" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-15" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 0}
+  {:snapshot-date "2026-05-16" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-17" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-18" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-19" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-20" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-21" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-22" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-23" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-24" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-25" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-26" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-27" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-28" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-29" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-30" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}
+  {:snapshot-date "2026-05-31" :marketplace "wb" :article "3452/Бежевый" :warehouse "FBO-Коледино" :quantity 120}]
+
+ ;; ── period sales (for turnover Σqty) ──
+ ;; 3452: ONE sale event of 5 units (FR-012: turnover must use 5 units, not 1 event).
+ ;; 9981: no sales.
+ :sales
+ [{:marketplace "wb" :article "3452/Бежевый" :type :sale :quantity 5 :retail-amount 7450.0}]
+
+ ;; ── MP-level net profit per article (GMROI numerator, TS def) ──
+ :net-profit {"3452/Бежевый" 24500.00
+              "9981/Чёрный"  nil}
+
+ ;; ── precomputed invariant targets (kopeck-exact) ──
+ :expected
+ {:days-in-period      31
+  ;; capitalization-by-cost = 590.00 × 120 (quantity-full: 100 + 20 in-transit)
+  :cap-by-cost-3452    70800.00
+  :stock-qty-3452      120
+  :cap-by-cost-9981    nil
+  :stock-qty-9981      40
+  :cap-by-cost-total   70800.00
+  :stock-qty-total     160
+  :na-cost-count       1
+  :sku-count           2
+  ;; coverage: 22 rows present, but one (2026-05-15) is a zero-stock day.
+  ;; "covered" = a day with COLLECTED (non-zero) stock → 21 covered days.
+  :covered-days-3452           21
+  :covered-days-3452-with-zero 22   ; if the zero-day is (wrongly) counted
+  ;; daily-cap-series over 21 covered days: each 590.00 × 120 = 70800.00
+  :daily-cap-3452      70800.00
+  :avg-inventory-3452  70800.00
+  ;; gmroi = 24500.00 / 70800.00
+  :gmroi-3452          0.346
+  ;; annualized = gmroi × (365 / 31)
+  :gmroi-annualized-3452 4.075
+  ;; turnover: sold=5, daily-rate=5/31=0.1613, days-of-cover=120/0.1613
+  :sold-3452           5
+  :daily-rate-3452     0.16
+  :days-left-3452      750.0}}

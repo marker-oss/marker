@@ -1558,6 +1558,66 @@
                      "(150.0) to -150.0. Got: " (:commission sku)))))))))
 
 ;; ---------------------------------------------------------------------------
+;; 016-US3 — pnl-handler emits the layered waterfall block
+;; ---------------------------------------------------------------------------
+
+(deftest pnl-handler-emits-waterfall
+  (testing "pnl-handler response carries a :waterfall whose netProfit ties to pnl :net-profit"
+    (let [finance-row {:marketplace :wb :rrd-id 1
+                       :date-from "2026-04-01" :date-to "2026-04-30"
+                       :event-date "2026-04-15"
+                       :article "WF-SKU" :operation "sale" :quantity 1
+                       :retail-amount 1000.0 :retail-price 1000.0
+                       :for-pay 760.0 :mp-commission -150.0 :wb-reward 0.0
+                       :delivery-cost 40.0 :storage-fee 10.0 :acceptance 5.0
+                       :penalty 0.0 :acquiring-fee 0.0 :deduction 5.0
+                       :additional-payment 20.0 :ad-cost 0.0}]
+      (with-redefs
+        [load-finance-var                          (fn [& _] [finance-row])
+         analitica.domain.finance/fetch-finance    (fn [& _] [finance-row])
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+         with-prelim-var                           (fn [pnl & _] pnl)
+         analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+         analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+         analitica.db/query                        (fn [& _] [{:n 0}])]
+        (let [resp (marker-api/pnl-handler {:params {}})
+              wf   (:waterfall resp)
+              line (fn [k] (first (filter #(= k (:key %)) wf)))]
+          (is (vector? wf) "response must carry a :waterfall vector")
+          (is (= "Выручка (GROSS)" (:label (line :sales))) "top line is GROSS revenue")
+          (is (some? (line :mp-commission)) "commission is a visible child line")
+          (let [np (:amount (line :net-profit))
+                p  (analitica.domain.pnl/calculate [finance-row]
+                                                   :marketplace :wb
+                                                   :from "2026-04-01" :to "2026-04-30")]
+            (is (= (:net-profit p) np)
+                "waterfall netProfit == pnl :net-profit to the kopeck"))))))
+  (testing "?compare=true attaches deltas; default omits them (neutral)"
+    (let [finance-row {:marketplace :wb :rrd-id 1
+                       :date-from "2026-04-01" :date-to "2026-04-30"
+                       :event-date "2026-04-15"
+                       :article "WF-SKU" :operation "sale" :quantity 1
+                       :retail-amount 1000.0 :retail-price 1000.0
+                       :for-pay 760.0 :mp-commission -150.0 :wb-reward 0.0
+                       :delivery-cost 40.0 :storage-fee 10.0 :acceptance 5.0
+                       :penalty 0.0 :acquiring-fee 0.0 :deduction 5.0
+                       :additional-payment 20.0 :ad-cost 0.0}]
+      (with-redefs
+        [load-finance-var                          (fn [& _] [finance-row])
+         analitica.domain.finance/fetch-finance    (fn [& _] [finance-row])
+         analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})
+         with-prelim-var                           (fn [pnl & _] pnl)
+         analitica.domain.pnl/ad-spend-by-article  (fn [& _] {})
+         analitica.domain.pnl/load-cf-adjustments  (fn [& _] nil)
+         analitica.db/query                        (fn [& _] [{:n 0}])]
+        (let [no-cmp   (:waterfall (marker-api/pnl-handler {:params {}}))
+              with-cmp (:waterfall (marker-api/pnl-handler {:params {:compare "true"}}))
+              sales-nc (first (filter #(= :sales (:key %)) no-cmp))
+              sales-wc (first (filter #(= :sales (:key %)) with-cmp))]
+          (is (nil? (:delta-pct sales-nc)) "no compare ⇒ neutral (delta-pct nil)")
+          (is (contains? sales-wc :delta) "compare=true ⇒ line carries :delta"))))))
+
+;; ---------------------------------------------------------------------------
 ;; LT3 — sku-list-empty-window-not-full (pure, no DB)
 ;; ---------------------------------------------------------------------------
 

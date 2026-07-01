@@ -1370,6 +1370,139 @@ All UE.11 gaps apply (they ride the same ingest pipeline). P&L adds:
 
 ---
 
+### P&L.10 — P&L Waterfall (GROSS basis, layered hierarchy)
+
+**Spec**: `016-reporting-depth` FR-015..FR-021. §0.1 LOCKED: top-line is always
+GROSS realisation (`:revenue`), not for-pay. `waterfall.netProfit ==
+pnl/calculate :net-profit` to the kopeck (VR-w1).
+
+**Invariants**:
+- **VR-w1**: `netProfit == pnl/calculate :net-profit` to the kopeck.
+- **VR-w2**: `Σ directExpenses.children == directExpenses` (commission counted once, no double-count).
+- **VR-w3**: `grossMargin == pnl :gross-profit` (GROSS − explicit commission reproduces for-pay gross).
+- **VR-w4**: with opex=tax=0 (015 not landed), `EBITDA == grossMargin − advertising` and `netProfit == EBITDA`, no error.
+- **VR-w5**: a line without a comparison value renders `delta-pct = nil` → neutral, NOT ±100%.
+
+**Layer composition**:
+
+```
+sales              = :revenue                          (GROSS realisation; basis: gross realisation)
+directExpenses     = Σ signed components of pnl :gross-profit
+  children (MUST be the exact signed components, so VR-w3 holds):
+    [:cogs :logistics :mp-commission :storage :penalties :deduction :acceptance :additional]
+    ;; :additional (Доплаты) is a CREDIT — it REDUCES directExpenses.
+    ;; commission (:mp-commission) is a VISIBLE child line (FR-016).
+grossMargin        = sales − directExpenses            (= pnl :gross-profit, VR-w3)
+advertising        = :ad-spend                         (basis: payout; positiveIfGrow false)
+operatingExpenses  = :opex from 015 seam | 0           (render 0 until 015 lands, FR-020)
+EBITDA             = grossMargin − advertising − operatingExpenses
+tax                = :tax + :vat from 015 seam | 0     (УСН + output-НДС; 0 for УСН sellers pre-015, FR-021)
+netProfit          = EBITDA − tax                      (== pnl :net-profit when opex=tax=0)
+```
+
+**Basis labels**:
+- `sales`: basis: gross realisation
+- `directExpenses` and children: basis: gross realisation (derived from gross minus for-pay delta)
+- `grossMargin`: basis: gross realisation (= for-pay basis gross-profit after GROSS-level recomposition)
+- `advertising`: basis: payout
+- `operatingExpenses`, `tax`: basis: management (from 015 adjusted-net seam)
+- `EBITDA`, `netProfit`: basis: management (management profit)
+
+**Implementation**: `src/analitica/domain/pnl.clj` — new pure fn `waterfall [pnl-result & opts]`;
+never modifies `pnl/calculate` frozen outputs. Tests: `test/analitica/domain/pnl_canon_test.clj`.
+
+---
+
+## Capitalization
+
+**Spec**: `016-reporting-depth` FR-007..FR-013, thread b.
+
+Inventory capitalization measures the monetary value of goods currently held
+on MP warehouses + in-transit + user warehouses. Two views are provided:
+
+### Capitalization.1 — By cost (cap-by-cost)
+
+```
+cap-by-cost := unit-cost-basis × stock-qty
+```
+
+- `unit-cost-basis`: cost + fulfilment + VAT from `cost_prices`; nil when the
+  SKU has no cost record → `cap-by-cost = nil` (rendered "—", never 0; FR-013).
+- `stock-qty`: `:quantity-full` (incl. in-transit), consistent with `stock/totals` denominator (FR-014).
+
+**Invariant (VR-c1 / SC-003)**: `Σ cap-by-cost (non-nil) == period stock-value-total` to the kopeck.
+
+**:hint**: "Капитализация по себестоимости = (себест. + фулфилмент + НДС) × текущий остаток. N/A без себестоимости. Basis: cost."
+
+### Capitalization.2 — By price (cap-by-price)
+
+```
+cap-by-price := wavg-price × stock-qty
+```
+
+- `wavg-price`: period weighted-average retail price (revenue-weighted over the selected period);
+  NOT last-full-week average (AVOID per spec AVOID list).
+
+**:hint**: "Капитализация по цене = средневзвеш. розничная цена за период × текущий остаток (period weighted-avg, не last-full-week). Basis: gross realisation."
+
+**positiveIfGrow**: `nil` (intentionally neutral — more stock value means both higher locked capital
+and higher potential revenue; direction is ambiguous).
+
+---
+
+## Stock.GMROI
+
+**Spec**: `016-reporting-depth` FR-009..FR-013, thread b. Definition follows TrueStats
+(notes/14 competitive audit), NOT the textbook gross-margin / avg-inventory formula.
+
+### Stock.GMROI.1 — Coverage-aware GMROI
+
+```
+gmroi := net-profit / mean(daily-cap-by-cost over COVERED days only)
+```
+
+- **Numerator**: net-profit (MP-level net profit, pre-OPEX/tax until 015 lands). NOT gross-margin / avg-inventory.
+- **Denominator**: arithmetic mean of per-day `cap-by-cost` over days where stock was collected
+  (i.e. `stocks_history` has a row for that day). Days with no collected stock are excluded from
+  BOTH the numerator period and the denominator average (coverage-aware; FR-010).
+- `covered-days = 0` (all-uncovered SKU) → `gmroi = :not-applicable` (rendered "—"; NOT 0/∞; FR-013).
+- SKU without cost-price → `gmroi = :not-applicable`.
+- Partial coverage → GMROI computed over covered days only; `covered-days < days-in-period` is surfaced
+  so the seller knows the estimate is based on incomplete data (SC-004).
+
+**Invariant (VR-g1 / SC-004)**: toggling one zero-stock day changes `covered-days` (denominator) AND
+the length of `daily-cap-series` (numerator basis). Verifiable by toggling one day in the test fixture.
+
+**Invariant (VR-g2 / FR-009)**: a test asserts the implementation uses net-profit as numerator;
+it MUST NOT substitute the textbook gross-margin / avg-inventory.
+
+**:hint**: "GMROI = чистая прибыль ÷ средний остаток по себестоимости (среднее по дням со собранным остатком; дни без остатка исключены). Безразмерное отношение (напр. 4.2×), НЕ рубли. N/A если остаток не собирался весь период. Basis: net profit (определение TS, не учебное)."
+
+### Stock.GMROI.2 — Annualized GMROI
+
+```
+gmroi-annualized := gmroi × (365 / days-in-period)
+```
+
+Annualizes the period GMROI to a 365-day year. `days-in-period` is the full calendar length of the
+selected period (not just covered days). When `gmroi = :not-applicable`, `gmroi-annualized` is also
+`:not-applicable` (FR-011).
+
+### Stock.GMROI.3 — Turnover (days-of-cover)
+
+```
+sold         := Σ(sale-quantity over period)       ; NOT (count sale-events) — a 5-unit order = 5 sold
+daily-rate   := sold / days-in-period
+days-of-cover := quantity-full / daily-rate        ; = days until stock runs out at current sell rate
+```
+
+**FR-012**: `sold` is the sum of quantities, not the count of sale operations. A single 5-unit order
+yields `daily-rate = 5 / days`, not `1 / days`.
+
+**:hint**: "Дней покрытия = остаток ÷ (Σ проданных штук ÷ дней периода). Используется Σ количества, не число операций."
+
+---
+
 ## Finance
 
 The Finance report decomposes the event stream to the per-article level: it

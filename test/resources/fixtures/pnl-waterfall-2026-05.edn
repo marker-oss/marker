@@ -1,0 +1,93 @@
+;; Fixture: closed month 2026-05 — finance rows for the P&L waterfall (spec 016 US3, data-model §4).
+;;
+;; Three marketplaces (WB / Ozon / YM), each with a NON-ZERO :additional (Доплаты, credit) so a
+;; missing/misnamed credit (the old :compensation child) fails VR-w3. cost-price rows are absent in the
+;; test DB, so :cogs resolves to 0 unless the test injects one — the waterfall kopeck invariants
+;; (netProfit == pnl :net-profit; Σ direct-expense children == direct-expenses; grossMargin ==
+;; :gross-profit) hold regardless of the exact cogs value because the waterfall is derived from
+;; pnl/calculate's already-computed aggregates.
+;;
+;; Per-MP known aggregates (pnl/calculate over the rows below):
+;;   WB  : revenue = 3×1000 = 3000 ; for-pay = 3×760 = 2280 ; additional = 3×20 = 60
+;;   Ozon: revenue = 2×5000 = 10000 ; for-pay = 2×4100 = 8200 ; additional = 2×50 = 100
+;;   YM  : revenue = 4×800 = 3200 ; for-pay = 4×620 = 2480 ; additional = 4×10 = 40
+;;
+;; Loaded by test/analitica/domain/pnl_canon_test.clj via read-string.
+
+{:wb
+ [{:marketplace :wb :rrd-id 5001
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-10"
+   :article "WB-A" :operation "sale" :quantity 1
+   :retail-amount 1000.0 :retail-price 1000.0
+   :for-pay 760.0 :mp-commission -150.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 10.0 :acceptance 5.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 5.0
+   :additional-payment 20.0 :ad-cost 0.0}
+  {:marketplace :wb :rrd-id 5002
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-11"
+   :article "WB-A" :operation "sale" :quantity 1
+   :retail-amount 1000.0 :retail-price 1000.0
+   :for-pay 760.0 :mp-commission -150.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 10.0 :acceptance 5.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 5.0
+   :additional-payment 20.0 :ad-cost 0.0}
+  {:marketplace :wb :rrd-id 5003
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-12"
+   :article "WB-B" :operation "sale" :quantity 1
+   :retail-amount 1000.0 :retail-price 1000.0
+   :for-pay 760.0 :mp-commission -150.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 10.0 :acceptance 5.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 5.0
+   :additional-payment 20.0 :ad-cost 0.0}]
+
+ :ozon
+ [{:marketplace :ozon :rrd-id 6001
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-15"
+   :article "OZ-A" :operation "sale" :quantity 1
+   :retail-amount 5000.0 :retail-price 5000.0
+   :for-pay 4100.0 :mp-commission 600.0 :wb-reward 0.0
+   :delivery-cost 200.0 :storage-fee 60.0 :acceptance 20.0
+   :penalty 10.0 :acquiring-fee 0.0 :deduction 10.0
+   :additional-payment 50.0 :ad-cost 0.0}
+  {:marketplace :ozon :rrd-id 6002
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-16"
+   :article "OZ-B" :operation "sale" :quantity 1
+   :retail-amount 5000.0 :retail-price 5000.0
+   :for-pay 4100.0 :mp-commission 600.0 :wb-reward 0.0
+   :delivery-cost 200.0 :storage-fee 60.0 :acceptance 20.0
+   :penalty 10.0 :acquiring-fee 0.0 :deduction 10.0
+   :additional-payment 50.0 :ad-cost 0.0}]
+
+ :ym
+ [{:marketplace :ym :rrd-id 7001
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-20"
+   :article "YM-A" :operation "sale" :quantity 1
+   :retail-amount 800.0 :retail-price 800.0
+   :for-pay 620.0 :mp-commission 120.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 8.0 :acceptance 2.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+   :additional-payment 10.0 :ad-cost 0.0}
+  {:marketplace :ym :rrd-id 7002
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-21"
+   :article "YM-A" :operation "sale" :quantity 1
+   :retail-amount 800.0 :retail-price 800.0
+   :for-pay 620.0 :mp-commission 120.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 8.0 :acceptance 2.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+   :additional-payment 10.0 :ad-cost 0.0}
+  {:marketplace :ym :rrd-id 7003
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-22"
+   :article "YM-B" :operation "sale" :quantity 1
+   :retail-amount 800.0 :retail-price 800.0
+   :for-pay 620.0 :mp-commission 120.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 8.0 :acceptance 2.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+   :additional-payment 10.0 :ad-cost 0.0}
+  {:marketplace :ym :rrd-id 7004
+   :date-from "2026-05-01" :date-to "2026-05-31" :event-date "2026-05-23"
+   :article "YM-B" :operation "sale" :quantity 1
+   :retail-amount 800.0 :retail-price 800.0
+   :for-pay 620.0 :mp-commission 120.0 :wb-reward 0.0
+   :delivery-cost 40.0 :storage-fee 8.0 :acceptance 2.0
+   :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+   :additional-payment 10.0 :ad-cost 0.0}]}

@@ -20,6 +20,7 @@
             [analitica.domain.sales       :as sales]
             [analitica.domain.stock       :as stock]
             [analitica.domain.buyout      :as buyout]
+            [analitica.domain.cost-price  :as cost-price]
             [analitica.alerts             :as alerts]
             [analitica.canonical.events.query :as canon]
             [analitica.util.period        :as period]
@@ -1160,6 +1161,16 @@
                             :group group})
                          pnl-row-defs)
 
+          ;; ── 016-US3 layered P&L waterfall (§0.1 LOCKED GROSS top-line) ──
+          ;; Pure re-composition of pnl-cur; netProfit == pnl :net-profit by
+          ;; construction. ?compare=true attaches per-line deltas vs prev period.
+          compare? (contains? #{"true" "1" "yes"}
+                              (some-> (or (:compare params) (get params "compare"))
+                                      clojure.core/str str/lower-case))
+          wf       (if compare?
+                     (pnl/waterfall pnl-cur :comparison pnl-prev)
+                     (pnl/waterfall pnl-cur))
+
           ;; Per-SKU breakdown via finance/by-article
           by-art   (try (finance/by-article fin-cur) (catch Exception _ []))
           ads-by-art (try (pnl/ad-spend-by-article (:from period) (:to period) mp1)
@@ -1176,6 +1187,7 @@
                               :net        (or (:for-pay a) 0.0)}))
                          by-art)]
       (merge {:rows              rows
+              :waterfall         (:waterfall wf)
               :sku-detail        sku-det
               :preliminary?      (boolean (:preliminary? pnl-cur))
               :preliminary-as-of (:preliminary-as-of pnl-cur)}
@@ -1249,6 +1261,27 @@
           ad-total  (or (:ad-spend pnl-cur) 0.0)
           ads-by-art (try (pnl/ad-spend-by-article from to mp1) (catch Exception _ {}))
 
+          ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
+          ;; days-in-period for annualization + turnover daily-rate.
+          days-in-period (try (inc (.until (period/parse-date from) (period/parse-date to)
+                                           java.time.temporal.ChronoUnit/DAYS))
+                              (catch Exception _ 30))
+          ;; cost basis lookup (nil ⇒ N/A, FR-013).
+          cost-fn        (fn [art] (cost-price/get-price art))
+          ;; period weighted-avg retail per article (FR-008, NOT last-full-week).
+          wavg-by-art    (->> (group-by :article sales-cur)
+                              (map (fn [[art rows]] [art (stock/wavg-retail rows)]))
+                              (into {}))
+          ;; per-day stocks_history for the window, grouped by article (coverage-aware GMROI).
+          history-rows   (try (stock/fetch-history from to :marketplace mp1) (catch Exception _ []))
+          history-by-art (group-by :article history-rows)
+          ;; capitalization aggregate + totals (VR-c1/FR-014).
+          cap-result     (stock/capitalize stocks :cost-fn cost-fn
+                                            :price-fn #(get wavg-by-art %))
+          cap-by-art     (->> (:per-sku cap-result)
+                              (map (fn [c] [(:article c) c]))
+                              (into {}))
+
           skus      (mapv (fn [a]
                             (let [art       (or (:article a) "")
                                   rev       (or (:revenue a) 0.0)
@@ -1279,7 +1312,23 @@
                                   drr-headroom    (math/round2 (- (or max-drr-pct 0.0)
                                                                    (or drr-pct 0.0)))
                                   over-ceiling?   (boolean (and max-drr-pct drr-pct
-                                                                (> drr-pct max-drr-pct)))]
+                                                                (> drr-pct max-drr-pct)))
+                                  ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
+                                  cap           (get cap-by-art art)
+                                  ;; per-SKU MP net profit = gross-profit − ad (TS-def GMROI numerator).
+                                  ;; nil when this SKU has no cost basis (FR-013 propagation).
+                                  net-profit    (when (:unit-cost-basis cap)
+                                                  (math/round2 (- for-pay cogs ads)))
+                                  gmroi-map     (stock/gmroi-inputs
+                                                  {:article         art
+                                                   :unit-cost-basis (:unit-cost-basis cap)
+                                                   :net-profit      net-profit
+                                                   :history         (get history-by-art art [])
+                                                   :days-in-period  days-in-period})
+                                  ;; turnover Σqty from finance sales-qty (orders) over the period.
+                                  daily-rate    (math/safe-div orders days-in-period)
+                                  days-of-cover (when (pos? daily-rate)
+                                                  (math/round2 (/ (double qty-full) daily-rate)))]
                               {:id               art
                                :name             (or (:subject a) art)
                                :mp               [(keyword (or (:marketplace a) :wb))]
@@ -1294,6 +1343,13 @@
                                :max-drr-pct      max-drr-pct
                                :drr-headroom-pct drr-headroom
                                :over-ceiling?    over-ceiling?
+                               ;; capitalization + coverage-aware GMROI + turnover
+                               :cap-by-cost      (:cap-by-cost cap)
+                               :cap-by-price     (:cap-by-price cap)
+                               :gmroi            (:gmroi gmroi-map)
+                               :gmroi-annualized (:gmroi-annualized gmroi-map)
+                               :covered-days     (:covered-days gmroi-map)
+                               :days-of-cover    days-of-cover
                                :spark            []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
                           by-art)
           ;; Default: drop orphan service-only SKUs (revenue=0 AND orders=0).
@@ -1307,7 +1363,10 @@
                        true   (drop offset)
                        limit  (take limit)
                        true   vec)]
-      (merge {:skus skus-paged}
+      (merge {:skus   skus-paged
+              ;; 016-US2 totals (T022) per contracts/stock-capitalization.edn:
+              ;; :cap-by-cost-total / :cap-by-price-total / :stock-qty-total / :na-cost-count.
+              :totals (:totals cap-result)}
              (basis-envelope fin-cur false)))
     (catch Exception e
       {:skus [] :error (.getMessage e)})))

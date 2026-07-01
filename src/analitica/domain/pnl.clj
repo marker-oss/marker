@@ -362,6 +362,153 @@
              :margin-without-expense (math/percentage mgmt-profit-we revenue)
              :management-zero-reason zero-reason))))
 
+;; ---------------------------------------------------------------------------
+;; P&L waterfall (spec 016 US3) — §0.1 LOCKED GROSS-realisation top-line.
+;;
+;; A PURE fn over `calculate` output. It NEVER recomputes revenue/gross/net —
+;; it re-composes the already-computed frozen aggregates onto a GROSS top-line
+;; so the kopeck invariants hold BY CONSTRUCTION:
+;;
+;;   sales          = :revenue                       (GROSS realisation, NOT for_pay)
+;;   directExpenses = :gross-profit − :revenue       (= −(revenue − gross-profit))
+;;   grossMargin    = sales + directExpenses          == :gross-profit (VR-w3)
+;;   advertising    = −:ad-spend                      (distinct line, FR-016/FR-017)
+;;   operatingExpenses = −:opex | 0                   (015 seam; 0 pre-015, FR-020/FR-021)
+;;   EBITDA         = grossMargin + advertising + operatingExpenses
+;;   tax            = −(:tax + :vat) | 0              (015 seam; 0 pre-015)
+;;   netProfit      = EBITDA + tax                    == :net-profit (opex=tax=0) / == :profit (managed)
+;;
+;; directExpenses children are EXACTLY the signed components of :gross-profit
+;; recomposed onto the GROSS base: the commission child absorbs (revenue − for_pay)
+;; — the MP's total retention at the payout gate — so Σ children == directExpenses
+;; to the kopeck (VR-w2). commission is now a VISIBLE line instead of hidden inside
+;; for_pay. :additional (Доплаты) is a CREDIT (positive, reduces directExpenses); it
+;; is the ONLY credit in :gross-profit. :compensation is a cf-layer field ABOVE the
+;; frozen basis and MUST NOT appear here.
+;; ---------------------------------------------------------------------------
+
+(def ^:private waterfall-labels
+  {:sales             "Выручка (GROSS)"
+   :direct-expenses   "Прямые расходы"
+   :cogs              "Себестоимость"
+   :mp-commission     "Комиссия МП"
+   :logistics         "Логистика"
+   :storage           "Хранение"
+   :acceptance        "Приёмка"
+   :penalties         "Штрафы"
+   :deduction         "Удержания"
+   :additional        "Доплаты"
+   :gross-margin      "Валовая прибыль"
+   :advertising       "Реклама"
+   :operating-expenses "Операционные расходы"
+   :ebitda            "Операционная прибыль (EBITDA)"
+   :tax               "Налог"
+   :tax-usn           "Налог УСН"
+   :vat               "НДС (исх.)"
+   :net-profit        "Чистая прибыль"})
+
+(def ^:private direct-expense-child-keys
+  "Drilldown children of the directExpenses layer — EXACTLY the signed
+   components of pnl :gross-profit recomposed on the GROSS base (VR-w3)."
+  [:cogs :mp-commission :logistics :storage :penalties :deduction :acceptance :additional])
+
+(defn- delta-for
+  "Signed delta and neutral-safe pct for a line vs its comparison amount.
+   Returns {:delta d :delta-pct p|nil}. pct is nil (neutral, NOT ±100%) when
+   there is no comparison or the prior amount is 0 (FR-026/VR-w5)."
+  [amount prev]
+  (if (nil? prev)
+    {:delta nil :delta-pct nil}
+    (let [d (math/round2 (- amount prev))]
+      {:delta d
+       :delta-pct (when-not (zero? prev)
+                    (math/round2 (* 100.0 (/ (- amount prev) (Math/abs (double prev))))))})))
+
+(defn waterfall
+  "Layered P&L waterfall over a `calculate` result (spec 016 US3, §0.1 LOCKED).
+
+   Pure re-composition of the frozen aggregates onto a GROSS top-line; the
+   frozen :revenue/:for-pay/:gross-profit/:net-profit are NOT recomputed.
+
+   Options:
+     :comparison  a prior-period `calculate` result. When present, each line
+                  carries {:delta :delta-pct} vs the matching prior line;
+                  a prior amount of 0 ⇒ :delta-pct nil (neutral, FR-026).
+
+   Returns {:waterfall [WaterfallLine...]}. Layers, in order:
+     :sales → :direct-expenses (+ children) → :gross-margin → :advertising
+     → :operating-expenses → :ebitda → :tax (+ children) → :net-profit.
+
+   Management layers (:operating-expenses / :tax) read the 015 adjusted-net
+   seam via the management keys on the `calculate` result (:opex / :tax / :vat).
+   When 015 has not landed (those keys absent) they render 0 and
+   EBITDA == grossMargin − advertising, netProfit == :net-profit (VR-w4)."
+  [pnl-result & {:keys [comparison]}]
+  (let [revenue    (double (or (:revenue pnl-result) 0.0))
+        for-pay    (double (or (:for-pay pnl-result) 0.0))
+        gross      (double (or (:gross-profit pnl-result) 0.0))
+        ad-spend   (double (or (:ad-spend pnl-result) 0.0))
+        ;; Signed component amounts (expenses negative, credits positive), recomposed
+        ;; onto the GROSS base. commission = −(revenue − for_pay): the MP's retention.
+        child-amount (fn [k]
+                       (case k
+                         :mp-commission (math/round2 (- (- revenue for-pay)))
+                         :additional    (math/round2 (double (or (:additional pnl-result) 0.0)))
+                         ;; all other children are costs stored non-negative in pnl → negate
+                         (math/round2 (- (double (or (get pnl-result k) 0.0))))))
+        children     (mapv (fn [k] {:key k :amount (child-amount k)}) direct-expense-child-keys)
+        direct-exp   (math/round2 (reduce + 0.0 (map :amount children)))   ; == gross − revenue
+        gross-margin (math/round2 (+ revenue direct-exp))                  ; == :gross-profit
+        advertising  (math/round2 (- ad-spend))
+        ;; 015 management seam — 0 when absent (FR-020/FR-021).
+        opex         (math/round2 (double (or (:opex pnl-result) 0.0)))
+        tax-usn      (math/round2 (double (or (:tax pnl-result) 0.0)))
+        vat          (math/round2 (double (or (:vat pnl-result) 0.0)))
+        op-exp-amt   (math/round2 (- opex))
+        tax-amt      (math/round2 (- (+ tax-usn vat)))
+        ebitda       (math/round2 (+ gross-margin advertising op-exp-amt))
+        net-profit   (math/round2 (+ ebitda tax-amt))
+        ;; comparison line amounts, keyed the same way, for delta attach.
+        cmp          (when comparison (waterfall comparison))
+        cmp-amt      (fn [k] (when cmp
+                               (some #(when (= k (:key %)) (:amount %))
+                                     (:waterfall cmp))))
+        line         (fn [m]
+                       (let [base (merge {:label (get waterfall-labels (:key m))} m)]
+                         (if comparison
+                           (merge base (delta-for (:amount base) (cmp-amt (:key m))))
+                           base)))
+        child-line   (fn [{:keys [key amount]}]
+                       (line {:key key :amount amount :layer :direct-expense
+                              :basis :gross-realisation
+                              :positive-if-grow (= key :additional)}))]
+    {:waterfall
+     (vec
+       (concat
+         [(line {:key :sales :amount (math/round2 revenue) :layer :sales
+                 :basis :gross-realisation :positive-if-grow true})
+          (line {:key :direct-expenses :amount direct-exp :layer :direct-expense
+                 :basis :gross-realisation :positive-if-grow false
+                 :children direct-expense-child-keys})]
+         (map child-line children)
+         [(line {:key :gross-margin :amount gross-margin :layer :gross-margin
+                 :basis :gross-realisation :positive-if-grow true})
+          (line {:key :advertising :amount advertising :layer :advertising
+                 :basis :payout :positive-if-grow false})
+          (line {:key :operating-expenses :amount op-exp-amt :layer :operating-expense
+                 :basis :management :positive-if-grow false})
+          (line {:key :ebitda :amount ebitda :layer :ebitda
+                 :basis :management :positive-if-grow true})
+          (line {:key :tax :amount tax-amt :layer :tax
+                 :basis :management :positive-if-grow false
+                 :children [:tax-usn :vat]})
+          (line {:key :tax-usn :amount (math/round2 (- tax-usn)) :layer :tax
+                 :basis :management :positive-if-grow false})
+          (line {:key :vat :amount (math/round2 (- vat)) :layer :tax
+                 :basis :management :positive-if-grow false})
+          (line {:key :net-profit :amount net-profit :layer :net-profit
+                 :basis :management :positive-if-grow true})]))}))
+
 (defn load-cf-adjustments [from to marketplace]
   (when (and from to (= marketplace :ozon))
     (let [adj (db/cash-flow-adjustments "ozon" from to)]
