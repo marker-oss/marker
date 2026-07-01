@@ -285,6 +285,32 @@
       :cashflow (materialize/rebuild! :cashflow :period period :marketplace mp)
       (println "Unknown rebuild target:" (first args)))))
 
+(defn- arg-value
+  "Read the value following `flag` in a raw args vector (e.g. --period 2026-04).
+   nil if the flag is absent or has no following token."
+  [args flag]
+  (->> (partition 2 1 args)
+       (some (fn [[a b]] (when (= a flag) b)))))
+
+(defn- handle-rematerialize-ym-finance
+  "spec 012 US3: re-run YM finance materialize under the corrected price basis
+   (gross = BUYER + subsidy, net = BUYER, for-pay = BUYER − commissions).
+   `--period YYYY-MM` re-materializes one month; `--all` re-materializes every
+   stored YM period. Marketplace is always :ym (WB/Ozon untouched — INV-5).
+
+   `--all` is not a shared cli-option, and --period after a subcommand is
+   dropped by the top-level :in-order parse (see reparse-subcommand-args), so
+   both are read straight from the raw args vector."
+  [args _opts]
+  (let [all?   (boolean (some #{"--all"} args))
+        ;; period resolved against stored raw batches by month prefix in
+        ;; materialize/rematerialize-ym-finance! (no YearMonth parsing).
+        period (or (arg-value args "--period") (arg-value args "-p"))]
+    (cond
+      all?   (materialize/rematerialize-ym-finance! :all true)
+      period (materialize/rematerialize-ym-finance! :period period)
+      :else  (println "rematerialize-ym-finance: pass --period YYYY-MM or --all"))))
+
 (defn- handle-report [args opts]
   (let [[args opts] (reparse-subcommand-args args opts)
         what   (first args)
@@ -1228,6 +1254,7 @@ Currently registered schemas:")
         (case command
           "ingest"      (handle-ingest rest-args options)
           "materialize" (handle-materialize rest-args options)
+          "rematerialize-ym-finance" (handle-rematerialize-ym-finance rest-args options)
           "rebuild"     (handle-rebuild rest-args options)
           "report"      (handle-report rest-args options)
           "audit"       (let [code (handle-audit rest-args options)]

@@ -180,6 +180,10 @@
      :sales-qty     (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
      :returns-qty   (reduce + 0 (map #(or (:quantity %) 0) return-lines))
      :revenue       (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
+     ;; spec 012: net-sales = Σ BUYER×qty (post-discount). YM carries this;
+     ;; WB/Ozon rows have :net-sales nil (== gross) → coalesce to 0 so their
+     ;; aggregate is 0.0 and :revenue (retail-amount) is untouched.
+     :net-sales     (math/round2 (reduce + 0.0 (map #(or (:net-sales %) 0) sales-lines)))
      :wb-reward     (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
      :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
      :acquiring     (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
@@ -221,6 +225,7 @@
    :sales-qty     0
    :returns-qty   0
    :revenue       0.0
+   :net-sales     0.0
    :wb-reward     0.0
    :mp-commission 0.0
    :acquiring     0.0
@@ -282,6 +287,8 @@
                  :sales-qty   (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
                  :returns-qty (reduce + 0 (map #(or (:quantity %) 0) return-lines))
                  :revenue     (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
+                 ;; spec 012: net-sales = Σ BUYER×qty; nil-safe for WB/Ozon.
+                 :net-sales   (math/round2 (reduce + 0.0 (map #(or (:net-sales %) 0) sales-lines)))
                  :wb-reward   (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
                  :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
                  :acquiring   (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))

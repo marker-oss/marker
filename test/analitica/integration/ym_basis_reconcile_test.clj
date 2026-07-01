@@ -28,7 +28,12 @@
    misses are partial-raw coverage gaps (missing order legs), not formula error."
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.edn :as edn]
-            [analitica.marketplace.ym.transform :as transform]))
+            [analitica.marketplace.ym.transform :as transform]
+            [analitica.domain.finance :as finance]
+            [analitica.domain.cost-price :as cost-price]
+            [analitica.db]
+            [analitica.canonical.events.materialize]
+            [analitica.materialize :as materialize]))
 
 ;; --- within-tolerance? from contracts/ym-finance-row.md §B ------------------
 (defn- within-tolerance? [ours theirs]
@@ -127,3 +132,111 @@
       (is (>= gross-rate 0.50)
           (str "gross match rate " (format "%.1f%%" (* 100.0 gross-rate))
                " (" gross-matches "/" n ")")))))
+
+;; ===========================================================================
+;; T020 (US2) — WB/Ozon no-regression guard.
+;;
+;; The :net-sales aggregation added to domain/finance/by-article must NOT
+;; perturb WB/Ozon: those rows carry no :net-sales (or nil), so their
+;; :net-sales aggregate must be 0.0 and their :revenue / :for-pay / :total-cost
+;; must equal a baseline captured from the same inputs. INV-5 / FR-011 / SC-004.
+;;
+;; Baseline is captured inline from these fixture rows rather than a separate
+;; edn file — the point is that the by-article outputs for WB/Ozon articles are
+;; unaffected by the :net-sales change (they have no :net-sales field).
+;; cost-price/get-price is redef'd to a fixed value so :total-cost is
+;; deterministic and the assertion is about stability, not the cost atom.
+;; ===========================================================================
+
+(def ^:private wb-ozon-fixture
+  ;; No :net-sales key anywhere (WB/Ozon never emit it).
+  [{:marketplace :wb :article "WB-A" :operation-kind :sale :quantity 2
+    :retail-amount 2000.0 :for-pay 1600.0 :mp-commission 200.0}
+   {:marketplace :wb :article "WB-A" :operation-kind :return :quantity 1
+    :retail-amount 1000.0 :for-pay 800.0 :mp-commission 100.0}
+   {:marketplace :wb :article "WB-B" :operation-kind :sale :quantity 1
+    :retail-amount 1500.0 :for-pay 1200.0 :mp-commission 150.0}
+   {:marketplace :ozon :article "OZ-A" :operation-kind :sale :quantity 3
+    :retail-amount 3000.0 :for-pay 2400.0 :mp-commission 300.0}
+   {:marketplace :ozon :article "OZ-B" :operation-kind :sale :quantity 1
+    :retail-amount 900.0 :for-pay 720.0 :mp-commission 90.0}])
+
+(deftest wb-ozon-no-regression
+  (testing "WB/Ozon by-article revenue/for-pay/total-cost stable; :net-sales = 0.0"
+    (with-redefs [cost-price/get-price (fn [_article _barcode] 100.0)]
+      (let [rows    (finance/by-article wb-ozon-fixture)
+            by-art  (into {} (map (juxt :article identity) rows))]
+        ;; Every WB/Ozon article carries :net-sales 0.0 (no :net-sales field).
+        (doseq [a ["WB-A" "WB-B" "OZ-A" "OZ-B"]]
+          (is (= 0.0 (:net-sales (get by-art a)))
+              (str a " :net-sales must be 0.0 (WB/Ozon carry no :net-sales)")))
+        ;; revenue = Σ retail-amount over SALE lines (unchanged formula).
+        (is (= 2000.0 (:revenue (get by-art "WB-A"))) "WB-A revenue = sale retail-amount")
+        (is (= 1500.0 (:revenue (get by-art "WB-B"))))
+        (is (= 3000.0 (:revenue (get by-art "OZ-A"))))
+        (is (= 900.0  (:revenue (get by-art "OZ-B"))))
+        ;; for-pay = Σsale − Σreturn (unchanged formula).
+        (is (= 800.0  (:for-pay (get by-art "WB-A"))) "WB-A for-pay = 1600 sale − 800 return")
+        (is (= 1200.0 (:for-pay (get by-art "WB-B"))))
+        (is (= 2400.0 (:for-pay (get by-art "OZ-A"))))
+        (is (= 720.0  (:for-pay (get by-art "OZ-B"))))
+        ;; total-cost = max 0 (Σ sale-cost − Σ return-cost) at 100/unit.
+        ;; WB-A: 2 sale − 1 return = net 1 unit × 100 = 100.
+        (is (= 100.0 (:total-cost (get by-art "WB-A"))))
+        (is (= 100.0 (:total-cost (get by-art "WB-B"))))
+        (is (= 300.0 (:total-cost (get by-art "OZ-A"))) "3 units × 100")
+        (is (= 100.0 (:total-cost (get by-art "OZ-B"))))))))
+
+;; ===========================================================================
+;; T024 (US3) — rematerialize-ym-finance! idempotency.
+;;
+;; Double-running rematerialize-ym-finance! for one period must yield an
+;; identical set of finance rows (by natural key rrd-id + monetary values).
+;; INV-7 / FR-010 / P5. Fully stubbed at the DB boundary — no live DB, no API,
+;; and raw_data is only READ (get-raw-range), never mutated.
+;; ===========================================================================
+
+(def ^:private ym-finance-raw-order
+  ;; One delivered YM order (order-stats shape) with subsidy + commissions so
+  ;; the corrected basis produces gross = BUYER + subsidy, net = BUYER.
+  {:id 555001
+   :status "DELIVERED"
+   :creationDate "2026-04-12"
+   :statusUpdateDate "2026-04-20T10:00:00.000+03:00"
+   :subsidies   [{:amount 800.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+   :commissions [{:type "FEE" :actual 300.0}]
+   :items [{:shopSku "IDEM-1" :count 1
+            :prices [{:type "BUYER"       :costPerItem 2000.0 :total 2000.0}
+                     {:type "MARKETPLACE" :costPerItem 800.0  :total 800.0}]}]})
+
+(defn- run-rematerialize-capture
+  "Run rematerialize-ym-finance! for a single stubbed period, capturing the
+   rows handed to db/insert-batch!. Returns the captured finance rows."
+  []
+  (let [captured (atom nil)]
+    (with-redefs [;; ym-finance-raw-periods discovery: one April period.
+                  analitica.db/query
+                  (fn [_sql] [{:date-from "2026-04-01" :date-to "2026-04-30"}])
+                  ;; load-raw → get-raw-range returns the raw order batch.
+                  analitica.db/get-raw-range
+                  (fn [_source _entity _from _to]
+                    [{:date-from "2026-04-01" :date-to "2026-04-30"
+                      :data [ym-finance-raw-order]}])
+                  ;; capture the transformed rows instead of writing to SQLite.
+                  analitica.db/insert-batch!
+                  (fn [_table _cols rows] (reset! captured (vec rows)) (count rows))
+                  ;; canonical item_events materialize is out of scope — stub
+                  ;; it so it doesn't touch the DB nor clobber @captured.
+                  analitica.db/execute! (fn [_] 0)
+                  analitica.canonical.events.materialize/materialize-ym-events!
+                  (fn [_from _to] 0)]
+      (materialize/rematerialize-ym-finance! :period "2026-04")
+      @captured)))
+
+(deftest rematerialize-idempotent
+  (testing "two runs of rematerialize-ym-finance! (one period) → identical rows"
+    (let [run1 (run-rematerialize-capture)
+          run2 (run-rematerialize-capture)]
+      (is (seq run1) "re-materialize must produce finance rows")
+      (is (= run1 run2)
+          "repeated re-materialize is idempotent (identical row vectors)"))))

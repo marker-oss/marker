@@ -298,6 +298,53 @@
            from to))
         cnt))))
 
+(defn- ym-finance-raw-periods
+  "Distinct [date_from date_to] pairs of stored YM finance raw_data batches.
+   Read-only — never mutates raw_data. Ordered by date_from for stable runs."
+  []
+  (->> (db/query ["SELECT DISTINCT date_from, date_to FROM raw_data
+                   WHERE source = 'ym' AND entity_type = 'finance'
+                   ORDER BY date_from"])
+       (mapv (fn [{:keys [date-from date-to]}] [date-from date-to]))))
+
+(defn rematerialize-ym-finance!
+  "Historical correction (spec 012 US3 / FR-010): re-run the finance
+   materialize pipeline for stored YM raw under the corrected price basis
+   (gross = BUYER + subsidy, net-sales = BUYER, for-pay = BUYER − commissions).
+
+   Thin wrapper over `materialize-finance! period :marketplace :ym` — reads the
+   already-stored raw_data (source=\"ym\", entity_type=\"finance\"), applies the
+   current transform, and INSERTs over the finance table. Does NOT call the YM
+   API and does NOT mutate raw_data (P5). Idempotent: repeated runs of the same
+   period yield identical rows (INV-7). Marketplace is always :ym — WB/Ozon
+   rows are never touched (INV-5).
+
+   Args:
+     :period \"YYYY-MM\"  — re-materialize a single YM month (raw must exist).
+     :all    true       — re-materialize every YM period with stored raw.
+
+   Returns the total finance-row count materialized across periods."
+  [& {:keys [period all]}]
+  (let [all-periods (ym-finance-raw-periods)
+        periods (cond
+                  all    all-periods
+                  ;; Resolve a "YYYY-MM" period against the stored raw batches
+                  ;; by month prefix on date_from. This uses the exact month
+                  ;; bounds already recorded in raw_data (no YearMonth parsing)
+                  ;; and guarantees the period actually has raw to re-run.
+                  period (filterv (fn [[from _to]]
+                                    (and from (.startsWith ^String from period)))
+                                  all-periods)
+                  :else  (throw (ex-info "rematerialize-ym-finance! needs :period or :all"
+                                         {:period period :all all})))]
+    (when (empty? periods)
+      (println "No stored YM finance raw to re-materialize."))
+    (reduce (fn [total [from to]]
+              (println (str "Re-materializing YM finance " from ".." to " …"))
+              (+ total (or (materialize-finance! [from to] :marketplace :ym) 0)))
+            0
+            periods)))
+
 ;; ---------------------------------------------------------------------------
 ;; Ozon hybrid service merge (US3B / spec 003-finance-row-completeness)
 ;;

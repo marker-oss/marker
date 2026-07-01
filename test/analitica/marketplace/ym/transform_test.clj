@@ -504,3 +504,45 @@
       (is (= 2500.0 (double (:retail-amount row)))
           "gross = BUYER line-total 2000 + subsidy 500 = 2500")
       (is (<= (double (:for-pay row)) (double (:retail-amount row)))))))
+
+;; ---- T025 (US3): event-date is statusUpdateDate-based, unmoved by basis ----
+;; INV-8: the corrected monetary block must not shift :event-date. event-date
+;; is derived from statusUpdateDate (subs 0..10); changing the monetary inputs
+;; (prices/subsidy/commissions) leaves it identical, so re-materialization does
+;; NOT move rows between months.
+
+(deftest event-date-unchanged
+  (testing ":event-date = statusUpdateDate[0..10] on the basis fixture (SUB-A April 30)"
+    (let [rows (transform/->finance-from-order-stats
+                (edn/read-string (slurp "test/resources/ym/ym-orders-basis.edn")))
+          by-sku (into {} (map (juxt :article identity) rows))]
+      ;; Fixture statusUpdateDate values → expected event-date per SKU.
+      (is (= "2026-04-30" (:event-date (get by-sku "SUB-A"))))
+      (is (= "2026-04-20" (:event-date (get by-sku "LOSS-B"))))
+      (is (= "2026-04-15" (:event-date (get by-sku "DEDUP-C"))))
+      (is (= "2026-04-18" (:event-date (get by-sku "NOSUB-D"))))
+      (is (= "2026-04-30" (:event-date (get by-sku "CANC-E"))))))
+
+  (testing "changing the monetary block (prices/subsidy/commissions) does not move event-date"
+    (let [base  {:id 700001 :status "DELIVERED" :creationDate "2026-04-01"
+                 :statusUpdateDate "2026-04-25T14:00:00.000+03:00"
+                 :subsidies [{:amount 300.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+                 :commissions [{:type "FEE" :actual 100.0}]
+                 :items [{:shopSku "ED-1" :count 1
+                          :prices [{:type "BUYER" :total 1000.0}
+                                   {:type "MARKETPLACE" :total 300.0}]}]}
+          ;; a second order with a WILDLY different monetary profile but the
+          ;; SAME statusUpdateDate — event-date must be identical.
+          bumped (-> base
+                     (assoc :subsidies [{:amount 9999.0 :type "SUBSIDY" :operationType "ACCRUAL"}])
+                     (assoc :commissions [{:type "FEE" :actual 5000.0}])
+                     (assoc-in [:items 0 :prices]
+                               [{:type "BUYER" :total 8000.0}
+                                {:type "MARKETPLACE" :total 4000.0}]))
+          [r1] (transform/->finance-from-order-stats [base])
+          [r2] (transform/->finance-from-order-stats [bumped])]
+      (is (= "2026-04-25" (:event-date r1)))
+      (is (= (:event-date r1) (:event-date r2))
+          "event-date is independent of the monetary basis (statusUpdateDate-based)")
+      ;; sanity: the monetary values DID change (so the test isn't vacuous).
+      (is (not= (:retail-amount r1) (:retail-amount r2))))))
