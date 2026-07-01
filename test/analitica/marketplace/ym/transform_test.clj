@@ -6,6 +6,7 @@
    over order-level :status. This namespace exercises the full 9-row
    matrix from data-model.md §4."
   (:require [clojure.test :refer [deftest testing is]]
+            [clojure.edn :as edn]
             [analitica.marketplace.ym.transform :as transform]))
 
 ;; ---------------------------------------------------------------------------
@@ -356,3 +357,150 @@
           [row] (transform/->finance-from-order-stats [order])]
       (is (false? (:price-basis-mismatch? row))
           "difference 0.005 < epsilon 0.01 → no flag"))))
+
+;; ===========================================================================
+;; Spec 012 — YM revenue / for-pay price-basis alignment (US1)
+;;
+;; CORRECTED basis (owner-approved 2026-07-01, after ground-truth reconciliation
+;; against the TrueStats anchor). The ORIGINAL spec said gross = MARKETPLACE —
+;; DISPROVED: the YM MARKETPLACE price field is a per-item SUBSIDY proxy, not a
+;; pre-discount price. Resolved formula:
+;;   net-sales     = BUYER × qty                         (== TS `sales`)
+;;   subsidy       = Σ SUBSIDY-type ACCRUAL (dedup'd), split per-item
+;;   gross         = (BUYER + subsidy) × qty  -> :retail-amount  (== TS `realisation`)
+;;   :retail-price = BUYER + subsidy (per-unit)
+;;   for_pay       = BUYER − all-comm  (subsidy is a bridge, NOT payout income)
+;;                   sale branch: no Math/abs (negative allowed); return: +abs; adjustment: 0.0
+;; ===========================================================================
+
+(def ^:private basis-fixture
+  (delay (edn/read-string (slurp "test/resources/ym/ym-orders-basis.edn"))))
+
+(defn- fixture-rows []
+  (transform/->finance-from-order-stats @basis-fixture))
+
+(defn- row-for [rows sku]
+  (first (filter #(= sku (:article %)) rows)))
+
+;; ---- T010: for_pay ≤ gross for every SKU (INV-1 / FR-006 / SC-001) --------
+
+(deftest for-pay-le-gross-per-sku
+  (testing "every finance row: :for-pay ≤ :retail-amount (gross) — hard invariant"
+    (let [rows (fixture-rows)]
+      (is (seq rows) "fixture must produce rows")
+      (doseq [row rows]
+        (is (<= (double (:for-pay row)) (double (:retail-amount row)))
+            (str "SKU " (:article row)
+                 " for-pay " (:for-pay row)
+                 " must be ≤ gross " (:retail-amount row)))))))
+
+;; ---- T011: negative payout allowed (INV-2 / FR-005 / SC-006) --------------
+
+(deftest negative-payout-allowed
+  (testing "loss-making SKU (BUYER − commissions < 0) → sale row :for-pay < 0, NOT Math/abs'd"
+    (let [row (row-for (fixture-rows) "LOSS-B")]
+      (is (some? row) "loss-making fixture row present")
+      (is (= :sale (:operation-kind row)))
+      ;; BUYER 2544 − (FEE 900 + PAYMENT_TRANSFER 213 + DELIVERY 2000) = -569.0
+      (is (neg? (double (:for-pay row)))
+          (str ":for-pay must be negative (real cash impact), got " (:for-pay row)))
+      (is (< (double (:for-pay row)) -500.0)
+          "≈ -569, confirms no Math/abs clamp"))))
+
+;; ---- T012: subsidy is a bridge, not payout income (INV-3 / FR-004) --------
+
+(deftest subsidy-is-bridge-not-income
+  (testing "subsidy NOT added to for_pay; gross = net + subsidy (net + subsidy ≈ retail-amount)"
+    (let [row (row-for (fixture-rows) "SUB-A")]
+      (is (some? row))
+      ;; net = BUYER 3741, subsidy 2804, gross should be 6545.
+      (is (= 3741.0 (double (:net-sales row))) "net-sales = BUYER × qty")
+      (is (= 6545.0 (double (:retail-amount row))) "gross = (BUYER + subsidy) × qty")
+      (is (<= (Math/abs (- (+ (double (:net-sales row)) 2804.0)
+                           (double (:retail-amount row))))
+              0.01)
+          "bridge closes: net + subsidy ≈ gross")
+      ;; for_pay = BUYER − all-comm (non-ad). Subsidy must NOT inflate it.
+      ;; all-comm = 756.19 + 104.72 + 0.12 + 425.25 = 1286.28 → for_pay ≈ 2454.72.
+      (is (<= (Math/abs (- (double (:for-pay row)) 2454.72)) 0.01)
+          (str "for_pay = BUYER − all-comm (subsidy excluded), got " (:for-pay row)))
+      (is (< (double (:for-pay row)) (double (:net-sales row)))
+          "for_pay < net (subsidy did not lift payout above buyer-paid)"))))
+
+;; ---- T013: dedup subsidies (INV-4 / FR-007 / FR-008) ----------------------
+
+(deftest dedup-subsidies
+  (testing "4 ACCRUAL entries (2× SUBSIDY dup + 2× YANDEX_CASHBACK) → each logical subsidy once"
+    ;; DEDUP-C: BUYER 2000, subsidies 2×{SUBSIDY ACCRUAL 1000} + 2×{CASHBACK ACCRUAL 150}.
+    ;; dedup by (type, operationType) FIRST-per-group → one SUBSIDY/ACCRUAL 1000.
+    ;; Cashback is NOT part of gross subsidy. gross = 2000 + 1000 = 3000.
+    (let [row (row-for (fixture-rows) "DEDUP-C")]
+      (is (some? row))
+      (is (= 2000.0 (double (:net-sales row))) "net = BUYER × qty")
+      (is (= 3000.0 (double (:retail-amount row)))
+          "gross = BUYER + ONE deduped SUBSIDY (1000), not 2×1000 nor cashback-inflated"))
+    ;; Direct helper check on the raw subsidies vector.
+    (let [subs [{:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                {:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}
+                {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}]
+          deduped (#'transform/dedup-subsidies subs)]
+      ;; deduped total (SUBSIDY only, first-per-group) = 1000.
+      (is (= 1000.0 (double deduped))
+          "dedup-subsidies counts one SUBSIDY/ACCRUAL, excludes cashback from gross bridge"))))
+
+;; ---- T014: gross = BUYER + subsidy, net = BUYER (R4 / FR-001 / FR-002) -----
+;; ⚠️ Supersedes the OLD `sale-row-extracts-nested-prices` expectation that
+;;    :retail-amount = BUYER. That was against the legacy ->sales path AND is
+;;    now the wrong basis for the finance path. This is the finance-path test.
+
+(deftest gross-is-buyer-plus-subsidy-net-is-buyer
+  (testing "BUYER + subsidy = gross; BUYER = net; retail-price = BUYER + subsidy per-unit"
+    (let [row (row-for (fixture-rows) "SUB-A")]
+      (is (some? row))
+      (is (= 3741.0 (double (:net-sales row)))    ":net-sales = BUYER × qty")
+      (is (= 6545.0 (double (:retail-amount row))) ":retail-amount = (BUYER + subsidy) × qty")
+      (is (= 6545.0 (double (:retail-price row)))  ":retail-price = BUYER + subsidy per-unit (qty=1)"))))
+
+;; ---- T015: missing subsidy → gross = BUYER (no inflation) -----------------
+
+(deftest missing-subsidy-gross-is-buyer
+  (testing "order with no subsidy → gross = BUYER (no inflation); invariant holds"
+    (let [row (row-for (fixture-rows) "NOSUB-D")]
+      (is (some? row))
+      (is (= 1500.0 (double (:net-sales row))))
+      (is (= 1500.0 (double (:retail-amount row))) "no subsidy → gross == BUYER")
+      (is (= 1500.0 (double (:retail-price row))))
+      (is (<= (double (:for-pay row)) (double (:retail-amount row)))
+          "invariant for_pay ≤ gross still holds"))))
+
+;; ---- T016: adjustment (cancelled) → for_pay 0.0 ---------------------------
+
+(deftest adjustment-row-zero-payout
+  (testing "CANCELLED_BEFORE_PROCESSING → :operation-kind :adjustment, :for-pay 0.0"
+    (let [row (row-for (fixture-rows) "CANC-E")]
+      (is (some? row))
+      (is (= :adjustment (:operation-kind row)))
+      (is (= 0.0 (double (:for-pay row))) "cancelled → payout clamped to 0.0"))))
+
+;; ---- count>1 guard: ×qty applied exactly once -----------------------------
+
+(deftest multi-count-qty-applied-once
+  (testing "count=2 order → gross/net scale by qty exactly once (not double-applied)"
+    (let [order {:id 900010 :status "DELIVERED" :creationDate "2026-04-12"
+                 :statusUpdateDate "2026-04-22T10:00:00.000+03:00"
+                 :subsidies [{:amount 500.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+                 :commissions [{:type "FEE" :actual 100.0}]
+                 :items [{:shopSku "QTY2" :count 2
+                          :prices [{:type "MARKETPLACE" :costPerItem 500.0 :total 1000.0}
+                                   {:type "BUYER" :costPerItem 1000.0 :total 2000.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      ;; price-by-type returns :total (line total = 2000 for BUYER, i.e. already ×qty).
+      ;; The corrected block must NOT multiply the line-total by qty again.
+      ;; net = BUYER line-total 2000; subsidy 500 (order-level, added once).
+      (is (= 2 (:quantity row)))
+      (is (= 2000.0 (double (:net-sales row)))
+          "net = BUYER :total (line-total), qty not double-applied")
+      (is (= 2500.0 (double (:retail-amount row)))
+          "gross = BUYER line-total 2000 + subsidy 500 = 2500")
+      (is (<= (double (:for-pay row)) (double (:retail-amount row)))))))

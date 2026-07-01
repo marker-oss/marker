@@ -31,6 +31,12 @@
       (try
         (alter-var-root #'db/db-spec (constantly {:dbtype "sqlite" :dbname path}))
         (db/init!)
+        ;; cost-price/get-price reads a GLOBAL in-memory atom, not the DB. The
+        ;; fixture rebinds db-spec/datasource per test but the atom persists —
+        ;; a prior test's cost-price (inserted with barcode "") would otherwise
+        ;; bleed into a later test via barcode fallback, making roi-zero-cost
+        ;; flaky by test order. Reset the atom to this fresh (empty) temp DB.
+        (cost-price/load-from-db!)
         (f)
         (finally
           (alter-var-root #'db/db-spec (constantly orig))

@@ -274,6 +274,34 @@
 ;; Finance from order-stats (primary source for YM commissions)
 ;; ---------------------------------------------------------------------------
 
+(defn- dedup-subsidies
+  "Collapse repeated ledger subsidy entries down to the net SUBSIDY-type
+   accrual, used as the bridge between BUYER (net) and gross (spec 012 §4).
+
+   Ground truth (owner-approved 2026-07-01): gross = BUYER + subsidy, where
+   `subsidy` is the SUBSIDY-type accrual — NOT the YM MARKETPLACE price field
+   (which is only a per-item proxy) and NOT cashback (YANDEX_CASHBACK is already
+   reflected in the buyer price, so it must not be re-added to gross).
+
+   Dedup rule (v1 default = `first`, data-model §4 — do NOT change silently):
+   group by (:type :operationType), take the FIRST entry per group (YM emits
+   logically-identical accruals more than once, e.g. 4 ACCRUAL on one item),
+   then sum ACCRUAL(+) / DEDUCTION(−) across the SUBSIDY-type groups only.
+
+   Returns the net SUBSIDY accrual amount (0.0 when none)."
+  [subsidies]
+  (->> subsidies
+       (filter #(= "SUBSIDY" (:type %)))          ; cashback excluded from gross bridge
+       (group-by (juxt :type :operationType))
+       (map (fn [[_ grp]] (first grp)))           ; v1: first-per-group (data-model §4)
+       (reduce (fn [acc s]
+                 (let [a (double (or (:amount s) 0))]
+                   (+ acc (case (:operationType s)
+                            "ACCRUAL"   a
+                            "DEDUCTION" (- a)
+                            0.0))))
+               0.0)))
+
 (defn- ->finance-from-order-stat
   "Convert a single order-stats order into finance lines (one per item).
 
@@ -282,25 +310,35 @@
   of orders (avg residual ~42₽ rounding). Commissions are NOT deducted from
   payments — YM invoices them separately in the next settlement period.
 
-  - prices[BUYER]        = what the buyer actually paid; equals payments[].total
-                           and is therefore the correct base for net income
-  - prices[MARKETPLACE]  = accounting price (post-promo), used in ledger only —
-                           NOT a money flow; using it as for-pay base undercounts
-                           seller income by ~58% (that's the buyer-visible
-                           discount Yandex absorbs from its own margin)
-  - subsidies[].amount   = ledger entry, mirrors MARKETPLACE; not additive income
-  - commissions[].actual = what YM will debit later
+  Price basis — CORRECTED spec 012 (owner-approved 2026-07-01, after
+  ground-truth reconciliation to the TrueStats anchor):
 
-  Net seller income (aligns with WB's ppvz_for_pay and Ozon realization
-  delivery_commission.amount — all three mean \"netto to seller after fees\"):
+  - prices[BUYER]        = what the buyer actually paid (post-promo). This is
+                           NET sales (== TS `sales`) and the base for for-pay.
+  - prices[MARKETPLACE]  = NOT a pre-discount price — it is a per-item SUBSIDY
+                           proxy (< BUYER in 91% of April items). NOT used as a
+                           money basis anymore. Kept only for the advisory
+                           :price-basis-mismatch? flag.
+  - subsidies[].amount   = the promotional subsidy Yandex absorbs. Deduped via
+                           `dedup-subsidies` (SUBSIDY-type only, first-per-group).
+                           It is the BRIDGE net→gross: gross = BUYER + subsidy
+                           (== TS `realisation`). It is INSIDE revenue but OUT of
+                           payout (subsidy is not extra seller cash).
+  - commissions[].actual = what YM will debit later.
 
-      for-pay = BUYER − FEE − AGENCY − DELIVERY_TO_CUSTOMER
-                      − PAYMENT_TRANSFER − AUCTION_PROMOTION − bidFee
+  Bases produced:
 
-  Per-item bidFee is extracted to :ad-cost and subtracted from :for-pay
-  without redistribution (FR-005/006/019). CANCELLED_BEFORE_PROCESSING
-  orders still carry bidFee — seller paid for the ad even if the order
-  never shipped, so :for-pay turns negative (matching real cash impact)."
+      :net-sales     = BUYER × qty                    (net, == TS `sales`)
+      :retail-price  = BUYER + subsidy (per-unit)      (gross per-unit)
+      :retail-amount = (BUYER + subsidy) × qty         (gross, == TS `realisation`)
+      for-pay        = BUYER − Σ(non-ad commissions)   (subsidy NOT added)
+
+  for-pay aligns with WB's ppvz_for_pay / Ozon realization — netto to seller
+  after fees. AUCTION_PROMOTION stays in :ad-cost (FR-009), out of for-pay.
+  Sale-branch for-pay is NOT Math/abs'd — a loss-making SKU may be negative
+  (FR-005, real cash impact). CANCELLED_BEFORE_PROCESSING → :adjustment,
+  for-pay clamped to 0.0 (cash impact carried in commission / ad-cost fields).
+  Invariant: for-pay ≤ :retail-amount for every YM row (FR-006)."
   [order]
   (let [order-id    (get order :id)
         date        (get order :creationDate)
@@ -368,42 +406,44 @@
                               (filter #(not= "AUCTION_PROMOTION" (:type %))
                                       commissions)))
                        n-items)
-        ;; YM subsidies: Yandex pays seller to cover Yandex-side discounts
-        ;; (SUBSIDY type) and cashbacks (YANDEX_CASHBACK). ACCRUAL adds to
-        ;; seller payout; DEDUCTION reverses on returns / partial delivery.
-        ;; Net effect per order, split across items like commissions.
-        ;; Discovered 2026-04-24 Phase-2 verification — YM UE was losing
-        ;; ~40% of real seller income on promo-heavy periods.
-        subsidies   (get order :subsidies [])
-        subsidy-net (/ (reduce + 0.0
-                          (map (fn [s]
-                                 (let [a (or (:amount s) 0)]
-                                   (case (:operationType s)
-                                     "ACCRUAL"   a
-                                     "DEDUCTION" (- a)
-                                     0)))
-                               subsidies))
-                       n-items)]
+        ;; YM subsidies (spec 012): the promotional discount Yandex absorbs.
+        ;; This is the BRIDGE net→gross (gross = BUYER + subsidy, == TS
+        ;; `realisation`), NOT additive seller income — it is inside revenue
+        ;; but out of payout. `dedup-subsidies` collapses repeated ledger
+        ;; entries (SUBSIDY-type only; cashback excluded — already in BUYER
+        ;; price) and returns the net accrual. Split per-item like commissions.
+        subsidies       (get order :subsidies [])
+        subsidy-net     (dedup-subsidies subsidies)
+        subsidy-per-item (/ (max 0.0 subsidy-net) n-items)]
     (mapv (fn [item]
             (let [shop-sku    (get item :shopSku)
+                  ;; price-by-type returns the LINE :total (already ×count in
+                  ;; YM's payload; verified count=1 for all real apparel orders,
+                  ;; :total == :costPerItem). Treat it as the line total — do
+                  ;; NOT multiply by qty again (that would double-apply).
                   buyer-price (price-by-type (get item :prices []) "BUYER")
                   mp-price    (price-by-type (get item :prices []) "MARKETPLACE")
                   qty         (or (get item :count) 1)
                   op-string   (classify-item-operation order item)
                   op-kind     (ym-operation-kind op-string)
-                  ;; :for-pay = BUYER − Σ(non-ad commissions) + net_subsidies.
-                  ;; AUCTION_PROMOTION (ad) is held separately in :ad-cost
-                  ;; so the UE.4 profit formula subtracts it once; the
-                  ;; other commissions stay inside for-pay.
-                  ;; RFC-15: for :adjustment (cancelled) rows for-pay = 0;
-                  ;; the cash impact (commissions still charged, bidFee
-                  ;; consumed) lives in :ad-cost / :mp-commission /
-                  ;; :delivery-cost / :acquiring-fee fields. L2 mp_payout
-                  ;; only sums sale/return rows.
-                  raw-net     (+ (- (or buyer-price 0) all-comm)
-                                 subsidy-net)
+                  ;; spec 012 CORRECTED basis:
+                  ;;   net   = BUYER (line total)              -> :net-sales
+                  ;;   gross = BUYER + subsidy (bridge)        -> :retail-amount
+                  ;;   subsidy split per-item, added ONCE (not ×qty)
+                  net-line    (or buyer-price 0.0)
+                  gross-line  (+ net-line subsidy-per-item)
+                  ;; for-pay = BUYER − Σ(non-ad commissions). Subsidy is a
+                  ;; bridge, NOT payout income — excluded here. AUCTION_PROMOTION
+                  ;; (ad) is held separately in :ad-cost so the UE.4 profit
+                  ;; formula subtracts it once. RFC-15: :adjustment (cancelled)
+                  ;; rows → for-pay 0; the cash impact (commissions charged,
+                  ;; bidFee consumed) lives in :ad-cost / :mp-commission /
+                  ;; :delivery-cost / :acquiring-fee. L2 mp_payout only sums
+                  ;; sale/return rows.
+                  raw-for-pay (- net-line all-comm)
                   net-pay     (case op-kind
-                                (:sale :return) (Math/abs (double raw-net))
+                                :sale   raw-for-pay                    ; no Math/abs — may be < 0 (FR-005)
+                                :return (Math/abs (double raw-for-pay)) ; return keeps +abs (RFC-15 pair)
                                 0.0)]
               {:marketplace        :ym
                :rrd-id             (Math/abs (.hashCode (str order-id "-" shop-sku)))
@@ -421,8 +461,13 @@
                :operation-subtype  status
                :doc-type           status
                :quantity           qty
-               :retail-price       (or buyer-price 0)
-               :retail-amount      (* (or buyer-price 0) qty)
+               ;; spec 012: gross = BUYER + subsidy (== TS realisation).
+               ;; :retail-amount is the line gross; :net-sales is the line net
+               ;; (BUYER). price-by-type already returns the line :total so no
+               ;; ×qty (verified count=1 for real data; count>1 test guards it).
+               :retail-price       gross-line
+               :retail-amount      gross-line
+               :net-sales          net-line
                :sale-percent       nil
                :commission-pct     nil
                ;; RFC-10: AGENCY больше не складывается с FEE — она в acquiring-fee.

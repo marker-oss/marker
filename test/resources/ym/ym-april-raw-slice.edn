@@ -1,0 +1,5230 @@
+[{:payments
+  [{:date "2026-04-30",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2877.0,
+    :id "1412057561"}
+   {:date "2026-05-10",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2877.0,
+    :id "1423804656"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Челябинск", :id 56},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-10T11:32:02.549+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56612854016,
+  :subsidies
+  [{:amount 2023.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 2023.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56612854016",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2023.0, :total 2023.0}
+     {:type "BUYER", :costPerItem 2877.0, :total 2877.0}],
+    :marketSku 4561030894,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3469-1/Красный52",
+    :offerName "Платье женское вечернее нарядное офис",
+    :cisList ["(01)04640392783325(21)5Qq<D-DRU6sll"]}],
+  :creationDate "2026-04-30"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Челябинск", :id 56},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-30T23:40:03.271+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 56612786112,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2023.0, :total 2023.0}
+     {:type "BUYER", :costPerItem 2877.0, :total 2877.0}],
+    :marketSku 4561030894,
+    :count 1,
+    :shopSku "3469-1/Красный52",
+    :offerName "Платье женское вечернее нарядное офис"}],
+  :creationDate "2026-04-30"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Бугры", :id 117428},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T10:13:01.562+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56580833793,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56580833793",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2666.0, :total 2666.0}
+     {:type "BUYER", :costPerItem 2134.0, :total 2134.0}],
+    :marketSku 4561003295,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5!)8RVe>l!sQq"]}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Челябинск", :id 56},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-08T10:25:11.387+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56570502594,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}],
+  :partnerOrderId "56570502594",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2508.0, :total 2508.0}
+     {:type "BUYER", :costPerItem 3092.0, :total 3092.0}],
+    :marketSku 4561031400,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3453-1/Бежевый50",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672260(21)5\"&piDQZfFKb,"]}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Рыбинск", :id 10839},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-29T18:46:45.228+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56568893569,
+  :commissions [],
+  :partnerOrderId "56568893569",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 769,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3046.0, :total 3046.0}
+     {:type "BUYER", :costPerItem 3954.0, :total 3954.0}],
+    :marketSku 4561015360,
+    :count 1,
+    :shopSku "1777-5/Васильковый46",
+    :offerName "Платье повседневное нарядное офис"}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тула", :id 15},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T17:38:07.242+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56559496898,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56559496898",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 955,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2108.0, :total 2108.0}
+     {:type "BUYER", :costPerItem 2572.0, :total 2572.0}],
+    :marketSku 4561024911,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Фисташковый54",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322670969(21)5hbXu8dt!ewof"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2626.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1415161146"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T16:53:41.363+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56557673216,
+  :subsidies
+  [{:amount 2054.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "AUCTION_PROMOTION", :actual 4.39}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "FEE", :actual 2386.8}],
+  :partnerOrderId "56557673216",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 936,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2054.0, :total 2054.0}
+     {:type "BUYER", :costPerItem 2626.0, :total 2626.0}],
+    :marketSku 4561019111,
+    :count 1,
+    :shopSku "3467/Васильковый52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671461(21)57nl3yVEbqwDt"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-03",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1539.0,
+    :id "1414455634"}
+   {:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1539.0,
+    :id "1409736422"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Щёлково", :id 10765},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-03T00:24:39.142+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56550781954,
+  :subsidies
+  [{:amount 1211.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1211.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 116.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 116.0}],
+  :partnerOrderId "56550781954",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 766,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1211.0, :total 1211.0}
+     {:type "BUYER", :costPerItem 1539.0, :total 1539.0}],
+    :marketSku 4977872697,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1821-1/Розовый52",
+    :offerName "Платье осеннее повседневное",
+    :cisList ["(01)04640392780522(21)5b0mZe+1o?KU/"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-03",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2167.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1415215059"}
+   {:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2167.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1409708349"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Юдино", :id 101562},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-02T20:12:32.065+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 56550671938,
+  :subsidies
+  [{:amount 1543.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1543.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 59.36}
+   {:type "SORTING", :actual 15.0}
+   {:type "FEE", :actual -1892.1}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "FEE", :actual 1892.1}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 185.5}
+   {:type "AUCTION_PROMOTION", :actual 3.12}],
+  :partnerOrderId "56550671938",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 839,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1543.0, :total 1543.0}
+     {:type "BUYER", :costPerItem 2167.0, :total 2167.0}],
+    :marketSku 4561055704,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3467/Коричневый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671195(21)5FmLNEl&dDFsT"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-07",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2849.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1420571915"}
+   {:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2849.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1409639456"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Омск", :id 66},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-07T16:03:07.776+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 56548259968,
+  :subsidies
+  [{:amount 3.0, :type "YANDEX_CASHBACK", :operationType "ACCRUAL"}
+   {:amount 2188.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 3.0, :type "YANDEX_CASHBACK", :operationType "DEDUCTION"}
+   {:amount 2188.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "FEE", :actual -2570.4}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 80.64}
+   {:type "AUCTION_PROMOTION", :actual 494.42}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 252.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "FEE", :actual 2570.4}],
+  :partnerOrderId "56548259968",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 981,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2188.0, :total 2188.0}
+     {:type "CASHBACK", :costPerItem 3.0, :total 3.0}
+     {:type "BUYER", :costPerItem 2849.0, :total 2849.0}],
+    :marketSku 4561015949,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3467/Красный54",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671317(21)5goEALOZ5ljPX"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2163.0,
+    :id "1409635601"}
+   {:date "2026-05-04",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2163.0,
+    :id "1416313624"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-04T16:03:37.75+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56548072577,
+  :subsidies
+  [{:amount 1547.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1547.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}],
+  :partnerOrderId "56548072577",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1547.0, :total 1547.0}
+     {:type "BUYER", :costPerItem 2163.0, :total 2163.0}],
+    :marketSku 4561037131,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671201(21)5f.ePOUeB?e.O"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2163.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1409634619"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-04T16:03:07.162+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56548017345,
+  :subsidies
+  [{:amount 1547.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "FEE", :actual 577.55}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 185.5}
+   {:type "PAYMENT_TRANSFER", :actual 59.36}
+   {:type "AUCTION_PROMOTION", :actual 1.28}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56548017345",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1547.0, :total 1547.0}
+     {:type "BUYER", :costPerItem 2163.0, :total 2163.0}],
+    :marketSku 4561055704,
+    :count 1,
+    :shopSku "3467/Коричневый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671195(21)5VllmWDq:KTMv"]}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T19:21:33.288+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56546627968,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}],
+  :partnerOrderId "56546627968",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2059.0, :total 2059.0}
+     {:type "BUYER", :costPerItem 2621.0, :total 2621.0}],
+    :marketSku 4561019099,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671423(21)5?=j<3qlJajq4"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-05",
+    :type "REFUND",
+    :source "BUYER",
+    :total 3818.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1417876544"}
+   {:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3818.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1409435320"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Химки", :id 10758},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-04T19:45:47.288+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 56540789889,
+  :subsidies
+  [{:amount 2727.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 2727.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "FEE", :actual 33.38}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 4.97}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 327.25}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "PAYMENT_TRANSFER", :actual 104.72}
+   {:type "FEE", :actual -33.38}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56540789889",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 759,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2727.0, :total 2727.0}
+     {:type "BUYER", :costPerItem 3818.0, :total 3818.0}],
+    :marketSku 4561012125,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3451-1/Черный52",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676947(21)50unKU12o(iGM"]}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Коломна", :id 10734},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-06T11:20:40.401+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56540779136,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}],
+  :partnerOrderId "56540779136",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 997,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2326.0, :total 2326.0}
+     {:type "BUYER", :costPerItem 1874.0, :total 1874.0}],
+    :marketSku 4561003295,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)59:?jmjbB6EiP"]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-08",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1921.0,
+    :paymentOrder {:date "2026-06-15", :id "496333"},
+    :id "1421805078"}
+   {:date "2026-05-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1921.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1415459692"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Выборг", :id 969},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T20:52:56.052+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 56539352769,
+  :subsidies
+  [{:amount 2279.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 2279.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 3.98}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 107.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "FEE", :actual 389.61}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "FEE", :actual -389.61}],
+  :partnerOrderId "56539352769",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 947,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2279.0, :total 2279.0}
+     {:type "BUYER", :costPerItem 1921.0, :total 1921.0}],
+    :marketSku 4561003293,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "109/Изумрудный50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670235(21)5Yre>0'<z99t="]}],
+  :creationDate "2026-04-29"}
+ {:payments
+  [{:date "2026-05-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1765.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1415322188"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T18:58:26.035+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 56535495488,
+  :subsidies
+  [{:amount 1224.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 3.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 89.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 149.45}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "PAYMENT_TRANSFER", :actual 47.82}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "FEE", :actual 15.25}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56535495488",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1001,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1224.0, :total 1224.0}
+     {:type "BUYER", :costPerItem 1765.0, :total 1765.0}],
+    :marketSku 4561021172,
+    :count 1,
+    :shopSku "3450-1/Желтый52",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703811057(21)5vnonkjwIx2TU"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1000,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1284.0, :total 1284.0}
+     {:type "BUYER", :costPerItem 1852.0, :total 1852.0}],
+    :marketSku 4561039885,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3450-1/Розовый52",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810692(21)5zs9AwEJKJmm9"]}],
+  :creationDate "2026-04-29"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Курск", :id 8},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-04T19:32:09.284+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56522168769,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 107.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 107.0}],
+  :partnerOrderId "56522168769",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 986,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3261.0, :total 3261.0}
+     {:type "BUYER", :costPerItem 4134.0, :total 4134.0}],
+    :marketSku 4561096624,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3522/Голубой52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392782748(21)5vh&ry.nLgE%d"]}],
+  :creationDate "2026-04-28"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Екатеринбург", :id 54},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-17T08:20:27.76+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56512383042,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 232.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 232.0}],
+  :partnerOrderId "56512383042",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3016.0, :total 3016.0}
+     {:type "BUYER", :costPerItem 3984.0, :total 3984.0}],
+    :marketSku 4561007053,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Бежевый46",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783585(21)5Lh5s&REltZ=q"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3854.0, :total 3854.0}
+     {:type "BUYER", :costPerItem 4446.0, :total 4446.0}],
+    :marketSku 4561040472,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Черный46",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04680703812795(21)5\"%3Da!s=(>1E"]}],
+  :creationDate "2026-04-28"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Великие Луки", :id 10928},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-28T02:05:26.755+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 56504150912,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 768,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3016.0, :total 3016.0}
+     {:type "BUYER", :costPerItem 4184.0, :total 4184.0}],
+    :marketSku 4561015373,
+    :count 1,
+    :shopSku "1777-5/Изумрудный52",
+    :offerName "Платье повседневное нарядное офис"}],
+  :creationDate "2026-04-28"}
+ {:payments
+  [{:date "2026-04-27",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 4221.0,
+    :id "1407830736"}
+   {:date "2026-05-04",
+    :type "REFUND",
+    :source "BUYER",
+    :total 4221.0,
+    :id "1416312986"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Ульяновск", :id 195},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-04T16:13:58.385+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56496897923,
+  :subsidies
+  [{:amount 3174.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 3174.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}],
+  :partnerOrderId "56496897923",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 867,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3174.0, :total 3174.0}
+     {:type "BUYER", :costPerItem 4221.0, :total 4221.0}],
+    :marketSku 4561068681,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3522/Голубой54",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392782731(21)5HUiKu,z5/L5\""]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1490.0,
+    :id "1409709341"}
+   {:date "2026-04-27",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1490.0,
+    :id "1407802831"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Казань", :id 43},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-29T11:26:01.211+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56496538369,
+  :subsidies
+  [{:amount 1360.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1360.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56496538369",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 887,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1360.0, :total 1360.0}
+     {:type "BUYER", :costPerItem 1490.0, :total 1490.0}],
+    :marketSku 4561095339,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Розовый56",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780850(21)5M+Pj0nWei-sJ"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-05-05",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2392.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1417416199"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Курган", :id 53},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-05T14:16:32.824+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56494107843,
+  :subsidies
+  [{:amount 1808.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 21.42}
+   {:type "AUCTION_PROMOTION", :actual 1.45}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 107.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}],
+  :partnerOrderId "56494107843",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1808.0, :total 1808.0}
+     {:type "BUYER", :costPerItem 2392.0, :total 2392.0}],
+    :marketSku 4561003289,
+    :count 1,
+    :shopSku "109/Синий58",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670259(21)5mZgHsHYB1ScW"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-04-27",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2377.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1407559615"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-01T17:39:01.466+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56491384896,
+  :subsidies
+  [{:amount 1823.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 716.08}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 107.0}
+   {:type "AUCTION_PROMOTION", :actual 4.02}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}],
+  :partnerOrderId "56491384896",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 955,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1823.0, :total 1823.0}
+     {:type "BUYER", :costPerItem 2377.0, :total 2377.0}],
+    :marketSku 4561015521,
+    :count 1,
+    :shopSku "109/Бордовый50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670150(21)5XnHmuONG3-Ip"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-05-06",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2569.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1418420563"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Нижний Тагил", :id 11168},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-06T09:42:38.296+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56489336642,
+  :subsidies
+  [{:amount 2111.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "FEE", :actual 23.87}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AUCTION_PROMOTION", :actual 4.43}
+   {:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}],
+  :partnerOrderId "56489336642",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 945,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2111.0, :total 2111.0}
+     {:type "BUYER", :costPerItem 2569.0, :total 2569.0}],
+    :marketSku 4561019106,
+    :count 1,
+    :shopSku "3467/Белый48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671133(21)5%h<pd%VwHeLG"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-05-08",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1324.0,
+    :paymentOrder {:date "2026-06-15", :id "496333"},
+    :id "1421491459"}
+   {:date "2026-05-08",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1350.0,
+    :paymentOrder {:date "2026-06-15", :id "496333"},
+    :id "1421491458"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Пенза", :id 49},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-08T12:16:46.348+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56486943744,
+  :subsidies
+  [{:amount 1226.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1250.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 232.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 257.5}
+   {:type "AGENCY", :actual 0.24}
+   {:type "PAYMENT_TRANSFER", :actual 82.4}
+   {:type "AUCTION_PROMOTION", :actual 3.82}
+   {:type "FEE", :actual 2703.75}],
+  :partnerOrderId "56486943744",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 741,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1226.0, :total 1226.0}
+     {:type "BUYER", :costPerItem 1324.0, :total 1324.0}],
+    :marketSku 4561015481,
+    :count 1,
+    :shopSku "1523/Синий58",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392781062(21)5JD<bNM\"6X-MI"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 742,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1250.0, :total 1250.0}
+     {:type "BUYER", :costPerItem 1350.0, :total 1350.0}],
+    :marketSku 4561012647,
+    :count 1,
+    :shopSku "1523/Бежевый58",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780935(21)5NQY'd0>TVXID"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-05-04",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1715.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1416430568"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Дмитров", :id 10723},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-04T17:41:21.4+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 56484836416,
+  :subsidies
+  [{:amount 1274.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 89.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "FEE", :actual 15.25}
+   {:type "SORTING", :actual 15.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 149.45}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "AUCTION_PROMOTION", :actual 1.09}
+   {:type "PAYMENT_TRANSFER", :actual 47.82}],
+  :partnerOrderId "56484836416",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 364,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1274.0, :total 1274.0}
+     {:type "BUYER", :costPerItem 1715.0, :total 1715.0}],
+    :marketSku 4561021172,
+    :count 1,
+    :shopSku "3450-1/Желтый52",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703811057(21)5gUoQflrfI5D7"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 363,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1281.0, :total 1281.0}
+     {:type "BUYER", :costPerItem 1855.0, :total 1855.0}],
+    :marketSku 4561039885,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3450-1/Розовый52",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810692(21)5dM-=pKGLqS&d"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-04-27",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2552.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1407272995"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-02T17:14:07.539+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56483734656,
+  :subsidies
+  [{:amount 2128.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 317.58}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AUCTION_PROMOTION", :actual 4.49}
+   {:type "AGENCY", :actual 0.12}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}],
+  :partnerOrderId "56483734656",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 959,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2128.0, :total 2128.0}
+     {:type "BUYER", :costPerItem 2552.0, :total 2552.0}],
+    :marketSku 4561019103,
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)5Ze3aZPj*rXE9"]}],
+  :creationDate "2026-04-27"}
+ {:payments
+  [{:date "2026-05-02",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2704.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1413756842"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-02T13:01:52.726+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56483406912,
+  :subsidies
+  [{:amount 1976.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "FEE", :actual 23.87}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 4.68}],
+  :partnerOrderId "56483406912",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 998,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1976.0, :total 1976.0}
+     {:type "BUYER", :costPerItem 2704.0, :total 2704.0}],
+    :marketSku 4561015950,
+    :count 1,
+    :shopSku "3467/Васильковый48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671485(21)5KhbCpPaHYqEu"]}],
+  :creationDate "2026-04-27"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Красноярск", :id 62},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-27T06:05:01.768+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 56475829954,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2064.0, :total 2064.0}
+     {:type "BUYER", :costPerItem 2976.0, :total 2976.0}],
+    :marketSku 4561019109,
+    :count 1,
+    :shopSku "3467/Красный50",
+    :offerName "Платье повседневное летнее"}],
+  :creationDate "2026-04-27"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Выборг", :id 969},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-29T05:45:31.217+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56471472065,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 214.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 214.0}],
+  :partnerOrderId "56471472065",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 768,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1807.0, :total 1807.0}
+     {:type "BUYER", :costPerItem 2393.0, :total 2393.0}],
+    :marketSku 4561003293,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670235(21)5NcMjOt-u9X!N"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 768,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1807.0, :total 1807.0}
+     {:type "BUYER", :costPerItem 2393.0, :total 2393.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5r6OtbBL2t*iN"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-02T15:33:18.914+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56460955584,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56460955584",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 987,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2880.0, :total 2880.0}
+     {:type "BUYER", :costPerItem 3760.0, :total 3760.0}],
+    :marketSku 4561031405,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3453-1/Бежевый56",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672239(21)5GssuktZbaGI="]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 999,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2332.0, :total 2332.0}
+     {:type "BUYER", :costPerItem 3268.0, :total 3268.0}],
+    :marketSku 4561005098,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1564-2/Кремовый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784001(21)5cZ2TCv%6GfgD"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Красноярск", :id 62},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-08T15:38:18.505+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56460636416,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 3.16}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 3.16}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56460636416",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 973,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1715.0, :total 1715.0}
+     {:type "BUYER", :costPerItem 2355.0, :total 2355.0}],
+    :marketSku 4561075201,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "6405/Черный52",
+    :offerName "Платье повседневное",
+    :cisList ["(01)04627128182805(21)5aeM3FGFT-IxF"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2964.0, :total 2964.0}
+     {:type "BUYER", :costPerItem 4236.0, :total 4236.0}],
+    :marketSku 4561015373,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Изумрудный52",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04680703812696(21)5rKBBcV9tiXgu"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 973,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1715.0, :total 1715.0}
+     {:type "BUYER", :costPerItem 2355.0, :total 2355.0}],
+    :marketSku 4561075195,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "6405/Голубой54",
+    :offerName "Платье повседневное",
+    :cisList ["(01)04627128182935(21)5UD,DKqzwtRPE"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Воронеж", :id 193},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-01T10:14:07.266+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56460438720,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56460438720",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2031.0, :total 2031.0}
+     {:type "BUYER", :costPerItem 2649.0, :total 2649.0}],
+    :marketSku 4561055707,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Фисташковый52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322670976(21)5TKVxV3nn&up+"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Омск", :id 66},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-05T14:42:01.757+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56449642560,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}],
+  :partnerOrderId "56449642560",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1003,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1591.0, :total 1591.0}
+     {:type "BUYER", :costPerItem 2119.0, :total 2119.0}],
+    :marketSku 4561019115,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671218(21)53jGGKOhOAYUI"]}],
+  :creationDate "2026-04-26"}
+ {:payments
+  [{:date "2026-04-26",
+    :type "REFUND",
+    :source "BUYER",
+    :total 3907.0,
+    :id "1406225205"}
+   {:date "2026-04-26",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3907.0,
+    :id "1405973895"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Рыбинск", :id 10839},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-26T13:08:21.239+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56446762881,
+  :subsidies
+  [{:amount 3093.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 3093.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions [{:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56446762881",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 761,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3093.0, :total 3093.0}
+     {:type "BUYER", :costPerItem 3907.0, :total 3907.0}],
+    :marketSku 4561007055,
+    :count 1,
+    :shopSku "1777-5/Бежевый54",
+    :offerName "Платье повседневное нарядное офис"}],
+  :creationDate "2026-04-26"}
+ {:payments
+  [{:date "2026-04-26",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 618.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1405927957"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Томилино", :id 101060},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-03T20:43:13.64+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56444924867,
+  :subsidies
+  [{:amount 2058.0, :type "YANDEX_CASHBACK", :operationType "ACCRUAL"}
+   {:amount 2004.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 4.24}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "FEE", :actual 23.87}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}],
+  :partnerOrderId "56444924867",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 904,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2004.0, :total 2004.0}
+     {:type "CASHBACK", :costPerItem 2058.0, :total 2058.0}
+     {:type "BUYER", :costPerItem 618.0, :total 618.0}],
+    :marketSku 4561019094,
+    :count 1,
+    :shopSku "3467/Белый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671126(21)5q*yN3PmEQad2"]}],
+  :creationDate "2026-04-26"}
+ {:payments
+  [{:date "2026-05-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3766.0,
+    :paymentOrder {:date "2026-06-05", :id "161536"},
+    :id "1414945278"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T13:46:42.168+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56443135170,
+  :subsidies
+  [{:amount 3434.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 7.15}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 360.0}
+   {:type "FEE", :actual 36.72}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 116.0}
+   {:type "PAYMENT_TRANSFER", :actual 115.2}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56443135170",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 993,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3434.0, :total 3434.0}
+     {:type "BUYER", :costPerItem 3766.0, :total 3766.0}],
+    :marketSku 4561007054,
+    :count 1,
+    :shopSku "1777-5/Красный46",
+    :offerName "Платье весеннее нарядное офис",
+    :cisList ["(01)04640392783646(21)58muNiqb7-)Jr"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-03T19:21:39.566+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56442381696,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}],
+  :partnerOrderId "56442381696",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 345,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1547.0, :total 1547.0}
+     {:type "BUYER", :costPerItem 2163.0, :total 2163.0}],
+    :marketSku 4561019115,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671218(21)5jKMDV3eCgor-"]}],
+  :creationDate "2026-04-26"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-01T15:05:13.037+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56440925312,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56440925312",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 990,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2878.0, :total 2878.0}
+     {:type "BUYER", :costPerItem 3667.0, :total 3667.0}],
+    :marketSku 4561019892,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Изумрудный50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322677036(21)51p:lG8dogrs\""]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 991,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2878.0, :total 2878.0}
+     {:type "BUYER", :costPerItem 3667.0, :total 3667.0}],
+    :marketSku 4831867846,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Изумрудный52",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676992(21)5.GE?7ntRo\"3o"]}],
+  :creationDate "2026-04-25"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Горки-10", :id 117713},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-05T09:51:38.187+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56427047104,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56427047104",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 769,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2332.0, :total 2332.0}
+     {:type "BUYER", :costPerItem 3268.0, :total 3268.0}],
+    :marketSku 4561005098,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1564-2/Кремовый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784001(21)59S1!PUXotRoU"]}],
+  :creationDate "2026-04-25"}
+ {:payments
+  [{:date "2026-04-25",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3183.0,
+    :id "1405180220"}
+   {:date "2026-05-15",
+    :type "REFUND",
+    :source "BUYER",
+    :total 3183.0,
+    :id "1430274908"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Новосибирск", :id 65},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-15T00:07:15.678+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56426075521,
+  :subsidies
+  [{:amount 2417.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 2417.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56426075521",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 748,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2417.0, :total 2417.0}
+     {:type "BUYER", :costPerItem 3183.0, :total 3183.0}],
+    :marketSku 4561027528,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "2701-3/Бордовый52",
+    :offerName "Платье летнее нарядное",
+    :cisList ["(01)04640392783905(21)5MzNRQgZeaFxf"]}],
+  :creationDate "2026-04-25"}
+ {:payments
+  [{:date "2026-04-25",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3594.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1404805291"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-28T20:05:28.371+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56414133377,
+  :subsidies
+  [{:amount 2951.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 2.25}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 327.25}
+   {:type "FEE", :actual 33.38}
+   {:type "PAYMENT_TRANSFER", :actual 104.72}],
+  :partnerOrderId "56414133377",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2951.0, :total 2951.0}
+     {:type "BUYER", :costPerItem 3594.0, :total 3594.0}],
+    :marketSku 4561012119,
+    :count 1,
+    :shopSku "3451-1/Розовый48",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322677142(21)5%dcLats5jh:="]}],
+  :creationDate "2026-04-25"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Казань", :id 43},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-01T16:21:42.11+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56411691520,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 232.0}
+   {:type "SORTING", :actual 30.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 232.0}],
+  :partnerOrderId "56411691520",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 727,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3014.0, :total 3014.0}
+     {:type "BUYER", :costPerItem 4186.0, :total 4186.0}],
+    :marketSku 4561015363,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Красный52",
+    :offerName "Платье весеннее нарядное офис",
+    :cisList ["(01)04640392783615(21)5FU*\"tLhvv,Zu"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3014.0, :total 3014.0}
+     {:type "BUYER", :costPerItem 4186.0, :total 4186.0}],
+    :marketSku 4561007049,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Красный50",
+    :offerName "Платье весеннее нарядное офис",
+    :cisList ["(01)04640392783622(21)5Hk7o'MN(TmHw"]}],
+  :creationDate "2026-04-24"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тула", :id 15},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-05T18:04:32.774+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56409009856,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}],
+  :partnerOrderId "56409009856",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1000,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1758.0, :total 1758.0}
+     {:type "BUYER", :costPerItem 2442.0, :total 2442.0}],
+    :marketSku 4561003295,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5NsoRKsFHX)Zs"]}],
+  :creationDate "2026-04-24"}
+ {:payments
+  [{:date "2026-04-24",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2428.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1404406200"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-29T16:55:02.274+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56396285251,
+  :subsidies
+  [{:amount 1772.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 1.44}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "FEE", :actual 2142.0}],
+  :partnerOrderId "56396285251",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1772.0, :total 1772.0}
+     {:type "BUYER", :costPerItem 2428.0, :total 2428.0}],
+    :marketSku 4561003291,
+    :count 1,
+    :shopSku "109/Изумрудный58",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670211(21)5VfuQZF1okeKk"]}],
+  :creationDate "2026-04-24"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3749.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1409968777"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Иваново", :id 5},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-29T14:22:02.597+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56378823747,
+  :subsidies
+  [{:amount 2796.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 2.25}
+   {:type "FEE", :actual 1605.58}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 327.25}
+   {:type "PAYMENT_TRANSFER", :actual 104.72}],
+  :partnerOrderId "56378823747",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2796.0, :total 2796.0}
+     {:type "BUYER", :costPerItem 3749.0, :total 3749.0}],
+    :marketSku 4561012130,
+    :count 1,
+    :shopSku "3451-1/Изумрудный48",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322677043(21)5hGTY+%CWlgP3"]}],
+  :creationDate "2026-04-23"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Рязань", :id 11},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-06T00:33:09.861+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56378393603,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.16}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.16}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56378393603",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 707,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1097.0, :total 1097.0}
+     {:type "BUYER", :costPerItem 1253.0, :total 1253.0}],
+    :marketSku 4561012648,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Бордовый52",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392781154(21)52YqfmDnpU-ti"]}],
+  :creationDate "2026-04-23"}
+ {:payments
+  [{:date "2026-04-28",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1513.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1408737861"}
+   {:date "2026-04-23",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1513.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1402831229"}
+   {:date "2026-04-23",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1513.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1402831228"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Набережные Челны", :id 236},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-28T17:27:59.284+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 56363679619,
+  :subsidies
+  [{:amount 1147.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1147.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1147.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 133.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "FEE", :actual 13.57}
+   {:type "PAYMENT_TRANSFER", :actual 42.56}
+   {:type "AGENCY", :actual 0.24}
+   {:type "AUCTION_PROMOTION", :actual 2.59}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.07}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56363679619",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 972,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1147.0, :total 1147.0}
+     {:type "BUYER", :costPerItem 1513.0, :total 1513.0}],
+    :marketSku 4561027121,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-4/Васильковый 50",
+    :offerName "Платье трикотажное теплое",
+    :cisList ["(01)04680703817202(21)53nj1jarEM!jp"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 972,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1147.0, :total 1147.0}
+     {:type "BUYER", :costPerItem 1513.0, :total 1513.0}],
+    :marketSku 4561027120,
+    :count 1,
+    :shopSku "1777-4/Васильковый 52",
+    :offerName "Платье трикотажное теплое",
+    :cisList ["(01)04680703817196(21)5kx0nRlKUVldk"]}],
+  :creationDate "2026-04-23"}
+ {:payments
+  [{:date "2026-04-23",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2445.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1403281888"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Одинцово", :id 10743},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-26T16:39:03.368+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56359769730,
+  :subsidies
+  [{:amount 1755.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 1846.66}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "AUCTION_PROMOTION", :actual 3.77}],
+  :partnerOrderId "56359769730",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 896,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1755.0, :total 1755.0}
+     {:type "BUYER", :costPerItem 2445.0, :total 2445.0}],
+    :marketSku 4561053425,
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5sN><V=dGBYwI"]}],
+  :creationDate "2026-04-23"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Иваново", :id 5},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-22T18:26:22.749+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56342059331,
+  :commissions [],
+  :partnerOrderId "56342059331",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2796.0, :total 2796.0}
+     {:type "BUYER", :costPerItem 3749.0, :total 3749.0}],
+    :marketSku 4561012130,
+    :count 1,
+    :shopSku "3451-1/Изумрудный48",
+    :offerName "Платье вечернее праздничное мини"}],
+  :creationDate "2026-04-22"}
+ {:payments
+  [{:date "2026-04-22",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3766.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1401563630"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-25T16:33:46.299+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56328370178,
+  :subsidies
+  [{:amount 2874.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 2534.56}
+   {:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 2.28}
+   {:type "PAYMENT_TRANSFER", :actual 106.24}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 332.0}],
+  :partnerOrderId "56328370178",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2874.0, :total 2874.0}
+     {:type "BUYER", :costPerItem 3766.0, :total 3766.0}],
+    :marketSku 4561031405,
+    :count 1,
+    :shopSku "3453-1/Бежевый56",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672239(21)5fhS1eqdW=KG%"]}],
+  :creationDate "2026-04-22"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-26T11:34:02.138+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56327494145,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}],
+  :partnerOrderId "56327494145",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 960,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1902.0, :total 1902.0}
+     {:type "BUYER", :costPerItem 2298.0, :total 2298.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5YgY-u9f&kCZj"]}],
+  :creationDate "2026-04-22"}
+ {:payments
+  [{:date "2026-04-22",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3984.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1402130535"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-26T11:06:42.12+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56326470979,
+  :subsidies
+  [{:amount 3216.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 115.2}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 360.0}
+   {:type "AUCTION_PROMOTION", :actual 2.48}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "FEE", :actual 36.72}],
+  :partnerOrderId "56326470979",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3216.0, :total 3216.0}
+     {:type "BUYER", :costPerItem 3984.0, :total 3984.0}],
+    :marketSku 4834971314,
+    :count 1,
+    :shopSku "1777-5/Васильковый54",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783486(21)5iEc<R8Y!Pg&("]}],
+  :creationDate "2026-04-22"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-25T15:38:43.853+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56318876482,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 214.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 214.0}],
+  :partnerOrderId "56318876482",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 966,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1781.0, :total 1781.0}
+     {:type "BUYER", :costPerItem 2419.0, :total 2419.0}],
+    :marketSku 4561003290,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий46",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670280(21)5*fBRrnomblmp"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 966,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1781.0, :total 1781.0}
+     {:type "BUYER", :costPerItem 2419.0, :total 2419.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)53ggA*kVnKK8f"]}],
+  :creationDate "2026-04-22"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2454.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1409696572"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Самара", :id 51},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-29T11:22:26.419+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56299102977,
+  :subsidies
+  [{:amount 1746.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 3.99}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "FEE", :actual 21.42}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}],
+  :partnerOrderId "56299102977",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 948,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1746.0, :total 1746.0}
+     {:type "BUYER", :costPerItem 2454.0, :total 2454.0}],
+    :marketSku 4561030895,
+    :count 1,
+    :shopSku "3469-1/Васильковый54",
+    :offerName "Платье женское вечернее нарядное офис",
+    :cisList ["(01)04640392783431(21)5b?6II0Lo<Si7"]}],
+  :creationDate "2026-04-21"}
+ {:payments
+  [{:date "2026-04-21",
+    :type "REFUND",
+    :source "BUYER",
+    :total 3910.0,
+    :id "1401042781"}
+   {:date "2026-04-20",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3910.0,
+    :id "1399927688"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Рыбинск", :id 10839},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-21T20:40:33.369+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56282223809,
+  :subsidies
+  [{:amount 3090.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 3090.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56282223809",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 989,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3090.0, :total 3090.0}
+     {:type "BUYER", :costPerItem 3910.0, :total 3910.0}],
+    :marketSku 4561007055,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Бежевый54",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783547(21)5KmXO.M-hs?CR"]}],
+  :creationDate "2026-04-20"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Кущёвская", :id 21016},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-24T14:06:37.9+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56275808256,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "56275808256",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 985,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2949.0, :total 2949.0}
+     {:type "BUYER", :costPerItem 3596.0, :total 3596.0}],
+    :marketSku 4561050024,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Синий50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04640392782564(21)5\"JWOedK2Q0(:"]}],
+  :creationDate "2026-04-20"}
+ {:payments
+  [{:date "2026-05-07",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2678.0,
+    :paymentOrder {:date "2026-06-15", :id "496333"},
+    :id "1420903518"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Кущёвская", :id 21016},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-05-08T07:30:28.743+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56273487232,
+  :subsidies
+  [{:amount 2002.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "FEE", :actual 60.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "AUCTION_PROMOTION", :actual 4.55}],
+  :partnerOrderId "56273487232",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 971,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2002.0, :total 2002.0}
+     {:type "BUYER", :costPerItem 2678.0, :total 2678.0}],
+    :marketSku 4561055708,
+    :count 1,
+    :shopSku "3467/Васильковый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671478(21)5FpCeEBfzx!,N"]}],
+  :creationDate "2026-04-20"}
+ {:payments
+  [{:date "2026-04-19",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1335.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1398833597"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Дмитров", :id 10723},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-23T15:44:01.25+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56255504896,
+  :subsidies
+  [{:amount 1265.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 41.6}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 130.0}
+   {:type "FEE", :actual 725.6}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AUCTION_PROMOTION", :actual 2.6}],
+  :partnerOrderId "56255504896",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1000,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1265.0, :total 1265.0}
+     {:type "BUYER", :costPerItem 1335.0, :total 1335.0}],
+    :marketSku 4561012647,
+    :count 1,
+    :shopSku "1523/Бежевый58",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780935(21)5AsS<<H=ks*aT"]}],
+  :creationDate "2026-04-19"}
+ {:payments
+  [{:date "2026-04-20",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2451.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1399507765"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-24T21:55:59.116+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56242087874,
+  :subsidies
+  [{:amount 1749.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 4.18}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 2142.0}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}],
+  :partnerOrderId "56242087874",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 994,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1749.0, :total 1749.0}
+     {:type "BUYER", :costPerItem 2451.0, :total 2451.0}],
+    :marketSku 4561030893,
+    :count 1,
+    :shopSku "3469-1/Васильковый58",
+    :offerName "Платье женское вечернее нарядное офис",
+    :cisList ["(01)04640392783417(21)5TWQc=3odGlQC"]}],
+  :creationDate "2026-04-19"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Екатеринбург", :id 54},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-25T13:20:55.848+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56233036672,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 196.0}],
+  :partnerOrderId "56233036672",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 857,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2802.0, :total 2802.0}
+     {:type "BUYER", :costPerItem 3743.0, :total 3743.0}],
+    :marketSku 4561012121,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Изумрудный54",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322677029(21)5=jg->i6WqazP"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2802.0, :total 2802.0}
+     {:type "BUYER", :costPerItem 3743.0, :total 3743.0}],
+    :marketSku 4831867846,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Изумрудный52",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676992(21)5tAOvOP0NbyQC"]}],
+  :creationDate "2026-04-19"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 4307.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1397233726"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тюмень", :id 55},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-25T07:32:31.556+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56201908802,
+  :subsidies
+  [{:amount 3088.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 369.75}
+   {:type "AUCTION_PROMOTION", :actual 7.1}
+   {:type "FEE", :actual 37.72}
+   {:type "PAYMENT_TRANSFER", :actual 118.32}],
+  :partnerOrderId "56201908802",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 960,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3088.0, :total 3088.0}
+     {:type "BUYER", :costPerItem 4307.0, :total 4307.0}],
+    :marketSku 4561076735,
+    :count 1,
+    :shopSku "3522/Голубой48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392782762(21)5bH7vCYK<h<hM"]}],
+  :creationDate "2026-04-18"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 4307.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1397233702"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-22T10:51:42.155+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56201077954,
+  :subsidies
+  [{:amount 3088.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 37.72}
+   {:type "AUCTION_PROMOTION", :actual 6.81}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 369.75}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 118.32}],
+  :partnerOrderId "56201077954",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 920,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3088.0, :total 3088.0}
+     {:type "BUYER", :costPerItem 4307.0, :total 4307.0}],
+    :marketSku 4561068680,
+    :count 1,
+    :shopSku "3522/Голубой58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392782717(21)5wnYin_,?JYYe"]}],
+  :creationDate "2026-04-18"}
+ {:payments
+  [{:date "2026-04-17",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3741.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1396408693"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Шатура", :id 10762},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-30T11:32:59.619+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56191842177,
+  :subsidies
+  [{:amount 2804.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 756.19}
+   {:type "PAYMENT_TRANSFER", :actual 104.72}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 327.25}
+   {:type "AUCTION_PROMOTION", :actual 2.25}],
+  :partnerOrderId "56191842177",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2804.0, :total 2804.0}
+     {:type "BUYER", :costPerItem 3741.0, :total 3741.0}],
+    :marketSku 4561041468,
+    :count 1,
+    :shopSku "3451-1/Синий54",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04640392782540(21)5fCfQiDXTw2,V"]}],
+  :creationDate "2026-04-17"}
+ {:payments
+  [{:date "2026-04-17",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2675.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1396247166"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Казань", :id 43},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-22T17:51:11.894+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56186849409,
+  :subsidies
+  [{:amount 2005.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 23.87}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "AUCTION_PROMOTION", :actual 4.45}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}],
+  :partnerOrderId "56186849409",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 950,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2005.0, :total 2005.0}
+     {:type "BUYER", :costPerItem 2675.0, :total 2675.0}],
+    :marketSku 4561019096,
+    :count 1,
+    :shopSku "3467/Васильковый54",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671454(21)54oN,nYdehqW9"]}],
+  :creationDate "2026-04-17"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-01T00:27:09.199+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56178228099,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 98.0}],
+  :partnerOrderId "56178228099",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 684,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2182.0, :total 2182.0}
+     {:type "BUYER", :costPerItem 2618.0, :total 2618.0}],
+    :marketSku 4561055706,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Красный56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671300(21)5zi<X?W/wnW?a"]}],
+  :creationDate "2026-04-17"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-17T14:37:42.874+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56178147843,
+  :commissions [],
+  :partnerOrderId "56178147843",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 684,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2182.0, :total 2182.0}
+     {:type "BUYER", :costPerItem 2618.0, :total 2618.0}],
+    :marketSku 4561055706,
+    :count 1,
+    :shopSku "3467/Красный56",
+    :offerName "Платье повседневное летнее"}],
+  :creationDate "2026-04-17"}
+ {:payments
+  [{:date "2026-04-17",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3885.0,
+    :id "1395632880"}
+   {:date "2026-04-17",
+    :type "REFUND",
+    :source "BUYER",
+    :total 3885.0,
+    :id "1395848393"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Шатура", :id 10762},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-17T14:58:49.971+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56172716993,
+  :subsidies
+  [{:amount 2660.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 2660.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions [{:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56172716993",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2660.0, :total 2660.0}
+     {:type "BUYER", :costPerItem 3885.0, :total 3885.0}],
+    :marketSku 4561019890,
+    :count 1,
+    :shopSku "3451-1/Розовый52",
+    :offerName "Платье вечернее праздничное мини"}],
+  :creationDate "2026-04-17"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Голицыно", :id 21646},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-18T22:33:07.125+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56161677441,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}],
+  :partnerOrderId "56161677441",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 944,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1711.0, :total 1711.0}
+     {:type "BUYER", :costPerItem 2489.0, :total 2489.0}],
+    :marketSku 4561035265,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "2701-4/Васильковый52",
+    :offerName "Платье летнее нарядное",
+    :cisList ["(01)04640392782267(21)5RLN>AHHJnZ*Z"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 944,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1711.0, :total 1711.0}
+     {:type "BUYER", :costPerItem 2489.0, :total 2489.0}],
+    :marketSku 4561035266,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "2701-4/Васильковый50",
+    :offerName "Платье летнее нарядное",
+    :cisList ["(01)04680703817233(21)5fql.q(>A6oSr"]}],
+  :creationDate "2026-04-16"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Курган", :id 53},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-26T13:18:30.162+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56161478402,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56161478402",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 959,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2868.0, :total 2868.0}
+     {:type "BUYER", :costPerItem 4172.0, :total 4172.0}],
+    :marketSku 4561016214,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1784-1/Синий58",
+    :offerName "Платье трикотаж вечернее нарядное офис",
+    :cisList ["(01)04680703812603(21)5cS!OuXToL;U8"]}],
+  :creationDate "2026-04-16"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-28T00:34:04.166+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56159838017,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 214.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 214.0}],
+  :partnerOrderId "56159838017",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1670.0, :total 1670.0}
+     {:type "BUYER", :costPerItem 2530.0, :total 2530.0}],
+    :marketSku 4561003290,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий46",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670280(21)5\"eK,gc9%PgB;"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1670.0, :total 1670.0}
+     {:type "BUYER", :costPerItem 2530.0, :total 2530.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5W:VO)CMZV>K/"]}],
+  :creationDate "2026-04-16"}
+ {:payments
+  [{:date "2026-04-24",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1423.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1404301406"}
+   {:date "2026-04-24",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1559.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1404301405"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Рязань", :id 11},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-24T17:36:17.794+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 56153823299,
+  :subsidies
+  [{:amount 1127.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1291.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "PAYMENT_TRANSFER", :actual 86.4}
+   {:type "AUCTION_PROMOTION", :actual 4.59}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AGENCY", :actual 0.24}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 232.0}
+   {:type "FEE", :actual 1389.96}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 270.0}],
+  :partnerOrderId "56153823299",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 849,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1127.0, :total 1127.0}
+     {:type "BUYER", :costPerItem 1423.0, :total 1423.0}],
+    :marketSku 4561012656,
+    :count 1,
+    :shopSku "1523/Синий52",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392781024(21)5aWhFYJ4(n=cJ"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 849,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1291.0, :total 1291.0}
+     {:type "BUYER", :costPerItem 1559.0, :total 1559.0}],
+    :marketSku 4561015480,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Розовый54",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780867(21)5)sqFhIy:/ljm"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 849,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1291.0, :total 1291.0}
+     {:type "BUYER", :costPerItem 1559.0, :total 1559.0}],
+    :marketSku 4561015482,
+    :count 1,
+    :shopSku "1523/Розовый52",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780881(21)5Z*UKivD)upNp"]}],
+  :creationDate "2026-04-16"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Электросталь", :id 20523},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-20T17:10:16.393+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56150782851,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56150782851",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 714,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1992.0, :total 1992.0}
+     {:type "BUYER", :costPerItem 2688.0, :total 2688.0}],
+    :marketSku 4561019091,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671492(21)50CSD.\"OpzmCK"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 707,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2047.0, :total 2047.0}
+     {:type "BUYER", :costPerItem 2633.0, :total 2633.0}],
+    :marketSku 4561019099,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671423(21)5r!oa/_!YIqoM"]}],
+  :creationDate "2026-04-16"}
+ {:payments
+  [{:date "2026-04-23",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2716.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1402679050"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Челябинск", :id 56},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-23T09:38:31.972+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56149755331,
+  :subsidies
+  [{:amount 1964.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 23.87}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 3.48}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}],
+  :partnerOrderId "56149755331",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 743,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1964.0, :total 1964.0}
+     {:type "BUYER", :costPerItem 2716.0, :total 2716.0}],
+    :marketSku 4561019103,
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)5&m>%VssC2jAu"]}],
+  :creationDate "2026-04-16"}
+ {:payments
+  [{:date "2026-04-16",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2700.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1394607916"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Горки", :id 117721},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-20T12:37:02.592+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56145967936,
+  :subsidies
+  [{:amount 1860.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 72.96}
+   {:type "FEE", :actual 23.26}
+   {:type "AUCTION_PROMOTION", :actual 4.46}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 228.0}],
+  :partnerOrderId "56145967936",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 977,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1860.0, :total 1860.0}
+     {:type "BUYER", :costPerItem 2700.0, :total 2700.0}],
+    :marketSku 4561005098,
+    :count 1,
+    :shopSku "1564-2/Кремовый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784001(21)5md%;68hl:blz"]}],
+  :creationDate "2026-04-16"}
+ {:payments
+  [{:date "2026-04-16",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2614.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1395101601"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Михайловск", :id 101271},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-20T14:07:59.719+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56144794497,
+  :subsidies
+  [{:amount 2186.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 24.48}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 240.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "PAYMENT_TRANSFER", :actual 76.8}
+   {:type "AUCTION_PROMOTION", :actual 1.65}],
+  :partnerOrderId "56144794497",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2186.0, :total 2186.0}
+     {:type "BUYER", :costPerItem 2614.0, :total 2614.0}],
+    :marketSku 4561005107,
+    :count 1,
+    :shopSku "1564-2/черный58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322676855(21)5WutQsGiBGXYn"]}],
+  :creationDate "2026-04-16"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Казань", :id 43},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-30T17:04:39.588+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56137584643,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 178.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 178.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56137584643",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 731,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1492.0, :total 1492.0}
+     {:type "BUYER", :costPerItem 1644.0, :total 1644.0}],
+    :marketSku 4561039883,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3450-1/Зеленый52",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810807(21)5l%gSndtDUuW8"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 731,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1492.0, :total 1492.0}
+     {:type "BUYER", :costPerItem 1644.0, :total 1644.0}],
+    :marketSku 4561021161,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3450-1/Зеленый54",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810791(21)5flauQEpqWF)v"]}],
+  :creationDate "2026-04-16"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Ростов-на-Дону", :id 39},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-22T18:41:07.206+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56128359682,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "56128359682",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3628.0, :total 3628.0}
+     {:type "BUYER", :costPerItem 2917.0, :total 2917.0}],
+    :marketSku 4954262720,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Черный50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676954(21)528sw_.Zf5bMB"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Октябрьский", :id 105574},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-05-02T17:40:42.925+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56122990787,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 196.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56122990787",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1000,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1861.0, :total 1861.0}
+     {:type "BUYER", :costPerItem 2699.0, :total 2699.0}],
+    :marketSku 4561010581,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1564-2/Кремовый52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784025(21)5+>IfdnCY>aYP"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2926.0, :total 2926.0}
+     {:type "BUYER", :costPerItem 3954.0, :total 3954.0}],
+    :marketSku 4561005958,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "111/Синий52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784094(21)5qm_uZg,bjFIX"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Руза", :id 10751},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-19T13:33:07.991+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56118582081,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "56118582081",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1001,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3345.0, :total 3345.0}
+     {:type "BUYER", :costPerItem 3655.0, :total 3655.0}],
+    :marketSku 4561015362,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Бежевый50",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783561(21)5D(XX5janIrLZ"]}],
+  :creationDate "2026-04-15"}
+ {:payments
+  [{:date "2026-04-20",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2909.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1399505175"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Стерлитамак", :id 11116},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-20T15:46:54.916+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 56113354242,
+  :subsidies
+  [{:amount 1771.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 1.61}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 23.87}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "56113354242",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1771.0, :total 1771.0}
+     {:type "BUYER", :costPerItem 2909.0, :total 2909.0}],
+    :marketSku 4561019099,
+    :count 1,
+    :shopSku "3467/Шоколадный46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671423(21)5VMHUYKOVU.!T"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1771.0, :total 1771.0}
+     {:type "BUYER", :costPerItem 2909.0, :total 2909.0}],
+    :marketSku 4561019113,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671416(21)5)?c7PixFM(2I"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Иваново", :id 5},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-15T22:00:00.712+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56105953538,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}],
+  :partnerOrderId "56105953538",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1897.0, :total 1897.0}
+     {:type "BUYER", :costPerItem 2303.0, :total 2303.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5=hui2G>OhRYj"]}],
+  :creationDate "2026-04-15"}
+ {:payments
+  [{:date "2026-04-29",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2241.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1410595942"}
+   {:date "2026-04-24",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2241.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1403763067"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-24T12:41:42.357+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 56099643779,
+  :subsidies
+  [{:amount 1959.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1959.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 1.44}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "FEE", :actual 21.42}
+   {:type "FEE", :actual -21.42}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 1.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}],
+  :partnerOrderId "56099643779",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1959.0, :total 1959.0}
+     {:type "BUYER", :costPerItem 2241.0, :total 2241.0}],
+    :marketSku 4561043111,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3469-1/Зеленый52",
+    :offerName "Платье женское вечернее нарядное офис",
+    :cisList ["(01)04640392783387(21)5uOonqp=P&Jc:"]}],
+  :creationDate "2026-04-15"}
+ {:payments
+  [{:date "2026-04-15",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2193.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1393847935"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-19T19:01:37.396+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56098822466,
+  :subsidies
+  [{:amount 2007.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AUCTION_PROMOTION", :actual 3.07}
+   {:type "FEE", :actual 438.11}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}],
+  :partnerOrderId "56098822466",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 729,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2007.0, :total 2007.0}
+     {:type "BUYER", :costPerItem 2193.0, :total 2193.0}],
+    :marketSku 4561053425,
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5r6OtbBL2t*iN"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-20T19:26:39.315+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56097120323,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "56097120323",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 999,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1224.0, :total 1224.0}
+     {:type "BUYER", :costPerItem 1526.0, :total 1526.0}],
+    :marketSku 4561030380,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1821-1/Розовый50",
+    :offerName "Платье осеннее повседневное",
+    :cisList ["(01)04640392780539(21)5Du.eWr&+4A!2"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Нижний Тагил", :id 11168},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-15T03:50:00.889+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 56094257217,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 707,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1917.0, :total 1917.0}
+     {:type "CASHBACK", :costPerItem 14.0, :total 14.0}
+     {:type "BUYER", :costPerItem 2269.0, :total 2269.0}],
+    :marketSku 4561015520,
+    :count 1,
+    :shopSku "109/Серый46",
+    :offerName "Платье офисное повседневное оверсайз"}],
+  :creationDate "2026-04-15"}
+ {:payments
+  [{:date "2026-04-20",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2007.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1399356981"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Ростов-на-Дону", :id 39},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-20T19:44:53.108+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56093026368,
+  :subsidies
+  [{:amount 2553.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 72.96}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 1.57}
+   {:type "AGENCY", :actual 0.12}
+   {:type "FEE", :actual 23.26}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 228.0}],
+  :partnerOrderId "56093026368",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2553.0, :total 2553.0}
+     {:type "BUYER", :costPerItem 2007.0, :total 2007.0}],
+    :marketSku 4561005098,
+    :count 1,
+    :shopSku "1564-2/Кремовый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04640392784001(21)5IAC\"+*rlUE-2"]}],
+  :creationDate "2026-04-15"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Иваново", :id 5},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-15T12:03:03.086+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56090480066,
+  :commissions [],
+  :partnerOrderId "56090480066",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1640.0, :total 1640.0}
+     {:type "BUYER", :costPerItem 2560.0, :total 2560.0}],
+    :marketSku 4561053425,
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз"}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-14",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2502.0,
+    :id "1392605604"}
+   {:date "2026-04-18",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2502.0,
+    :id "1397082680"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Посёлок санатория Подмосковье", :id 121347},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-18T15:42:39.936+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56087296769,
+  :subsidies
+  [{:amount 1698.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1698.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}],
+  :partnerOrderId "56087296769",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 950,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1698.0, :total 1698.0}
+     {:type "BUYER", :costPerItem 2502.0, :total 2502.0}],
+    :marketSku 4561015607,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Серый50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670198(21)5b3m3(DI,nJGi"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-27",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1676.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1407104978"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Новотроицк", :id 11090},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-27T09:25:36.89+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56085484867,
+  :subsidies
+  [{:amount 984.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 133.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "PAYMENT_TRANSFER", :actual 42.56}
+   {:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 2.54}
+   {:type "FEE", :actual 623.82}],
+  :partnerOrderId "56085484867",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 954,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 984.0, :total 984.0}
+     {:type "BUYER", :costPerItem 1676.0, :total 1676.0}],
+    :marketSku 4561002237,
+    :count 1,
+    :shopSku "1777-4/Васильковый 56",
+    :offerName "Платье трикотажное теплое",
+    :cisList ["(01)04680703817172(21)5l.BmCj'HrkCv"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 3901.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1397349937"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Краснодар", :id 35},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-18T19:16:21.803+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56083282945,
+  :subsidies
+  [{:amount 3099.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 2.41}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 350.0}
+   {:type "FEE", :actual 2725.79}
+   {:type "PAYMENT_TRANSFER", :actual 112.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "56083282945",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3099.0, :total 3099.0}
+     {:type "BUYER", :costPerItem 3901.0, :total 3901.0}],
+    :marketSku 4561091392,
+    :count 1,
+    :shopSku "1777-5/Бежевый52",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783554(21)5FZvc29VdtJps"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-14",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1997.0,
+    :id "1392403221"}
+   {:date "2026-04-21",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1997.0,
+    :id "1401010135"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-21T20:04:00.913+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56082574273,
+  :subsidies
+  [{:amount 1503.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1503.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "56082574273",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1001,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1503.0, :total 1503.0}
+     {:type "BUYER", :costPerItem 1997.0, :total 1997.0}],
+    :marketSku 4561015944,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671164(21)5oXX:XoTTmn=k"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-22",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2540.0,
+    :id "1401508189"}
+   {:date "2026-04-14",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2540.0,
+    :id "1391985872"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Верхняя Пышма", :id 20720},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-22T10:21:14.484+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56072339778,
+  :subsidies
+  [{:amount 2020.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 2020.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56072339778",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 691,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2020.0, :total 2020.0}
+     {:type "BUYER", :costPerItem 2540.0, :total 2540.0}],
+    :marketSku 4561005107,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1564-2/черный58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322676855(21)5NXsRiLm_1Oti"]}],
+  :creationDate "2026-04-14"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-15T23:11:10.889+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56066609858,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 89.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 89.0}],
+  :partnerOrderId "56066609858",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1001,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1331.0, :total 1331.0}
+     {:type "BUYER", :costPerItem 1805.0, :total 1805.0}],
+    :marketSku 4561021161,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3450-1/Зеленый54",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810791(21)5kqKbJi>OBeCj"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-26",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2525.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1406567034"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Нижний Тагил", :id 11168},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-26T18:00:58.131+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 56064891584,
+  :subsidies
+  [{:amount 2035.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 228.0}
+   {:type "FEE", :actual 23.26}
+   {:type "AUCTION_PROMOTION", :actual 1.57}
+   {:type "PAYMENT_TRANSFER", :actual 72.96}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "56064891584",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2035.0, :total 2035.0}
+     {:type "BUYER", :costPerItem 2525.0, :total 2525.0}],
+    :marketSku 4561010588,
+    :count 1,
+    :shopSku "1564-2/черный56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322676862(21)5CsccZPEMQPOW"]}],
+  :creationDate "2026-04-14"}
+ {:payments
+  [{:date "2026-04-13",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1626.0,
+    :id "1391388366"}
+   {:date "2026-04-21",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1626.0,
+    :id "1400275568"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Уфа", :id 172},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-21T08:42:40.357+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56054528385,
+  :subsidies
+  [{:amount 1034.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1034.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56054528385",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 819,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1034.0, :total 1034.0}
+     {:type "BUYER", :costPerItem 1626.0, :total 1626.0}],
+    :marketSku 4561090478,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-4/Бирюзовый58",
+    :offerName "Платье трикотажное",
+    :cisList ["(01)04680703814270(21)5'*Qr1f(o6.tN"]}],
+  :creationDate "2026-04-13"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Новосибирск", :id 65},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-24T15:07:37.821+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56033788355,
+  :commissions
+  [{:type "CROSSREGIONAL_DELIVERY", :actual 116.0}
+   {:type "CROSSREGIONAL_DELIVERY", :actual 116.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "56033788355",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 956,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3103.0, :total 3103.0}
+     {:type "BUYER", :costPerItem 4097.0, :total 4097.0}],
+    :marketSku 4561040468,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Васильковый56",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04640392783479(21)5UhC%KjbFI9MX"]}],
+  :creationDate "2026-04-13"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-20T17:17:17.363+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 56028494848,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 392.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 392.0}],
+  :partnerOrderId "56028494848",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 919,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2088.0, :total 2088.0}
+     {:type "BUYER", :costPerItem 2592.0, :total 2592.0}],
+    :marketSku 4561015950,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671485(21)58XjUfVcZf<rg"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 918,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2142.0, :total 2142.0}
+     {:type "BUYER", :costPerItem 2658.0, :total 2658.0}],
+    :marketSku 4561019102,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Лиловый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671263(21)5FTWOT>raRWsM"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 919,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2088.0, :total 2088.0}
+     {:type "BUYER", :costPerItem 2592.0, :total 2592.0}],
+    :marketSku 4561019094,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Белый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671126(21)5raqR9GDcY_+I"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 919,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2088.0, :total 2088.0}
+     {:type "BUYER", :costPerItem 2592.0, :total 2592.0}],
+    :marketSku 4561019103,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)57cbMV6tHo*)Q"]}],
+  :creationDate "2026-04-12"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Белгород", :id 4},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-12T21:50:00.793+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 56026602754,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1002,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2806.0, :total 2806.0}
+     {:type "BUYER", :costPerItem 3739.0, :total 3739.0}],
+    :marketSku 4831867846,
+    :count 1,
+    :shopSku "3451-1/Изумрудный46",
+    :offerName "Платье вечернее праздничное мини"}],
+  :creationDate "2026-04-12"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-12T23:01:05.741+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 56014447235,
+  :commissions [],
+  :partnerOrderId "56014447235",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1711.0, :total 1711.0}
+     {:type "BUYER", :costPerItem 2969.0, :total 2969.0}],
+    :marketSku 4561019091,
+    :count 1,
+    :shopSku "3467/Васильковый46",
+    :offerName "Платье повседневное летнее"}],
+  :creationDate "2026-04-12"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-18T18:25:05.113+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55999601345,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55999601345",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 746,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2784.0, :total 2784.0}
+     {:type "BUYER", :costPerItem 3761.0, :total 3761.0}],
+    :marketSku 4561050024,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Синий50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04640392782564(21)5+o0Qfkz?e94I"]}],
+  :creationDate "2026-04-11"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Люберцы", :id 10738},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-11T17:45:04.071+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 55989056897,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 747,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2259.0, :total 2259.0}
+     {:type "BUYER", :costPerItem 2421.0, :total 2421.0}],
+    :marketSku 4561019094,
+    :count 1,
+    :shopSku "3467/Белый50",
+    :offerName "Платье повседневное летнее"}],
+  :creationDate "2026-04-11"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2674.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1396759284"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Краснодар", :id 35},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-18T11:26:27.445+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55986122435,
+  :subsidies
+  [{:amount 2006.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 4.67}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "FEE", :actual 23.87}],
+  :partnerOrderId "55986122435",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2006.0, :total 2006.0}
+     {:type "BUYER", :costPerItem 2674.0, :total 2674.0}],
+    :marketSku 4561019103,
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)5edI(o'lTHMSq"]}],
+  :creationDate "2026-04-11"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Одинцово", :id 10743},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-21T14:34:58.84+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55968644675,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "55968644675",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3201.0, :total 3201.0}
+     {:type "BUYER", :costPerItem 3439.0, :total 3439.0}],
+    :marketSku 4561031396,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3453-1/Бежевый60",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672307(21)5PQ_CzdIUhkms"]}],
+  :creationDate "2026-04-11"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Петергоф", :id 98546},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-23T17:38:29.808+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55967538627,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "55967538627",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 423,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1262.0, :total 1262.0}
+     {:type "BUYER", :costPerItem 1338.0, :total 1338.0}],
+    :marketSku 4561008167,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Бежевый56",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780942(21)5t3DOOqmDi&/L"]}],
+  :creationDate "2026-04-10"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Сириус", :id 218709},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-25T00:25:39.973+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55959005763,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "55959005763",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 423,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1219.0, :total 1219.0}
+     {:type "BUYER", :costPerItem 1381.0, :total 1381.0}],
+    :marketSku 4561015489,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Бежевый50",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780980(21)5<hRclLmlUQkf"]}],
+  :creationDate "2026-04-10"}
+ {:payments
+  [{:date "2026-04-10",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1735.0,
+    :id "1387778429"}
+   {:date "2026-04-10",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1735.0,
+    :id "1387106318"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Омск", :id 66},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-10T17:23:26.548+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 55937221632,
+  :subsidies
+  [{:amount 1115.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1115.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions [{:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55937221632",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 777,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1115.0, :total 1115.0}
+     {:type "BUYER", :costPerItem 1735.0, :total 1735.0}],
+    :marketSku 4561095339,
+    :count 1,
+    :shopSku "1523/Розовый56",
+    :offerName "Свитшот оверсайз"}],
+  :creationDate "2026-04-10"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-21T19:31:10.591+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55931422211,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "55931422211",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 948,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3850.0, :total 3850.0}
+     {:type "BUYER", :costPerItem 4450.0, :total 4450.0}],
+    :marketSku 4561015377,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Черный56",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04680703812740(21)5fLdmiM5FESqr"]}],
+  :creationDate "2026-04-09"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Нижний Новгород", :id 47},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-16T13:27:40.252+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55930839427,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 2.39}],
+  :partnerOrderId "55930839427",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 721,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2085.0, :total 2085.0}
+     {:type "BUYER", :costPerItem 2595.0, :total 2595.0}],
+    :marketSku 4561055709,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Фисташковый48",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322670990(21)5ENG4aZHbEr&."]}],
+  :creationDate "2026-04-09"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Яблоновский", :id 120503},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-09T17:35:05.673+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 55923944833,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 344,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2085.0, :total 2085.0}
+     {:type "BUYER", :costPerItem 2595.0, :total 2595.0}],
+    :marketSku 4561019096,
+    :count 1,
+    :shopSku "3467/Васильковый54",
+    :offerName "Платье повседневное летнее"}],
+  :creationDate "2026-04-09"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1403.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1396695629"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Челябинск", :id 56},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-18T10:27:33.489+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 55921206466,
+  :subsidies
+  [{:amount 1197.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 2.5}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 130.0}
+   {:type "FEE", :actual 13.65}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "PAYMENT_TRANSFER", :actual 41.6}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55921206466",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 959,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1197.0, :total 1197.0}
+     {:type "BUYER", :costPerItem 1403.0, :total 1403.0}],
+    :marketSku 4561008167,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1523/Бежевый56",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780942(21)5r*EoJ3jQZkog"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 959,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1197.0, :total 1197.0}
+     {:type "BUYER", :costPerItem 1403.0, :total 1403.0}],
+    :marketSku 4561015488,
+    :count 1,
+    :shopSku "1523/Бежевый54",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780966(21)5atNrf3lxajc="]}],
+  :creationDate "2026-04-09"}
+ {:payments
+  [{:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1936.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1397275742"}
+   {:date "2026-04-18",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1936.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1397275741"}
+   {:date "2026-04-24",
+    :type "REFUND",
+    :source "BUYER",
+    :total 1936.0,
+    :paymentOrder {:date "2026-05-29", :id "902526"},
+    :id "1404094157"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-18T18:27:04.413+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55912325058,
+  :subsidies
+  [{:amount 1551.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1551.0, :type "SUBSIDY", :operationType "ACCRUAL"}
+   {:amount 1551.0, :type "SUBSIDY", :operationType "DEDUCTION"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.24}
+   {:type "SORTING", :actual 15.0}
+   {:type "FEE", :actual -17.79}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "AUCTION_PROMOTION", :actual 3.82}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 348.7}
+   {:type "PAYMENT_TRANSFER", :actual 111.58}
+   {:type "FEE", :actual 35.58}],
+  :partnerOrderId "55912325058",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 730,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1551.0, :total 1551.0}
+     {:type "BUYER", :costPerItem 1936.0, :total 1936.0}],
+    :marketSku 4561063997,
+    :count 1,
+    :shopSku "3708/Сиреневый50",
+    :offerName "Сарафан летний длинный бандо",
+    :cisList ["(01)04660322672963(21)57&Qq)G1epHEX"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 364,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1551.0, :total 1551.0}
+     {:type "BUYER", :costPerItem 1936.0, :total 1936.0}],
+    :marketSku 4561037139,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3708/Персиковый50",
+    :offerName "Сарафан летний длинный бандо",
+    :cisList ["(01)04660322672925(21)5eu!;o%9PBgfO"]}],
+  :creationDate "2026-04-09"}
+ {:payments
+  [{:date "2026-04-09",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2550.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1386755114"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-12T14:11:10.112+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55896135873,
+  :subsidies
+  [{:amount 2250.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 1.65}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 240.0}
+   {:type "PAYMENT_TRANSFER", :actual 76.8}
+   {:type "FEE", :actual 24.48}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55896135873",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 343,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2250.0, :total 2250.0}
+     {:type "BUYER", :costPerItem 2550.0, :total 2550.0}],
+    :marketSku 4561019110,
+    :count 1,
+    :shopSku "3467/Красный46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671355(21)5Gb?p+ziNMIby"]}],
+  :creationDate "2026-04-08"}
+ {:payments
+  [{:date "2026-04-14",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1999.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1392523277"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-14T19:40:18.417+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 55890515072,
+  :subsidies
+  [{:amount 1501.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "FEE", :actual 17.85}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 175.0}
+   {:type "PAYMENT_TRANSFER", :actual 56.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 3.45}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55890515072",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 987,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2003.0, :total 2003.0}
+     {:type "BUYER", :costPerItem 2677.0, :total 2677.0}],
+    :marketSku 4561019092,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671430(21)5Kf6etAoRs4Ul"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 985,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1501.0, :total 1501.0}
+     {:type "BUYER", :costPerItem 1999.0, :total 1999.0}],
+    :marketSku 4561015944,
+    :count 1,
+    :shopSku "3467/Коричневый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671164(21)5U6B(5e_nWdN/"]}],
+  :creationDate "2026-04-08"}
+ {:payments
+  [{:date "2026-04-15",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2520.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1393757194"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Курск", :id 8},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-15T18:48:56.644+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 55882777731,
+  :subsidies
+  [{:amount 2160.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "FEE", :actual 23.87}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "PAYMENT_TRANSFER", :actual 74.88}
+   {:type "AUCTION_PROMOTION", :actual 4.54}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 234.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "55882777731",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 967,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2217.0, :total 2217.0}
+     {:type "BUYER", :costPerItem 2583.0, :total 2583.0}],
+    :marketSku 4561019109,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Красный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671331(21)5cy(XJexT-kqq"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 968,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2160.0, :total 2160.0}
+     {:type "BUYER", :costPerItem 2520.0, :total 2520.0}],
+    :marketSku 4561019103,
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)5yj\"'.dtZA,U-"]}],
+  :creationDate "2026-04-08"}
+ {:payments
+  [{:date "2026-04-13",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2743.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1390953256"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Долгопрудный", :id 214},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-13T14:07:34.644+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 55869966210,
+  :subsidies
+  [{:amount 2057.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 76.8}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 240.0}
+   {:type "AUCTION_PROMOTION", :actual 4.04}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 24.48}],
+  :partnerOrderId "55869966210",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 841,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2057.0, :total 2057.0}
+     {:type "BUYER", :costPerItem 2743.0, :total 2743.0}],
+    :marketSku 4561019119,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Лиловый52",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671256(21)5TJSUP7Z6m6Sh"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 841,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2057.0, :total 2057.0}
+     {:type "BUYER", :costPerItem 2743.0, :total 2743.0}],
+    :marketSku 4561019102,
+    :count 1,
+    :shopSku "3467/Лиловый50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671263(21)51FFcvDuSUWJn"]}],
+  :creationDate "2026-04-08"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Барнаул", :id 197},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-19T11:50:08.898+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55867087104,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 294.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 294.0}],
+  :partnerOrderId "55867087104",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 731,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2586.0, :total 2586.0}
+     {:type "BUYER", :costPerItem 2214.0, :total 2214.0}],
+    :marketSku 4561019092,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671430(21)5&eQjZpX*.MWi"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 731,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2587.0, :total 2587.0}
+     {:type "BUYER", :costPerItem 2213.0, :total 2213.0}],
+    :marketSku 4561015946,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671447(21)52+c1\"RuihELb"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 731,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2586.0, :total 2586.0}
+     {:type "BUYER", :costPerItem 2214.0, :total 2214.0}],
+    :marketSku 4561019100,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный58",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671362(21)5WRBV=PdP3GlZ"]}],
+  :creationDate "2026-04-08"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Барнаул", :id 197},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-19T11:38:07.513+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55867081984,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 303.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 303.0}],
+  :partnerOrderId "55867081984",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 804,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2627.0, :total 2627.0}
+     {:type "BUYER", :costPerItem 2173.0, :total 2173.0}],
+    :marketSku 4561015951,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671379(21)5QYkNM.!SU5lD"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 804,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1917.0, :total 1917.0}
+     {:type "BUYER", :costPerItem 1583.0, :total 1583.0}],
+    :marketSku 4561015944,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671164(21)5UT9zJWCESTuY"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 804,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2307.0, :total 2307.0}
+     {:type "BUYER", :costPerItem 1893.0, :total 1893.0}],
+    :marketSku 4561003295,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5+nlcPOWhyTIf"]}],
+  :creationDate "2026-04-08"}
+ {:payments
+  [{:date "2026-04-07",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2289.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1384255661"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тверь", :id 14},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-15T18:44:22.447+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55855657153,
+  :subsidies
+  [{:amount 1731.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "FEE", :actual 20.51}
+   {:type "AUCTION_PROMOTION", :actual 3.61}
+   {:type "PAYMENT_TRANSFER", :actual 64.32}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 201.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55855657153",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 897,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1731.0, :total 1731.0}
+     {:type "BUYER", :costPerItem 2289.0, :total 2289.0}],
+    :marketSku 4561003292,
+    :count 1,
+    :shopSku "109/Голубой58",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670051(21)5a%glYFBdW(i*"]}],
+  :creationDate "2026-04-07"}
+ {:payments
+  [{:date "2026-04-14",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2830.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1392241871"}
+   {:date "2026-04-15",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2830.0,
+    :paymentOrder {:date "2026-05-20", :id "555454"},
+    :id "1393612138"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Стерлитамак", :id 11116},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-14T16:05:35.016+03:00",
+  :currency "RUR",
+  :status "RETURNED",
+  :id 55849085762,
+  :subsidies
+  [{:amount 1970.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 1970.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "PAYMENT_TRANSFER", :actual 76.8}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 240.0}
+   {:type "AUCTION_PROMOTION", :actual 4.75}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "FEE", :actual 24.48}
+   {:type "FEE", :actual -24.48}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55849085762",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 989,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1970.0, :total 1970.0}
+     {:type "BUYER", :costPerItem 2830.0, :total 2830.0}],
+    :marketSku 4561019103,
+    :details [{:itemCount 1, :itemStatus "RETURNED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный50",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671409(21)5,MbrHSOBapQO"]}],
+  :creationDate "2026-04-07"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-11T13:08:33.206+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55829704321,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55829704321",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 983,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1872.0, :total 1872.0}
+     {:type "BUYER", :costPerItem 2328.0, :total 2328.0}],
+    :marketSku 4561030897,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3469-1/Васильковый52",
+    :offerName "Платье женское вечернее нарядное офис",
+    :cisList ["(01)04640392783448(21)5ccBXd-pdHUAN"]}],
+  :creationDate "2026-04-06"}
+ {:payments
+  [{:date "2026-04-06",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2235.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1383225545"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Екатеринбург", :id 54},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-14T14:26:28.309+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55828341697,
+  :subsidies
+  [{:amount 1965.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AUCTION_PROMOTION", :actual 4.13}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "FEE", :actual 21.42}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55828341697",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 982,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1965.0, :total 1965.0}
+     {:type "BUYER", :costPerItem 2235.0, :total 2235.0}],
+    :marketSku 4561030870,
+    :count 1,
+    :shopSku "109/Бордовый58",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670136(21)5v(e*aoVYs8Z)"]}],
+  :creationDate "2026-04-06"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Лебяжье", :id 118574},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-06T13:45:02.007+03:00",
+  :currency "RUR",
+  :status "CANCELLED_BEFORE_PROCESSING",
+  :id 55810856896,
+  :commissions [],
+  :partnerOrderId "",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 712,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1842.0, :total 1842.0}
+     {:type "BUYER", :costPerItem 2358.0, :total 2358.0}],
+    :marketSku 4561027526,
+    :count 1,
+    :shopSku "2701-3/Черный52",
+    :offerName "Платье летнее нарядное повседневное"}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 712,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1842.0, :total 1842.0}
+     {:type "BUYER", :costPerItem 2358.0, :total 2358.0}],
+    :marketSku 4561027527,
+    :count 1,
+    :shopSku "2701-3/Бордовый54",
+    :offerName "Платье летнее нарядное"}],
+  :creationDate "2026-04-06"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Белгород", :id 4},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-10T19:10:34.644+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55796412352,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}],
+  :partnerOrderId "55796412352",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 980,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2465.0, :total 2465.0}
+     {:type "BUYER", :costPerItem 2335.0, :total 2335.0}],
+    :marketSku 4561019091,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671492(21)5u<>%L0'*Mr!c"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 980,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2465.0, :total 2465.0}
+     {:type "BUYER", :costPerItem 2335.0, :total 2335.0}],
+    :marketSku 4561019099,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный46",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671423(21)5?=j<3qlJajq4"]}],
+  :creationDate "2026-04-06"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Покровская", :id 119613},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-13T13:51:02.374+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55787976771,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 232.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 232.0}],
+  :partnerOrderId "55787976771",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 862,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3356.0, :total 3356.0}
+     {:type "BUYER", :costPerItem 3844.0, :total 3844.0}],
+    :marketSku 4561007051,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Изумрудный54",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04680703812689(21)5tepF7R!uQP6e"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 862,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3511.0, :total 3511.0}
+     {:type "BUYER", :costPerItem 3689.0, :total 3689.0}],
+    :marketSku 4561015373,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1777-5/Изумрудный52",
+    :offerName "Платье повседневное нарядное офис",
+    :cisList ["(01)04680703812696(21)5rKBBcV9tiXgu"]}],
+  :creationDate "2026-04-05"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-10T16:14:02.584+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55781381251,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55781381251",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 1000,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3085.0, :total 3085.0}
+     {:type "BUYER", :costPerItem 3630.0, :total 3630.0}],
+    :marketSku 4561041467,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Синий52",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04640392782557(21)5+-4r2LTTdIIa"]}],
+  :creationDate "2026-04-05"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тучково", :id 21626},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-10T13:41:28.426+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55767474947,
+  :commissions
+  [{:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 196.0}],
+  :partnerOrderId "55767474947",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 872,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2814.0, :total 2814.0}
+     {:type "BUYER", :costPerItem 3901.0, :total 3901.0}],
+    :marketSku 4561019896,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Черный48",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676961(21)5vERgZe_Sh'ie"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 713,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2814.0, :total 2814.0}
+     {:type "BUYER", :costPerItem 3901.0, :total 3901.0}],
+    :marketSku 4954262720,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Черный50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322676954(21)5=mDM6lmmFnOx"]}],
+  :creationDate "2026-04-05"}
+ {:payments
+  [{:date "2026-04-12",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1546.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1389680782"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Самара", :id 51},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-12T11:23:57.207+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55727721539,
+  :subsidies
+  [{:amount 1454.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 48.0}
+   {:type "FEE", :actual 15.75}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 150.0}
+   {:type "AUCTION_PROMOTION", :actual 2.56}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}],
+  :partnerOrderId "55727721539",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 852,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1454.0, :total 1454.0}
+     {:type "BUYER", :costPerItem 1546.0, :total 1546.0}],
+    :marketSku 4561008167,
+    :count 1,
+    :shopSku "1523/Бежевый56",
+    :offerName "Свитшот оверсайз",
+    :cisList ["(01)04640392780942(21)5CiD(E=UW-DCA"]}],
+  :creationDate "2026-04-04"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Янино-1", :id 120523},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-10T17:12:59.356+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55718269377,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}],
+  :partnerOrderId "55718269377",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1749.0, :total 1749.0}
+     {:type "BUYER", :costPerItem 2451.0, :total 2451.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5cCUQ?FK3U%W8"]}],
+  :creationDate "2026-04-03"}
+ {:payments
+  [{:date "2026-04-10",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2451.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1387745262"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Янино-1", :id 120523},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-10T17:12:26.019+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55718259969,
+  :subsidies
+  [{:amount 1749.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "AUCTION_PROMOTION", :actual 4.19}
+   {:type "FEE", :actual 21.42}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}],
+  :partnerOrderId "55718259969",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1749.0, :total 1749.0}
+     {:type "BUYER", :costPerItem 2451.0, :total 2451.0}],
+    :marketSku 4561003293,
+    :count 1,
+    :shopSku "109/Изумрудный50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670235(21)5pS,G0YU<h1Lx"]}],
+  :creationDate "2026-04-03"}
+ {:payments
+  [{:date "2026-04-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2451.0,
+    :paymentOrder {:date "2026-05-04", :id "968060"},
+    :id "1379015942"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Балашиха", :id 10716},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-06T13:51:41.68+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55711679489,
+  :subsidies
+  [{:amount 1749.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "AUCTION_PROMOTION", :actual 1.44}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AGENCY", :actual 0.12}
+   {:type "FEE", :actual 21.42}],
+  :partnerOrderId "55711679489",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1749.0, :total 1749.0}
+     {:type "BUYER", :costPerItem 2451.0, :total 2451.0}],
+    :marketSku 4561003289,
+    :count 1,
+    :shopSku "109/Синий58",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670259(21)586WQ0QtstF\"P"]}],
+  :creationDate "2026-04-03"}
+ {:payments
+  [{:date "2026-04-03",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2049.0,
+    :id "1378666666"}
+   {:date "2026-04-15",
+    :type "REFUND",
+    :source "BUYER",
+    :total 2049.0,
+    :id "1393844201"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Красково", :id 101764},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-15T19:53:04.847+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55702355011,
+  :subsidies
+  [{:amount 2151.0, :type "SUBSIDY", :operationType "DEDUCTION"}
+   {:amount 2151.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "55702355011",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 851,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2151.0, :total 2151.0}
+     {:type "BUYER", :costPerItem 2049.0, :total 2049.0}],
+    :marketSku 4561053425,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Синий50",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670273(21)5rcWAwH9U?DzB"]}],
+  :creationDate "2026-04-03"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Москва", :id 213},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-02T23:21:36.753+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_PROCESSING",
+  :id 55686534336,
+  :commissions [],
+  :partnerOrderId "55686534336",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 743,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1648.0, :total 1648.0}
+     {:type "BUYER", :costPerItem 2552.0, :total 2552.0}],
+    :marketSku 4561015608,
+    :count 1,
+    :shopSku "109/Бордовый46",
+    :offerName "Платье офисное повседневное оверсайз"}],
+  :creationDate "2026-04-02"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Одинцово", :id 10743},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-11T00:06:38.361+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55680739779,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55680739779",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 993,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2917.0, :total 2917.0}
+     {:type "BUYER", :costPerItem 3883.0, :total 3883.0}],
+    :marketSku 4561031396,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3453-1/Бежевый60",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672307(21)5dN)E%hYJ6j3%"]}],
+  :creationDate "2026-04-02"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Ростов-на-Дону", :id 39},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-06T16:50:31.867+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55668393794,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 232.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 232.0}],
+  :partnerOrderId "55668393794",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 997,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2993.0, :total 2993.0}
+     {:type "BUYER", :costPerItem 4207.0, :total 4207.0}],
+    :marketSku 4561013417,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1761-1/Синий50",
+    :offerName "Платье футляр повседневное",
+    :cisList ["(01)04680703812511(21)5LCzNIupBk.Yq"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 997,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2993.0, :total 2993.0}
+     {:type "BUYER", :costPerItem 4207.0, :total 4207.0}],
+    :marketSku 4561013409,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1761-1/Синий48",
+    :offerName "Платье футляр повседневное",
+    :cisList ["(01)04680703812528(21)5Ijq(lyjWmQJz"]}],
+  :creationDate "2026-04-02"}
+ {:payments
+  [{:date "2026-04-06",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 4032.0,
+    :paymentOrder {:date "2026-05-04", :id "968060"},
+    :id "1382796291"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Ростов-на-Дону", :id 39},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-06T16:46:54.777+03:00",
+  :currency "RUR",
+  :status "PARTIALLY_DELIVERED",
+  :id 55667352514,
+  :subsidies
+  [{:amount 3008.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "AGENCY", :actual 0.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "AUCTION_PROMOTION", :actual 7.02}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 116.0}
+   {:type "FEE", :actual 35.91}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 352.0}
+   {:type "PAYMENT_TRANSFER", :actual 112.64}],
+  :partnerOrderId "55667352514",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3008.0, :total 3008.0}
+     {:type "BUYER", :costPerItem 4032.0, :total 4032.0}],
+    :marketSku 4561013410,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "1761-1/васильковый50",
+    :offerName "Платье вечернее миди",
+    :cisList ["(01)04680703812450(21)5rfPRw.0qpGLu"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 996,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3008.0, :total 3008.0}
+     {:type "BUYER", :costPerItem 4032.0, :total 4032.0}],
+    :marketSku 4561035485,
+    :count 1,
+    :shopSku "1761-1/васильковый48",
+    :offerName "Платье вечернее миди",
+    :cisList ["(01)04680703812467(21)5H4t1C(ATXK<g"]}],
+  :creationDate "2026-04-02"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Барнаул", :id 197},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-19T11:50:08.799+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55660638208,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 294.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 294.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "55660638208",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 983,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1886.0, :total 1886.0}
+     {:type "BUYER", :costPerItem 2914.0, :total 2914.0}],
+    :marketSku 4561015951,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Шоколадный56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671379(21)5!WWeOh8MtQi\""]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 983,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1886.0, :total 1886.0}
+     {:type "BUYER", :costPerItem 2914.0, :total 2914.0}],
+    :marketSku 4561015946,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Васильковый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671447(21)5LBmr)OGr,Mwi"]}
+   {:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 982,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1380.0, :total 1380.0}
+     {:type "BUYER", :costPerItem 2120.0, :total 2120.0}],
+    :marketSku 4561015944,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3467/Коричневый56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322671164(21)5IsK&N%=xeD-L"]}],
+  :creationDate "2026-04-02"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Барнаул", :id 197},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-19T11:36:06.757+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55660075776,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "SORTING", :actual 15.0}],
+  :partnerOrderId "55660075776",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 848,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1673.0, :total 1673.0}
+     {:type "BUYER", :costPerItem 2527.0, :total 2527.0}],
+    :marketSku 4561003295,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5LRxYqkXyQZTK"]}],
+  :creationDate "2026-04-02"}
+ {:payments
+  [{:date "2026-04-02",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 1387.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1378024080"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Уфа", :id 172},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-09T11:03:11.203+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55656867008,
+  :subsidies
+  [{:amount 916.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "PAYMENT_TRANSFER", :actual 36.85}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 115.15}
+   {:type "FEE", :actual 11.75}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 89.0}
+   {:type "AUCTION_PROMOTION", :actual 2.2}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55656867008",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 954,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 916.0, :total 916.0}
+     {:type "BUYER", :costPerItem 1387.0, :total 1387.0}],
+    :marketSku 4561021182,
+    :count 1,
+    :shopSku "3450-1/Синий54",
+    :offerName "Сарафан летний повседневный",
+    :cisList ["(01)04680703810852(21)5qh?F+eYoL>BK"]}],
+  :creationDate "2026-04-02"}
+ {:payments
+  [{:date "2026-04-02",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2545.0,
+    :paymentOrder {:date "2026-05-13", :id "285265"},
+    :id "1378024034"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Тюмень", :id 55},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-11T17:53:23.922+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55655668290,
+  :subsidies
+  [{:amount 1655.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AUCTION_PROMOTION", :actual 3.12}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "FEE", :actual 21.42}
+   {:type "AGENCY", :actual 0.12}],
+  :partnerOrderId "55655668290",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 741,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1655.0, :total 1655.0}
+     {:type "BUYER", :costPerItem 2545.0, :total 2545.0}],
+    :marketSku 4561003295,
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5PR&HNak:_yh/"]}],
+  :creationDate "2026-04-02"}
+ {:payments
+  [{:date "2026-04-02",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2787.0,
+    :paymentOrder {:date "2026-05-04", :id "968060"},
+    :id "1378023949"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "PREPAID",
+  :statusUpdateDate "2026-04-07T14:55:36.471+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55652712448,
+  :subsidies
+  [{:amount 1773.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "AGENCY", :actual 0.12}
+   {:type "PAYMENT_TRANSFER", :actual 72.96}
+   {:type "FEE", :actual 23.26}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "AUCTION_PROMOTION", :actual 4.5}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 228.0}],
+  :partnerOrderId "55652712448",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 986,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 1773.0, :total 1773.0}
+     {:type "BUYER", :costPerItem 2787.0, :total 2787.0}],
+    :marketSku 4561010588,
+    :count 1,
+    :shopSku "1564-2/черный56",
+    :offerName "Платье повседневное летнее",
+    :cisList ["(01)04660322676862(21)5-;uRBeUMmVHT"]}],
+  :creationDate "2026-04-01"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-11T16:50:04.325+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55650208194,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55650208194",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 747,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2715.0, :total 2715.0}
+     {:type "BUYER", :costPerItem 4325.0, :total 4325.0}],
+    :marketSku 4561031390,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3453-1/Вишневый58",
+    :offerName "Платье повседневное летнее в стиле бохо",
+    :cisList ["(01)04660322672321(21)5nN-4NYfR=hNr"]}],
+  :creationDate "2026-04-01"}
+ {:payments [],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Медведево", :id 101204},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-07T13:40:01.378+03:00",
+  :currency "RUR",
+  :status "CANCELLED_IN_DELIVERY",
+  :id 55617163395,
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 98.0}
+   {:type "SORTING", :actual 15.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 98.0}],
+  :partnerOrderId "55617163395",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 897,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 3073.0, :total 3073.0}
+     {:type "BUYER", :costPerItem 3642.0, :total 3642.0}],
+    :marketSku 4561012128,
+    :details [{:itemCount 1, :itemStatus "REJECTED"}],
+    :count 1,
+    :shopSku "3451-1/Розовый50",
+    :offerName "Платье вечернее праздничное мини",
+    :cisList ["(01)04660322677135(21)5H?I_LbU*EDf*"]}],
+  :creationDate "2026-04-01"}
+ {:payments
+  [{:date "2026-04-05",
+    :type "PAYMENT",
+    :source "BUYER",
+    :total 2157.0,
+    :paymentOrder {:date "2026-05-04", :id "968060"},
+    :id "1381394348"}],
+  :buyerType "PERSON",
+  :deliveryRegion {:name "Санкт-Петербург", :id 2},
+  :fake false,
+  :paymentType "POSTPAID",
+  :statusUpdateDate "2026-04-05T15:13:35.985+03:00",
+  :currency "RUR",
+  :status "DELIVERED",
+  :id 55615697984,
+  :subsidies
+  [{:amount 2043.0, :type "SUBSIDY", :operationType "ACCRUAL"}],
+  :commissions
+  [{:type "DELIVERY_TO_CUSTOMER", :actual 210.0}
+   {:type "PAYMENT_TRANSFER", :actual 67.2}
+   {:type "AGENCY", :actual 0.12}
+   {:type "FEE", :actual 2142.0}
+   {:type "DELIVERY_TO_CUSTOMER", :actual 107.0}
+   {:type "AUCTION_PROMOTION", :actual 1.44}],
+  :partnerOrderId "55615697984",
+  :items
+  [{:warehouse {:name "SHEGIDA 2", :id 1521756},
+    :bidFee 342,
+    :prices
+    [{:type "MARKETPLACE", :costPerItem 2043.0, :total 2043.0}
+     {:type "BUYER", :costPerItem 2157.0, :total 2157.0}],
+    :marketSku 4561003295,
+    :count 1,
+    :shopSku "109/Изумрудный54",
+    :offerName "Платье офисное повседневное оверсайз",
+    :cisList ["(01)04660322670228(21)5N7_8MGPEN?=a"]}],
+  :creationDate "2026-04-01"}]
