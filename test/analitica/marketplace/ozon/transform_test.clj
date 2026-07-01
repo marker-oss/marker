@@ -163,10 +163,18 @@
    :services       []
    :type           "transaction"})
 
-(deftest canceled-no-double-count-with-return
+(deftest canceled-and-return-ops-stay-distinct-no-merge
   ;; Verify that one Canceled op → one return line, and a separate
   ;; ClientReturnAgentOperation (different operation_id) → its own return line.
-  ;; Neither is dropped, merged, or produces a sale line. No double-counting.
+  ;; Neither is dropped, merged, or produces a sale line.
+  ;;
+  ;; SCOPE: these are two DISTINCT operation_ids, so this proves
+  ;; "distinct ops → distinct lines (no merge)" — NOT that a single physical
+  ;; return arriving as BOTH a Canceled op and a ClientReturnAgentOperation is
+  ;; de-duplicated. That double-count cannot happen in production: live Ozon
+  ;; return *counts* come from the realization path
+  ;; (return_commission.quantity), not from transaction-list operation_type, so
+  ;; the Canceled→return relabel here never contributes to return quantity.
   (testing "two distinct raw ops each produce exactly one return finance-line"
     (let [sku-map {111 "ART-001"}
           lines   (transform/->finance-report

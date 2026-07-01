@@ -95,7 +95,7 @@
 
 (defn report
   [period & {:keys [marketplace]}]
-  (println "\nАнализ % выкупа...")
+  (println "\nАнализ доли невозвратов...")
   (let [data    (analyze period :marketplace marketplace)
         total-o (reduce + 0 (map :ordered data))
         total-b (reduce + 0 (map :bought data))
@@ -107,9 +107,9 @@
      [["Всего операций"    total-o]
       ["Выкуплено"         total-b]
       ["Возвращено"        total-r]
-      ["Общий % выкупа"    (str (math/percentage total-b total-o) "%")]])
+      ["Общая доля невозвратов" (str (math/percentage total-b total-o) "%")]])
 
-    (println "\n── Низкий % выкупа (< 70%, мин. 3 операции) ──")
+    (println "\n── Низкая доля невозвратов (< 70%, мин. 3 операции) ──")
     (if (seq low)
       (table/print-table
        [[:article "Артикул"] [:subject "Предмет"] [:ordered "Операций"]

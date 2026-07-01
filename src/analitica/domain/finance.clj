@@ -154,17 +154,20 @@
   [article lines storage-by-article]
   (let [sales-lines  (filter sale-row? lines)
         return-lines (filter return-row? lines)
-        ;; FR-004 net-of-returns COGS: cost-per-unit × max(0, sold−returned).
-        ;; The previous formula charged cost on gross sold units (returns ignored).
-        ;; The even-older `(max 1 (or quantity 1))` clamp before that overstated
-        ;; by 30× for spread rows (quantity = 1/30 → floored to 1) and fabricated
-        ;; cogs for service rows where quantity = 0/nil.
-        ;; See finance-cogs-test for full regression coverage.
-        cost-per-unit (if (seq sales-lines) (line-cost (first sales-lines)) 0.0)
-        sales-qty    (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
-        returns-qty  (reduce + 0 (map #(or (:quantity %) 0) return-lines))
-        net-units    (max 0 (- sales-qty returns-qty))
-        total-cost   (* cost-per-unit net-units)
+        ;; FR-004 net-of-returns COGS, computed PER LINE at each line's own unit
+        ;; cost, then returned units credited back at their own unit cost, clamp ≥0.
+        ;; Per-line (NOT a single first-line cost × net-units) is required because one
+        ;; :article can span barcodes with DIFFERENT 1C costs — a size-suffixed finance
+        ;; article ("6405/Голубой48") misses the strict 1C article key so each line
+        ;; falls through to its own per-barcode cost. Per-line keeps Σ by-sku ==
+        ;; by-article (P7) and is order-independent. The earlier gross formula ignored
+        ;; returns; the even-older `(max 1 qty)` clamp overstated 30× for spread rows
+        ;; (quantity = 1/30 → floored to 1). See finance-cogs-test for regression coverage.
+        ;; (Edge: an article where one barcode's in-period returns exceed its own sales
+        ;; can differ from Σ by-sku by that per-barcode clamp — rare, documented.)
+        sales-cost   (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) sales-lines))
+        returns-cost (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) return-lines))
+        total-cost   (max 0.0 (- sales-cost returns-cost))
         ;; First non-nil :marketplace wins; cross-MP article collisions
         ;; (rare but possible per Sales.7.3) collapse to whichever MP
         ;; appears first in the row order. Caller should disambiguate
@@ -263,16 +266,14 @@
        (map (fn [[[article barcode] lines]]
               (let [sales-lines  (filter sale-row? lines)
                     return-lines (filter return-row? lines)
-                    ;; FR-004 net-of-returns COGS: cost-per-unit × max(0, sold−returned).
-                    ;; Mirrors the by-article fix; the previous formula charged cost on
-                    ;; gross sold units (returns ignored). The even-older `(max 1 qty)`
-                    ;; clamp before that overstated by 30× for Ozon spread rows.
-                    ;; See by-sku-cogs-* tests in finance-cogs-test for regression coverage.
-                    sku-cost-per-unit (if (seq sales-lines) (line-cost (first sales-lines)) 0.0)
-                    sku-sales-qty     (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
-                    sku-returns-qty   (reduce + 0 (map #(or (:quantity %) 0) return-lines))
-                    sku-net-units     (max 0 (- sku-sales-qty sku-returns-qty))
-                    total-cost        (* sku-cost-per-unit sku-net-units)]
+                    ;; FR-004 net-of-returns COGS, per line at each line's own unit
+                    ;; cost minus returned units at their own cost, clamp ≥0. Per-line
+                    ;; matches the by-article path so Σ by-sku == by-article (P7). A
+                    ;; [article,barcode] group is cost-homogeneous, but per-line keeps
+                    ;; the two paths formula-identical. See by-sku-cogs-* in finance-cogs-test.
+                    sku-sales-cost   (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) sales-lines))
+                    sku-returns-cost (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) return-lines))
+                    total-cost       (max 0.0 (- sku-sales-cost sku-returns-cost))]
                 {:article     article
                  :barcode     barcode
                  :tech-size   (when (and size-map barcode) (get size-map barcode))

@@ -290,3 +290,28 @@
       (testing "P7: Σ per-article :total-cost = 400.0"
         (is (= 400.0 per-article-sum)
             (str "Expected 400.0, got " per-article-sum))))))
+
+(deftest cogs-per-line-heterogeneous-costs-reconcile
+  ;; Adversarial-review guard (Lens 1/2, FR-004): a single :article can span
+  ;; barcodes with DIFFERENT 1C costs (a size-suffixed finance article misses the
+  ;; strict 1C key → each line resolves to its own per-barcode cost). COGS MUST sum
+  ;; each line at its OWN cost, NOT collapse to the first sale-line's cost × net-units
+  ;; (that understated ~80% and broke P7 between by-sku and by-article).
+  (with-redefs [cost-price/get-price (fn [_article barcode]
+                                       (case barcode
+                                         "BC-CHEAP"  100.0
+                                         "BC-PRICEY" 900.0
+                                         0.0))]
+    (let [rows [{:marketplace :wb :rrd-id 1 :article "HET" :barcode "BC-CHEAP"  :operation "sale" :quantity 1 :retail-amount 200.0 :for-pay 160.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-05"}
+                {:marketplace :wb :rrd-id 2 :article "HET" :barcode "BC-PRICEY" :operation "sale" :quantity 1 :retail-amount 999.0 :for-pay 800.0 :date-from "2026-04-01" :date-to "2026-04-30" :event-date "2026-04-06"}]
+          by-art  (first (finance/by-article rows))
+          sku-sum (reduce + 0.0 (map :total-cost (finance/by-sku rows)))]
+      (testing "by-article sums each line at its own cost (100+900=1000), not first-cost×2 (200)"
+        (is (= 1000.0 (:total-cost by-art))
+            (str "Expected 1000.0 (100+900). Got " (:total-cost by-art)
+                 " — 200.0 would mean per-line costs were collapsed to the first line's cost.")))
+      (testing "P7: Σ by-sku :total-cost == by-article :total-cost"
+        (is (= (:total-cost by-art) sku-sum)
+            (str "by-article " (:total-cost by-art) " vs Σ by-sku " sku-sum)))
+      (testing "order-independent: reversed input yields the same by-article total-cost"
+        (is (= 1000.0 (:total-cost (first (finance/by-article (reverse rows))))))))))

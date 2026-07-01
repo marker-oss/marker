@@ -1153,51 +1153,105 @@
 ;; B4e. max-ДРР / headroom / over-ceiling? — FR-P4.2 (pure + integration)
 ;; ---------------------------------------------------------------------------
 
+;; Real handler helper (FR-005 numerator). Aliased here so both the pure
+;; formula test below and the isolation test further down share one source.
+(def ^:private max-drr-numerator #'marker-api/max-drr-numerator)
+
 (deftest sku-list-max-drr-formula-pure
   ;; The sku-list-handler builds per-SKU rows inline. This test verifies the
-  ;; max-ДРР formula that must appear in each row:
-  ;;   max-drr-pct   = (net-profit + ads) / revenue × 100
+  ;; max-ДРР formula that must appear in each row (FR-005 / UE.7):
+  ;;   max-drr-numer = for-pay − cogs − logistics − storage − penalties − acceptance
+  ;;   max-drr-pct   = max-drr-numer / revenue × 100
   ;;   drr-headroom-pct = max-drr-pct − drr-pct
   ;;   over-ceiling? = drr-pct > max-drr-pct
-  ;; These mirror analitica.domain.unit_economics/calculate (UE.7).
-  (testing "max-drr-pct formula matches UE canon"
-    ;; revenue=10000, for-pay=8000, cogs=3000, ads=500
-    ;; net-profit (proxy) = for-pay - cogs - ads = 8000-3000-500 = 4500
-    ;; max-drr-numer = net-profit + ads = 4500+500 = 5000
-    ;; max-drr-pct = 5000/10000*100 = 50.0
-    (let [rev     10000.0
-          for-pay  8000.0
-          cogs     3000.0
-          ads       500.0
-          ;; replicate the inline formula used in sku-list-handler
-          margin    (analitica.util.math/percentage (- for-pay cogs) (max 1.0 for-pay))
-          drr-pct   (analitica.util.math/percentage ads rev)
-          ;; max-drr uses net-profit: for-pay - cogs - ads (no logistics etc. at sku-list level)
-          net-profit (- for-pay cogs ads)
-          max-drr-numer (+ net-profit ads)
+  ;; The numerator MUST come from the real handler helper so a reverted
+  ;; deduction is caught here, not silently re-implemented with the old formula.
+  (testing "max-drr-pct uses the FR-005 numerator (all variable costs deducted)"
+    ;; spec fixture: for-pay=700 cogs=200 logistics=50 storage=20 penalties=10
+    ;;               acceptance=20 → numerator=400 ; revenue=1000 → 40.0
+    ;;               (before-would-be: (700−200)/1000×100 = 50.0)
+    (let [rev        1000.0
+          for-pay     700.0
+          cogs        200.0
+          logistics    50.0
+          storage      20.0
+          penalties    10.0
+          acceptance   20.0
+          ads          50.0
+          margin        (analitica.util.math/percentage (- for-pay cogs) (max 1.0 for-pay))
+          drr-pct       (analitica.util.math/percentage ads rev)
+          ;; Call the REAL handler helper (not an inline re-implementation).
+          max-drr-numer (max-drr-numerator for-pay cogs logistics storage penalties acceptance)
           max-drr-pct   (analitica.util.math/percentage max-drr-numer rev)
           headroom-pct  (analitica.util.math/round2 (- (or max-drr-pct 0.0) (or drr-pct 0.0)))
           over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
-      (is (= 62.5 margin)         "margin % = (for-pay − cogs) / for-pay × 100")
-      (is (= 50.0 max-drr-pct)   "max-drr-pct = (net-profit+ads)/revenue*100")
-      (is (= 5.0  drr-pct)       "drr-pct = ads/revenue*100")
-      (is (= 45.0 headroom-pct)  "headroom = max-drr - drr")
-      (is (false? over-ceiling?) "ads < max ceiling → not over")))
+      (is (= 400.0 max-drr-numer) "numerator = for-pay − cogs − logistics − storage − penalties − acceptance")
+      (is (= 71.43 margin)        "margin % = (for-pay − cogs) / for-pay × 100")
+      (is (= 40.0 max-drr-pct)    "max-drr-pct = numerator/revenue*100  ;; before-would-be 50.0")
+      (is (= 5.0  drr-pct)        "drr-pct = ads/revenue*100")
+      (is (= 35.0 headroom-pct)   "headroom = max-drr - drr")
+      (is (false? over-ceiling?)  "ads < max ceiling → not over")))
 
   (testing "over-ceiling? fires when ads exceed break-even"
-    ;; margin article: for-pay=1000, cogs=1200 (loss), ads=200
-    ;; net-profit = 1000-1200-200 = -400
-    ;; max-drr-numer = -400+200 = -200 → max-drr-pct = -20%
+    ;; loss article: for-pay=1000, cogs=1200 (already below break-even), ads=200
+    ;; numerator = 1000-1200-0-0-0-0 = -200 → max-drr-pct = -20%
     ;; drr-pct = 200/1000*100 = 20% → 20 > -20 → over-ceiling?=true
     (let [rev     1000.0
           for-pay 1000.0
           cogs    1200.0
           ads      200.0
-          net-profit   (- for-pay cogs ads)
-          max-drr-pct  (analitica.util.math/percentage (+ net-profit ads) rev)
+          max-drr-pct  (analitica.util.math/percentage
+                         (max-drr-numerator for-pay cogs 0.0 0.0 0.0 0.0) rev)
           drr-pct      (analitica.util.math/percentage ads rev)
           over-ceiling? (boolean (and max-drr-pct drr-pct (> drr-pct max-drr-pct)))]
       (is (true? over-ceiling?) "loss-making SKU must be flagged over-ceiling"))))
+
+(deftest sku-list-handler-threads-variable-costs-into-ceiling
+  ;; FR-005 WIRING guard: the isolation test above proves the helper is
+  ;; correct; this proves sku-list-handler actually READS
+  ;; :logistics/:storage/:penalties/:acceptance off the by-article row and
+  ;; threads them into the ceiling. If any of logistics-a/storage-a/
+  ;; penalties-a/acceptance-a wiring were reverted, :max-drr-pct would jump
+  ;; from 40.0 back toward the old gross-margin 50.0 and this test would fail.
+  ;;
+  ;; Spec fixture (metric-formulas.edn §FR-005):
+  ;;   revenue=1000 for-pay=700 cogs(total-cost)=200
+  ;;   logistics=50 storage=20 penalties=10 acceptance=20
+  ;;   numerator = 700 − 200 − 50 − 20 − 10 − 20 = 400 → max-drr-pct = 40.0
+  ;;   (old gross-margin numerator 700−200=500 would give 50.0)
+  (let [by-art-row {:article    "SKU-WIRE"
+                    :subject    "Wiring fixture"
+                    :marketplace :ozon
+                    :revenue    1000.0
+                    :for-pay    700.0
+                    :total-cost 200.0
+                    :logistics  50.0
+                    :storage    20.0
+                    :penalties  10.0
+                    :acceptance 20.0
+                    :sales-qty  5
+                    :returns-qty 0}]
+    (with-redefs
+      [load-finance-var                          (fn [& _] [{:for-pay 700.0}])
+       load-sales-var                            (fn [& _] [])
+       compute-pnl-var                           (fn [& _] {:ad-spend 0.0})
+       analitica.domain.finance/by-article       (fn [_] [by-art-row])
+       analitica.domain.sales/by-article         (fn [_] [])
+       analitica.domain.stock/fetch-stocks       (fn [& _] [])
+       analitica.domain.stock/by-article         (fn [_] [])
+       analitica.domain.pnl/ad-spend-by-article  (fn [& _] {"SKU-WIRE" 0.0})
+       analitica.domain.finance/date-basis-split (fn [& _] {:api 1.0 :spread 0.0 :flat 0.0})]
+      (let [body (marker-api/sku-list-handler {:params {}})
+            sku  (first (:skus body))]
+        (is (map? body) "handler returned a map (not an exception)")
+        (is (nil? (:error body)) (str "handler errored: " (:error body)))
+        (is (= "SKU-WIRE" (:id sku)) "fixture row must survive to the response")
+        (testing "max-drr-pct reflects logistics+storage+penalties+acceptance deductions"
+          ;; This is the load-bearing assertion: 40.0 only if all four are threaded.
+          (is (= 40.0 (:max-drr-pct sku))
+              "max-drr-pct must be 40.0 (numerator 400), NOT 50.0 (gross-margin) — variable costs threaded"))
+        (testing "headroom = ceiling − drr (ads=0 → drr=0 → headroom = ceiling)"
+          (is (= 40.0 (:drr-headroom-pct sku))))))))
 
 (deftest ^:integration sku-list-max-drr-fields-test
   ;; FR-P4.2: sku-list rows must carry the three max-ДРР fields.
@@ -1676,8 +1730,8 @@
 ;; ---------------------------------------------------------------------------
 ;; FR-005: max-drr-numerator must include all variable costs
 ;; ---------------------------------------------------------------------------
-
-(def ^:private max-drr-numerator #'marker-api/max-drr-numerator)
+;; (the #'marker-api/max-drr-numerator var alias is defined once, above the
+;;  B4e max-ДРР section, so the pure formula test can reference it too.)
 
 (deftest max-drr-numerator-includes-variable-costs
   ;; Fixture from spec contract (metric-formulas.edn §FR-005):
@@ -1705,4 +1759,7 @@
     (is (= 500.0 (max-drr-numerator 700.0 200.0 0.0 0.0 0.0 0.0))))
 
   (testing "coalesces nil variable-cost fields to 0"
-    (is (= 400.0 (max-drr-numerator 700.0 200.0 50.0 20.0 10.0 20.0)))))
+    ;; nil variable-cost args must be treated as 0.0 (exercises the (or x 0.0)
+    ;; coalescing) → numerator = for-pay − cogs = 500.0.
+    (is (= 500.0 (max-drr-numerator 700.0 200.0 nil nil nil nil))
+        "nil logistics/storage/penalties/acceptance coalesce to 0 → 700 − 200 = 500")))
