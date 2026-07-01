@@ -622,3 +622,46 @@
       (is (seq (table-info ds "opex_rows")) "opex_rows must survive treasury migration")
       (is (seq (table-info ds "opex_auto_rules"))
           "opex_auto_rules must survive treasury migration (015 classification seed, §3.A)"))))
+
+;; ---------------------------------------------------------------------------
+;; T050 (spec 015 US5) — opex_auto_rules table + idx_opex_auto_active
+;;   Dedicated assertions for the auto-rule engine DDL (FR-020/FR-021).
+;; ---------------------------------------------------------------------------
+
+(deftest spec-015-us5-opex-auto-rules-table-exists
+  (testing "spec 015 T050: opex_auto_rules table created by init! with all required columns"
+    (let [ds   (db/init!)
+          info (table-col-info ds "opex_auto_rules")
+          cols (set (map :name info))]
+      (is (seq info) "opex_auto_rules table must exist after init!")
+      (doseq [c ["id" "category" "amount" "marketplace" "cadence"
+                 "effective_from" "effective_to" "note" "created_at"]]
+        (is (contains? cols c) (str "opex_auto_rules missing column: " c)))
+      ;; id is the sole PK
+      (let [pk-col (->> info (filter #(pos? (:pk %))) first)]
+        (is (= "id" (:name pk-col)) "id must be the primary key of opex_auto_rules"))))
+  (testing "spec 015 T050: opex_rows.source DEFAULT 'manual' and rule_id nullable columns exist"
+    (let [ds   (db/init!)
+          info (table-col-info ds "opex_rows")
+          src  (find-column info "source")
+          rid  (find-column info "rule_id")]
+      (is (some? src) "opex_rows.source column must exist")
+      (is (= "TEXT" (:type src)) "opex_rows.source must be TEXT")
+      (is (some? rid) "opex_rows.rule_id column must exist"))))
+
+(deftest spec-015-us5-idx-opex-auto-active-exists
+  (testing "spec 015 T050: idx_opex_auto_active index exists on opex_auto_rules after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "idx_opex_auto_active")
+          "idx_opex_auto_active index on opex_auto_rules must exist"))))
+
+(deftest spec-015-us5-opex-auto-rules-idempotent
+  (testing "spec 015 T050: double init! does not throw; opex_auto_rules present exactly once"
+    (db/init!)
+    (let [ds (db/init!)]
+      (is (= 1 (count (jdbc/execute! ds
+                        ["SELECT name FROM sqlite_master WHERE type='table' AND name='opex_auto_rules'"]
+                        {:builder-fn rs/as-unqualified-maps})))
+          "opex_auto_rules present exactly once after 2× init!")
+      (is (index-exists? ds "idx_opex_auto_active")
+          "idx_opex_auto_active still present after 2× init!"))))

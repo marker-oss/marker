@@ -211,9 +211,13 @@
 
 (defn materialize-rules!
   "For each active opex_auto_rules row covering period-month (YYYY-MM),
-   UPSERT an opex_rows row with source='auto', rule_id set.
-   Idempotent: ON CONFLICT (rule_id, period_month) DO NOTHING.
-   Override-safe: manual edit of a materialized row is preserved."
+   INSERT OR IGNORE an opex_rows row with source='auto', rule_id set.
+   Idempotent: the partial UNIQUE index idx_opex_rule_period on
+   (rule_id, period_month) WHERE rule_id IS NOT NULL causes INSERT OR IGNORE
+   to skip duplicate rows silently — no exception, no double-count.
+   Override-safe: if the auto-row was already inserted (same rule_id+period),
+   the second run produces 0 update-count, so a manually-overridden row is never
+   clobbered."
   [period-month]
   (let [rules (db/query
                 ["SELECT id, category, amount, marketplace, cadence,
@@ -225,11 +229,10 @@
         counts (doall
                 (for [rule rules]
                   (let [res (db/execute!
-                              ["INSERT INTO opex_rows
+                              ["INSERT OR IGNORE INTO opex_rows
                                   (period_month, category, amount, marketplace,
                                    source, rule_id)
-                                VALUES (?, ?, ?, ?, 'auto', ?)
-                                ON CONFLICT (rule_id, period_month) DO NOTHING"
+                                VALUES (?, ?, ?, ?, 'auto', ?)"
                                period-month
                                (:category rule)
                                (double (:amount rule))

@@ -6,7 +6,7 @@
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.middleware.content-type :refer [wrap-content-type]]
             [ring.middleware.resource :as resource]
-            [compojure.core :refer [defroutes GET POST PUT]]
+            [compojure.core :refer [defroutes GET POST PUT DELETE]]
             [compojure.route :as route]
             [hiccup.core]
             [analitica.config :as config]
@@ -41,6 +41,7 @@
             [analitica.web.api.search :as search-api]
             [analitica.web.api.marker :as marker-api]
             [analitica.web.api.settings :as settings-api]
+            [analitica.web.api.tax-opex :as tax-opex-api]
             [analitica.web.api.feedback :as feedback-api]
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.middleware.trace :as trace-mw]
@@ -1299,6 +1300,15 @@
     (settings-api/test-marketplace (assoc-in req [:body :marketplace] mp)))
   (PUT  "/api/v1/settings/marketplace/:mp" [mp :as req]
     (settings-api/put-marketplace (assoc-in req [:body :marketplace] mp)))
+
+  ;; ---------------------------------------------------------------------------
+  ;; OPEX auto-rules API  (/api/v1/opex/auto-rules)
+  ;; spec 015 US5 (T060) — auto-rule CRUD (materialize-rules! triggered by GET opex)
+  ;; NOTE: more-specific /auto-rules route MUST precede any /:id catch-all
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/opex/auto-rules"     req (tax-opex-api/get-auto-rules req))
+  (POST   "/api/v1/opex/auto-rules"     req (tax-opex-api/post-auto-rule req))
+  (DELETE "/api/v1/opex/auto-rules/:id" req (tax-opex-api/delete-auto-rule req))
 
   ;; ---------------------------------------------------------------------------
   ;; Feedback API  (/api/v1/feedback)
