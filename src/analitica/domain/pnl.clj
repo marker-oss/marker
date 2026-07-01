@@ -1,12 +1,15 @@
 (ns analitica.domain.pnl
   (:require [analitica.domain.finance :as finance]
             [analitica.domain.cost-price :as cost-price]
+            [analitica.domain.tax :as tax]
+            [analitica.domain.opex :as opex]
             [analitica.db :as db]
             [analitica.report.table :as table]
             [analitica.report.export :as export]
             [analitica.util.math :as math]
             [analitica.util.safe :as safe]
-            [analitica.util.time :as t]))
+            [analitica.util.time :as t]
+            [clojure.string :as str]))
 
 (defn- derive-date-range
   "Fallback used only when the caller did not pass `:from`/`:to`: take
@@ -223,7 +226,7 @@
 
    Returns a map with the P&L.1–P&L.5 fields unconditionally; P&L.6
    cf-* / adjusted-* fields appear only when cf-adjustments is non-nil."
-  [finance-data & {:keys [cf-adjustments marketplace from to]}]
+  [finance-data & {:keys [cf-adjustments marketplace from to management]}]
   (let [by-art        (finance/by-article finance-data)
         [from to]     (if (and from to)
                         [from to]
@@ -264,7 +267,46 @@
         cf-total      (+ cf-costs cf-income)
         has-cf?       (some? cf-adjustments)
         adj-gross     (+ gross-profit cf-total)
-        adj-net       (- adj-gross ad-spend)]
+        adj-net       (- adj-gross ad-spend)
+        ;; -------------------------------------------------------------------
+        ;; Management-basis layer (spec 015 §P&L.10): tax (УСН/НДС) + OPEX
+        ;; ABOVE the frozen reconciled basis. Computed only when :management
+        ;; is passed; otherwise the output is byte-for-byte identical to today
+        ;; (SC-006, INV-4). P&L.1–P&L.6 above are NEVER touched by this.
+        ;;
+        ;; tax/vat are derived from the ALREADY-computed aggregates
+        ;; (for_pay / revenue / cogs / opex — no second pass, R8).
+        ;; -------------------------------------------------------------------
+        has-mgmt?     (some? management)
+        tax-config    (when has-mgmt? (:tax-config management))
+        mgmt-opex     (when has-mgmt? (math/round2 (double (or (:opex management) 0.0))))
+        opex-by-cat   (when has-mgmt? (or (:opex-by-category management) {}))
+        mgmt-configured? (when has-mgmt?
+                           (boolean (or tax-config
+                                        (pos? (or mgmt-opex 0.0)))))
+        tax-res       (when has-mgmt?
+                        (tax/compute-period
+                          {:taxation-type       (or (:taxation-type tax-config) :none)
+                           :usn-rate            (double (or (:usn-rate tax-config) 0.0))
+                           :vat-rate            (double (or (:vat-rate tax-config) 0.0))
+                           :official-cost-price (boolean (:official-cost-price tax-config))
+                           :for-pay             (double for-pay)
+                           :revenue             (double revenue)
+                           :cogs                (double cogs)
+                           :opex                (double (or mgmt-opex 0.0))}))
+        mgmt-tax      (when has-mgmt? (or (:tax tax-res) 0.0))
+        mgmt-vat      (when has-mgmt? (or (:vat tax-res) 0.0))
+        mgmt-tax-base (when has-mgmt? (or (:tax-base tax-res) 0.0))
+        ;; base ≤ 0 while a УСН regime IS configured ⇒ tax clamped to 0 (loss),
+        ;; distinguishing configured-but-zero from inert (FR-016 / SC-007).
+        usn?          (contains? #{:usn-income :usn-income-expense}
+                                 (:taxation-type tax-config))
+        zero-reason   (when (and has-mgmt? usn? (<= (or mgmt-tax-base 0.0) 0.0))
+                        :base-non-positive)
+        mgmt-profit   (when has-mgmt?
+                        (math/round2 (- net-profit mgmt-opex mgmt-tax mgmt-vat)))
+        mgmt-profit-we (when has-mgmt?
+                         (math/round2 (- net-profit mgmt-tax mgmt-vat)))]
     (cond->
       {:revenue       (math/round2 revenue)
        :wb-reward     (math/round2 wb-reward)
@@ -306,7 +348,19 @@
              :cf-total            (math/round2 cf-total)
              :adjusted-gross      (math/round2 adj-gross)
              :adjusted-net        (math/round2 adj-net)
-             :adjusted-margin     (math/percentage adj-net revenue)))))
+             :adjusted-margin     (math/percentage adj-net revenue))
+      has-mgmt?
+      (assoc :management-configured? mgmt-configured?
+             :tax-base               (math/round2 mgmt-tax-base)
+             :tax                    (math/round2 mgmt-tax)
+             :vat                    (math/round2 mgmt-vat)
+             :opex                   mgmt-opex
+             :opex-by-category       opex-by-cat
+             :profit                 mgmt-profit
+             :profit-without-expense mgmt-profit-we
+             :management-margin      (math/percentage mgmt-profit revenue)
+             :margin-without-expense (math/percentage mgmt-profit-we revenue)
+             :management-zero-reason zero-reason))))
 
 (defn load-cf-adjustments [from to marketplace]
   (when (and from to (= marketplace :ozon))
@@ -314,15 +368,76 @@
       (when (some pos? (map #(Math/abs (or % 0)) (vals adj)))
         adj))))
 
+(defn- period-months
+  "Distinct (year, month) pairs spanning the [from..to] window (YYYY-MM[-DD]
+   strings). Used to look up tax-config for each month of the period. Returns
+   a seq of [year month] longs, month-ordered."
+  [from to]
+  (let [ym    (fn [s] (mapv #(Long/parseLong %) (take 2 (str/split s #"-"))))
+        [fy fm] (ym from)
+        [ty tm] (ym to)]
+    (loop [y fy m fm acc []]
+      (if (or (> y ty) (and (= y ty) (> m tm)))
+        acc
+        (recur (if (= m 12) (inc y) y)
+               (if (= m 12) 1 (inc m))
+               (conj acc [y m]))))))
+
+(defn load-management-adjustments
+  "Generalised management seam (spec 015 §3.A, US4/T032). Loads the three
+   management inputs for the [from..to] period and assembles the :management
+   block that `calculate` consumes.
+
+     :cf               Ozon cash-flow adjustments map (nil for non-Ozon MPs or
+                       when no non-trivial cf lines exist). `load-cf-adjustments`
+                       itself gates on marketplace=:ozon, so calling it
+                       unconditionally here is correct — WB/YM always get nil
+                       (T032: removed the redundant outer (= marketplace :ozon)
+                       guard; inner gate in load-cf-adjustments is the authority).
+     :opex             Σ OPEX for the period+marketplace (double, ≥ 0).
+                       Allocation rule R11 (T033): per-MP query = tagged rows of
+                       that MP only; blended (marketplace nil) = all per-MP +
+                       unallocated NULL rows — no double-count. Delegated to
+                       opex/sum-by-category which implements R11 directly.
+     :opex-by-category {category → double}.
+     :tax-config       the TaxConfigRow for the FIRST month of the period, or
+                       nil when no config exists (nil ⇒ tax 0, FR-004).
+     :configured?      true when a tax-config exists OR OPEX > 0 (FR-016).
+
+   Returns {:cf {..|nil} :opex d :opex-by-category {..} :tax-config {..|nil}
+            :configured? bool}. Pure over the stores (no finance second-pass, R8)."
+  [from to marketplace]
+  (let [;; T032: call load-cf-adjustments unconditionally — it gates on :ozon internally.
+        ;; WB/YM ⇒ nil; Ozon with non-trivial cf lines ⇒ the cf map.
+        cf         (load-cf-adjustments from to marketplace)
+        ;; T033: opex/sum-by-category implements R11 allocation directly:
+        ;;   marketplace non-nil → tagged rows for that MP only (NULL excluded)
+        ;;   marketplace nil     → ALL rows (per-MP tagged + unallocated NULL), no double-count
+        opex-agg   (opex/sum-by-category from to marketplace)
+        opex-total (double (or (:total opex-agg) 0.0))
+        opex-by-cat (or (:by-category opex-agg) {})
+        ;; tax-config keyed by (year, month); the period's first month drives
+        ;; the regime/rate (mid-year rate change is per-month, but the P&L
+        ;; period is a single month in practice — first month wins).
+        [y m]      (first (period-months from to))
+        tax-config (when (and y m) (tax/config-for-month y m))]
+    {:cf               cf
+     :opex             opex-total
+     :opex-by-category opex-by-cat
+     :tax-config       tax-config
+     :configured?      (boolean (or tax-config (pos? opex-total)))}))
+
 (defn report
   "Print P&L report."
   [period & {:keys [marketplace source] :or {marketplace :wb source :db}}]
   (println "\nЗагрузка P&L...")
   (let [[from to] (t/resolve-period period)
         fin-data  (finance/fetch-finance period :marketplace marketplace :source source)
-        cf-adj    (load-cf-adjustments from to marketplace)
+        ;; T032: replace load-cf-adjustments call site with load-management-adjustments.
+        ;; The :cf key carries the Ozon cf map (or nil for WB/YM) via the inner gate.
+        mgmt-blk  (load-management-adjustments from to marketplace)
         pnl       (calculate fin-data
-                             :cf-adjustments cf-adj
+                             :cf-adjustments (:cf mgmt-blk)
                              :marketplace marketplace
                              :from from :to to)]
 
@@ -392,9 +507,10 @@
         marketplace (:marketplace opts-map)
         [from to]   (t/resolve-period period)
         fin-data    (apply finance/fetch-finance period opts)
-        cf-adj      (load-cf-adjustments from to marketplace)
+        ;; T032: replace load-cf-adjustments call site with load-management-adjustments.
+        mgmt-blk    (load-management-adjustments from to marketplace)
         pnl         (calculate fin-data
-                               :cf-adjustments cf-adj
+                               :cf-adjustments (:cf mgmt-blk)
                                :marketplace marketplace
                                :from from :to to)
         pnl-rows    (cond->

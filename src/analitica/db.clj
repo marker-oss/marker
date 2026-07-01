@@ -471,7 +471,47 @@
       content_type TEXT,
       size         INTEGER,
       stored_path  TEXT
-    )"])
+    )"
+
+   ;; spec 015 — management-basis layer: taxes (УСН/НДС) + OPEX
+   "CREATE TABLE IF NOT EXISTS tax_config (
+      year                INTEGER NOT NULL,
+      month               INTEGER NOT NULL,
+      taxation_type       TEXT NOT NULL DEFAULT 'none',
+      usn_rate            REAL NOT NULL DEFAULT 0,
+      vat_rate            REAL NOT NULL DEFAULT 0,
+      official_cost_price INTEGER NOT NULL DEFAULT 1,
+      updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (year, month)
+    )"
+
+   "CREATE TABLE IF NOT EXISTS opex_rows (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_month TEXT NOT NULL,
+      category     TEXT NOT NULL,
+      amount       REAL NOT NULL,
+      marketplace  TEXT,
+      note         TEXT,
+      source       TEXT NOT NULL DEFAULT 'manual',
+      rule_id      INTEGER,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_opex_period ON opex_rows(period_month)"
+   "CREATE INDEX IF NOT EXISTS idx_opex_period_mp ON opex_rows(period_month, marketplace)"
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_opex_rule_period ON opex_rows(rule_id, period_month) WHERE rule_id IS NOT NULL"
+
+   "CREATE TABLE IF NOT EXISTS opex_auto_rules (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      category       TEXT NOT NULL,
+      amount         REAL NOT NULL,
+      marketplace    TEXT,
+      cadence        TEXT NOT NULL DEFAULT 'monthly',
+      effective_from TEXT NOT NULL,
+      effective_to   TEXT,
+      note           TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_opex_auto_active ON opex_auto_rules(effective_from, effective_to)"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init

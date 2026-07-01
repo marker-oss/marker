@@ -324,3 +324,67 @@
       (let [got (db/get-ad-campaign-stats "ozon" "2026-04-01" "2026-04-30")]
         (is (= 1 (count got)) "PK (marketplace, campaign_id, stat_date) dedups reruns")
         (is (= 1200 (:views (first got))))))))
+
+;; ---------------------------------------------------------------------------
+;; T004 (spec 015) — tax_config / opex_rows tables + indexes
+;; ---------------------------------------------------------------------------
+
+(defn- table-col-info [ds table-name]
+  (jdbc/execute! ds [(str "PRAGMA table_info(" table-name ")")]
+                 {:builder-fn rs/as-unqualified-maps}))
+
+(defn- index-exists? [ds index-name]
+  (let [rows (jdbc/execute! ds
+               ["SELECT name FROM sqlite_master WHERE type='index' AND name=?", index-name]
+               {:builder-fn rs/as-unqualified-maps})]
+    (some? (seq rows))))
+
+(deftest spec-015-tax-config-table-exists
+  (testing "spec 015 T004: tax_config table is created by init! with correct columns and PK"
+    (let [ds   (db/init!)
+          info (table-col-info ds "tax_config")
+          cols (set (map :name info))]
+      (is (seq info) "tax_config table must exist after init!")
+      (doseq [c ["year" "month" "taxation_type" "usn_rate" "vat_rate"
+                 "official_cost_price" "updated_at"]]
+        (is (contains? cols c) (str "tax_config missing column: " c)))
+      ;; Verify composite PK: both year and month have pk > 0
+      (let [pk-cols (->> info (filter #(pos? (:pk %))) (map :name) set)]
+        (is (contains? pk-cols "year")  "year must be part of PK")
+        (is (contains? pk-cols "month") "month must be part of PK")))))
+
+(deftest spec-015-opex-rows-table-exists
+  (testing "spec 015 T004: opex_rows table is created by init! with correct columns"
+    (let [ds   (db/init!)
+          info (table-col-info ds "opex_rows")
+          cols (set (map :name info))]
+      (is (seq info) "opex_rows table must exist after init!")
+      (doseq [c ["id" "period_month" "category" "amount" "marketplace"
+                 "note" "source" "rule_id" "created_at"]]
+        (is (contains? cols c) (str "opex_rows missing column: " c)))
+      ;; id is the sole PK
+      (let [pk-col (->> info (filter #(= 1 (:pk %))) first)]
+        (is (= "id" (:name pk-col)) "id must be the primary key of opex_rows")))))
+
+(deftest spec-015-opex-rows-indexes-exist
+  (testing "spec 015 T004: required indexes on opex_rows exist after init!"
+    (let [ds (db/init!)]
+      (is (index-exists? ds "idx_opex_period")
+          "idx_opex_period on opex_rows(period_month) must exist")
+      (is (index-exists? ds "idx_opex_period_mp")
+          "idx_opex_period_mp on opex_rows(period_month, marketplace) must exist")
+      (is (index-exists? ds "idx_opex_rule_period")
+          "idx_opex_rule_period unique partial index on opex_rows must exist"))))
+
+(deftest spec-015-tables-idempotent
+  (testing "spec 015 T004: calling init! twice does not throw; tables present exactly once"
+    (db/init!)
+    (let [ds (db/init!)]
+      (is (= 1 (count (jdbc/execute! ds
+                        ["SELECT name FROM sqlite_master WHERE type='table' AND name='tax_config'"]
+                        {:builder-fn rs/as-unqualified-maps})))
+          "tax_config present exactly once after 2× init!")
+      (is (= 1 (count (jdbc/execute! ds
+                        ["SELECT name FROM sqlite_master WHERE type='table' AND name='opex_rows'"]
+                        {:builder-fn rs/as-unqualified-maps})))
+          "opex_rows present exactly once after 2× init!"))))
