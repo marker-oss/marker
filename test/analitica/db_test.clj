@@ -94,6 +94,18 @@
                 (= 0.0 dflt))
             (str "ad_cost default should be 0 (got " (pr-str dflt) ")"))))))
 
+(deftest init!-creates-net-sales-column
+  (testing "spec 012: finance.net_sales exists after init!, type REAL"
+    (let [ds  (db/init!)
+          col (find-column (finance-column-info ds) "net_sales")]
+      (is (some? col) "net_sales column should exist in finance after init!")
+      (is (= "REAL" (:type col)) "net_sales column should be REAL")))
+  (testing "spec 012: net_sales migration is idempotent (2× init! → column present exactly once)"
+    (db/init!)
+    (let [ds   (db/init!)
+          n    (count (filter #(= "net_sales" (:name %)) (finance-column-info ds)))]
+      (is (= 1 n) "net_sales present exactly once after repeated init!"))))
+
 (deftest init!-creates-item-events-table
   (testing "Phase 5a: canonical event log table exists after init!.
             Each row = one lifecycle event of one item-unit; replaces

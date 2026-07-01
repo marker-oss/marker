@@ -36,11 +36,18 @@
 
    Sign conventions (RFC-14, RFC-15 — invariants enforced by transforms,
    not yet by schema until DB backfill is complete):
-   - :for-pay   ≥ 0 always. Sign is encoded in :operation-kind (sale = +,
+   - :for-pay   ≥ 0 for WB/Ozon (sign encoded in :operation-kind: sale = +,
                 return = − under L2 mp_payout formula). For :service /
                 :adjustment rows :for-pay is 0 — actual money lives in
                 dedicated fields (delivery-cost / storage-fee /
                 additional-payment / penalty / deduction).
+                YM EXCEPTION (spec 012): a YM sale row's :for-pay MAY be
+                negative (gross − Σdeductions can be < 0 on a loss-making,
+                heavily-returned SKU). The ≥0 assumption is enforced by the
+                WB/Ozon transforms only, not by this schema. YM returns keep
+                +abs for the L2 pair. Schema type is `number?` accordingly.
+   - :net-sales YM post-discount BUYER amount (Σ BUYER×qty); nil for WB/Ozon
+                where there is no platform-side discount (net == gross).
    - :quantity  ≥ 0 always. Returns use positive quantity together with
                 operation-kind = :return."
   [:map {:closed false}
@@ -57,7 +64,9 @@
    [:operation-kind    {:optional true} [:maybe [:enum :sale :return :service :adjustment]]]
    [:operation-subtype {:optional true} [:maybe :string]]
    [:quantity       [:maybe [:or :int :double]]]
-   [:for-pay        [:or :int :double]]
+   ;; number? (not [:or :int :double]) — YM sale rows may be negative (spec 012)
+   ;; and the value can be a ratio/BigDecimal from upstream Clojure math.
+   [:for-pay        number?]
 
    [:report-id          {:optional true} [:maybe [:or :int :double]]]
    ;; :nm-id holds the marketplace's internal product id — WB `nmId`,
@@ -75,6 +84,9 @@
    [:doc-type           {:optional true} [:maybe :string]]
    [:retail-price       {:optional true} [:maybe [:or :int :double]]]
    [:retail-amount      {:optional true} [:maybe [:or :int :double]]]
+   ;; :net-sales (spec 012) — YM post-discount BUYER amount (Σ BUYER×qty).
+   ;; nil for WB/Ozon (no platform discount → net == gross == :retail-amount).
+   [:net-sales          {:optional true} [:maybe number?]]
    [:sale-percent       {:optional true} [:maybe [:or :int :double]]]
    [:commission-pct     {:optional true} [:maybe [:or :int :double]]]
    ;; RFC-6 (closed 2026-04-28): renamed from :wb-commission. The

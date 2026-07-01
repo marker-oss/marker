@@ -84,6 +84,7 @@
       quantity           INTEGER,
       retail_price       REAL,
       retail_amount      REAL,
+      net_sales          REAL,
       sale_percent       REAL,
       commission_pct     REAL,
       mp_commission      REAL,
@@ -623,6 +624,15 @@
       (when-not has-ad-cost?
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN ad_cost REAL DEFAULT 0"])
         (println "Migration: finance.ad_cost column added")))
+    ;; Migration (012-ym-revenue-forpay-basis): add finance.net_sales column.
+    ;; YM post-discount BUYER amount (gross = MARKETPLACE lives in retail_amount);
+    ;; WB/Ozon stay NULL (net == gross). Additive, idempotent via PRAGMA check.
+    (let [info          (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                       {:builder-fn rs/as-unqualified-maps})
+          has-net-sales? (some #(= "net_sales" (:name %)) info)]
+      (when-not has-net-sales?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN net_sales REAL"])
+        (println "Migration: finance.net_sales column added")))
     ;; Migration (RFC-6, 2026-04-28): rename finance.wb_commission →
     ;; finance.mp_commission. The field is cross-MP (Ozon and YM also use
     ;; it for MP commission RUB) — the WB-prefixed legacy name was misleading.
