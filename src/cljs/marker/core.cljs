@@ -20,6 +20,7 @@
             [marker.pages.finance  :as finance]
             [marker.pages.products :as products]
             [marker.pages.dynamics :as dynamics]
+            [marker.pages.treasury :as treasury]
             [marker.pages.sync     :as sync-page]
             [marker.pages.settings :as settings-page]
             [marker.pages.feedback :as feedback]))
@@ -34,6 +35,7 @@
    :finance  "Финансы"
    :products "Товары"
    :dynamics "Динамика"
+   :treasury "Казначейство"
    :sync     "Синхронизация"
    :settings "Настройки"})
 
@@ -55,7 +57,10 @@
    [:dynamics :trends] "Тренды"
    [:dynamics :sales]  "Продажи"
    [:dynamics :geo]    "География"
-   [:dynamics :buyout] "Выкуп"})
+   [:dynamics :buyout] "Выкуп"
+   [:treasury :cashflow]    "ДДС"
+   [:treasury :registry]    "Реестр"
+   [:treasury :obligations] "Обязательства"})
 
 (defn- page-section
   "Return the section keyword for any page shape."
@@ -114,6 +119,7 @@
     :finance  "Финансовая отчётность и юнит-экономика"
     :products "Товарный каталог, остатки и себестоимость"
     :dynamics "Динамика продаж, география и тренды"
+    :treasury "Движение денежных средств, реестр и обязательства"
     :pulse    (str "Анализ данных " (mp-subtitle mp-filter))
     :sync     "Синхронизация с маркетплейсами"
     (str "Анализ данных " (mp-subtitle mp-filter))))
@@ -223,6 +229,7 @@
                  :finance  ($ finance/finance   {:tab tab})
                  :products ($ products/products {:tab tab})
                  :dynamics ($ dynamics/dynamics {:tab tab})
+                 :treasury ($ treasury/treasury {:tab tab})
                  ($ pulse/pulse {})))))
 
        ;; Tweaks panel (portals out of the page flow, fixed position)

@@ -7,7 +7,7 @@
      :returns    → schema-driven returns report
      :losses     → schema-driven losses report
      :finance    → schema-driven финансовый отчёт
-     :plan-fact  → placeholder (Phase 5)"
+     :plan-fact  → marker.pages.plan-fact (per-SKU План/Факт stub)"
   (:require [uix.core             :refer [$ defui]]
             [marker.ui.chrome     :refer [tabs]]
             [marker.util.nav      :as nav]
@@ -15,19 +15,8 @@
             [marker.pages.pnl     :as pnl]
             [marker.pages.unit    :as unit]
             [marker.pages.reports :as reports]
+            [marker.pages.plan-fact :as plan-fact]
             [marker.pages.reconciliation :as reconciliation]))
-
-(defui ^:private placeholder-tab [{:keys [title]}]
-  ($ :div {:class "page-content"}
-     ($ :div {:class "card section-card"
-              :style {:text-align "center" :padding "48px 24px"
-                      :color "var(--color-fg-muted)"}}
-        ($ :p {:style {:font-size   "14px" :font-weight 600
-                       :margin      "0 0 6px"
-                       :color       "var(--color-fg-primary)"}}
-           (str "«" title "»"))
-        ($ :p {:style {:font-size "12px" :margin 0}}
-           "Будет реализована в следующей фазе."))))
 
 (defui finance
   [{:keys [tab]}]
@@ -44,5 +33,5 @@
          :losses     ($ reports/report {:type :losses})
          :finance    ($ reports/report {:type :finance})
          :reconciliation ($ reconciliation/reconciliation {})
-         :plan-fact  ($ placeholder-tab {:title "План/Факт"})
+         :plan-fact  ($ plan-fact/plan-fact {})
          ($ pnl/pnl {})))))

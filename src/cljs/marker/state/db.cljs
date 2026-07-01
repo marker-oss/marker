@@ -53,4 +53,53 @@
 
    ;; Settings page — operator marketplace credentials
    ;; {:data <server settings map> :status {<mp> {:testing? bool :saving? bool :verdict {:valid? bool :detail str} :saved? bool :error str}}}
-   :marker/settings {:data nil :status {}}})
+   :marker/settings {:data nil :status {}}
+
+   ;; ---------------------------------------------------------------------
+   ;; 013 Frontend — new feature data slices.
+   ;; Each data key nil = "not yet loaded"; paired *-loading? starts false.
+   ;; ---------------------------------------------------------------------
+
+   ;; 015: tax config + OPEX
+   :marker/tax-config                 nil
+   :marker/tax-config-loading?        false
+   :marker/opex                       nil
+   :marker/opex-loading?              false
+   :marker/opex-auto-rules            nil
+   :marker/opex-auto-rules-loading?   false
+
+   ;; 016: user-defined metrics
+   :marker/user-metrics               nil
+   :marker/user-metrics-loading?      false
+
+   ;; 017: Telegram/MAX bot settings
+   :marker/bot-settings               nil
+   :marker/bot-settings-loading?      false
+
+   ;; 017: plan/fact + import preview
+   :marker/plan-fact                  nil
+   :marker/plan-fact-loading?         false
+   :marker/plan-import-preview        nil
+   :marker/plan-import-preview-loading? false
+
+   ;; 019: treasury (DECIMAL cells arrive as "0.00" strings — never parseFloat
+   ;; for storage/aggregation, only for display formatting)
+   :marker/treasury-cashflow                    nil
+   :marker/treasury-cashflow-loading?           false
+   :marker/treasury-operations                  nil
+   :marker/treasury-operations-loading?         false
+   :marker/treasury-accounts                    nil
+   :marker/treasury-accounts-loading?           false
+   :marker/treasury-counterparties              nil
+   :marker/treasury-counterparties-loading?     false
+   :marker/treasury-obligations-summary         nil
+   :marker/treasury-obligations-summary-loading? false
+   :marker/treasury-obligations-dynamics        nil
+   :marker/treasury-obligations-dynamics-loading? false
+   :marker/treasury-obligations                 nil
+   :marker/treasury-obligations-loading?        false
+   :marker/treasury-auto-rules                  nil
+   :marker/treasury-auto-rules-loading?         false
+   ;; last classify {:classified ...} for UI feedback
+   :marker/treasury-classify-result             nil
+   :marker/treasury-classify-result-loading?    false})

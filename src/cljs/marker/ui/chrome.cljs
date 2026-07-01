@@ -29,6 +29,8 @@
     :default-tab "skus"}
    {:id "dynamics" :label "Динамика"       :icon :layers
     :default-tab "trends"}
+   {:id "treasury" :label "Казначейство"   :icon :save
+    :default-tab "cashflow"}
    {:id "sync"      :label "Синхронизация"  :icon :refresh}
    {:id "settings"  :label "Настройки"      :icon :settings}])
 

@@ -231,3 +231,42 @@
    :response-format (transit-response-format)
    :on-success      on-success
    :on-failure      on-failure})
+
+(defn delete-xhrio
+  "Build an http-xhrio effect map for a Transit DELETE request.
+   Mirrors put-xhrio: X-API-Key header, Transit response decode. No body."
+  [url on-success on-failure]
+  {:method          :delete
+   :uri             url
+   :timeout         15000
+   :headers         {"X-API-Key" (api-key)}
+   :response-format (transit-response-format)
+   :on-success      on-success
+   :on-failure      on-failure})
+
+(defn multipart-xhrio
+  "Build an http-xhrio effect map for a multipart/form-data POST (file upload).
+   `form-data` is a js/FormData (see build-plan-import-form). Passes the raw
+   FormData as :body with :format nil so cljs-ajax does NOT re-encode it — the
+   browser sets the multipart Content-Type + boundary itself. The server
+   answers Transit, so we still decode with transit-response-format."
+  [url form-data on-success on-failure]
+  {:method          :post
+   :uri             url
+   :timeout         60000               ; uploads can be slower than JSON calls
+   :body            form-data
+   :headers         {"X-API-Key" (api-key)}
+   :response-format (transit-response-format)
+   :on-success      on-success
+   :on-failure      on-failure})
+
+(defn build-plan-import-form
+  "Build a js/FormData for the plan-import endpoints: a `file` part plus the
+   `period_month` and `marketplace` form fields the server expects.
+   `mp` may be a keyword (:wb) or string."
+  [js-file period-month mp]
+  (let [fd (js/FormData.)]
+    (.append fd "file" js-file)
+    (when period-month (.append fd "period_month" (str period-month)))
+    (when mp (.append fd "marketplace" (name (if (keyword? mp) mp (keyword mp)))))
+    fd))

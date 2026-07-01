@@ -186,3 +186,81 @@
 
 (rf/reg-sub ::settings-status
   (fn [db _] (get-in db [:marker/settings :status])))
+
+;; ---------------------------------------------------------------------------
+;; 013 Frontend — new feature slices (one reg-sub per db key, sans :marker/)
+;; ---------------------------------------------------------------------------
+
+;; 015: tax config + OPEX
+(rf/reg-sub ::tax-config
+  (fn [db _] (:marker/tax-config db)))
+(rf/reg-sub ::tax-config-loading?
+  (fn [db _] (:marker/tax-config-loading? db)))
+(rf/reg-sub ::opex
+  (fn [db _] (:marker/opex db)))
+(rf/reg-sub ::opex-loading?
+  (fn [db _] (:marker/opex-loading? db)))
+(rf/reg-sub ::opex-auto-rules
+  (fn [db _] (:marker/opex-auto-rules db)))
+(rf/reg-sub ::opex-auto-rules-loading?
+  (fn [db _] (:marker/opex-auto-rules-loading? db)))
+
+;; 016: user metrics
+(rf/reg-sub ::user-metrics
+  (fn [db _] (:marker/user-metrics db)))
+(rf/reg-sub ::user-metrics-loading?
+  (fn [db _] (:marker/user-metrics-loading? db)))
+
+;; 017: bot settings
+(rf/reg-sub ::bot-settings
+  (fn [db _] (:marker/bot-settings db)))
+(rf/reg-sub ::bot-settings-loading?
+  (fn [db _] (:marker/bot-settings-loading? db)))
+
+;; 017: plan/fact + import preview
+(rf/reg-sub ::plan-fact
+  (fn [db _] (:marker/plan-fact db)))
+(rf/reg-sub ::plan-fact-loading?
+  (fn [db _] (:marker/plan-fact-loading? db)))
+(rf/reg-sub ::plan-import-preview
+  (fn [db _] (:marker/plan-import-preview db)))
+(rf/reg-sub ::plan-import-preview-loading?
+  (fn [db _] (:marker/plan-import-preview-loading? db)))
+
+;; 019: treasury
+(rf/reg-sub ::treasury-cashflow
+  (fn [db _] (:marker/treasury-cashflow db)))
+(rf/reg-sub ::treasury-cashflow-loading?
+  (fn [db _] (:marker/treasury-cashflow-loading? db)))
+(rf/reg-sub ::treasury-operations
+  (fn [db _] (:marker/treasury-operations db)))
+(rf/reg-sub ::treasury-operations-loading?
+  (fn [db _] (:marker/treasury-operations-loading? db)))
+(rf/reg-sub ::treasury-accounts
+  (fn [db _] (:marker/treasury-accounts db)))
+(rf/reg-sub ::treasury-accounts-loading?
+  (fn [db _] (:marker/treasury-accounts-loading? db)))
+(rf/reg-sub ::treasury-counterparties
+  (fn [db _] (:marker/treasury-counterparties db)))
+(rf/reg-sub ::treasury-counterparties-loading?
+  (fn [db _] (:marker/treasury-counterparties-loading? db)))
+(rf/reg-sub ::treasury-obligations-summary
+  (fn [db _] (:marker/treasury-obligations-summary db)))
+(rf/reg-sub ::treasury-obligations-summary-loading?
+  (fn [db _] (:marker/treasury-obligations-summary-loading? db)))
+(rf/reg-sub ::treasury-obligations-dynamics
+  (fn [db _] (:marker/treasury-obligations-dynamics db)))
+(rf/reg-sub ::treasury-obligations-dynamics-loading?
+  (fn [db _] (:marker/treasury-obligations-dynamics-loading? db)))
+(rf/reg-sub ::treasury-obligations
+  (fn [db _] (:marker/treasury-obligations db)))
+(rf/reg-sub ::treasury-obligations-loading?
+  (fn [db _] (:marker/treasury-obligations-loading? db)))
+(rf/reg-sub ::treasury-auto-rules
+  (fn [db _] (:marker/treasury-auto-rules db)))
+(rf/reg-sub ::treasury-auto-rules-loading?
+  (fn [db _] (:marker/treasury-auto-rules-loading? db)))
+(rf/reg-sub ::treasury-classify-result
+  (fn [db _] (:marker/treasury-classify-result db)))
+(rf/reg-sub ::treasury-classify-result-loading?
+  (fn [db _] (:marker/treasury-classify-result-loading? db)))

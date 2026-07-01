@@ -7,7 +7,8 @@
      /app/sync               → page :sync
      /app/<section>          → redirects to /app/<section>/<default-tab>
      /app/<section>/<tab>    → page [<section> <tab>]
-                                where <section> ∈ {finance, products, dynamics}
+                                where <section> ∈ {finance, products, dynamics,
+                                                   treasury}
 
    Legacy routes (kept for old bookmarks; redirect cleanly):
      /app/pnl, /app/unit, /app/cost-prices,
@@ -46,6 +47,8 @@
    ["/products/:tab" {:name :products}]
    ["/dynamics"      {:name :dynamics-root}]
    ["/dynamics/:tab" {:name :dynamics}]
+   ["/treasury"      {:name :treasury-root}]
+   ["/treasury/:tab" {:name :treasury}]
 
    ;; Legacy routes — preserved so old bookmarks redirect cleanly.
    ["/pnl"           {:name :legacy-pnl}]
@@ -91,11 +94,13 @@
       :finance-root  (redirect-to [:finance  (nav/default-tab :finance)])
       :products-root (redirect-to [:products (nav/default-tab :products)])
       :dynamics-root (redirect-to [:dynamics (nav/default-tab :dynamics)])
+      :treasury-root (redirect-to [:treasury (nav/default-tab :treasury)])
 
       ;; Sectioned tabs → set page or redirect on bad tab.
       :finance  (handle-section :finance  path-params)
       :products (handle-section :products path-params)
       :dynamics (handle-section :dynamics path-params)
+      :treasury (handle-section :treasury path-params)
 
       ;; Legacy redirects.
       :legacy-pnl         (redirect-to (nav/legacy-redirect :pnl))

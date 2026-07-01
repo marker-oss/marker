@@ -2,9 +2,10 @@
   "Pure helpers for SPA navigation: section/tab structure,
    legacy URL redirects.
 
-   The SPA uses a 5-section sidebar (Главная, Финансы, Товары,
-   Динамика, Синхронизация); the latter three sections render an
-   internal tabs strip and are addressed by [:section :tab] vectors.
+   The SPA uses a sidebar of top-level sections (Главная, Финансы,
+   Товары, Динамика, Казначейство, Синхронизация); the tabbed sections
+   (finance, products, dynamics, treasury) render an internal tabs
+   strip and are addressed by [:section :tab] vectors.
 
    Page values across re-frame:
    - keyword              : single-page route, e.g. :pulse, :sync
@@ -28,7 +29,18 @@
    :dynamics [{:id :trends :label "Тренды"}
               {:id :sales  :label "Продажи"}
               {:id :geo    :label "География"}
-              {:id :buyout :label "Выкуп"}]})
+              {:id :buyout :label "Выкуп"}]
+   :treasury [{:id :cashflow    :label "ДДС"}
+              {:id :registry    :label "Реестр"}
+              {:id :obligations :label "Обязательства"}]})
+
+(def ^:private SECTION-TITLES
+  "RU section-header labels for tabbed sections. Single-page sections
+   (pulse/sync/settings) carry their titles in marker.core/page-titles."
+  {:finance  "Финансы"
+   :products "Товары"
+   :dynamics "Динамика"
+   :treasury "Финансы/Казначейство"})
 
 (def ^:private LEGACY-MAP
   "Map old route value → new [:section :tab].
@@ -71,3 +83,8 @@
   "True if tab-id is a valid tab inside the given section."
   [section tab-id]
   (boolean (some #(= tab-id (:id %)) (section-tabs section))))
+
+(defn section-title
+  "RU header label for a tabbed section, or nil for single-page sections."
+  [section]
+  (get SECTION-TITLES section))

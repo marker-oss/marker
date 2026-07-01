@@ -740,3 +740,583 @@
                         :elapsed  "0s"
                         :progress 30}))}
         load-evt (assoc :dispatch load-evt)))))
+
+;; ===========================================================================
+;; 013 Frontend — new feature events.
+;;
+;; Load events: set *-loading? true, fire api/get-xhrio, success handler
+;; stores data + clears loading? + dissocs any stale api-error for the url,
+;; failure → [::api-error url resp] + clears loading?.
+;;
+;; Mutation events (add/save/delete/settle/classify/import): POST/PUT/DELETE
+;; via the matching api/*-xhrio, and on success re-dispatch the matching
+;; ::load-* so the view refreshes. Failures → [::api-error url resp].
+;;
+;; A small generic pair keeps this section DRY: `simple-load` builds a load
+;; effect map for a single top-level data-key, and `simple-loaded` / handlers
+;; below store the result. Endpoints that need cache or per-key nesting keep
+;; bespoke handlers (none here need the Phase-8 cache — these are settings /
+;; mutable data that must always reflect the server).
+;; ===========================================================================
+
+(defn- load-fx
+  "Build the {:db ... :http-xhrio ...} effect map for a plain GET load into a
+   single top-level data-key. `data-key`/`loading-key` are namespaced kw db
+   keys; success/failure are the event vectors to dispatch."
+  [db url data-key loading-key on-success on-failure]
+  {:db         (assoc db loading-key true)
+   :http-xhrio (api/get-xhrio url on-success on-failure)})
+
+(defn- loaded-db
+  "Store `data` under `data-key`, clear `loading-key`, dissoc stale error for url."
+  [db url data-key loading-key data]
+  (-> db
+      (assoc data-key data
+             loading-key false)
+      (update :marker/api-errors dissoc url)))
+
+(defn- load-failed-fx
+  "Clear `loading-key`, route the failure to ::api-error for `url`."
+  [db url loading-key failure]
+  {:db       (assoc db loading-key false)
+   :dispatch [::api-error url failure]})
+
+;; ---------------------------------------------------------------------------
+;; 015: Tax config
+;; ---------------------------------------------------------------------------
+
+(def ^:private tax-url "/api/v1/settings/tax")
+
+(rf/reg-event-fx ::load-tax-config
+  (fn [{:keys [db]} [_ year]]
+    (let [url (api/build-url tax-url (cond-> {} year (assoc :year year)))]
+      (load-fx db url :marker/tax-config :marker/tax-config-loading?
+               [::tax-config-loaded url] [::tax-config-load-failed url]))))
+
+(rf/reg-event-db ::tax-config-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/tax-config :marker/tax-config-loading? data)))
+
+(rf/reg-event-fx ::tax-config-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/tax-config-loading? failure)))
+
+(rf/reg-event-fx ::save-tax-config
+  (fn [_ [_ payload]]
+    {:http-xhrio (api/put-xhrio tax-url payload
+                                [::tax-config-saved]
+                                [::api-error tax-url])}))
+
+(rf/reg-event-fx ::tax-config-saved
+  (fn [{:keys [db]} [_ resp]]
+    ;; refresh the year we just saved (falls back to server-echoed :year)
+    {:fx [[:dispatch [::load-tax-config (:year resp)]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 015: OPEX
+;; ---------------------------------------------------------------------------
+
+(def ^:private opex-url "/api/v1/opex")
+
+(rf/reg-event-fx ::load-opex
+  (fn [{:keys [db]} [_ period]]
+    (let [url (api/build-url opex-url (cond-> {} period (assoc :period period)))]
+      {:db         (assoc db :marker/opex-loading? true
+                             ;; remember the active period so mutation refreshes hit it
+                             :marker/opex-period period)
+       :http-xhrio (api/get-xhrio url [::opex-loaded url] [::opex-load-failed url])})))
+
+(rf/reg-event-db ::opex-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/opex :marker/opex-loading? data)))
+
+(rf/reg-event-fx ::opex-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/opex-loading? failure)))
+
+(rf/reg-event-fx ::add-opex
+  (fn [_ [_ row]]
+    {:http-xhrio (api/post-xhrio opex-url row
+                                 [::opex-mutated] [::api-error opex-url])}))
+
+(rf/reg-event-fx ::delete-opex
+  (fn [_ [_ id]]
+    (let [url (str opex-url "/" id)]
+      {:http-xhrio (api/delete-xhrio url [::opex-mutated] [::api-error url])})))
+
+(rf/reg-event-fx ::opex-mutated
+  ;; Re-load the currently displayed period after any add/delete.
+  (fn [{:keys [db]} _]
+    {:fx [[:dispatch [::load-opex (:marker/opex-period db)]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 015: OPEX auto-rules
+;; ---------------------------------------------------------------------------
+
+(def ^:private opex-auto-rules-url "/api/v1/opex/auto-rules")
+
+(rf/reg-event-fx ::load-opex-auto-rules
+  (fn [{:keys [db]} _]
+    (load-fx db opex-auto-rules-url
+             :marker/opex-auto-rules :marker/opex-auto-rules-loading?
+             [::opex-auto-rules-loaded opex-auto-rules-url]
+             [::opex-auto-rules-load-failed opex-auto-rules-url])))
+
+(rf/reg-event-db ::opex-auto-rules-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/opex-auto-rules :marker/opex-auto-rules-loading? data)))
+
+(rf/reg-event-fx ::opex-auto-rules-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/opex-auto-rules-loading? failure)))
+
+(rf/reg-event-fx ::add-opex-auto-rule
+  (fn [_ [_ rule]]
+    {:http-xhrio (api/post-xhrio opex-auto-rules-url rule
+                                 [::opex-auto-rule-mutated]
+                                 [::api-error opex-auto-rules-url])}))
+
+(rf/reg-event-fx ::delete-opex-auto-rule
+  (fn [_ [_ id]]
+    (let [url (str opex-auto-rules-url "/" id)]
+      {:http-xhrio (api/delete-xhrio url [::opex-auto-rule-mutated]
+                                     [::api-error url])})))
+
+(rf/reg-event-fx ::opex-auto-rule-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-opex-auto-rules]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 016: User metrics
+;; ---------------------------------------------------------------------------
+
+(def ^:private user-metrics-url "/api/v1/metrics")
+
+(rf/reg-event-fx ::load-user-metrics
+  (fn [{:keys [db]} _]
+    (load-fx db user-metrics-url
+             :marker/user-metrics :marker/user-metrics-loading?
+             [::user-metrics-loaded user-metrics-url]
+             [::user-metrics-load-failed user-metrics-url])))
+
+(rf/reg-event-db ::user-metrics-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/user-metrics :marker/user-metrics-loading? data)))
+
+(rf/reg-event-fx ::user-metrics-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/user-metrics-loading? failure)))
+
+(rf/reg-event-fx ::save-user-metric
+  (fn [_ [_ m]]
+    {:http-xhrio (api/post-xhrio user-metrics-url m
+                                 [::user-metric-mutated]
+                                 [::api-error user-metrics-url])}))
+
+(rf/reg-event-fx ::delete-user-metric
+  (fn [_ [_ id]]
+    (let [url (str user-metrics-url "/" id)]
+      {:http-xhrio (api/delete-xhrio url [::user-metric-mutated]
+                                     [::api-error url])})))
+
+(rf/reg-event-fx ::user-metric-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-user-metrics]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 017: Bot settings
+;; ---------------------------------------------------------------------------
+
+(def ^:private bot-subs-url "/api/v1/bot/subscriptions")
+(def ^:private bot-test-url "/api/v1/bot/test")
+
+(rf/reg-event-fx ::load-bot-settings
+  (fn [{:keys [db]} _]
+    (load-fx db bot-subs-url
+             :marker/bot-settings :marker/bot-settings-loading?
+             [::bot-settings-loaded bot-subs-url]
+             [::bot-settings-load-failed bot-subs-url])))
+
+(rf/reg-event-db ::bot-settings-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/bot-settings :marker/bot-settings-loading? data)))
+
+(rf/reg-event-fx ::bot-settings-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/bot-settings-loading? failure)))
+
+(rf/reg-event-fx ::save-bot-subscription
+  ;; New subscription (no :chat-id yet) → POST; existing → PUT to /:chat-id.
+  (fn [_ [_ sub]]
+    (let [chat-id (:chat-id sub)
+          new?    (or (nil? chat-id) (= "" (str chat-id)))
+          url     (if new? bot-subs-url (str bot-subs-url "/" chat-id))
+          effect  (if new?
+                    (api/post-xhrio url sub [::bot-subscription-mutated] [::api-error url])
+                    (api/put-xhrio  url sub [::bot-subscription-mutated] [::api-error url]))]
+      {:http-xhrio effect})))
+
+(rf/reg-event-fx ::delete-bot-subscription
+  (fn [_ [_ chat-id]]
+    (let [url (str bot-subs-url "/" chat-id)]
+      {:http-xhrio (api/delete-xhrio url [::bot-subscription-mutated]
+                                     [::api-error url])})))
+
+(rf/reg-event-fx ::bot-subscription-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-bot-settings]]]}))
+
+(rf/reg-event-fx ::send-bot-test
+  ;; Fire the test and stash the outcome so the UI can show delivery feedback.
+  (fn [_ [_ chat-id]]
+    {:http-xhrio (api/post-xhrio bot-test-url {:chat-id chat-id}
+                                 [::bot-test-result]
+                                 [::api-error bot-test-url])}))
+
+(rf/reg-event-db ::bot-test-result
+  (fn [db [_ resp]]
+    (assoc db :marker/bot-test-result resp)))
+
+;; ---------------------------------------------------------------------------
+;; 017: Plan / fact + multipart import
+;; ---------------------------------------------------------------------------
+
+(def ^:private plan-sku-url "/api/v1/plan/sku")
+(def ^:private plan-preview-url "/api/v1/plan/sku/preview")
+(def ^:private plan-import-url "/api/v1/plan/sku/import")
+
+(rf/reg-event-fx ::load-plan-fact
+  (fn [{:keys [db]} [_ period mp]]
+    (let [params (cond-> {}
+                   period (assoc :period_month period)
+                   mp     (assoc :marketplace (name (if (keyword? mp) mp (keyword mp)))))
+          url    (api/build-url plan-sku-url params)]
+      {:db         (assoc db :marker/plan-fact-loading? true
+                             :marker/plan-fact-period period
+                             :marker/plan-fact-mp     mp)
+       :http-xhrio (api/get-xhrio url [::plan-fact-loaded url]
+                                      [::plan-fact-load-failed url])})))
+
+(rf/reg-event-db ::plan-fact-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/plan-fact :marker/plan-fact-loading? data)))
+
+(rf/reg-event-fx ::plan-fact-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/plan-fact-loading? failure)))
+
+(rf/reg-event-fx ::preview-plan-import
+  (fn [{:keys [db]} [_ js-file period mp]]
+    {:db         (assoc db :marker/plan-import-preview-loading? true)
+     :http-xhrio (api/multipart-xhrio
+                   plan-preview-url
+                   (api/build-plan-import-form js-file period mp)
+                   [::plan-import-preview-loaded plan-preview-url]
+                   [::plan-import-preview-failed plan-preview-url])}))
+
+(rf/reg-event-db ::plan-import-preview-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/plan-import-preview :marker/plan-import-preview-loading? data)))
+
+(rf/reg-event-fx ::plan-import-preview-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/plan-import-preview-loading? failure)))
+
+(rf/reg-event-fx ::commit-plan-import
+  (fn [{:keys [db]} [_ js-file period mp]]
+    {:db         (assoc db :marker/plan-import-preview-loading? true)
+     :http-xhrio (api/multipart-xhrio
+                   plan-import-url
+                   (api/build-plan-import-form js-file period mp)
+                   [::plan-import-committed period mp]
+                   [::plan-import-preview-failed plan-import-url])}))
+
+(rf/reg-event-fx ::plan-import-committed
+  (fn [{:keys [db]} [_ period mp data]]
+    {:db (-> db
+             (assoc :marker/plan-import-preview data
+                    :marker/plan-import-preview-loading? false)
+             (update :marker/api-errors dissoc plan-import-url))
+     ;; refresh the plan/fact table for the imported period after a commit
+     :fx [[:dispatch [::load-plan-fact period mp]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — cashflow
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-cashflow-url "/api/v1/treasury/cashflow")
+
+(defn- treasury-params
+  "Convert a filters map to query params. Values pass through as strings;
+   keyword values (:group-by, :mode) render via name. Nils are dropped.
+   account-ids (a seq) is comma-joined."
+  [filters]
+  (reduce-kv
+    (fn [acc k v]
+      (cond
+        (nil? v)                                   acc
+        (and (coll? v) (not (map? v)))             (assoc acc k (str/join "," (map str v)))
+        (keyword? v)                               (assoc acc k (name v))
+        :else                                      (assoc acc k v)))
+    {}
+    filters))
+
+(rf/reg-event-fx ::load-treasury-cashflow
+  (fn [{:keys [db]} [_ filters]]
+    (let [url (api/build-url treasury-cashflow-url (treasury-params filters))]
+      {:db         (assoc db :marker/treasury-cashflow-loading? true)
+       :http-xhrio (api/get-xhrio url [::treasury-cashflow-loaded url]
+                                      [::treasury-cashflow-load-failed url])})))
+
+(rf/reg-event-db ::treasury-cashflow-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-cashflow :marker/treasury-cashflow-loading? data)))
+
+(rf/reg-event-fx ::treasury-cashflow-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-cashflow-loading? failure)))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — operations (paged + filtered)
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-ops-url "/api/v1/treasury/operations")
+
+(rf/reg-event-fx ::load-treasury-operations
+  (fn [{:keys [db]} [_ filters]]
+    (let [url (api/build-url treasury-ops-url (treasury-params filters))]
+      {:db         (assoc db :marker/treasury-operations-loading? true
+                             ;; remember filters so a save can re-load the same view
+                             :marker/treasury-operations-filters filters)
+       :http-xhrio (api/get-xhrio url [::treasury-operations-loaded url]
+                                      [::treasury-operations-load-failed url])})))
+
+(rf/reg-event-db ::treasury-operations-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-operations :marker/treasury-operations-loading? data)))
+
+(rf/reg-event-fx ::treasury-operations-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-operations-loading? failure)))
+
+(rf/reg-event-fx ::save-treasury-operation
+  (fn [_ [_ op]]
+    {:http-xhrio (api/post-xhrio treasury-ops-url op
+                                 [::treasury-operation-mutated]
+                                 [::api-error treasury-ops-url])}))
+
+(rf/reg-event-fx ::update-treasury-operation
+  (fn [_ [_ id op]]
+    (let [url (str treasury-ops-url "/" id)]
+      {:http-xhrio (api/put-xhrio url op [::treasury-operation-mutated]
+                                  [::api-error url])})))
+
+(rf/reg-event-fx ::treasury-operation-mutated
+  ;; Refresh both the operations list (using its stored filters) and the
+  ;; cashflow view, since an op changes both.
+  (fn [{:keys [db]} _]
+    {:fx [[:dispatch [::load-treasury-operations
+                      (:marker/treasury-operations-filters db)]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — accounts
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-accounts-url "/api/v1/treasury/accounts")
+
+(rf/reg-event-fx ::load-treasury-accounts
+  (fn [{:keys [db]} _]
+    (load-fx db treasury-accounts-url
+             :marker/treasury-accounts :marker/treasury-accounts-loading?
+             [::treasury-accounts-loaded treasury-accounts-url]
+             [::treasury-accounts-load-failed treasury-accounts-url])))
+
+(rf/reg-event-db ::treasury-accounts-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-accounts :marker/treasury-accounts-loading? data)))
+
+(rf/reg-event-fx ::treasury-accounts-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-accounts-loading? failure)))
+
+(rf/reg-event-fx ::add-treasury-account
+  (fn [_ [_ a]]
+    {:http-xhrio (api/post-xhrio treasury-accounts-url a
+                                 [::treasury-account-mutated]
+                                 [::api-error treasury-accounts-url])}))
+
+(rf/reg-event-fx ::delete-treasury-account
+  (fn [_ [_ id]]
+    (let [url (str treasury-accounts-url "/" id)]
+      {:http-xhrio (api/delete-xhrio url [::treasury-account-mutated]
+                                     [::api-error url])})))
+
+(rf/reg-event-fx ::treasury-account-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-treasury-accounts]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — counterparties
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-counterparties-url "/api/v1/treasury/counterparties")
+
+(rf/reg-event-fx ::load-treasury-counterparties
+  (fn [{:keys [db]} _]
+    (load-fx db treasury-counterparties-url
+             :marker/treasury-counterparties :marker/treasury-counterparties-loading?
+             [::treasury-counterparties-loaded treasury-counterparties-url]
+             [::treasury-counterparties-load-failed treasury-counterparties-url])))
+
+(rf/reg-event-db ::treasury-counterparties-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-counterparties
+               :marker/treasury-counterparties-loading? data)))
+
+(rf/reg-event-fx ::treasury-counterparties-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-counterparties-loading? failure)))
+
+(rf/reg-event-fx ::add-treasury-counterparty
+  (fn [_ [_ c]]
+    {:http-xhrio (api/post-xhrio treasury-counterparties-url c
+                                 [::treasury-counterparty-mutated]
+                                 [::api-error treasury-counterparties-url])}))
+
+(rf/reg-event-fx ::treasury-counterparty-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-treasury-counterparties]]]}))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — obligations (+ summary + dynamics)
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-obligations-url "/api/v1/treasury/obligations")
+(def ^:private treasury-obligations-summary-url "/api/v1/treasury/obligations/summary")
+(def ^:private treasury-obligations-dynamics-url "/api/v1/treasury/obligations/dynamics")
+
+(rf/reg-event-fx ::load-treasury-obligations
+  (fn [{:keys [db]} [_ filters]]
+    (let [url (api/build-url treasury-obligations-url (treasury-params filters))]
+      {:db         (assoc db :marker/treasury-obligations-loading? true
+                             :marker/treasury-obligations-filters filters)
+       :http-xhrio (api/get-xhrio url [::treasury-obligations-loaded url]
+                                      [::treasury-obligations-load-failed url])})))
+
+(rf/reg-event-db ::treasury-obligations-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-obligations :marker/treasury-obligations-loading? data)))
+
+(rf/reg-event-fx ::treasury-obligations-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-obligations-loading? failure)))
+
+(rf/reg-event-fx ::add-treasury-obligation
+  (fn [_ [_ o]]
+    {:http-xhrio (api/post-xhrio treasury-obligations-url o
+                                 [::treasury-obligation-mutated]
+                                 [::api-error treasury-obligations-url])}))
+
+(rf/reg-event-fx ::settle-treasury-obligation
+  (fn [_ [_ id payload]]
+    (let [url (str treasury-obligations-url "/" id "/settle")]
+      {:http-xhrio (api/post-xhrio url payload
+                                   [::treasury-obligation-mutated]
+                                   [::api-error url])})))
+
+(rf/reg-event-fx ::treasury-obligation-mutated
+  ;; A settle/add changes the list, the summary AND the dynamics chart.
+  (fn [{:keys [db]} _]
+    {:fx [[:dispatch [::load-treasury-obligations
+                      (:marker/treasury-obligations-filters db)]]
+          [:dispatch [::load-treasury-obligations-summary]]
+          [:dispatch [::load-treasury-obligations-dynamics]]]}))
+
+(rf/reg-event-fx ::load-treasury-obligations-summary
+  (fn [{:keys [db]} [_ mode]]
+    (let [url (api/build-url treasury-obligations-summary-url
+                             (cond-> {} mode (assoc :mode (name mode))))]
+      {:db         (assoc db :marker/treasury-obligations-summary-loading? true)
+       :http-xhrio (api/get-xhrio url [::treasury-obligations-summary-loaded url]
+                                      [::treasury-obligations-summary-failed url])})))
+
+(rf/reg-event-db ::treasury-obligations-summary-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-obligations-summary
+               :marker/treasury-obligations-summary-loading? data)))
+
+(rf/reg-event-fx ::treasury-obligations-summary-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-obligations-summary-loading? failure)))
+
+(rf/reg-event-fx ::load-treasury-obligations-dynamics
+  (fn [{:keys [db]} [_ mode]]
+    (let [url (api/build-url treasury-obligations-dynamics-url
+                             (cond-> {} mode (assoc :mode (name mode))))]
+      {:db         (assoc db :marker/treasury-obligations-dynamics-loading? true)
+       :http-xhrio (api/get-xhrio url [::treasury-obligations-dynamics-loaded url]
+                                      [::treasury-obligations-dynamics-failed url])})))
+
+(rf/reg-event-db ::treasury-obligations-dynamics-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-obligations-dynamics
+               :marker/treasury-obligations-dynamics-loading? data)))
+
+(rf/reg-event-fx ::treasury-obligations-dynamics-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-obligations-dynamics-loading? failure)))
+
+;; ---------------------------------------------------------------------------
+;; 019: Treasury — auto-rules + classify
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-auto-rules-url "/api/v1/treasury/auto-rules")
+(def ^:private treasury-classify-url "/api/v1/treasury/auto-rules/classify")
+
+(rf/reg-event-fx ::load-treasury-auto-rules
+  (fn [{:keys [db]} _]
+    (load-fx db treasury-auto-rules-url
+             :marker/treasury-auto-rules :marker/treasury-auto-rules-loading?
+             [::treasury-auto-rules-loaded treasury-auto-rules-url]
+             [::treasury-auto-rules-load-failed treasury-auto-rules-url])))
+
+(rf/reg-event-db ::treasury-auto-rules-loaded
+  (fn [db [_ url data]]
+    (loaded-db db url :marker/treasury-auto-rules :marker/treasury-auto-rules-loading? data)))
+
+(rf/reg-event-fx ::treasury-auto-rules-load-failed
+  (fn [{:keys [db]} [_ url failure]]
+    (load-failed-fx db url :marker/treasury-auto-rules-loading? failure)))
+
+(rf/reg-event-fx ::add-treasury-auto-rule
+  (fn [_ [_ r]]
+    {:http-xhrio (api/post-xhrio treasury-auto-rules-url r
+                                 [::treasury-auto-rule-mutated]
+                                 [::api-error treasury-auto-rules-url])}))
+
+(rf/reg-event-fx ::treasury-auto-rule-mutated
+  (fn [_ _]
+    {:fx [[:dispatch [::load-treasury-auto-rules]]]}))
+
+(rf/reg-event-fx ::classify-treasury
+  ;; Run auto-classification, stash the result for UI feedback, then refresh
+  ;; both the operations list and cashflow (classification changes categories).
+  (fn [{:keys [db]} _]
+    {:db         (assoc db :marker/treasury-classify-result-loading? true)
+     :http-xhrio (api/post-xhrio treasury-classify-url {}
+                                 [::treasury-classified]
+                                 [::treasury-classify-failed])}))
+
+(rf/reg-event-fx ::treasury-classified
+  (fn [{:keys [db]} [_ result]]
+    {:db (-> db
+             (assoc :marker/treasury-classify-result result
+                    :marker/treasury-classify-result-loading? false)
+             (update :marker/api-errors dissoc treasury-classify-url))
+     :fx [[:dispatch [::load-treasury-operations
+                      (:marker/treasury-operations-filters db)]]]}))
+
+(rf/reg-event-fx ::treasury-classify-failed
+  (fn [{:keys [db]} [_ failure]]
+    {:db       (assoc db :marker/treasury-classify-result-loading? false)
+     :dispatch [::api-error treasury-classify-url failure]}))

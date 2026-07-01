@@ -94,3 +94,68 @@
       (= a1 1)                  one
       (and (>= a1 2) (<= a1 4)) few
       :else                     many)))
+
+(defn format-days
+  "Format a day count with a Russian «Дн.» suffix: «12\\u00A0Дн.».
+   nil / NaN → «—». Non-abbreviated plural is not used here — the
+   dashboard descriptor unit is the fixed «Дн.» abbreviation."
+  [n]
+  (if (or (nil? n) (js/isNaN n))
+    "—"
+    (str (format-int n) NBSP "Дн.")))
+
+(defn format-suffixed
+  "Render a number according to a descriptor :suffix keyword.
+     :rub          → format-rub   («1\\u00A0234\\u00A0₽»)
+     :pct          → format-pct   («12,3%»)
+     :qty          → format-int + «\\u00A0шт»
+     :days         → format-days  («12\\u00A0Дн.»)
+     :mul          → format-mul   («1,5×»)
+     nil / :none   → format-int   (plain grouped integer)
+   nil value ALWAYS → «—» regardless of suffix."
+  [value suffix]
+  (if (nil? value)
+    "—"
+    (case suffix
+      :rub          (format-rub value)
+      :pct          (format-pct value)
+      :qty          (str (format-int value) NBSP "шт")
+      :days         (format-days value)
+      :mul          (format-mul value)
+      (:none nil)   (format-int value)
+      (format-int value))))
+
+;; ---------------------------------------------------------------------------
+;; Exact decimal-string formatting.
+;; Treasury / ledger values arrive as DECIMAL-as-string (e.g. \"-742000.00\").
+;; js/parseFloat would lose precision on large magnitudes, so we group the
+;; integer part on the STRING itself and never coerce to a JS number.
+;; ---------------------------------------------------------------------------
+
+(defn- blank-str? [s]
+  (or (nil? s) (= "" (str s))))
+
+(defn format-decimal-str
+  "Format a DECIMAL-as-string (e.g. \"-742000.00\") to a grouped RU-locale
+   string WITHOUT js/parseFloat — precision-exact for arbitrarily large
+   magnitudes. Groups only the integer part with NBSP; drops the fractional
+   part (treasury display is whole-ruble). Negative sign → Unicode minus.
+   nil / \"\" → «—»."
+  [s]
+  (if (blank-str? s)
+    "—"
+    (let [t        (str/trim (str s))
+          neg?     (str/starts-with? t "-")
+          unsigned (if (or neg? (str/starts-with? t "+")) (subs t 1) t)
+          int-part (first (str/split unsigned #"\." 2))
+          int-part (if (= "" int-part) "0" int-part)
+          sign     (if neg? MINUS "")]
+      (str sign (add-thousands int-part)))))
+
+(defn format-decimal-rub
+  "Like format-decimal-str but appends the «\\u00A0₽» ruble unit.
+   Precision-exact (no js/parseFloat). nil / \"\" → «—»."
+  [s]
+  (if (blank-str? s)
+    "—"
+    (str (format-decimal-str s) NBSP "₽")))
