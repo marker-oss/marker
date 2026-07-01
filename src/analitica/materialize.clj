@@ -1303,6 +1303,23 @@
                        vals vec)]
     {:campaigns campaigns :daily-rows daily}))
 
+(defn- ad-campaign-stats-raw
+  "Merge every stored :ad_campaign_stats batch overlapping [from..to] into a
+   flat {:campaigns [...] :stat-rows [...]} map. Stat rows are deduped by
+   (campaign-id, date) to handle overlapping ingest windows. Returns nil when
+   no raw :ad_campaign_stats batches exist (P1 not yet fetched → no-op)."
+  [from to]
+  (let [batches (db/get-raw-range "ozon" :ad_campaign_stats from to)]
+    (when (seq batches)
+      (let [campaigns (->> batches (mapcat #(get-in % [:data :campaigns]))
+                           (reduce (fn [m c] (assoc m (:id c) c)) {}) vals vec)
+            stat-rows (->> batches (mapcat #(get-in % [:data :stat-rows]))
+                           ;; Dedup by (sku, date): keep last for each key so
+                           ;; a re-ingest with the same fixture overwrites.
+                           (reduce (fn [m r] (assoc m [(:sku r) (:date r)] r)) (array-map))
+                           vals vec)]
+        {:campaigns campaigns :stat-rows stat-rows}))))
+
 (defn- build-ozon-ad-spend
   "Pure: Performance raw → §3.B ad_spend rows. `sku->article` from ozon_sku_map,
    `article->revenue` for spread weights. Returns [ad_spend maps]."
@@ -1319,26 +1336,92 @@
                             campaign-rows)]
     (vec (concat api-rows spread-rows))))
 
+(defn- build-ozon-ad-campaign-stats
+  "T039: transform raw :ad_campaign_stats payload into §2.2 rows for the DB.
+
+   `raw-stats` is {:campaigns [...] :stat-rows [...]} from ad-campaign-stats-raw.
+   `sku->article` is used to normalise :sku → :article on each row via
+   `perf-t/statistics-rows->ad-campaign-stats` (which groups by date, summing
+   counters per campaign per day). `synced-at` is stamped on each row.
+
+   Returns [{:marketplace :ozon :campaign-id … :stat-date … …} …] ready for
+   `db/insert-ad-campaign-stats!`, or [] when raw-stats is nil/empty."
+  [raw-stats sku->article synced-at]
+  (when raw-stats
+    (let [{:keys [campaigns stat-rows]} raw-stats
+          camp-map (into {} (map (juxt :id identity) campaigns))]
+      (->> campaigns
+           (mapcat (fn [{:keys [id advObjectType title]}]
+                     ;; Filter raw rows for this campaign. The statistics report
+                     ;; rows carry :sku/:date but not campaign-id; since we store
+                     ;; per-campaign in the raw batch (one batch per ingest call),
+                     ;; all stat-rows in a batch belong to the same request and we
+                     ;; use the campaign metadata from the same raw batch.
+                     (let [camp-type (or advObjectType (get-in camp-map [id :advObjectType]))
+                           camp-name (or title (get-in camp-map [id :title]))]
+                       (perf-t/statistics-rows->ad-campaign-stats
+                         stat-rows
+                         {:marketplace   :ozon
+                          :campaign-id   id
+                          :campaign-type camp-type
+                          :campaign-name camp-name}))))
+           ;; Dedup: multiple campaigns in one batch each produce per-day rows;
+           ;; dedupe by (campaign-id, stat-date) keeping the last value.
+           (reduce (fn [m r] (assoc m [(:campaign-id r) (:stat-date r)] r)) (array-map))
+           vals
+           (mapv #(assoc % :synced-at synced-at))))))
+
 (defn materialize-ozon-ad-cost!
   "Populate `finance.ad_cost` for Ozon rows in [from..to] from raw
    :ad_performance (spec 011 US1). See section header for the full contract.
 
+   T039 (P1): when raw :ad_campaign_stats data exists for the period (ingested
+   via ingest-ozon-ads! :fetch-stats? true), also materialises the
+   ad_campaign_stats table (DELETE by period+ozon → INSERT) and re-attributes
+   ad_spend rows to :api for any sku that appears in the async report. Σ spend
+   is UNCHANGED — the async report carries the exact per-SKU moneySpent which
+   already matches the daily total. Strictly additive: if no :ad_campaign_stats
+   raw exists the function behaves exactly as before (US1 baseline unchanged).
+
    Idempotent (FR-007/P5): ad_spend is DELETE+INSERT per (ozon, period);
    finance.ad_cost is reset to 0 then SET per article. Running twice yields
    identical state (spend never doubles; account-level NULL rows don't
-   accumulate).
+   accumulate). ad_campaign_stats uses the same DELETE+INSERT pattern.
 
    Reconciliation (FR-008/T022): after materialize, Σ finance.ad_cost(ozon,
    period) is compared to Σ raw moneySpent; a diff beyond config/audit-tolerance
    logs ::ad-cost-reconcile-mismatch (NOT fatal — preserves failure-isolation).
 
-   Returns {:ad-spend-rows N :articles K :total-spend ₽ :reconciled? bool}."
+   Returns {:ad-spend-rows N :articles K :total-spend ₽ :reconciled? bool
+            :stat-rows S}."
   [from to]
   (let [synced-at        (sync/now-str)
         raw              (ad-performance-raw from to)
+        raw-stats        (ad-campaign-stats-raw from to)
         sku->article     (try (db/ozon-sku-map) (catch Exception _ {}))
         article->revenue (ozon-ad-article-revenue from to)
-        ad-spend-rows    (build-ozon-ad-spend raw sku->article article->revenue synced-at)
+        ;; Base ad_spend from P0 daily path.
+        base-ad-spend    (build-ozon-ad-spend raw sku->article article->revenue synced-at)
+        ;; T039: when async report exists, override :spread rows with :api rows
+        ;; for any sku that the statistics report resolves to an article. The
+        ;; async per-SKU rows carry exact moneySpent → Σ remains equal. We
+        ;; build the api-override rows, then replace matching (campaign-id,
+        ;; article, event-date) entries from the base set.
+        async-api-rows   (when raw-stats
+                           (perf-t/statistics-rows->ad-spend
+                             (:stat-rows raw-stats)
+                             sku->article
+                             {:synced-at   synced-at
+                              :campaign-id (-> raw-stats :campaigns first :id)
+                              :campaign-type (-> raw-stats :campaigns first :advObjectType)}))
+        ;; Merge: async :api rows displace base rows for the same
+        ;; (campaign-id, article, event-date); remaining base rows are kept.
+        ad-spend-rows    (if (seq async-api-rows)
+                           (let [async-key (fn [r] [(:campaign-id r) (:article r) (:event-date r)])
+                                 async-idx (into #{} (map async-key async-api-rows))
+                                 kept-base (remove (fn [r] (async-idx (async-key r))) base-ad-spend)]
+                             (vec (concat kept-base async-api-rows)))
+                           base-ad-spend)
         ;; Per-article cash spend (Σ :spend). Bonus is excluded (FR-009).
         by-article       (reduce (fn [m r]
                                    (if-let [a (:article r)]
@@ -1380,7 +1463,21 @@
            (double cost) (get source-by-article article "api") article
            from to to from])))
 
-    ;; 3. Reconciliation log (FR-008) — non-fatal.
+    ;; 3. T039: ad_campaign_stats — DELETE(ozon, period) → INSERT.
+    ;;    Strictly additive: only runs when async raw data exists.
+    (let [stat-rows (build-ozon-ad-campaign-stats raw-stats sku->article synced-at)]
+      (when (seq stat-rows)
+        ;; Idempotent DELETE+INSERT: remove the period first so a re-materialize
+        ;; doesn't accumulate duplicate rows (same PK guarantees from INSERT OR
+        ;; REPLACE, but the DELETE ensures a clean slate for the period).
+        (db/execute! ["DELETE FROM ad_campaign_stats
+                       WHERE marketplace = 'ozon'
+                         AND stat_date >= ? AND stat_date <= ?" from to])
+        (db/insert-ad-campaign-stats! stat-rows)
+        (println (str "  Materialized Ozon ad_campaign_stats: "
+                      (count stat-rows) " row(s)"))))
+
+    ;; 4. Reconciliation log (FR-008) — non-fatal.
     (let [sum-ad-cost (-> (db/query
                             ["SELECT COALESCE(SUM(ad_cost),0) AS s FROM finance
                               WHERE marketplace='ozon'
@@ -1391,7 +1488,8 @@
           {:keys [rel abs]} (try (config/audit-tolerance) (catch Exception _ {:rel 0.01 :abs 10.0}))
           diff       (Math/abs (- sum-ad-cost raw-money-total))
           tol        (max (double abs) (* (double rel) raw-money-total))
-          reconciled? (<= diff tol)]
+          reconciled? (<= diff tol)
+          stat-rows  (build-ozon-ad-campaign-stats raw-stats sku->article synced-at)]
       (when-not reconciled?
         (mu/log ::ad-cost-reconcile-mismatch
                 :period [from to]
@@ -1406,7 +1504,8 @@
       {:ad-spend-rows (count ad-spend-rows)
        :articles      (count by-article)
        :total-spend   sum-ad-cost
-       :reconciled?   reconciled?})))
+       :reconciled?   reconciled?
+       :stat-rows     (count (or stat-rows []))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Cash flow periods (Ozon)

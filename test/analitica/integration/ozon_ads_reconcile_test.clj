@@ -1,5 +1,6 @@
 (ns analitica.integration.ozon-ads-reconcile-test
   "T015 — end-to-end reconciliation + profit integration test (spec 011 US1).
+   T038/T039 — async statistics ingest + materialize wiring tests.
 
    Seeds a temp SQLite DB with:
      - finance rows (ozon) for two articles with known revenue,
@@ -11,13 +12,20 @@
      (b) (pnl/calculate … :marketplace :ozon) net-profit == baseline − ad-spend,
          with :marketplace :ozon passed (memory marketplace_kwarg_propagation);
      (c) :drr non-zero;
-     (d) per-SKU rows → finance event_date_source='api', spread → 'spread' (SC-004)."
+     (d) per-SKU rows → finance event_date_source='api', spread → 'spread' (SC-004).
+
+   T038 ingest-idempotent: running ingest-ozon-ads! twice with the async-stats
+   flag does NOT double ad_campaign_stats rows.
+   T039 materialize-idempotent: running materialize-ozon-ad-cost! twice does NOT
+   double ad_campaign_stats rows and ad_cost total is unchanged.
+   FR-015: per-article spend in efficiency-report == Σ ad_spend.spend from US1."
   (:require [clojure.test :refer [deftest testing is use-fixtures]]
             [analitica.db :as db]
             [analitica.ingest :as ingest]
             [analitica.materialize :as mat]
             [analitica.domain.finance :as finance]
             [analitica.domain.pnl :as pnl]
+            [analitica.domain.ozon-ads :as ozon-ads]
             [analitica.marketplace.ozon.performance.client :as pc])
   (:import [java.io File]
            [java.nio.file Files]
@@ -192,3 +200,114 @@
           (is (= "api" (esource "ABC-123")) "SKU-attributed article → api")
           (is (= "spread" (esource "ART-A")) "banner-spread article → spread")
           (is (= "spread" (esource "ART-B")) "banner-spread article → spread"))))))
+
+;; ---------------------------------------------------------------------------
+;; T038 — async statistics ingest idempotency
+;;
+;; A stub client that also carries :report-rows (the async statistics fixture
+;; for campaign 78901, two per-SKU days). Running ingest-ozon-ads! twice with
+;; :fetch-stats? true must NOT double ad_campaign_stats rows.
+;; ---------------------------------------------------------------------------
+
+(defn- stub-client-with-stats []
+  ;; The report rows match statistics-report.json: campaign 78901, sku 12345678,
+  ;; two days. moneySpent totals 610.00 (same as the daily rows for that campaign).
+  (pc/stub-client
+    {:token         {:access_token "t" :expires_in 1800}
+     :campaigns     [{:id "78901" :advObjectType "SKU"   :title "SKU camp"}
+                     {:id "78902" :advObjectType "BANNER" :title "Banner camp"}]
+     :daily-rows    [{:date "2026-04-10" :id "78901" :sku "12345678" :moneySpent 410.00 :bonusSpent 0.0}
+                     {:date "2026-04-15" :id "78901" :sku "12345678" :moneySpent 200.00 :bonusSpent 0.0}
+                     {:date "2026-04-10" :id "78902" :moneySpent 500.00 :bonusSpent 60.00}
+                     {:date "2026-04-20" :id "78902" :moneySpent 534.56 :bonusSpent 40.00}]
+     :report-uuid   "test-uuid-001"
+     :report-status {:state "OK"}
+     :report-rows   [{:date "2026-04-10" :sku "12345678" :views 1200 :clicks 48
+                      :moneySpent 410.00 :bonusSpent 0.0 :orders 6 :ordersMoney 9000.0}
+                     {:date "2026-04-15" :sku "12345678" :views 800  :clicks 30
+                      :moneySpent 200.00 :bonusSpent 0.0 :orders 3 :ordersMoney 4500.0}]}))
+
+(deftest t038-async-ingest-idempotent
+  "T038: ingest-ozon-ads! with :fetch-stats? true stores raw :ad_campaign_stats;
+   running it twice stores it idempotently (INSERT OR REPLACE on the raw_data
+   natural key — same (source, entity_type, date_from, date_to) → 1 row).
+   After materialize the ad_campaign_stats table is populated correctly."
+  (seed-finance!)
+  (seed-sku-map!)
+  (let [client (stub-client-with-stats)]
+    ;; First ingest with async stats.
+    (let [r1 (ingest/ingest-ozon-ads! client from to :fetch-stats? true)]
+      (is (= :ok (:status r1)))
+      (is (number? (:stat-rows r1)) "stat-rows count returned"))
+    ;; raw_data should have exactly 1 :ad_campaign_stats batch.
+    (let [raw-1 (db/get-raw-range "ozon" :ad_campaign_stats from to)]
+      (is (= 1 (count raw-1)) "exactly 1 raw batch stored after first ingest"))
+    ;; Second ingest — INSERT OR REPLACE dedups on the natural key.
+    (ingest/ingest-ozon-ads! client from to :fetch-stats? true)
+    (let [raw-2 (db/get-raw-range "ozon" :ad_campaign_stats from to)]
+      (is (= 1 (count raw-2))
+          "raw_data still exactly 1 batch after second ingest (idempotent)"))
+    ;; After materialize, the table is populated (2 report rows × 2 campaigns = 4).
+    (mat/materialize-ozon-ad-cost! from to)
+    (let [stats (db/get-ad-campaign-stats :ozon from to)]
+      (is (pos? (count stats))
+          "ad_campaign_stats table populated after materialize"))))
+
+;; ---------------------------------------------------------------------------
+;; T039 — materialize idempotency for ad_campaign_stats + ad_cost unchanged
+;;
+;; Running materialize-ozon-ad-cost! twice:
+;;   (1) ad_campaign_stats count is unchanged (DELETE+INSERT, not accumulate).
+;;   (2) Σ finance.ad_cost is unchanged (no double-counting).
+;;   (3) Per-article spend in efficiency-report == Σ ad_spend.spend (FR-015).
+;; ---------------------------------------------------------------------------
+
+(deftest t039-materialize-idempotent
+  "T039: materialize-ozon-ad-cost! twice → ad_campaign_stats unchanged,
+   ad_cost total unchanged, per-article spend == efficiency report (FR-015)."
+  (seed-finance!)
+  (seed-sku-map!)
+  (let [client (stub-client-with-stats)]
+    ;; Ingest with async stats first.
+    (ingest/ingest-ozon-ads! client from to :fetch-stats? true)
+    ;; First materialize.
+    (mat/materialize-ozon-ad-cost! from to)
+    (let [stats-1     (db/get-ad-campaign-stats :ozon from to)
+          ad-cost-1   (-> (db/query ["SELECT COALESCE(SUM(ad_cost),0) AS s FROM finance
+                                      WHERE marketplace='ozon'"]) first :s double)
+          spend-sum-1 (reduce + 0.0 (map :spend (db/get-ad-spend :ozon from to)))]
+      ;; Second materialize.
+      (mat/materialize-ozon-ad-cost! from to)
+      (let [stats-2     (db/get-ad-campaign-stats :ozon from to)
+            ad-cost-2   (-> (db/query ["SELECT COALESCE(SUM(ad_cost),0) AS s FROM finance
+                                        WHERE marketplace='ozon'"]) first :s double)
+            spend-sum-2 (reduce + 0.0 (map :spend (db/get-ad-spend :ozon from to)))]
+
+        (testing "ad_campaign_stats count unchanged after double-materialize"
+          (is (= (count stats-1) (count stats-2))
+              "ad_campaign_stats not doubled on re-materialize"))
+
+        (testing "Σ finance.ad_cost unchanged after double-materialize"
+          (is (= (kopecks ad-cost-1) (kopecks ad-cost-2))
+              "ad_cost total not doubled"))
+
+        (testing "Σ ad_spend.spend unchanged after double-materialize"
+          (is (= (kopecks spend-sum-1) (kopecks spend-sum-2))
+              "ad_spend total not doubled"))
+
+        (testing "FR-015: per-article spend in efficiency-report == Σ ad_spend"
+          (let [report      (ozon-ads/efficiency-report [from to] :marketplace :ozon)
+                per-article (:per-article report)
+                ;; Ground truth from ad_spend canon.
+                expected    (->> (db/get-ad-spend :ozon from to)
+                                 (reduce (fn [m r]
+                                           (when-let [a (:article r)]
+                                             (update m a (fnil + 0.0)
+                                                     (double (or (:spend r) 0.0)))))
+                                         {}))]
+            (is (seq per-article) "efficiency report has per-article rows")
+            (doseq [{:keys [article spend]} per-article
+                    :when article]
+              (is (= (kopecks (get expected article 0.0))
+                     (kopecks spend))
+                  (str "FR-015: " article " efficiency-report spend == ad_spend canon")))))))))

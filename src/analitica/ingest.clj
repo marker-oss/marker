@@ -777,8 +777,13 @@
    knows each campaign's advObjectType (SKU vs BANNER) alongside its spend:
      {:campaigns [Campaign …] :daily-rows [DailyStatRow …]}
    `db/insert-raw!` is INSERT-OR-REPLACE on the natural key (source,
-   entity_type, date_from, date_to) → re-ingest is idempotent (FR-007)."
-  [client from to]
+   entity_type, date_from, date_to) → re-ingest is idempotent (FR-007).
+
+   T038 (P1): when `fetch-stats?` is true, also run the async statistics report
+   (create → poll → download) and persist per-campaign/per-day efficiency rows
+   as raw_data entity_type :ad_campaign_stats. Gated behind the flag so the P0
+   daily-stats path remains synchronous and fast by default."
+  [client from to & {:keys [fetch-stats?] :or {fetch-stats? false}}]
   (let [_          (perf-api/get-token client)
         campaigns  (perf-api/list-campaigns client)
         camp-ids   (mapv :id campaigns)
@@ -790,20 +795,42 @@
     (println (str "Ingested Ozon ad_performance " from " .. " to
                   " (" (count campaigns) " campaign(s), "
                   (count daily-rows) " daily row(s))"))
-    {:campaigns  (count campaigns)
-     :daily-rows (count daily-rows)
-     :status     :ok}))
+    ;; T038 (P1): async statistics report — per-SKU efficiency counters.
+    ;; Runs only when fetch-stats? is true. Non-fatal: a failure here is caught
+    ;; by the outer try/catch in ingest-ozon-ads! (failure-isolation, FR-006).
+    (let [stat-rows
+          (when (and fetch-stats? (seq camp-ids))
+            (let [rows (perf-api/fetch-statistics-report client camp-ids from to
+                                                         :poll-ms 0)]
+              ;; Persist as raw_data :ad_campaign_stats. INSERT-OR-REPLACE on
+              ;; the natural key (source, entity_type, date_from, date_to) →
+              ;; re-ingest is idempotent (FR-007).
+              (db/insert-raw! :ozon :ad_campaign_stats from to
+                              {:campaigns campaigns :stat-rows rows})
+              (println (str "  Ingested Ozon ad_campaign_stats: "
+                            (count rows) " stat row(s)"))
+              rows))]
+      {:campaigns  (count campaigns)
+       :daily-rows (count daily-rows)
+       :stat-rows  (count (or stat-rows []))
+       :status     :ok})))
 
 (defn ingest-ozon-ads!
   "Fetch Ozon Performance advertising data (token → campaigns → daily stats)
    and persist it as raw_data (source='ozon', entity_type=:ad_performance).
 
-   Two arities:
-     [from to]        — resolve the registered OzonPerfClient from config; when
-                        Performance is NOT configured, short-circuit with
-                        {:status :not-configured} (baseline unchanged, FR-005).
-     [client from to] — use an explicit client (or test stub) satisfying the
-                        `performance.client/PerformanceApi` protocol.
+   Arities:
+     [from to]                     — resolve the registered OzonPerfClient from
+                                     config; when Performance is NOT configured,
+                                     short-circuit with {:status :not-configured}.
+     [from to & opts]              — same but accepts keyword opts (see below).
+     [client from to & opts]       — use an explicit client (or test stub).
+
+   Opts:
+     :fetch-stats? (default false) — T038 (P1): also run the async statistics
+       report (create → poll → download) for per-SKU/per-campaign efficiency
+       counters, persisted as raw_data :ad_campaign_stats. Gated so the P0
+       daily-stats path stays synchronous and fast by default.
 
    OPTIONALITY (FR-005): no credentials ⇒ {:status :not-configured} + one info
    line; nothing is fetched or written; finance.ad_cost stays 0.
@@ -816,7 +843,7 @@
 
    READ-ONLY (FR-010): only campaign-list + daily-stats reads are issued.
 
-   Returns {:campaigns N :daily-rows M :status :ok}
+   Returns {:campaigns N :daily-rows M :stat-rows K :status :ok}
         or {:status :not-configured}
         or {:status :ad-unavailable :error \"…\"}."
   ([from to]
@@ -824,9 +851,9 @@
      (ingest-ozon-ads! client from to)
      (do (println "Ozon Performance not configured — skipping ad_stats")
          {:status :not-configured})))
-  ([client from to]
+  ([client from to & {:keys [fetch-stats?] :or {fetch-stats? false}}]
    (try
-     (do-ingest-ozon-ads! client from to)
+     (do-ingest-ozon-ads! client from to :fetch-stats? fetch-stats?)
      (catch Exception e
        (mu/log ::ad-ingest-failed
                :marketplace :ozon
