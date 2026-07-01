@@ -28,15 +28,30 @@
                    cum'
                    (conj result (assoc item :abc-category cat :cum-pct pct)))))))))
 
+(defn- article-profit
+  "Per-article net profit computable in the finance aggregation pipeline:
+   for-pay (net payout) − total-cost (net-of-returns COGS). Ad-spend is NOT
+   attributable per-article in finance data, so it is excluded here — this is
+   the honest per-article profit basis for ABC ranking (016 US4 / R7)."
+  [row]
+  (- (double (or (:for-pay row) 0.0))
+     (double (or (:total-cost row) 0.0))))
+
 (defn analyze-by
-  "Perform ABC analysis on finance data.
-   criterion: :revenue, :for-pay, :sales-qty"
+  "Perform ABC analysis on finance data over the FULL dataset (never a top-N
+   slice or a single page — VR-a1/SC-006).
+   criterion: :revenue, :for-pay, :sales-qty, :profit.
+
+   :profit ranks by per-article net profit (for-pay − total-cost); the
+   cumulative-share `classify` machinery (≤80→A, ≤95→B, else C) is reused
+   unchanged. 016 US4 / R7."
   [finance-data criterion]
   (let [by-art  (finance/by-article finance-data)
         val-fn  (case criterion
                   :revenue   :revenue
                   :for-pay   :for-pay
                   :sales-qty (comp double :sales-qty)
+                  :profit    article-profit
                   :revenue)
         sorted  (sort-by val-fn > by-art)]
     (classify sorted val-fn)))

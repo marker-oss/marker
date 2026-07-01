@@ -9,7 +9,13 @@
 
    T005 adds :canonical-metric-slugs — exhaustive kebab-keyword metric set
    per contracts/descriptor-schema.edn §CANONICAL SLUG DICTIONARY. 016 OWNS
-   this set; 017 and the US5 metric constructor consume it, define nothing.")
+   this set; 017 and the US5 metric constructor consume it, define nothing.
+
+   US5 (§8) adds the minimal user-metric constructor: a SAFE EDN-AST evaluator
+   (eval-user-metric) + validation (valid-formula?) + descriptor emission
+   (user-metric->descriptor). It is a pure AST interpreter; runtime code
+   evaluation of user input is deliberately never used — sandboxing via EDN-spec."
+  (:require [malli.core :as m]))
 
 ;; ---------------------------------------------------------------------------
 ;; T004 — Malli schemas for column descriptor (§3.C contract, OWNED by 016)
@@ -101,6 +107,149 @@
     :cap-by-cost :cap-by-price :gmroi :days-of-cover
     ;; classification (thread d)
     :revenue-abc :profit-abc})
+
+;; ---------------------------------------------------------------------------
+;; US5 (016 §8, owner override 2026-06-30 MERGE) — minimal user-metric
+;; constructor. A user composes a metric from canonical slugs + arithmetic;
+;; it is emitted as an ordinary ColumnDescriptor and renders through the SAME
+;; US1 path (table + KPI + bot) with no special-casing.
+;;
+;; SAFETY (VR-u2): the formula is a SAFE EDN-AST evaluated by a PURE INTERPRETER.
+;; Runtime code evaluation of user input is deliberately never used — sandboxing
+;; is entirely via the closed EDN grammar + a recursive walk over the row map.
+;; ---------------------------------------------------------------------------
+
+(def formula-operators
+  "The only operators a user-metric formula may use. Division-by-zero ⇒ nil."
+  #{:+ :- :* :/})
+
+(def slug-row-key-aliases
+  "Display-slug → emitted row-key map (contracts/descriptor-schema.edn
+   :slug-row-key-aliases). Where a canonical slug differs from the key pnl/calculate
+   + the aggregator actually emit, eval-user-metric MUST map it (else the slug
+   silently yields nil). All other canonical slugs equal their row-key."
+  {:gross-margin :gross-profit   ; pnl emits :gross-profit (₽); :gross-margin is the display name
+   :advertising  :ad-spend})     ; pnl emits :ad-spend; :advertising is the display name
+
+(defn- resolve-slug
+  "Resolve a canonical display-slug to the row-map key it is stored under."
+  [slug]
+  (get slug-row-key-aliases slug slug))
+
+(defn valid-formula?
+  "Predicate: is `formula` a well-formed, SAFE user-metric AST?
+
+   grammar:  formula := [op formula formula] | slug | number
+             op      ∈ formula-operators
+             slug    ∈ canonical-metric-slugs (unknown slug ⇒ not valid)
+
+   Pure structural check — never evaluates anything. Returns true/false."
+  [formula]
+  (cond
+    (number? formula) true
+    (keyword? formula) (contains? canonical-metric-slugs formula)
+    (and (vector? formula)
+         (= 3 (count formula))
+         (contains? formula-operators (first formula)))
+    (and (valid-formula? (nth formula 1))
+         (valid-formula? (nth formula 2)))
+    :else false))
+
+(defn eval-user-metric
+  "Evaluate a SAFE user-metric AST `formula` over a `row` map (per-article/period
+   metric values). PURE INTERPRETER — walks the AST, resolving slug leaves against
+   the row (via slug-row-key-aliases). Never performs runtime code evaluation.
+
+   - numeric literal  → itself (as double)
+   - slug leaf        → (resolve-slug slug) looked up in row; absent/nil ⇒ nil
+   - [op a b]         → op applied to recursively-evaluated a,b
+   - nil operand      → propagates to nil (no NPE)
+   - division by zero → nil (rendered '—', FR-013 N/A discipline)
+
+   Assumes `formula` already passed valid-formula? (callers validate at save)."
+  [formula row]
+  (cond
+    (number? formula) (double formula)
+
+    (keyword? formula)
+    (let [v (get row (resolve-slug formula))]
+      (when (number? v) (double v)))
+
+    (vector? formula)
+    (let [[op a b] formula
+          va (eval-user-metric a row)
+          vb (eval-user-metric b row)]
+      (when (and (some? va) (some? vb))
+        (case op
+          :+ (+ va vb)
+          :- (- va vb)
+          :* (* va vb)
+          :/ (when-not (zero? vb) (/ va vb))
+          nil)))
+
+    :else nil))
+
+(def UserMetric
+  "Malli schema for a user-defined metric (016 §8.2). :formula is validated
+   separately by valid-formula? (the recursive EDN-AST grammar)."
+  [:map {:closed false}
+   [:id             {:optional true} :int]
+   [:slug           :keyword]
+   [:name           :string]
+   [:formula        :any]                       ; validated by valid-formula?
+   [:suffix         {:optional true} Suffix]
+   [:filterType     {:optional true} FilterType]
+   [:positiveIfGrow {:optional true} [:maybe :boolean]]
+   [:basis          {:optional true} [:maybe :string]]])
+
+(defn- formula->human
+  "Render a formula AST as a human-readable infix string for the ⓘ hint."
+  [formula]
+  (cond
+    (number? formula) (str formula)
+    (keyword? formula) (name formula)
+    (vector? formula)
+    (let [[op a b] formula]
+      (str "(" (formula->human a) " " (name op) " " (formula->human b) ")"))
+    :else (str formula)))
+
+(defn- suffix->format
+  "Map a Suffix to the descriptor :format. A ratio metric renders dimensionless
+   (NOT ₽); percentage → :pct; qty/days → :int; rub → :rub."
+  [suffix]
+  (case suffix
+    :ratio :ratio
+    :pct   :pct
+    :rub   :rub
+    (:qty :days) :int
+    :ratio))
+
+(defn user-metric->descriptor
+  "Emit a saved user metric as an ordinary ColumnDescriptor (016 §8, VR-u1) so the
+   US1 render-path handles it with no special-casing. :hint folds in the formula
+   and the free-text basis (P6/FR-004); :user-defined? flags it for edit/delete."
+  [{:keys [slug name formula suffix filterType positiveIfGrow basis]}]
+  (let [human (formula->human formula)
+        hint  (str name " = " human "."
+                   (when (seq basis) (str " Basis: " basis "."))
+                   " (пользовательская метрика)")]
+    (cond-> {:key           slug
+             :title         name
+             :group         :user
+             :format        (suffix->format suffix)
+             :hint          hint
+             :user-defined? true}
+      suffix               (assoc :suffix suffix)
+      filterType           (assoc :filterType filterType)
+      (some? positiveIfGrow) (assoc :positiveIfGrow positiveIfGrow))))
+
+(defn validate-descriptor
+  "Return `descriptor` if it satisfies ColumnDescriptor, else nil. Thin wrapper
+   so tests / callers can assert emitted user-metric descriptors are US1-valid
+   without pulling malli into the caller."
+  [descriptor]
+  (when (m/validate ColumnDescriptor descriptor)
+    descriptor))
 
 ;; ---------------------------------------------------------------------------
 ;; Report schemas
