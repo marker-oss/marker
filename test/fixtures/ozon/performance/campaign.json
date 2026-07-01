@@ -1,0 +1,18 @@
+{
+  "list": [
+    {
+      "id": "78901",
+      "title": "Search promo — SKU campaign",
+      "state": "CAMPAIGN_STATE_RUNNING",
+      "advObjectType": "SKU",
+      "paymentType": "CPC"
+    },
+    {
+      "id": "78902",
+      "title": "Banner — account-level campaign",
+      "state": "CAMPAIGN_STATE_RUNNING",
+      "advObjectType": "BANNER",
+      "paymentType": "CPO"
+    }
+  ]
+}

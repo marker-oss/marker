@@ -980,16 +980,34 @@
   [:marketplace :event-date :campaign-id :campaign-type :article :sku
    :spend :bonus-spend :attribution-source :basis :synced-at])
 
+(defn- ->db-name
+  "Coerce a keyword canon value (e.g. :ozon, :api) to its plain string name for
+   storage. Passes strings/nil through unchanged. Keeps the in-memory §3.B canon
+   keyword-typed while persisting clean 'ozon'/'api' strings (a raw keyword would
+   be stored WITH its colon → ':ozon', breaking name-based WHERE filters)."
+  [v]
+  (cond (keyword? v) (name v)
+        :else        v))
+
 (defn insert-ad-spend!
   "Insert attributed ad-spend rows (§3.B canon). Each row is a map with
    kebab keys matching `ad-spend-columns`. INSERT OR REPLACE on the natural
-   PK (marketplace, event_date, campaign_id, article)."
+   PK (marketplace, event_date, campaign_id, article).
+
+   `:marketplace` and `:attribution-source` arrive as canon keywords (:ozon /
+   :api / :spread) and are stored as plain strings so name-based WHERE filters
+   (get-ad-spend / materialize) match."
   [rows]
   (insert-batch! :ad_spend
                  [:marketplace :event_date :campaign_id :campaign_type
                   :article :sku :spend :bonus_spend :attribution_source
                   :basis :synced_at]
-                 (mapv (fn [r] (mapv r ad-spend-columns)) rows)))
+                 ;; ad-spend-columns index map: 0 marketplace … 8 attribution-source.
+                 (mapv (fn [r]
+                         (-> (mapv r ad-spend-columns)
+                             (assoc 0 (->db-name (:marketplace r)))
+                             (assoc 8 (->db-name (:attribution-source r)))))
+                       rows)))
 
 (defn delete-ad-spend!
   "Delete every ad_spend row for `marketplace` whose event_date falls in
@@ -1023,7 +1041,11 @@
                  [:marketplace :campaign_id :campaign_type :campaign_name
                   :stat_date :views :clicks :add_to_cart :orders
                   :orders_revenue :spend :bonus_spend :synced_at]
-                 (mapv (fn [r] (mapv r ad-campaign-stats-columns)) rows)))
+                 ;; index 0 = marketplace (canon keyword → plain string).
+                 (mapv (fn [r]
+                         (-> (mapv r ad-campaign-stats-columns)
+                             (assoc 0 (->db-name (:marketplace r)))))
+                       rows)))
 
 (defn get-ad-campaign-stats
   "Return ad_campaign_stats rows for `marketplace` with stat_date in

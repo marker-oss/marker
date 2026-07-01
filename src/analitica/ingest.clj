@@ -5,6 +5,7 @@
             [analitica.marketplace.registry :as registry]
             [analitica.marketplace.wb.api :as wb-api]
             [analitica.marketplace.ozon.api :as ozon-api]
+            [analitica.marketplace.ozon.performance.api :as perf-api]
             [analitica.marketplace.ym.api :as ym-api]
             [analitica.marketplace.ym.client :as ym-client]
             [analitica.schema.validator :as schema-validator]
@@ -750,6 +751,42 @@
               (+ acc (or (ingest-wb-ad-stats! client cf ct) 0)))
             0
             chunks)))
+
+;; ---------------------------------------------------------------------------
+;; Ozon Performance (advertising) ingest — spec 011 US1 (T020)
+;; ---------------------------------------------------------------------------
+
+(defn ingest-ozon-ads!
+  "Fetch Ozon Performance advertising data (token → campaigns → daily stats)
+   and persist it as raw_data (source='ozon', entity_type=:ad_performance).
+
+   `client` is an OzonPerfClient (or a test stub) satisfying the
+   `performance.client/PerformanceApi` protocol. `from`/`to` are ISO dates.
+
+   The raw payload bundles campaigns + daily rows in one batch so materialize
+   knows each campaign's advObjectType (SKU vs BANNER) alongside its spend:
+     {:campaigns [Campaign …] :daily-rows [DailyStatRow …]}
+   `db/insert-raw!` is INSERT-OR-REPLACE on the natural key (source,
+   entity_type, date_from, date_to) → re-ingest is idempotent (FR-007).
+
+   READ-ONLY (FR-010): only campaign-list + daily-stats reads are issued.
+
+   Returns {:campaigns N :daily-rows M :status :ok}."
+  [client from to]
+  (let [_          (perf-api/get-token client)
+        campaigns  (perf-api/list-campaigns client)
+        camp-ids   (mapv :id campaigns)
+        daily-rows (if (seq camp-ids)
+                     (perf-api/daily-stats client camp-ids from to)
+                     [])]
+    (db/insert-raw! :ozon :ad_performance from to
+                    {:campaigns campaigns :daily-rows daily-rows})
+    (println (str "Ingested Ozon ad_performance " from " .. " to
+                  " (" (count campaigns) " campaign(s), "
+                  (count daily-rows) " daily row(s))"))
+    {:campaigns  (count campaigns)
+     :daily-rows (count daily-rows)
+     :status     :ok}))
 
 (defn ingest!
   "Ingest raw data from marketplace API to raw_data table.
