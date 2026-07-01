@@ -87,12 +87,19 @@
                        :else
                        (let [reason (dep-failure-reason depends-on)]
                          (if reason
-                           (do
-                             (registry/record-skipped! id reason)
-                             (update acc :skipped inc))
-                           ;; Run the task via the runner envelope
-                           (let [row (runner/run-task! id thunk)]
-                             (if (= "ok" (:status row))
+                           (do (registry/record-skipped! id reason)
+                               (update acc :skipped inc))
+                           ;; US2 T026: background-op span (FR-011).
+                           ;; Correlated under run-id via mu/with-context (line 54).
+                           ;; Only allow-list keys — no per-SKU/article labels (FR-014).
+                           (let [t0  (System/currentTimeMillis)
+                                 row (runner/run-task! id thunk)
+                                 ok? (= "ok" (:status row))]
+                             (mu/log :marker/background-op
+                                     :operation   :sync
+                                     :outcome     (if ok? :success :error)
+                                     :duration-ms (double (- (System/currentTimeMillis) t0)))
+                             (if ok?
                                (update acc :ok inc)
                                (update acc :failed inc)))))))
                    {:ok 0 :failed 0 :skipped 0}

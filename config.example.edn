@@ -31,4 +31,24 @@
 
  :audit
  {:tolerance {:rel 0.01   ;; 1% relative delta → classified as :expected (rounding)
-              :abs 10.0}}}
+              :abs 10.0}}
+
+ ;; ---------------------------------------------------------------------------
+ ;; 018-platform-seams: Telemetry (US2 T010) — optional, default OFF.
+ ;; Self-host without a collector works normally (SC-005 fail-open).
+ ;; Use #prop (NOT #env): .env values load as JVM system properties.
+ ;; Uncomment and set OTLP_ENDPOINT in .env to enable export.
+ ;; ---------------------------------------------------------------------------
+ ;; :telemetry
+ ;; {:enabled   #prop TELEMETRY_ENABLED    ;; "true" to enable OTLP export
+ ;;  :endpoint  #prop OTLP_ENDPOINT        ;; e.g. "http://localhost:4318"
+ ;;  :publisher :otlp}                     ;; pluggable; :otlp is the default
+
+ ;; ---------------------------------------------------------------------------
+ ;; 018-platform-seams: Tariffs (US4 T010) — open edition default.
+ ;; The catalogue is defined as data in platform/tariffs.clj; no DB needed.
+ ;; This config key reserves the namespace for future per-user entitlement.
+ ;; ---------------------------------------------------------------------------
+ ;; :tariffs
+ ;; {:edition "free"}                      ;; "free" = open/self-host (default)
+ }

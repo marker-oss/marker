@@ -29,6 +29,7 @@
             [analitica.web.api.charts     :as charts]
             [analitica.web.api.report     :as report]
             [analitica.web.report-schemas :as rs]
+            [analitica.platform.capability :as cap]
             [clojure.string               :as str]
             [com.brunobonacci.mulog       :as mu]))
 
@@ -497,6 +498,14 @@
     (math/round2 (* (/ (double revenue) days-so-far) days-total))
     0.0))
 
+(defn- pulse-capability-envelope
+  "Add :capabilities alongside the existing honesty-envelope keys.
+   Caller context is nil (single-API-key open edition — FR-028 forward seam).
+   The slot is placed NEXT TO :completeness/:date-basis/:preliminary? (FR-027/P6);
+   it never replaces them and never truncates payload (FR-017/SC-006)."
+  [response-map]
+  (merge response-map (cap/capabilities-for nil)))
+
 (defn pulse-summary
   "Handler for GET /api/v1/marker/pulse-summary"
   [request]
@@ -517,8 +526,12 @@
           ;; the rest of the Ozon cash-flow service costs land on Pulse
           ;; net-profit too. Without this Pulse silently overstated
           ;; Ozon profit vs the canonical P&L tile.
-          fin-cur    (load-finance period mp1)
-          sales-cur  (load-sales  period mp1)
+          ;; US2 T025: data-load inner trace — wraps finance + sales DB fetches.
+          ;; mu/trace emits a span nested under the outer request span context
+          ;; (set by wrap-request-trace via mu/with-context). Only allow-list
+          ;; attributes — no per-SKU/article labels (FR-014).
+          fin-cur    (mu/trace :marker/data-load {} (load-finance period mp1))
+          sales-cur  (mu/trace :marker/data-load {} (load-sales   period mp1))
           cf-adj-cur (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
                           (catch Exception _ nil))
           pnl-cur    (-> (compute-pnl fin-cur period mp1 cf-adj-cur)
@@ -769,9 +782,12 @@
           ;; a partial-cost profit/margin or surface a false zero.
           ;; Domain pnl-result keeps numeric 0 (safe for sum-total-costs/
           ;; what-if/exports); nil is applied ONLY here in presentation.
-          cost-missing? (= :preliminary-missing (:cost-source pnl-cur))]
-
-      {:alerts          alert-list
+          cost-missing? (= :preliminary-missing (:cost-source pnl-cur))
+          ;; US2 T025 / US3 T032: response-map bound so we can wrap it in
+          ;; compute+encode traces and merge the capability-slot (FR-027/P6).
+          response-map
+          (mu/trace :marker/compute {}
+            {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
                                         (assoc :date-basis fin-basis :completeness fin-completeness
                                                :basis-note (basis-note fin-basis window-days)
@@ -950,7 +966,12 @@
                           {:articles-with-cost arts-with
                            :articles-total     arts-total
                            :coverage-pct       pct
-                           :complete?          (>= pct 90.0)})})
+                           :complete?          (>= pct 90.0)})})]
+      ;; US2 T025: encode inner trace wraps final encoding step.
+      ;; US3 T032: merge :capabilities NEXT TO :completeness/:date-basis/:preliminary?
+      ;; (FR-027/P6) — pulse-capability-envelope is additive, never truncates payload.
+      (mu/trace :marker/encode {}
+        (pulse-capability-envelope response-map)))
     (catch Exception e
       {:error (.getMessage e)})))
 

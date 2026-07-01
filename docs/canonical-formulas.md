@@ -172,14 +172,32 @@ cogs := cost_price.get(article, barcode) × net_sold
 - Если цены нет — считается `0`, метрики с `cogs` возвращают degraded-результат; в отчёте предупреждение.
 - `max(0, …)` prevents negative COGS when returns exceed sales in the period (net-return scenario).
 
-#### 3.9. Ad-spend (реклама)
+#### 3.9. Ad-spend (реклама) — P&L.2
 
 ```
-ad_spend_total            := SUM(ad_stats.spend WHERE marketplace=M AND date ∩ period)
-ad_spend_per_article[a]   := распределение ad_spend_total по кампаниям → артикулам
+ad_spend_total          := SUM(finance.ad_cost WHERE marketplace=M AND event_date ∈ period)
+                           -- canonical path (018 §3.B): ad_spend → materialize → finance.ad_cost
+                           -- legacy fallback (WB pre-migration): SUM(ad_stats.spend) JOIN finance.nm_id
+
+ad_spend_per_article[a] := SUM(finance.ad_cost WHERE article=a AND marketplace=M AND event_date ∈ period)
+                           -- producer writes ad_spend.spend → materialize-ad-cost! → finance.ad_cost
+                           -- только :spend (cash); :bonus-spend хранится отдельно (не суммируется)
+
+drr_pct[M]              := ad_spend_total / revenue × 100  -- единый документированный базис, все МП
+roas[M]                 := revenue / ad_spend_total        -- обратная метрика
 ```
-- **Текущее ограничение (B-003)**: мульти-артикульные кампании распределяют spend на первый артикул. **Корректное** распределение — пропорционально выручке артикула в рамках кампании — ещё не реализовано.
-- **BUG (известный, не починен)**: `pnl.calculate` читает `sum(spend)` **без фильтра по marketplace**. В мультимаркетной установке P&L одной МП включает рекламу другой. Fix — добавить `AND marketplace = ?`.
+
+**Канонический путь ad-canon (018 §3.B, 2026-07):**
+- Единая таблица `ad_spend` — sibling к `item_events`, **не** `event_type`.
+- Продюсер (011 Ozon Performance, далее WB/YM) пишет в `ad_spend` через `db/insert-ad-spend!`.
+- `canonical/ad/materialize.clj` `materialize-ad-cost!` суммирует `Σ ad_spend.spend` per-article и делает `UPDATE finance SET ad_cost = ...` — единая точка записи.
+- `finance.ad_cost` остаётся единственной точкой чтения для P&L/UE/DRR/ROAS (не изменилось).
+- Только `:spend` (cash) течёт в `finance.ad_cost`; `:bonus-spend` хранится отдельно (double-count prevention).
+- SC-001: ноль per-MP веток в `canonical/ad/query.clj` — один `mp-clause`, все МП параметрически.
+- SC-002: второй продюсер (WB/YM) = новый `:marketplace`-тег в ту же форму, **ноль** изменений read-side.
+- SC-003: `drr_pct := ad_spend / revenue × 100` — **один** документированный базис для всех МП.
+- **Legacy fallback (WB pre-migration)**: `ad_stats` JOIN остаётся в `pnl.clj` пока `finance.ad_cost` не заполнен для периода. Приоритет: canonical (ad_cost > 0) → legacy.
+- **Инвариант P7/kopeck**: `Σ ad_spend.spend` per-article за период == campaign-level Performance total точно (rounding-остаток на крупнейший артикул).
 
 #### 3.10. Gross Profit (валовая прибыль до рекламы)
 
@@ -216,7 +234,7 @@ net_profit := gross_profit − ad_spend_total − tax
 margin_gross_pct  := gross_profit / revenue × 100
 margin_net_pct    := net_profit   / revenue × 100
 cogs_pct          := cogs         / revenue × 100
-drr_pct           := ad_spend     / revenue × 100       — "ДРР"
+drr_pct           := ad_spend     / revenue × 100       — "ДРР" (единый базис §3.9/P&L.2, SC-003)
 non_return_rate   := sales_qty    / (sales_qty + returns_qty + refusals_qty) × 100
                      — "Доля невозвратов" (sales-only; WB refusals with saleID prefix "D" counted in denominator)
                      — :buyout-rate is a one-cycle deprecated alias for backward compat

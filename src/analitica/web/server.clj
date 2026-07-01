@@ -43,6 +43,7 @@
             [analitica.web.api.settings :as settings-api]
             [analitica.web.api.feedback :as feedback-api]
             [analitica.web.middleware.transit :as transit-mw]
+            [analitica.web.middleware.trace :as trace-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
             [analitica.util.safe :as safe]
@@ -1395,6 +1396,7 @@
       (transit-mw/wrap-transit-response) ; encode outgoing maps to transit when requested
       (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
       (auth/wrap-api-key)
+      (trace-mw/wrap-request-trace)           ; US2: per-request telemetry span (T024)
       (wrap-cors :access-control-allow-origin (cors-origin-patterns)
                  :access-control-allow-methods [:get :post :put :delete :options])
       (body-limit/wrap-content-length-limit)

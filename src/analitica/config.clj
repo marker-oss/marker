@@ -130,3 +130,35 @@
   []
   (merge default-audit-tolerance
          (get-in (config) [:audit :tolerance])))
+
+;; ---------------------------------------------------------------------------
+;; 018-platform-seams: telemetry + tariffs getters (T010)
+;; All values resolved via aero #prop (NOT #env) — .env loaded as JVM system
+;; properties by load-env-file! above (memory: env_loaded_as_system_properties).
+;; Default: telemetry off so self-host without a collector works normally (SC-005).
+;; ---------------------------------------------------------------------------
+
+(def ^:private default-telemetry-config
+  "Default telemetry config — off so absence of a collector never fails requests."
+  {:telemetry/enabled   false
+   :telemetry/endpoint  nil
+   :telemetry/publisher :otlp})
+
+(defn telemetry-config
+  "Return telemetry configuration from config.edn [:telemetry].
+   Falls back to default-off when key is absent (so a stale config.edn does
+   not break startup — SC-005 fail-open default)."
+  []
+  (merge default-telemetry-config
+         (get-in (config) [:telemetry])))
+
+(def ^:private default-tariffs-config
+  "Default tariffs config — open edition with no enforcement."
+  {:tariffs/edition "free"})
+
+(defn tariffs-config
+  "Return tariffs configuration from config.edn [:tariffs].
+   Falls back to free/open edition when key is absent."
+  []
+  (merge default-tariffs-config
+         (get-in (config) [:tariffs])))
