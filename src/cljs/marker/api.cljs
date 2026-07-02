@@ -91,11 +91,13 @@
      (let [t (fmt-date (days-ago now 1))]
        {:from t :to t})
 
+     ;; N−1 back from today: the range is inclusive on both ends, so
+     ;; «Последние 7 дней» = today + 6 prior days (was an 8-day span).
      (= period "Последние 7 дней")
-     {:from (fmt-date (days-ago now 7)) :to (fmt-date now)}
+     {:from (fmt-date (days-ago now 6)) :to (fmt-date now)}
 
      (= period "Последние 30 дней")
-     {:from (fmt-date (days-ago now 30)) :to (fmt-date now)}
+     {:from (fmt-date (days-ago now 29)) :to (fmt-date now)}
 
      (= period "Этот месяц")
      {:from (fmt-date (js/Date. (.getFullYear now) (.getMonth now) 1))
