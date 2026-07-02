@@ -606,3 +606,46 @@
                :marker/treasury-operations-loading?
                :marker/treasury-obligations-loading?]]
       (is (false? (get (db) k)) (str k " starts false")))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H1 — Sync button page→loader mapping (post-nav-restructure)
+;; ---------------------------------------------------------------------------
+
+(deftest page->load-maps-current-nav-shapes
+  (let [ctx {:fs {:mp-filter [:wb]} :treasury-filters {} :obligations-filters {:mode :with-planned}
+             :plan-period "2026-07" :plan-mp :wb}
+        ev  (fn [page] (:event (events/page->load page ctx)))]
+    (testing "single-page + sectioned pages resolve to their loaders"
+      (is (= ::events/load-pulse            (first (ev :pulse))))
+      (is (= ::events/load-pnl              (first (ev [:finance :pnl]))))
+      (is (= ::events/load-reconciliation   (first (ev [:finance :reconciliation]))))
+      (is (= ::events/load-plan-fact        (first (ev [:finance :plan-fact]))))
+      (is (= ::events/load-sku-list         (first (ev [:products :skus]))))
+      (is (= ::events/load-stocks-overview  (first (ev [:products :stocks]))))
+      (is (= ::events/load-treasury-cashflow    (first (ev [:treasury :cashflow]))))
+      (is (= ::events/load-treasury-operations  (first (ev [:treasury :registry]))))
+      (is (= ::events/load-treasury-obligations (first (ev [:treasury :obligations])))))
+    (testing "report-backed tabs route through ::load-report with the right type"
+      (is (= [::events/load-report :ue]      (take 2 (ev [:finance :unit-table]))))
+      (is (= [::events/load-report :returns] (take 2 (ev [:finance :returns]))))
+      (is (= [::events/load-report :abc]     (take 2 (ev [:products :abc]))))
+      (is (= [::events/load-report :buyout]  (take 2 (ev [:dynamics :buyout])))))
+    (testing "dataset-less pages return nil event (so the spinner can resolve)"
+      (is (nil? (ev :settings)))
+      (is (nil? (ev :sync)))
+      (is (nil? (ev [:finance :unit-calc])))
+      (is (nil? (ev [:products :cost-prices]))))
+    (testing "plan-fact forwards period+mp; treasury forwards filters"
+      (is (= [::events/load-plan-fact "2026-07" :wb] (ev [:finance :plan-fact]))))))
+
+(deftest sync-and-refresh-resolves-spinner-on-dataless-page
+  (testing "on a page with no server dataset, Sync clears cache and immediately
+            marks the sync finished instead of leaving it stuck :running"
+    (reset! rf-db/app-db {:marker/page :settings
+                          :marker/mp-filter [:wb] :marker/period "x" :marker/compare false
+                          :marker/cache {:some :thing}})
+    (rf/dispatch-sync [::events/sync-and-refresh])
+    ;; refresh-finished (:success) sets sync-state to {:kind :success ...}
+    ;; and it is never left at :running.
+    (is (not= :running (:kind (:marker/sync-state (db)))))
+    (is (= {} (:marker/cache (db))) "cache cleared")))

@@ -530,12 +530,14 @@
              (assoc :marker/stocks-overview         data
                     :marker/stocks-overview-loading? false)
              (assoc-in [:marker/cache ckey] data)
-             (update :marker/api-errors dissoc stocks-overview-url))}))
+             (update :marker/api-errors dissoc stocks-overview-url))
+     :fx [[:dispatch [::refresh-finished :success]]]}))
 
 (rf/reg-event-fx ::stocks-overview-failed
   (fn [{:keys [db]} [_ failure]]
     {:db       (assoc db :marker/stocks-overview-loading? false)
-     :dispatch [::api-error stocks-overview-url failure]}))
+     :fx       [[:dispatch [::api-error stocks-overview-url failure]]
+                [:dispatch [::refresh-finished :failure]]]}))
 
 ;; Per-article drilldown — keyed by article id so multiple sheet opens
 ;; don't race on a global :loading? flag (mirrors sku-detail pattern).
@@ -710,6 +712,46 @@
                       (get-in resp [:response :error])
                       "Не удалось сохранить")))))
 
+;; Sectioned page value ([:section :tab]) → report-type for tabs served by
+;; the generic /reports/:type handler. Keys mirror nav/SECTION-TABS; the
+;; report-backed tabs are exactly these (stocks has its own overview loader,
+;; not a report; unit-calc/cost-prices/storage carry no server dataset).
+(def ^:private page->report-type
+  {[:finance :unit-table] :ue
+   [:finance :returns]    :returns
+   [:finance :losses]     :losses
+   [:finance :finance]    :finance
+   [:products :abc]       :abc
+   [:dynamics :trends]    :trends
+   [:dynamics :sales]     :sales
+   [:dynamics :geo]       :geo
+   [:dynamics :buyout]    :buyout})
+
+(defn page->load
+  "Map the current SPA page value to the reload plan for the Sync button.
+   Returns {:event <re-frame vector | nil> :label <RU string>}.
+
+   Handles the post-nav-restructure shapes ([:section :tab] vectors and the
+   :pulse keyword). Pages with no server-backed dataset (settings, sync,
+   unit-calc, cost-prices, storage) return {:event nil} so the caller can
+   resolve the spinner immediately instead of leaving it stuck :running
+   (audit 2026-07-02 H1)."
+  [page {:keys [fs treasury-filters obligations-filters plan-period plan-mp]}]
+  (cond
+    (= page :pulse)                {:event [::load-pulse fs]            :label "Pulse"}
+    (= page [:finance :pnl])       {:event [::load-pnl fs]              :label "P&L"}
+    (= page [:finance :reconciliation]) {:event [::load-reconciliation fs] :label "Сверка"}
+    (= page [:finance :plan-fact]) {:event [::load-plan-fact plan-period plan-mp] :label "План/Факт"}
+    (= page [:products :skus])     {:event [::load-sku-list fs]         :label "Товары"}
+    (= page [:products :stocks])   {:event [::load-stocks-overview]     :label "Склады"}
+    (= page [:treasury :cashflow]) {:event [::load-treasury-cashflow treasury-filters] :label "ДДС"}
+    (= page [:treasury :registry]) {:event [::load-treasury-operations treasury-filters] :label "Реестр"}
+    (= page [:treasury :obligations]) {:event [::load-treasury-obligations obligations-filters] :label "Обязательства"}
+    (contains? page->report-type page)
+    (let [t (page->report-type page)]
+      {:event [::load-report t fs] :label (str "Отчёт " (name t))})
+    :else {:event nil :label "данных"}))
+
 (rf/reg-event-fx ::sync-and-refresh
   ;; Clear cache, show sync running state, reload data for the current page.
   (fn [{:keys [db]} _]
@@ -717,29 +759,24 @@
           fs   {:mp-filter (:marker/mp-filter db)
                 :period    (:marker/period    db)
                 :compare   (:marker/compare   db)}
-          ;; If on a report page, reload that report
-          report-type (when (and (vector? page) (= :report (first page)))
-                        (second page))
-          load-evt (cond
-                     report-type     [::load-report  report-type fs]
-                     (= page :pulse) [::load-pulse    fs]
-                     (= page :pnl)   [::load-pnl      fs]
-                     (= page :products) [::load-sku-list fs]
-                     :else           nil)]
-      (cond->
-       {:db (-> db
-                (assoc :marker/cache {})
-                (assoc :marker/sync-state
-                       {:kind     :running
-                        :section  (cond
-                                    report-type      (str "Отчёт " (name report-type))
-                                    (= page :pulse)  "Pulse"
-                                    (= page :pnl)    "P&L"
-                                    (= page :products) "Товары"
-                                    :else            "данных")
-                        :elapsed  "0s"
-                        :progress 30}))}
-        load-evt (assoc :dispatch load-evt)))))
+          {:keys [event label]}
+          (page->load page
+                      {:fs                  fs
+                       :treasury-filters    (:marker/treasury-operations-filters db)
+                       :obligations-filters (:marker/treasury-obligations-filters db)
+                       :plan-period         (:marker/plan-fact-period db)
+                       :plan-mp             (:marker/plan-fact-mp db)})
+          db'  (-> db
+                   (assoc :marker/cache {})
+                   (assoc :marker/sync-state
+                          {:kind :running :section label :elapsed "0s" :progress 30}))]
+      (if event
+        {:db db' :dispatch event}
+        ;; No server-backed dataset on this page — resolve the spinner
+        ;; synchronously instead of leaving it stuck :running (audit H1).
+        {:db (assoc db' :marker/sync-state
+                    {:kind :success :time (current-time-hhmm)})
+         :fx [[:dispatch-later {:ms 4000 :dispatch [::set-sync-state nil]}]]}))))
 
 ;; ===========================================================================
 ;; 013 Frontend — new feature events.
@@ -780,6 +817,21 @@
   [db url loading-key failure]
   {:db       (assoc db loading-key false)
    :dispatch [::api-error url failure]})
+
+(defn- loaded-fx
+  "loaded-db + resolve the Sync spinner. ::refresh-finished is a no-op
+   unless a sync is running, so this is safe on the normal load path too
+   (audit H1: treasury/stocks/plan pages left the spinner stuck)."
+  [db url data-key loading-key data]
+  {:db (loaded-db db url data-key loading-key data)
+   :fx [[:dispatch [::refresh-finished :success]]]})
+
+(defn- load-failed-refresh-fx
+  "load-failed-fx + resolve the Sync spinner on failure."
+  [db url loading-key failure]
+  {:db (assoc db loading-key false)
+   :fx [[:dispatch [::api-error url failure]]
+        [:dispatch [::refresh-finished :failure]]]})
 
 ;; ---------------------------------------------------------------------------
 ;; 015: Tax config
@@ -997,13 +1049,13 @@
        :http-xhrio (api/get-xhrio url [::plan-fact-loaded url]
                                       [::plan-fact-load-failed url])})))
 
-(rf/reg-event-db ::plan-fact-loaded
-  (fn [db [_ url data]]
-    (loaded-db db url :marker/plan-fact :marker/plan-fact-loading? data)))
+(rf/reg-event-fx ::plan-fact-loaded
+  (fn [{:keys [db]} [_ url data]]
+    (loaded-fx db url :marker/plan-fact :marker/plan-fact-loading? data)))
 
 (rf/reg-event-fx ::plan-fact-load-failed
   (fn [{:keys [db]} [_ url failure]]
-    (load-failed-fx db url :marker/plan-fact-loading? failure)))
+    (load-failed-refresh-fx db url :marker/plan-fact-loading? failure)))
 
 (rf/reg-event-fx ::preview-plan-import
   (fn [{:keys [db]} [_ js-file period mp]]
@@ -1068,13 +1120,13 @@
        :http-xhrio (api/get-xhrio url [::treasury-cashflow-loaded url]
                                       [::treasury-cashflow-load-failed url])})))
 
-(rf/reg-event-db ::treasury-cashflow-loaded
-  (fn [db [_ url data]]
-    (loaded-db db url :marker/treasury-cashflow :marker/treasury-cashflow-loading? data)))
+(rf/reg-event-fx ::treasury-cashflow-loaded
+  (fn [{:keys [db]} [_ url data]]
+    (loaded-fx db url :marker/treasury-cashflow :marker/treasury-cashflow-loading? data)))
 
 (rf/reg-event-fx ::treasury-cashflow-load-failed
   (fn [{:keys [db]} [_ url failure]]
-    (load-failed-fx db url :marker/treasury-cashflow-loading? failure)))
+    (load-failed-refresh-fx db url :marker/treasury-cashflow-loading? failure)))
 
 ;; ---------------------------------------------------------------------------
 ;; 019: Treasury — operations (paged + filtered)
@@ -1091,13 +1143,13 @@
        :http-xhrio (api/get-xhrio url [::treasury-operations-loaded url]
                                       [::treasury-operations-load-failed url])})))
 
-(rf/reg-event-db ::treasury-operations-loaded
-  (fn [db [_ url data]]
-    (loaded-db db url :marker/treasury-operations :marker/treasury-operations-loading? data)))
+(rf/reg-event-fx ::treasury-operations-loaded
+  (fn [{:keys [db]} [_ url data]]
+    (loaded-fx db url :marker/treasury-operations :marker/treasury-operations-loading? data)))
 
 (rf/reg-event-fx ::treasury-operations-load-failed
   (fn [{:keys [db]} [_ url failure]]
-    (load-failed-fx db url :marker/treasury-operations-loading? failure)))
+    (load-failed-refresh-fx db url :marker/treasury-operations-loading? failure)))
 
 (rf/reg-event-fx ::save-treasury-operation
   (fn [_ [_ op]]
@@ -1203,13 +1255,13 @@
        :http-xhrio (api/get-xhrio url [::treasury-obligations-loaded url]
                                       [::treasury-obligations-load-failed url])})))
 
-(rf/reg-event-db ::treasury-obligations-loaded
-  (fn [db [_ url data]]
-    (loaded-db db url :marker/treasury-obligations :marker/treasury-obligations-loading? data)))
+(rf/reg-event-fx ::treasury-obligations-loaded
+  (fn [{:keys [db]} [_ url data]]
+    (loaded-fx db url :marker/treasury-obligations :marker/treasury-obligations-loading? data)))
 
 (rf/reg-event-fx ::treasury-obligations-load-failed
   (fn [{:keys [db]} [_ url failure]]
-    (load-failed-fx db url :marker/treasury-obligations-loading? failure)))
+    (load-failed-refresh-fx db url :marker/treasury-obligations-loading? failure)))
 
 (rf/reg-event-fx ::add-treasury-obligation
   (fn [_ [_ o]]
@@ -1226,11 +1278,15 @@
 
 (rf/reg-event-fx ::treasury-obligation-mutated
   ;; A settle/add changes the list, the summary AND the dynamics chart.
+  ;; Summary/dynamics default to :actuals when called with no mode — so we
+  ;; MUST forward the current basis, else the KPIs+chart silently revert to
+  ;; «Факт» while the toggle still reads «С плановыми» (audit H2).
   (fn [{:keys [db]} _]
-    {:fx [[:dispatch [::load-treasury-obligations
-                      (:marker/treasury-obligations-filters db)]]
-          [:dispatch [::load-treasury-obligations-summary]]
-          [:dispatch [::load-treasury-obligations-dynamics]]]}))
+    (let [filters (:marker/treasury-obligations-filters db)
+          mode    (:mode filters)]
+      {:fx [[:dispatch [::load-treasury-obligations filters]]
+            [:dispatch [::load-treasury-obligations-summary mode]]
+            [:dispatch [::load-treasury-obligations-dynamics mode]]]})))
 
 (rf/reg-event-fx ::load-treasury-obligations-summary
   (fn [{:keys [db]} [_ mode]]

@@ -38,8 +38,18 @@
 (def ^:private ozon-color "#0891b2")
 (def ^:private ym-color   "#ca8a04")
 
-(def ^:private day-labels
-  (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range 30)))
+(defn- day-labels-from
+  "Chart x-axis labels from the backend :charts :dates (ISO strings) → dd.MM.
+   Falls back to bare day ordinals when dates are absent — NOT a fabricated
+   month (audit M1: labels were hardcoded to «.05» for every period)."
+  [dates n]
+  (if (seq dates)
+    (mapv (fn [d]
+            (if (and (string? d) (>= (count d) 10))
+              (str (subs d 8 10) "." (subs d 5 7))
+              (str d)))
+          dates)
+    (mapv #(str (inc %)) (range n))))
 
 (defn- css-var [name]
   (let [v (.getPropertyValue (js/getComputedStyle js/document.documentElement) name)]
@@ -151,7 +161,7 @@
 ;; Revenue line chart
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private revenue-chart [{:keys [compare? rev-spark rev-prev-spark]}]
+(defui ^:private revenue-chart [{:keys [compare? rev-spark rev-prev-spark dates]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -162,10 +172,7 @@
                base-font     #js{:family "Inter" :size 11}
                data          (safe-spark rev-spark)
                prev-data     (safe-spark rev-prev-spark)
-               labels        (if (seq data)
-                               (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05")
-                                     (range (count data)))
-                               day-labels)
+               labels        (day-labels-from dates (count data))
                datasets      (clj->js
                               (cond-> [{:label           "Выручка"
                                         :data            data
@@ -213,14 +220,14 @@
                                                                          :border #js{:display false}
                                                                          :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     [rev-spark rev-prev-spark compare?])
+     [rev-spark rev-prev-spark compare? dates])
     ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
 ;; Stacked bar — orders by MP
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private orders-bar [{:keys [mp-filter orders-by-mp]}]
+(defui ^:private orders-bar [{:keys [mp-filter orders-by-mp dates]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -236,7 +243,7 @@
                ym-data   (when (active? :ym)   (safe-spark (:ym orders-by-mp)))
                n         (max (count wb-data) (count oz-data) (count ym-data) 30)
                zero-pad  (fn [v] (or v (vec (repeat n 0))))
-               labels    (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range n))
+               labels    (day-labels-from dates n)
                datasets  (clj->js
                           [{:label           "WB"
                             :data            (zero-pad wb-data)
@@ -286,7 +293,7 @@
                                                                      :border      #js{:display false}
                                                                      :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     [mp-filter orders-by-mp])
+     [mp-filter orders-by-mp dates])
     ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
@@ -336,7 +343,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark
-                                         rev-source rev-spark-source]}]
+                                         rev-source rev-spark-source dates]}]
   (let [plan       (:month-plan  forecast)
         fact       (safe-num (:month-fact forecast))
         projection (safe-num (:projection forecast))
@@ -398,7 +405,8 @@
        ($ :div {:style {:margin-top "18px" :height "220px"}}
           ($ revenue-chart {:compare?      compare?
                             :rev-spark     rev-spark
-                            :rev-prev-spark rev-prev-spark})))))
+                            :rev-prev-spark rev-prev-spark
+                            :dates          dates})))))
 
 ;; ---------------------------------------------------------------------------
 ;; MP structure card (donut + legend)
@@ -1102,7 +1110,8 @@
                                  :rev-spark        rev-spark
                                  :rev-prev-spark   rev-prev-spark
                                  :rev-source       (:source (:revenue kpis))
-                                 :rev-spark-source (:spark-source (:revenue kpis))})
+                                 :rev-spark-source (:spark-source (:revenue kpis))
+                                 :dates            (:dates charts)})
               ($ mp-structure-card {:mp-filter mp-filter
                                     :mp-share  (:mp-share charts)}))
 
@@ -1120,7 +1129,8 @@
                           ($ icon {:name :more-h}))))
                  ($ :div {:style {:height "240px"}}
                     ($ orders-bar {:mp-filter    mp-filter
-                                   :orders-by-mp orders-by-mp})))
+                                   :orders-by-mp orders-by-mp
+                                   :dates        (:dates charts)})))
               ($ movers-tabs {:movers movers :fallers fallers}))
 
            ;; Critical stocks
