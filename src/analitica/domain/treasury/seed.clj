@@ -29,23 +29,24 @@
 ;; ---------------------------------------------------------------------------
 
 (def flow-columns
-  "Money-flow columns → category slug. Source signs are preserved in the DB
-   (costs negative, db/cash-flow-adjustments): sign picks the direction,
-   this map picks the category."
-  {:orders_amount      "mp-payout"
-   :returns_amount     "mp-payout"
-   :return_amount      "mp-payout"
-   :commission_amount  "services"
+  "Money-flow columns (kebab keys, as db/query returns them) → category slug.
+   Source signs are preserved in the DB (costs negative,
+   db/cash-flow-adjustments): sign picks the direction, this map picks the
+   category."
+  {:orders-amount      "mp-payout"
+   :returns-amount     "mp-payout"
+   :return-amount      "mp-payout"
+   :commission-amount  "services"
    :acquiring          "services"
    :subscription       "services"
-   :other_services     "services"
-   :delivery_amount    "logistics"
-   :delivery_logistics "logistics"
-   :return_logistics   "logistics"
-   :returns_cargo      "logistics"
+   :other-services     "services"
+   :delivery-amount    "logistics"
+   :delivery-logistics "logistics"
+   :return-logistics   "logistics"
+   :returns-cargo      "logistics"
    :storage            "logistics"
    :packaging          "logistics"
-   :warehouse_movement "logistics"
+   :warehouse-movement "logistics"
    :fines              "other"
    :corrections        "other"
    :compensation       "other"})
@@ -53,7 +54,7 @@
 (def transfer-columns
   "Payout legs — money leaving the MP settlement account to the seller's
    bank. Modeled as :transfer (excluded from ДДС income/expense, CF-5)."
-  [:payment :invoice_transfer])
+  [:payment :invoice-transfer])
 
 ;; ---------------------------------------------------------------------------
 ;; DEC-3 telescoping pro-rate
@@ -88,8 +89,8 @@
   "One cash_flow_periods row → vector of ops/create!-ready maps for the
    window overlap. Zero slices are skipped."
   [row {:keys [from to mp-account-id bank-account-id counterparty-id]}]
-  (let [begin    (subs (str (:period_begin row)) 0 10)
-        end      (subs (str (:period_end row)) 0 10)
+  (let [begin    (subs (str (:period-begin row)) 0 10)
+        end      (subs (str (:period-end row)) 0 10)
         op-date  (if (pos? (compare end to)) to end)
         slice-of (fn [col]
                    (let [raw (get row col)]
@@ -124,3 +125,61 @@
                                   :description         (descr col))))
                        transfer-columns)]
     (vec (concat flows payouts))))
+
+;; ---------------------------------------------------------------------------
+;; Orchestration
+;; ---------------------------------------------------------------------------
+
+(def ^:private mp-names
+  {"ozon" {:account "Ozon — маркетплейс" :counterparty "Ozon"}
+   "wb"   {:account "WB — маркетплейс"   :counterparty "Wildberries"}
+   "ym"   {:account "ЯМ — маркетплейс"   :counterparty "Яндекс Маркет"}})
+
+(defn- find-or-create-account! [nm kind mp]
+  (or (->> (:accounts (ops/list-accounts {:include-archived true}))
+           (filter #(= nm (:name %))) first :id)
+      (:id (ops/create-account! {:name nm :kind kind :marketplace mp}))))
+
+(defn- find-or-create-counterparty! [nm kind]
+  (or (->> (:counterparties (ops/list-counterparties {:include-archived true}))
+           (filter #(= nm (:name %))) first :id)
+      (:id (ops/create-counterparty! {:name nm :kind kind}))))
+
+(defn seed!
+  "Idempotently seed treasury_operations from cash_flow_periods for
+   `marketplace` (string = cash_flow_periods.source) over [from..to]
+   ISO dates. Prior seed rows for the same account+window are replaced;
+   cash_flow_periods is never written. Returns a summary map."
+  [marketplace from to]
+  (let [{acc-name :account cp-name :counterparty}
+        (or (mp-names marketplace)
+            (throw (ex-info "Unknown marketplace for treasury seed"
+                            {:marketplace marketplace})))
+        mp-acc   (find-or-create-account! acc-name :mp-settlement (keyword marketplace))
+        bank-acc (find-or-create-account! "Расчётный счёт" :bank nil)
+        cp-id    (find-or-create-counterparty! cp-name :marketplace)
+        rows     (db/query [(str "SELECT * FROM cash_flow_periods "
+                                 "WHERE source = ? AND period_begin <= ? AND period_end >= ? "
+                                 "ORDER BY period_begin")
+                            marketplace to from])
+        prior    (-> (db/query [(str "SELECT COUNT(*) AS n FROM treasury_operations "
+                                     "WHERE source = 'seed:cash_flow_periods' "
+                                     "AND account_id = ? AND op_date BETWEEN ? AND ?")
+                                mp-acc from to])
+                     first :n)
+        _        (db/execute! [(str "DELETE FROM treasury_operations "
+                                    "WHERE source = 'seed:cash_flow_periods' "
+                                    "AND account_id = ? AND op_date BETWEEN ? AND ?")
+                               mp-acc from to])
+        ctx      {:from from :to to :mp-account-id mp-acc
+                  :bank-account-id bank-acc :counterparty-id cp-id}
+        to-write (vec (mapcat #(bucket->ops % ctx) rows))
+        _        (doseq [op to-write] (ops/create! op))
+        sum-dir  (fn [dir] (m/d->str (m/dsum (map #(m/d (:amount %))
+                                                  (filter #(= dir (:direction %)) to-write)))))]
+    {:buckets  (count rows)
+     :deleted  (long (or prior 0))
+     :ops      (count to-write)
+     :income   (sum-dir :income)
+     :expense  (sum-dir :expense)
+     :transfer (sum-dir :transfer)}))
