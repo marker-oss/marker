@@ -23,6 +23,7 @@
             [analitica.domain.geography :as geo]
             [analitica.domain.trends :as trends]
             [analitica.domain.buyout :as buyout]
+            [analitica.domain.treasury.seed :as treasury-seed]
             [analitica.audit.rules :as audit-rules]
             [analitica.audit.report :as audit-report]
             [analitica.audit.rule-impl :as audit-rule-impl]
@@ -369,6 +370,8 @@ Commands:
 
   audit <subcommand>    Calculation audit: reconciliation, KPI, verdicts, fixtures
     subcommands: reconcile, kpi, verdict, fixture (use `audit help` for details)
+
+  treasury seed         Seed ledger from cash_flow_periods (-m ozon -p 2026-04 | -f/-t)
 
   1c                    Load cost prices from 1C CSV into SQLite
 
@@ -1242,6 +1245,41 @@ Currently registered schemas:")
           (schema-help)
           3))))
 
+(defn- month-bounds
+  "\"2026-04\" → {:from \"2026-04-01\" :to \"2026-04-30\"}."
+  [ym]
+  (let [ld (java.time.LocalDate/parse (str ym "-01"))]
+    {:from (str ld)
+     :to   (str (.withDayOfMonth ld (.lengthOfMonth ld)))}))
+
+(defn- handle-treasury
+  "Dispatch for `treasury <subcommand>`. seed: requires -f/-t dates or
+   -p YYYY-MM (named periods are not accepted — seeding wants explicit
+   bounds)."
+  [args opts]
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what (first args)]
+    (case what
+      "seed"
+      (let [{:keys [from to period marketplace]} opts
+            window (cond
+                     (and from to)
+                     {:from from :to to}
+
+                     (and period (re-matches #"\d{4}-\d{2}" period))
+                     (month-bounds period)
+
+                     :else nil)]
+        (if-not window
+          (println "treasury seed: pass -f FROM -t TO or -p YYYY-MM (explicit dates required)")
+          (let [r (treasury-seed/seed! marketplace (:from window) (:to window))]
+            (println (format "Seeded %s %s..%s: %d buckets → %d ops (replaced %d)"
+                             marketplace (:from window) (:to window)
+                             (:buckets r) (:ops r) (:deleted r)))
+            (println (format "  income %s | expense %s | transfer→bank %s"
+                             (:income r) (:expense r) (:transfer r))))))
+      (println "Unknown treasury subcommand:" what "— available: seed"))))
+
 (defn -main [& args]
   (let [{:keys [options arguments errors]} (parse-opts args cli-options :in-order true)
         command (first arguments)
@@ -1265,6 +1303,7 @@ Currently registered schemas:")
           "schema"      (let [code (handle-schema rest-args options)]
                           (when (and (integer? code) (not (zero? code)))
                             (System/exit code)))
+          "treasury"    (handle-treasury rest-args options)
           "1c"          (sync/sync-1c!)
           "menu"        (menu)
           "status"      (sync/status)
