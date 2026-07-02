@@ -288,3 +288,27 @@
         (is (= 0 (:nm-id (first rows)))
             "nm_id sentinel 0 since ad_stats PK NOT NULL requires deterministic value")
         (is (= 50.0 (:spend (first rows))))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 P0-1a — ad-campaigns default must include COMPLETED (7)
+;; campaigns, else re-syncing a past period after campaigns finish silently
+;; fetches nothing and zeroes historical WB ad spend.
+;; ---------------------------------------------------------------------------
+
+(defn- promotion-count-resp []
+  {:adverts [{:type 8 :status 7  :count 1 :advert_list [{:advertId 700}]}   ; completed
+             {:type 8 :status 9  :count 1 :advert_list [{:advertId 900}]}   ; active
+             {:type 8 :status 11 :count 1 :advert_list [{:advertId 1100}]}  ; paused
+             {:type 8 :status 8  :count 1 :advert_list [{:advertId 800}]}]}) ; refusal
+
+(deftest ad-campaigns-default-includes-completed
+  (with-redefs [wb-client/get-request (fn [& _] (promotion-count-resp))]
+    (testing "default statuses = completed(7)+active(9)+paused(11); refusal(8) excluded"
+      (let [ids (set (map :advertId (wb-api/ad-campaigns (fake-client))))]
+        (is (contains? ids 700)  "completed campaign is fetched (P0-1a)")
+        (is (contains? ids 900))
+        (is (contains? ids 1100))
+        (is (not (contains? ids 800)) "refusal status still excluded")))
+    (testing "explicit status filter still overrides"
+      (let [ids (set (map :advertId (wb-api/ad-campaigns (fake-client) :status #{9})))]
+        (is (= #{900} ids))))))

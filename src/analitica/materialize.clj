@@ -1038,15 +1038,24 @@
 
 (defn- load-wb-finance-for-ad-cost
   "Load WB finance rows in [from..to] that are candidates for ad-cost
-   attribution. Returns a map {(date-substring) [{:rrd-id :nm-id :retail-amount}]}."
+   attribution, keyed by the row's EVENT day. Returns
+   {day [{:rrd-id :nm-id :retail-amount}]}.
+
+   Audit 2026-07-02 P0-1b: this used to key by substr(date_from,1,10) — the
+   WEEKLY report-period start, not the event day — so ad_stats spend (dated by
+   day) only matched rows whose report happened to start on the ad day, and
+   ~95% of spend was silently dropped. Key by COALESCE(event_date, date_from)
+   so a day's spend joins the finance rows realised on that day."
   [tx from to]
   (let [rows (jdbc/execute!
                tx
-               ["SELECT rrd_id, nm_id, substr(date_from, 1, 10) AS d, retail_amount
+               ["SELECT rrd_id, nm_id,
+                        COALESCE(substr(event_date, 1, 10), substr(date_from, 1, 10)) AS d,
+                        retail_amount
                  FROM finance
                  WHERE marketplace='wb'
-                   AND substr(date_from, 1, 10) >= ?
-                   AND substr(date_from, 1, 10) <= ?"
+                   AND COALESCE(substr(event_date, 1, 10), substr(date_from, 1, 10)) >= ?
+                   AND COALESCE(substr(event_date, 1, 10), substr(date_from, 1, 10)) <= ?"
                 from to]
                {:builder-fn rs/as-unqualified-kebab-maps})]
     (group-by :d rows)))
@@ -1209,11 +1218,13 @@
           ad-stats-by-day)
 
         ;; Reset all WB ad_cost in the period to 0, then SET per-rrd contribution.
+        ;; Same EVENT-day predicate as load-wb-finance-for-ad-cost so every row
+        ;; that can receive a contribution is also reset first (P0-1b).
         (jdbc/execute! tx
           ["UPDATE finance SET ad_cost = 0
             WHERE marketplace='wb'
-              AND substr(date_from, 1, 10) >= ?
-              AND substr(date_from, 1, 10) <= ?"
+              AND COALESCE(substr(event_date, 1, 10), substr(date_from, 1, 10)) >= ?
+              AND COALESCE(substr(event_date, 1, 10), substr(date_from, 1, 10)) <= ?"
            from to])
 
         (doseq [[rrd-id cost] contributions]

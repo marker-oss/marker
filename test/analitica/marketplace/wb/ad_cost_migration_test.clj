@@ -531,3 +531,33 @@
                          WHERE marketplace='wb' AND article='ART-A'"]))]
       (is (or (nil? (:ad-cost row)) (zero? (:ad-cost row)))
           "ad_cost untouched when ad_stats raw is absent"))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 P0-1b — ad spend must join finance on the EVENT day, not the
+;; weekly report-period start (date_from). A row whose report week starts before
+;; the ad day must still receive the day's spend.
+;; ---------------------------------------------------------------------------
+
+(defn- seed-wb-finance-row-with-event-date!
+  [{:keys [rrd-id article nm-id date-from event-date retail-amount for-pay]
+    :or   {retail-amount 1000.0 for-pay 800.0}}]
+  (let [row (sync/finance->row {:rrd-id rrd-id :date-from date-from :date-to date-from
+                                :event-date event-date :article article :nm-id nm-id
+                                :operation "sale" :retail-amount retail-amount
+                                :for-pay for-pay :marketplace :wb})]
+    (db/insert-batch! :finance sync/finance-columns [row])))
+
+(deftest materialize-wb-ad-cost-joins-on-event-date
+  (testing "weekly date_from precedes the ad day; spend still attaches via event_date"
+    ;; report week starts 2026-03-09, the sale's real day is 2026-03-12
+    (seed-wb-finance-row-with-event-date!
+      {:rrd-id 1 :article "ART-A" :nm-id 100
+       :date-from "2026-03-09" :event-date "2026-03-12"
+       :retail-amount 1000.0 :for-pay 800.0})
+    ;; ad spend is dated by the actual day (2026-03-12), NOT the week start
+    (seed-ad-stats! {:campaign-id 11 :date "2026-03-12" :nm-id 100 :spend 75.0})
+
+    (mat/materialize-wb-ad-cost! ["2026-03-01" "2026-03-31"])
+
+    (is (= 75.0 (:ad-cost (wb-ad-cost-by-article "ART-A")))
+        "spend dated 03-12 joined the row whose event_date is 03-12 (date_from=03-09)")))
