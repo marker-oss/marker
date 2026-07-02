@@ -135,22 +135,33 @@
 (defn- blank-str? [s]
   (or (nil? s) (= "" (str s))))
 
+(defn- round-int-part
+  "HALF_UP to whole rubles on the STRING (BigInt-exact, no parseFloat):
+   bump the integer part when the first fractional digit is ≥ 5."
+  [int-part frac-part]
+  (if (and (seq frac-part)
+           (>= (js/parseInt (subs frac-part 0 1) 10) 5))
+    (str (+ (js/BigInt int-part) (js/BigInt 1)))
+    int-part))
+
 (defn format-decimal-str
-  "Format a DECIMAL-as-string (e.g. \"-742000.00\") to a grouped RU-locale
-   string WITHOUT js/parseFloat — precision-exact for arbitrarily large
-   magnitudes. Groups only the integer part with NBSP; drops the fractional
-   part (treasury display is whole-ruble). Negative sign → Unicode minus.
-   nil / \"\" → «—»."
+  "Format a DECIMAL-as-string (e.g. \"-742000.49\") to a grouped RU-locale
+   whole-ruble string WITHOUT js/parseFloat — precision-exact for arbitrarily
+   large magnitudes. Rounds HALF_UP on the magnitude; a zero result never
+   carries a sign (no «−0»). Groups the integer part with NBSP; negative
+   sign → Unicode minus. nil / \"\" → «—»."
   [s]
   (if (blank-str? s)
     "—"
     (let [t        (str/trim (str s))
           neg?     (str/starts-with? t "-")
           unsigned (if (or neg? (str/starts-with? t "+")) (subs t 1) t)
-          int-part (first (str/split unsigned #"\." 2))
-          int-part (if (= "" int-part) "0" int-part)
-          sign     (if neg? MINUS "")]
-      (str sign (add-thousands int-part)))))
+          [int-part frac-part] (str/split unsigned #"\." 2)
+          int-part (if (or (nil? int-part) (= "" int-part)) "0" int-part)
+          rounded  (round-int-part int-part frac-part)
+          zero?    (some? (re-matches #"0+" rounded))
+          sign     (if (and neg? (not zero?)) MINUS "")]
+      (str sign (add-thousands rounded)))))
 
 (defn format-decimal-rub
   "Like format-decimal-str but appends the «\\u00A0₽» ruble unit.

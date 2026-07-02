@@ -161,8 +161,8 @@
 (deftest format-decimal-str-precision
   (testing "negative decimal string → grouped unicode-minus, fraction dropped"
     (is (= (str "−742 000") (fmt/format-decimal-str "-742000.00"))))
-  (testing "positive decimal string grouped"
-    (is (= (str "1 234 567") (fmt/format-decimal-str "1234567.99"))))
+  (testing "positive decimal string grouped, rounded half-up"
+    (is (= (str "1 234 568") (fmt/format-decimal-str "1234567.99"))))
   (testing "no fractional part"
     (is (= (str "500") (fmt/format-decimal-str "500"))))
   (testing "explicit plus sign stripped"
@@ -182,6 +182,17 @@
   (testing "nil / blank → em-dash"
     (is (= "—" (fmt/format-decimal-rub nil)))
     (is (= "—" (fmt/format-decimal-rub "")))))
+
+(deftest format-decimal-str-rounds-half-up
+  (testing "fraction ≥ .50 bumps the ruble (string-exact, no parseFloat)"
+    (is (= "1" (fmt/format-decimal-str "0.75")))
+    (is (= (str "1 000") (fmt/format-decimal-str "999.99")))
+    (is (= (str "742 000") (fmt/format-decimal-str "742000.49"))))
+  (testing "negative rounds on magnitude with unicode minus"
+    (is (= (str "−1") (fmt/format-decimal-str "-0.75"))))
+  (testing "never renders «−0»"
+    (is (= "0" (fmt/format-decimal-str "-0.25")))
+    (is (= "0" (fmt/format-decimal-str "-0.00")))))
 
 ;; ---- delta-class (marker.ui.metric-hint) truth table ----
 

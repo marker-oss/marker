@@ -133,8 +133,9 @@
 (deftest operations-summary-formats-from-decimal-strings
   (let [s (:summary mock-operations)]
     (is (= (str "120" NBSP "000" NBSP "₽") (fmt/format-decimal-rub (:total-income s))))
-    (is (= (str "80"  NBSP "000" NBSP "₽") (fmt/format-decimal-rub (:total-expense s))))
-    (is (= (str "39"  NBSP "999" NBSP "₽") (fmt/format-decimal-rub (:balance s))))
+    ;; mock values end in .50 — display rounds HALF_UP (no truncation)
+    (is (= (str "80"  NBSP "001" NBSP "₽") (fmt/format-decimal-rub (:total-expense s))))
+    (is (= (str "40"  NBSP "000" NBSP "₽") (fmt/format-decimal-rub (:balance s))))
     (is (= "1" (fmt/format-int (:planned-count s))))))
 
 (deftest operations-lookups
