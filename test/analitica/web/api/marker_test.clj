@@ -12,6 +12,7 @@
             [analitica.web.server :as server]
             [analitica.web.middleware.transit :as transit-mw]
             [analitica.web.api.marker :as marker-api]
+            [analitica.domain.plan]
             [analitica.web.api.report])
   (:import (java.io ByteArrayInputStream)))
 
@@ -2089,3 +2090,27 @@
              (- 1000.0 400.0 50.0))))
     (testing "nil-safe on missing components"
       (is (= 1000.0 (#'marker-api/gmroi-net-profit {:for-pay 1000.0} nil))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 — pulse :forecast :month-plan wired to 017 plans (L6)
+;; and :charts :dates carries the real day axis (M1).
+;; ---------------------------------------------------------------------------
+
+(deftest pulse-forecast-month-plan-and-chart-dates
+  (testing "no plan set → :month-plan nil (SPA hides the plan line)"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+      (is (nil? (get-in body [:forecast :month-plan])))))
+  (testing "an :all revenue plan for the current month surfaces as month-plan"
+    (let [month (subs (str (java.time.LocalDate/now)) 0 7)]
+      (analitica.domain.plan/save-plan! {:period-month month
+                                         :marketplace  :all
+                                         :metric       :revenue
+                                         :target-value 500000.0})
+      (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+        (is (= 500000.0 (get-in body [:forecast :month-plan]))))))
+  (testing ":charts :dates is the ISO day axis, same length as revenue-30d"
+    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
+          ch (:charts body)]
+      (is (vector? (:dates ch)))
+      (is (= (count (:dates ch)) (count (:revenue-30d ch))))
+      (is (every? #(re-matches #"\d{4}-\d{2}-\d{2}" %) (:dates ch))))))

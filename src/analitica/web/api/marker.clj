@@ -15,6 +15,7 @@
    client sends Accept: application/transit+json."
   (:require [analitica.domain.finance         :as finance]
             [analitica.domain.pnl             :as pnl]
+            [analitica.domain.plan            :as plan]
             [analitica.domain.preliminary     :as prelim]
             [analitica.domain.reconciliation  :as reconciliation]
             [analitica.domain.sales       :as sales]
@@ -963,10 +964,25 @@
                                        :as-of            revenue-as-of
                                        :known-components [:logistics :ads :other]}
                                       (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of))}
-       :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
+       ;; 017 plans: revenue target for the month of `to`, honoring the MP
+       ;; filter (per-MP row wins; falls back to the cross-MP "all" row).
+       ;; nil when no plan is set — the SPA hides the plan line honestly.
+       :forecast        {:month-plan (try
+                                       (let [month (subs to 0 7)
+                                             rows  (plan/fetch-plans month)]
+                                         (some-> (plan/lookup-plan
+                                                   rows
+                                                   {:period-month month
+                                                    :marketplace  (or mp1 :all)
+                                                    :metric       :revenue})
+                                                 double math/round2))
+                                       (catch Exception _ nil))
                          :month-fact (math/round2 rev-cur)
                          :projection projection}
-       :charts          (cond-> {:revenue-30d  rev-spark
+       ;; :dates — the ISO day axis all daily series are built on. The SPA
+       ;; used to fabricate «NN.05» labels for every period (audit M1).
+       :charts          (cond-> {:dates        (date-range-seq from to)
+                                 :revenue-30d  rev-spark
                                  :orders-by-mp orders-by-mp
                                  :mp-share     mp-share}
                           do-compare (assoc :revenue-prev-30d (or rev-prev-spark [])))
