@@ -3,6 +3,7 @@
             [analitica.db :as db]
             [analitica.sync :as sync]
             [analitica.sync.scheduler :as scheduler]
+            [analitica.bot.scheduler :as bot-scheduler]
             [analitica.ingest :as ingest]
             [analitica.materialize :as materialize]
             [analitica.marketplace.registry :as registry]
@@ -93,6 +94,8 @@
   (sync/status)
   ;; Start the daily auto-refresh scheduler (reads sync_schedule, arms if enabled).
   (scheduler/start!)
+  ;; Start the Telegram digest scheduler (017; idempotent, daemon thread).
+  (bot-scheduler/start!)
   (println "\nTry (help) for available commands."))
 
 (defn mp

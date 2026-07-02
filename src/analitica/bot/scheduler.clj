@@ -49,16 +49,14 @@
 
 (defn weekly-period
   "Last completed ISO week in local tz as \"YYYY-Www\" (e.g. \"2026-W26\").
-   Returns nil on Sunday — the current week just ended, so W = current week."
+   Computed from yesterday's date, so a Monday-morning firing yields the
+   week that ended on Sunday."
   ([] (weekly-period (bot-tz)))
   ([tz]
-   (let [today     (LocalDate/now tz)
-         week-num  (.get today (WeekFields/ISO.weekOfWeekBasedYear))
-         year      (.get today (WeekFields/ISO.weekBasedYear))
-         ;; The completed week is the one that just ended (we fire on Monday morning)
-         last-week-end (.with today (.minusDays today 1))
-         lw-num    (.get last-week-end (WeekFields/ISO.weekOfWeekBasedYear))
-         lw-year   (.get last-week-end (WeekFields/ISO.weekBasedYear))]
+   (let [yesterday (.minusDays (LocalDate/now tz) 1)
+         wf        WeekFields/ISO
+         lw-num    (.get yesterday (.weekOfWeekBasedYear wf))
+         lw-year   (.get yesterday (.weekBasedYear wf))]
      (format "%d-W%02d" lw-year lw-num))))
 
 ;; ---------------------------------------------------------------------------
