@@ -174,6 +174,21 @@
   [page {:keys [mp-filter period compare]}]
   [page (vec (sort mp-filter)) period compare])
 
+(defn- current-fs
+  "Filter-state map from the live app-db — the filters currently shown."
+  [db]
+  {:mp-filter (:marker/mp-filter db)
+   :period    (:marker/period    db)
+   :compare   (:marker/compare   db)})
+
+(defn- stale?
+  "True when a response keyed by `ckey` no longer matches the filters shown
+   now (the user flipped MP/period while the request was in flight). Stale
+   responses must update the cache but NOT the visible slice, else an earlier
+   slow request overwrites the data under newer filter chips (audit H3)."
+  [db page ckey]
+  (not= ckey (cache-key page (current-fs db))))
+
 ;; ---------------------------------------------------------------------------
 ;; Phase 8: Error handling
 ;; ---------------------------------------------------------------------------
@@ -227,12 +242,15 @@
 
 (rf/reg-event-fx ::pulse-data-loaded
   (fn [{:keys [db]} [_ ckey data]]
-    {:db (-> db
-             (assoc :marker/pulse-data    data
-                    :marker/pulse-loading? false)
-             (assoc-in [:marker/cache ckey] data)
-             (update :marker/api-errors dissoc pulse-url))
-     :fx [[:dispatch [::refresh-finished :success]]]}))
+    (if (stale? db :pulse ckey)
+      ;; filters changed mid-flight — cache only, don't touch the visible slice
+      {:db (assoc-in db [:marker/cache ckey] data)}
+      {:db (-> db
+               (assoc :marker/pulse-data    data
+                      :marker/pulse-loading? false)
+               (assoc-in [:marker/cache ckey] data)
+               (update :marker/api-errors dissoc pulse-url))
+       :fx [[:dispatch [::refresh-finished :success]]]})))
 
 (rf/reg-event-fx ::pulse-load-failed
   (fn [{:keys [db]} [_ failure]]
@@ -264,12 +282,14 @@
 
 (rf/reg-event-fx ::pnl-data-loaded
   (fn [{:keys [db]} [_ ckey data]]
-    {:db (-> db
-             (assoc :marker/pnl-data    data
-                    :marker/pnl-loading? false)
-             (assoc-in [:marker/cache ckey] data)
-             (update :marker/api-errors dissoc pnl-url))
-     :fx [[:dispatch [::refresh-finished :success]]]}))
+    (if (stale? db :pnl ckey)
+      {:db (assoc-in db [:marker/cache ckey] data)}
+      {:db (-> db
+               (assoc :marker/pnl-data    data
+                      :marker/pnl-loading? false)
+               (assoc-in [:marker/cache ckey] data)
+               (update :marker/api-errors dissoc pnl-url))
+       :fx [[:dispatch [::refresh-finished :success]]]})))
 
 (rf/reg-event-fx ::pnl-load-failed
   (fn [{:keys [db]} [_ failure]]
@@ -309,14 +329,16 @@
     ;; vector). LT3: stash the honesty envelope separately so the coverage
     ;; banner/chip can read it without changing the vector contract. Cache the
     ;; whole response so a cache hit can re-derive both.
-    (let [env (select-keys data [:completeness :date-basis :preliminary?])]
-      {:db (-> db
-               (assoc :marker/sku-list-data     (:skus data)
-                      :marker/sku-list-envelope env
-                      :marker/sku-list-loading? false)
-               (assoc-in [:marker/cache ckey] data)
-               (update :marker/api-errors dissoc sku-list-url))
-       :fx [[:dispatch [::refresh-finished :success]]]})))
+    (if (stale? db :sku-list ckey)
+      {:db (assoc-in db [:marker/cache ckey] data)}
+      (let [env (select-keys data [:completeness :date-basis :preliminary?])]
+        {:db (-> db
+                 (assoc :marker/sku-list-data     (:skus data)
+                        :marker/sku-list-envelope env
+                        :marker/sku-list-loading? false)
+                 (assoc-in [:marker/cache ckey] data)
+                 (update :marker/api-errors dissoc sku-list-url))
+         :fx [[:dispatch [::refresh-finished :success]]]}))))
 
 (rf/reg-event-fx ::sku-list-load-failed
   (fn [{:keys [db]} [_ failure]]
@@ -349,12 +371,14 @@
 
 (rf/reg-event-fx ::reconciliation-loaded
   (fn [{:keys [db]} [_ ckey data]]
-    {:db (-> db
-             (assoc :marker/reconciliation-data    data
-                    :marker/reconciliation-loading? false)
-             (assoc-in [:marker/cache ckey] data)
-             (update :marker/api-errors dissoc reconciliation-url))
-     :fx [[:dispatch [::refresh-finished :success]]]}))
+    (if (stale? db :reconciliation ckey)
+      {:db (assoc-in db [:marker/cache ckey] data)}
+      {:db (-> db
+               (assoc :marker/reconciliation-data    data
+                      :marker/reconciliation-loading? false)
+               (assoc-in [:marker/cache ckey] data)
+               (update :marker/api-errors dissoc reconciliation-url))
+       :fx [[:dispatch [::refresh-finished :success]]]})))
 
 (rf/reg-event-fx ::reconciliation-load-failed
   (fn [{:keys [db]} [_ failure]]

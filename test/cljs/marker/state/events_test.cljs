@@ -219,7 +219,7 @@
     (is (true? (:marker/pulse-loading? (db))) "loading flag set")
     ;; Simulate success callback
     (let [fake-data {:alerts [] :kpis {:revenue {:value 1000}} :forecast {}}
-          ckey      [:pulse [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pulse [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pulse-data-loaded ckey fake-data])
       (is (false? (:marker/pulse-loading? (db)))  "loading cleared after data loaded")
       (is (= fake-data (:marker/pulse-data (db)))  "data written to :marker/pulse-data")
@@ -231,7 +231,7 @@
     (swap! rf-db/app-db assoc :marker/pnl-loading? true)
     (let [fake-data {:rows [{:key :revenue :label "Выручка" :cur 1000 :prev 900 :group "income"}]
                     :sku-detail []}
-          ckey      [:pnl [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pnl [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pnl-data-loaded ckey fake-data])
       (is (false? (:marker/pnl-loading? (db)))   "loading cleared")
       (is (= fake-data (:marker/pnl-data (db)))   "data written to :marker/pnl-data"))))
@@ -242,7 +242,7 @@
     (swap! rf-db/app-db assoc :marker/sku-list-loading? true)
     (let [skus      [{:id "ART-001" :name "Товар 1" :mp [:wb] :revenue 50000}]
           fake-resp {:skus skus}
-          ckey      [:sku-list [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:sku-list [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/sku-list-data-loaded ckey fake-resp])
       (is (false? (:marker/sku-list-loading? (db))) "loading cleared")
       (is (= skus (:marker/sku-list-data (db)))      "skus vector written directly"))))
@@ -391,7 +391,7 @@
     (swap! rf-db/app-db assoc :marker/sync-state
            {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
     (let [fake-data {:alerts [] :kpis {:revenue {:value 5000}} :forecast {}}
-          ckey      [:pulse [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pulse [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pulse-data-loaded ckey fake-data])
       (is (= fake-data (:marker/pulse-data (db)))  "pulse data written")
       (is (false? (:marker/pulse-loading? (db)))   "loading flag cleared")))
@@ -649,3 +649,30 @@
     ;; and it is never left at :running.
     (is (not= :running (:kind (:marker/sync-state (db)))))
     (is (= {} (:marker/cache (db))) "cache cleared")))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H3 — stale (out-of-order) responses must not overwrite the
+;; visible slice when the user has since changed filters.
+;; ---------------------------------------------------------------------------
+
+(deftest stale-response-does-not-overwrite-visible-slice
+  (testing "a pulse response keyed for [:wb] arriving after the user switched
+            to all-MP updates only the cache, not :marker/pulse-data"
+    ;; current filters = all three MPs
+    (reset! rf-db/app-db {:marker/mp-filter [:wb :ozon :ym]
+                          :marker/period "P" :marker/compare false
+                          :marker/pulse-data {:marker :current-allmp}
+                          :marker/pulse-loading? true})
+    ;; a slow response for the OLD [:wb]-only filter arrives now
+    (let [stale-ckey [:pulse [:wb] "P" false]]
+      (rf/dispatch-sync [::events/pulse-data-loaded stale-ckey {:marker :stale-wb}])
+      (is (= {:marker :current-allmp} (:marker/pulse-data (db)))
+          "visible slice untouched by the stale response")
+      (is (= {:marker :stale-wb} (get-in (db) [:marker/cache stale-ckey]))
+          "stale response still cached for when those filters return")))
+  (testing "a matching response DOES update the visible slice"
+    (reset! rf-db/app-db {:marker/mp-filter [:wb] :marker/period "P" :marker/compare false
+                          :marker/pulse-loading? true})
+    (let [ckey [:pulse [:wb] "P" false]]
+      (rf/dispatch-sync [::events/pulse-data-loaded ckey {:marker :fresh-wb}])
+      (is (= {:marker :fresh-wb} (:marker/pulse-data (db)))))))
