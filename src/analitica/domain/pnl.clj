@@ -332,7 +332,11 @@
        :non-return-rate (math/percentage sales-qty (+ sales-qty returns-qty))
        :buyout-rate     (math/percentage sales-qty (+ sales-qty returns-qty))
        :avg-check     (math/round2 (math/safe-div revenue sales-qty))
-       :profit-per-sale (math/round2 (math/safe-div net-profit net-qty))
+       ;; Canon P&L.5: net-qty <= 0 (returns >= sales) yields 0, never a
+       ;; sign-flipped "profit" from dividing a loss by a negative count.
+       :profit-per-sale (if (pos? net-qty)
+                          (math/round2 (math/safe-div net-profit net-qty))
+                          0.0)
        :articles      (count by-art)}
       has-cf?
       (assoc :cf-subscription     (math/round2 cf-subscr)

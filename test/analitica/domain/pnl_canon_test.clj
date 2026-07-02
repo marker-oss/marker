@@ -769,3 +769,35 @@
       ;; netProfit == 015 management :profit (= net − opex − tax − vat)
       (is (= (:profit p) np)
           "netProfit == 015 management :profit when management present"))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 N2 — P&L.5 clamp: net-qty <= 0 must yield 0, not a
+;; sign-flipped positive "profit per sale" (loss ÷ negative count).
+;; ---------------------------------------------------------------------------
+
+(deftest profit-per-sale-clamps-on-net-negative-qty
+  (let [rows [{:marketplace :wb :rrd-id 900
+               :date-from "2026-03-01" :date-to "2026-03-07"
+               :event-date "2026-03-03"
+               :article "Z" :operation "sale" :quantity 1
+               :retail-amount 100.0 :retail-price 100.0
+               :for-pay 80.0 :mp-commission 15.0 :wb-reward 15.0
+               :delivery-cost 1.0 :storage-fee 0.0 :acceptance 0.0
+               :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+               :additional-payment 0.0 :ad-cost 0.0}
+              {:marketplace :wb :rrd-id 901
+               :date-from "2026-03-01" :date-to "2026-03-07"
+               :event-date "2026-03-05"
+               :article "Z" :operation "return" :quantity 2
+               :retail-amount 0.0 :retail-price 0.0
+               :for-pay 200.0 :mp-commission 0.0 :wb-reward 0.0
+               :delivery-cost 0.5 :storage-fee 0.0 :acceptance 0.0
+               :penalty 0.0 :acquiring-fee 0.0 :deduction 0.0
+               :additional-payment 0.0 :ad-cost 0.0}]
+        r    (pnl/calculate rows :marketplace :wb
+                            :from "2026-03-01" :to "2026-03-07")]
+    (testing "period is a loss with net-qty < 0"
+      (is (neg? (:net-profit r)))
+      (is (neg? (- (:sales-qty r) (:returns-qty r)))))
+    (testing "profit-per-sale is clamped to 0, not sign-flipped positive"
+      (is (= 0.0 (:profit-per-sale r))))))
