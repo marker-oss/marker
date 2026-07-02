@@ -207,3 +207,46 @@
                       first :s double)]
         (is (zero? total)
             "nil-article spend (50.0) must NOT leak into finance.ad_cost (no article = no finance row)")))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 N3 — ad_cost must NOT be multiplied by rows-per-article.
+;; A single day's spend lands on ONE finance row, not on every row of that
+;; article in the window. Regression: the old code SET the article total on
+;; every matching row, so SUM(ad_cost) inflated ~N×.
+;; ---------------------------------------------------------------------------
+
+(deftest ad-cost-not-multiplied-across-rows
+  (let [from "2026-04-01" to "2026-04-30"]
+    ;; one day of spend for ART-C, but the article has THREE finance rows
+    (seed-ad-spend! [{:marketplace :ozon :event-date "2026-04-10" :campaign-id "C1"
+                      :article "ART-C" :spend 300.0 :bonus-spend 0.0
+                      :attribution-source :api}])
+    (insert-finance-row! {:marketplace :ozon :article "ART-C" :event-date "2026-04-10"})
+    (insert-finance-row! {:marketplace :ozon :article "ART-C" :event-date "2026-04-11"})
+    (insert-finance-row! {:marketplace :ozon :article "ART-C" :event-date "2026-04-12"})
+    (mat/materialize-ad-cost! :ozon from to)
+    (let [per-row (->> (db/query
+                         ["SELECT rrd_id, ad_cost FROM finance
+                           WHERE marketplace='ozon' AND article='ART-C'"])
+                       (mapv #(double (or (:ad-cost %) (:ad_cost %) 0.0))))]
+      (testing "Σ ad_cost == spend, not 3× spend"
+        (is (= 300.0 (reduce + 0.0 per-row))))
+      (testing "the whole day-spend sits on exactly one row"
+        (is (= [0.0 0.0 300.0] (vec (sort per-row))))))))
+
+(deftest ad-cost-allocated-per-day
+  (let [from "2026-04-01" to "2026-04-30"]
+    ;; two days of spend for ART-D, one finance row per day
+    (seed-ad-spend! [{:marketplace :ozon :event-date "2026-04-10" :campaign-id "C1"
+                      :article "ART-D" :spend 150.0 :bonus-spend 0.0 :attribution-source :api}
+                     {:marketplace :ozon :event-date "2026-04-20" :campaign-id "C1"
+                      :article "ART-D" :spend 150.0 :bonus-spend 0.0 :attribution-source :api}])
+    (insert-finance-row! {:marketplace :ozon :article "ART-D" :event-date "2026-04-10"})
+    (insert-finance-row! {:marketplace :ozon :article "ART-D" :event-date "2026-04-20"})
+    (mat/materialize-ad-cost! :ozon from to)
+    (let [per-row (->> (db/query
+                         ["SELECT ad_cost FROM finance
+                           WHERE marketplace='ozon' AND article='ART-D'"])
+                       (mapv #(double (or (:ad-cost %) (:ad_cost %) 0.0))))]
+      (testing "each day's spend lands on its own row; Σ exact"
+        (is (= [150.0 150.0] (vec (sort per-row))))))))

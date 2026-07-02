@@ -24,28 +24,62 @@
    :bonus-spend is stored in ad_spend separately and never summed into ad_cost
    (prevents double-counting, contracts/ad-canon.edn :invariants)."
   (:require [analitica.db :as db]
-            [next.jdbc :as jdbc]))
+            [clojure.string :as str]
+            [next.jdbc :as jdbc]
+            [next.jdbc.result-set :as rs]))
 
-(defn- sum-spend-by-article
-  "Compute {article → Σ :spend} from ad_spend for the given marketplace+period.
-   nil-article rows (account-level residue) are excluded — they have no finance
-   row to UPDATE."
+(defn- sum-spend-by-article-day
+  "Compute {[article event_date] → Σ :spend} from ad_spend for the period.
+   Day-level (not article-total) so ad_cost can be allocated onto ONE finance
+   row per (article, day) instead of the article total on every row (audit N3).
+   nil-article rows (account-level residue) are excluded."
   [marketplace from to]
   (->> (db/query
-         ["SELECT article, COALESCE(SUM(spend), 0.0) AS total_spend
+         ["SELECT article, event_date, COALESCE(SUM(spend), 0.0) AS total_spend
            FROM ad_spend
            WHERE marketplace = ?
              AND event_date BETWEEN ? AND ?
              AND article IS NOT NULL
-           GROUP BY article"
+           GROUP BY article, event_date"
           (name marketplace) from to])
        (reduce (fn [m row]
-                 (let [article     (:article row)
-                       total-spend (or (:total-spend row) (:total_spend row) 0.0)]
+                 (let [article (:article row)
+                       day     (or (:event-date row) (:event_date row))
+                       spend   (or (:total-spend row) (:total_spend row) 0.0)]
                    (if article
-                     (assoc m article (double total-spend))
+                     (assoc m [article day] (double spend))
                      m)))
                {})))
+
+(defn- ad-cost-by-rrd
+  "Allocate {[article day] → spend} onto finance rrd_ids: one target row per
+   (article, day) — min rrd_id with event_date = day, else the article's min
+   rrd_id in the window. Keeps SUM(ad_cost) == Σ spend without per-row
+   multiplication (audit N3). Returns {rrd_id → ad_cost}."
+  [tx marketplace by-art-day from to]
+  (let [articles (into #{} (keep first (keys by-art-day)))
+        fin-rows (when (seq articles)
+                   (jdbc/execute! tx
+                     (into [(str "SELECT rrd_id, article, event_date FROM finance
+                                  WHERE marketplace = ? AND article IN ("
+                                 (str/join "," (repeat (count articles) "?"))
+                                 ") AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
+                                        OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))
+                                  ORDER BY rrd_id")]
+                           (concat [(name marketplace)] articles [from to to from]))
+                     {:builder-fn rs/as-unqualified-lower-maps}))
+        by-day-rrd (reduce (fn [m {:keys [rrd_id article event_date]}]
+                             (update m [article event_date] (fnil conj []) rrd_id))
+                           {} fin-rows)
+        by-art-rrd (reduce (fn [m {:keys [rrd_id article]}]
+                             (update m article (fnil conj []) rrd_id))
+                           {} fin-rows)]
+    (reduce (fn [acc [[article day] spend]]
+              (if-let [rrd (or (first (get by-day-rrd [article day]))
+                               (first (get by-art-rrd article)))]
+                (update acc rrd (fnil + 0.0) spend)
+                acc))
+            {} by-art-day)))
 
 (defn materialize-ad-cost!
   "Propagate per-article :spend totals from ad_spend into finance.ad_cost
@@ -62,7 +96,7 @@
 
    Returns {:marketplace mp :articles N :total-spend double}."
   [marketplace from to]
-  (let [by-article (sum-spend-by-article marketplace from to)]
+  (let [by-art-day (sum-spend-by-article-day marketplace from to)]
     (jdbc/with-transaction [tx (db/ds)]
       ;; Step 1: reset ad_cost to 0 for the entire (marketplace, period)
       (jdbc/execute! tx
@@ -72,17 +106,12 @@
             AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
                  OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
          (name marketplace) from to to from])
-      ;; Step 2: SET per article (only where we have spend)
-      (doseq [[article spend] by-article]
+      ;; Step 2: SET one target finance row per (article, day) — NOT the article
+      ;; total on every row (audit N3: that multiplied ad_cost by rows-per-article).
+      (doseq [[rrd cost] (ad-cost-by-rrd tx marketplace by-art-day from to)]
         (jdbc/execute! tx
-          ["UPDATE finance
-            SET ad_cost = ?
-            WHERE marketplace = ?
-              AND article = ?
-              AND ((event_date IS NOT NULL AND event_date BETWEEN ? AND ?)
-                   OR (event_date IS NULL AND date_from <= ? AND date_to >= ?))"
-           (double spend) (name marketplace) article
-           from to to from])))
-    {:marketplace  marketplace
-     :articles     (count by-article)
-     :total-spend  (reduce + 0.0 (vals by-article))}))
+          ["UPDATE finance SET ad_cost = ? WHERE marketplace = ? AND rrd_id = ?"
+           (double cost) (name marketplace) rrd])))
+    {:marketplace marketplace
+     :articles    (count (into #{} (keep first (keys by-art-day))))
+     :total-spend (reduce + 0.0 (vals by-art-day))}))

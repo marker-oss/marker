@@ -185,21 +185,25 @@
               drr     (* 100.0 (/ (:ad-spend after) revenue))]
           (is (pos? drr) "DRR is non-zero once ad_cost is populated"))))
 
-    (testing "(d) per-SKU rows → event_date_source='api', spread → 'spread'"
+    (testing "(d) ad attribution source lives on ad_spend; finance.event_date_source
+                  is the MONEY basis and is NOT overwritten by ad materialization"
       (let [rows      (db/get-ad-spend :ozon from to)
             by-source (group-by :attribution-source rows)]
-        (is (seq (get by-source "api")) "SKU campaign produced :api rows")
-        (is (seq (get by-source "spread")) "banner campaign produced :spread rows")
-        ;; finance.event_date_source: the SKU-attributed article carries 'api',
-        ;; the spread articles carry 'spread'.
+        (is (seq (get by-source "api")) "SKU campaign produced :api ad_spend rows")
+        (is (seq (get by-source "spread")) "banner campaign produced :spread ad_spend rows")
+        ;; Audit N3e: ad materialization used to overwrite finance.event_date_source
+        ;; with the ad attribution source, corrupting the money row's date basis
+        ;; (a 'flat'-spread realization row could be relabelled 'api'). It must be
+        ;; left untouched — here all three rows keep their seeded 'api' money basis
+        ;; regardless of whether their ad spend was :api or :spread.
         (let [esource (fn [article]
                         (-> (db/query
                               ["SELECT event_date_source FROM finance
                                 WHERE marketplace='ozon' AND article=? LIMIT 1" article])
                             first :event-date-source))]
-          (is (= "api" (esource "ABC-123")) "SKU-attributed article → api")
-          (is (= "spread" (esource "ART-A")) "banner-spread article → spread")
-          (is (= "spread" (esource "ART-B")) "banner-spread article → spread"))))))
+          (is (= "api" (esource "ABC-123")) "money basis preserved")
+          (is (= "api" (esource "ART-A")) "money basis preserved (not relabelled by ad spread)")
+          (is (= "api" (esource "ART-B")) "money basis preserved (not relabelled by ad spread)"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; T038 — async statistics ingest idempotency
@@ -311,3 +315,44 @@
               (is (= (kopecks (get expected article 0.0))
                      (kopecks spend))
                   (str "FR-015: " article " efficiency-report spend == ad_spend canon")))))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 N3 (money path) — the ozon-specific materialize path must
+;; NOT set an article's spend on every one of its finance rows. Give an article
+;; TWO finance rows on the ad day and assert Σ ad_cost == spend, not 2×.
+;; ---------------------------------------------------------------------------
+
+(deftest ozon-ad-cost-not-multiplied-across-rows
+  ;; one SKU campaign, one article, spend 500 on a single day
+  (db/insert-batch!
+    :finance
+    [:rrd_id :report_id :date_from :date_to :event_date :event_date_source
+     :article :nm_id :operation :operation_subtype
+     :retail_amount :for_pay :quantity :ad_cost :marketplace :synced_at]
+    (mapv (fn [r] (mapv r [:rrd_id :report_id :date_from :date_to :event_date
+                           :event_date_source :article :nm_id :operation
+                           :operation_subtype :retail_amount :for_pay :quantity
+                           :ad_cost :marketplace :synced_at]))
+          [{:rrd_id "m1" :report_id "rp" :date_from from :date_to to
+            :event_date "2026-04-10" :event_date_source "api" :article "MULTI"
+            :nm_id "99999999" :operation "sale" :operation_subtype "realization"
+            :retail_amount 10000.0 :for_pay 8000.0 :quantity 5 :ad_cost 0.0
+            :marketplace "ozon" :synced_at "2026-05-01T00:00:00"}
+           {:rrd_id "m2" :report_id "rp" :date_from from :date_to to
+            :event_date "2026-04-10" :event_date_source "api" :article "MULTI"
+            :nm_id "99999999" :operation "sale" :operation_subtype "realization"
+            :retail_amount 10000.0 :for_pay 8000.0 :quantity 5 :ad_cost 0.0
+            :marketplace "ozon" :synced_at "2026-05-01T00:00:00"}]))
+  (db/save-ozon-sku-map! [["99999999" "MULTI"]])
+  (ingest/ingest-ozon-ads!
+    (pc/stub-client
+      {:token      {:access_token "t" :expires_in 1800}
+       :campaigns  [{:id "500" :advObjectType "SKU" :title "c"}]
+       :daily-rows [{:date "2026-04-10" :id "500" :sku "99999999"
+                     :moneySpent 500.0 :bonusSpent 0.0}]})
+    from to)
+  (mat/materialize-ozon-ad-cost! from to)
+  (let [rows (->> (db/query ["SELECT ad_cost FROM finance WHERE marketplace='ozon' AND article='MULTI'"])
+                  (mapv #(double (or (:ad-cost %) (:ad_cost %) 0.0))))]
+    (testing "Σ ad_cost == 500, not 1000 (no per-row multiplication)"
+      (is (= 500.0 (reduce + 0.0 rows))))))
