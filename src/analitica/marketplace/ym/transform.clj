@@ -156,22 +156,21 @@
         date     (->iso-datetime (or (get order :creationDate) (get order :date)))
         region   (get-in order [:deliveryRegion :name])
         buyer    (price-entry-of-type item "BUYER")
-        marketp  (price-entry-of-type item "MARKETPLACE")
-        bid-fee  (or (get item :bidFee) 0)
-        ;; Per-unit values: dividing total by count would lose precision when
-        ;; YM emits costPerItem directly. Prefer costPerItem; fall back to
+        ;; Per-unit BUYER value: dividing total by count would lose precision
+        ;; when YM emits costPerItem directly. Prefer costPerItem; fall back to
         ;; total/count when the field is absent.
         unit-buyer  (or (some-> buyer :costPerItem)
                         (when-let [t (some-> buyer :total)]
                           (/ (double t) (max 1 (or (:count item) 1)))))
-        unit-mp     (or (some-> marketp :costPerItem)
-                        (when-let [t (some-> marketp :total)]
-                          (/ (double t) (max 1 (or (:count item) 1)))))
-        ;; Net seller payout = MARKETPLACE total minus the ad bid that was
-        ;; actually charged. bidFee is per-item; per-item net payout uses
-        ;; the unit MP price minus the per-unit slice of the bid. For
-        ;; aggregate parity we keep it simple: bidFee is order-item-level.
-        net-pay     (when marketp (- (double (:total marketp)) (double bid-fee)))]
+        ;; spec 012 basis (audit 2026-07-02 P1): use the BUYER price, NOT
+        ;; MARKETPLACE − bidFee. MARKETPLACE is a subsidy proxy (not a price)
+        ;; and bidFee is the seller's bid CAP — observed 351× the real
+        ;; AUCTION_PROMOTION charge — so MARKETPLACE − bidFee was a badly
+        ;; distorted payout basis. The commission-netted payout is only
+        ;; recoverable from order-stats (the finance table); the orders
+        ;; endpoint feeding the sales table carries no commission breakdown,
+        ;; so BUYER (the buyer-paid amount) is the honest sales-table figure.
+        buyer-total (some-> buyer :total)]
     {:marketplace     :ym
      :sale-id         (str order-id "-" idx)
      :date            date
@@ -186,8 +185,11 @@
      :region          region
      :type            (keyword op)
      :quantity        (or (get item :count) 1)
-     :total-price     (some-> buyer :total)
-     :for-pay         net-pay
+     :total-price     buyer-total
+     ;; for_pay on the BUYER basis (see above). domain.sales Sales.3 sums
+     ;; for_pay as revenue; keeping it on BUYER makes YM sales revenue the
+     ;; real buyer-paid amount instead of the 351×-distorted MP−bidFee.
+     :for-pay         buyer-total
      :finished-price  unit-buyer
      :price-with-disc unit-buyer}))
 

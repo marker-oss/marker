@@ -232,8 +232,13 @@
     (is (= "Москва"              (:region row))     "region from order.deliveryRegion.name")
     (is (= 3766.0                (:total-price row)) "BUYER.total = gross buyer price")
     (is (= 3766.0                (:finished-price row)) "BUYER.costPerItem per unit")
-    (is (= 2531.0 (:for-pay row))
-        "MARKETPLACE.total (2874) minus bidFee (343) = net seller payout")
+    ;; Audit 2026-07-02 P1: for_pay is the BUYER amount, not MARKETPLACE − bidFee.
+    ;; bidFee is the bid CAP (351× the real ad charge) and MARKETPLACE is a
+    ;; subsidy proxy; the orders endpoint has no commission breakdown, so the
+    ;; sales table uses the buyer-paid price (commission-netted payout lives in
+    ;; the finance table via order-stats).
+    (is (= 3766.0 (:for-pay row))
+        "for_pay = BUYER.total (sales-table basis; not MP−bidFee)")
     (is (= :sale (:type row)))
     (is (= 1     (:quantity row)))))
 
@@ -266,7 +271,7 @@
       (is (= 1 (count out)))
       (is (= :return (:type (first out))))
       (is (= 500.0 (:total-price (first out))))
-      (is (= 350.0 (:for-pay (first out))) "MARKETPLACE 400 − bidFee 50 = 350"))))
+      (is (= 500.0 (:for-pay (first out))) "for_pay = BUYER.total (P1 basis; not MP−bidFee)"))))
 
 (deftest multi-item-order-produces-row-per-item
   (testing "Multi-item order with mixed item-level statuses splits cleanly"
