@@ -2049,3 +2049,26 @@
     ;; coalescing) → numerator = for-pay − cogs = 500.0.
     (is (= 500.0 (max-drr-numerator 700.0 200.0 nil nil nil nil))
         "nil logistics/storage/penalties/acceptance coalesce to 0 → 700 − 200 = 500")))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 N1 — :additional (доплаты) is a seller credit and must
+;; REDUCE «Прочее»/«Итого расходы», not inflate them.
+;; ---------------------------------------------------------------------------
+
+(deftest additional-payments-reduce-other-costs
+  (let [pnl {:storage 100.0 :acceptance 50.0 :penalties 30.0
+             :deduction 20.0 :additional 60.0
+             :cogs 500.0 :wb-reward 10.0 :logistics 40.0 :ad-spend 25.0}]
+    (testing "other = storage+acceptance+penalties+deduction − additional"
+      (is (= 140.0 (#'marker-api/sum-other-costs pnl))))
+    (testing "total inherits the credit"
+      (is (= (+ 500.0 10.0 40.0 25.0 140.0)
+             (#'marker-api/sum-total-costs pnl))))
+    (testing "cost block reconciles with the signed P&L identity"
+      ;; gross-profit = for-pay − cogs − logistics − storage − penalties
+      ;;                − acceptance − deduction + additional  (pnl.clj:248)
+      ;; ⇒ for-pay − (cogs+logistics+other) = gross-profit exactly when
+      ;;   other carries additional as a credit.
+      (let [for-pay 1000.0
+            gross   (+ (- for-pay 500.0 40.0 100.0 30.0 50.0 20.0) 60.0)]
+        (is (= gross (- for-pay 500.0 40.0 (#'marker-api/sum-other-costs pnl))))))))

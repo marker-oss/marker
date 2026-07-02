@@ -291,12 +291,14 @@
      (cost-line _cur _prev _source as-of))))
 
 (defn- sum-other-costs
-  "Storage + acceptance + penalties + deduction + additional."
+  "Storage + acceptance + penalties + deduction − additional.
+   :additional (доплаты) is a seller CREDIT — pnl/calculate adds it back
+   to gross-profit — so it reduces «Прочее», not inflates it (audit N1)."
   [pnl]
-  (+ (or (:storage    pnl) 0)
-     (or (:acceptance pnl) 0)
-     (or (:penalties  pnl) 0)
-     (or (:deduction  pnl) 0)
+  (- (+ (or (:storage    pnl) 0)
+        (or (:acceptance pnl) 0)
+        (or (:penalties  pnl) 0)
+        (or (:deduction  pnl) 0))
      (or (:additional pnl) 0)))
 
 (defn- sum-total-costs
