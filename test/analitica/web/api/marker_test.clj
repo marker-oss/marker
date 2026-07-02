@@ -2097,17 +2097,22 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest pulse-forecast-month-plan-and-chart-dates
-  (testing "no plan set → :month-plan nil (SPA hides the plan line)"
-    (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
-      (is (nil? (get-in body [:forecast :month-plan])))))
-  (testing "an :all revenue plan for the current month surfaces as month-plan"
-    (let [month (subs (str (java.time.LocalDate/now)) 0 7)]
-      (analitica.domain.plan/save-plan! {:period-month month
-                                         :marketplace  :all
-                                         :metric       :revenue
-                                         :target-value 500000.0})
-      (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
-        (is (= 500000.0 (get-in body [:forecast :month-plan]))))))
+  ;; This ns runs against the shared dev DB (init-test-db has no temp-db
+  ;; isolation) — the plan row MUST be removed both before the nil assertion
+  ;; and after the test, or the first run poisons every later one.
+  (let [month     (subs (str (java.time.LocalDate/now)) 0 7)
+        test-plan {:period-month month :marketplace :all :metric :revenue}]
+    (analitica.domain.plan/delete-plan! test-plan)
+    (try
+      (testing "no plan set → :month-plan nil (SPA hides the plan line)"
+        (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+          (is (nil? (get-in body [:forecast :month-plan])))))
+      (testing "an :all revenue plan for the current month surfaces as month-plan"
+        (analitica.domain.plan/save-plan! (assoc test-plan :target-value 500000.0))
+        (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")]
+          (is (= 500000.0 (get-in body [:forecast :month-plan])))))
+      (finally
+        (analitica.domain.plan/delete-plan! test-plan))))
   (testing ":charts :dates is the ISO day axis, same length as revenue-30d"
     (let [{:keys [body]} (do-get "/api/v1/marker/pulse-summary")
           ch (:charts body)]

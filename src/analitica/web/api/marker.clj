@@ -1411,6 +1411,19 @@
           ad-total  (or (:ad-spend pnl-cur) 0.0)
           ads-by-art (try (pnl/ad-spend-by-article from to mp1) (catch Exception _ {}))
 
+          ;; P0-B basis contract: «Выкуп» is ORDER-based (sold/placed) on every
+          ;; surface — same basis as the Pulse headline. The sales-basis rate
+          ;; (sold/(sold+returns)) structurally cannot see cancellations and
+          ;; read 97% here vs 40% on Pulse for the same SKU.
+          buyout-by-art (try
+                          (let [orows (db/orders-by-article from to :marketplace mp1)
+                                omap  (into {} (map (juxt :article identity) orows))]
+                            (->> (buyout/analyze period :marketplace mp1
+                                                 :orders-by-article omap)
+                                 (map (juxt :article :true-buyout-rate))
+                                 (into {})))
+                          (catch Exception _ {}))
+
           ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
           ;; days-in-period for annualization + turnover daily-rate.
           days-in-period (try (inc (.until (period/parse-date from) (period/parse-date to)
@@ -1439,14 +1452,15 @@
                                   stk       (get stock-map art)
                                   qty-full  (or (:quantity-full stk) 0)
                                   orders    (or (:sales-qty a) 0)
-                                  returns   (or (:returns-qty a) 0)
                                   for-pay   (or (:for-pay a) 0.0)
                                   cogs      (or (:total-cost a) 0.0)
-                                  margin    (math/percentage
-                                              (- for-pay cogs)
-                                              (max 1.0 for-pay))
-                                  buyout    (math/percentage orders (+ orders returns))
                                   ads       (or (get ads-by-art art) 0.0)
+                                  ;; canon margin_net_pct: full MP net profit /
+                                  ;; revenue (same numerator as GMROI, audit N3)
+                                  ;; — retires the (for-pay−cogs)/max(1,for-pay)
+                                  ;; third margin definition.
+                                  margin    (math/percentage (gmroi-net-profit a ads) rev)
+                                  buyout    (get buyout-by-art art)
                                   roas      (math/roas rev ads)
                                   ;; max-ДРР ceiling (FR-005 / UE.7).
                                   ;; Numerator = for-pay − cogs − logistics − storage − penalties − acceptance.
