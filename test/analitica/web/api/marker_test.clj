@@ -1530,13 +1530,18 @@
          analitica.domain.finance/fetch-finance             (fn [& _] [finance-row])
          analitica.db/query                                 (fn [& _] [{:n 0}])]
         (let [body     (marker-api/pulse-summary {:params {}})
-              comm-val (get-in body [:costs :commission :value])]
+              comm     (get-in body [:costs :commission])
+              comm-val (:value comm)]
           (is (map? body) "handler returned a map")
-          ;; :mp-commission (ozon-positive 99) normalizes to -99.0
-          ;; :wb-reward = 200.0 — they are distinct, so we can prove the wire
-          (is (= -99.0 comm-val)
-              (str "Pulse :costs :commission must use :mp-commission (-99.0 normalized), "
-                   "not :wb-reward (200.0). Got: " comm-val)))))))
+          ;; :mp-commission (ozon-positive 99) → costs block lists the POSITIVE
+          ;; magnitude 99.0 (audit P1: the block is positive-magnitude and
+          ;; cost-line gates :source on pos?, so the raw negative read :none).
+          ;; :wb-reward = 200.0 — distinct, so we can still prove the wire.
+          (is (= 99.0 comm-val)
+              (str "Pulse :costs :commission must use abs(:mp-commission) (99.0), "
+                   "not :wb-reward (200.0). Got: " comm-val))
+          (is (not= :none (:source comm))
+              ":commission line must carry a real :source, not :none"))))))
 
 (deftest pnl-rows-include-mp-commission-row
   (testing "pnl-row-defs contains a :mp-commission row labeled Комиссия МП"

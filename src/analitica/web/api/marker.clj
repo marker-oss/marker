@@ -953,7 +953,12 @@
        ;; :total is also :preliminary-missing (incomplete; lists :known-components).
        ;; Domain sum-total-costs/what-if/exports continue to use numeric 0 from pnl-cur.
        :costs           {:cogs       (cost-line (:cogs         pnl-cur) (:cogs         pnl-prev) revenue-src revenue-as-of cost-missing?)
-                        :commission (cost-line (:mp-commission pnl-cur) (:mp-commission pnl-prev) revenue-src revenue-as-of cost-missing?)
+                        ;; :mp-commission arrives sign-negative from pnl/calculate;
+                        ;; the costs block lists positive magnitudes and cost-line
+                        ;; gates :source on pos? — feed it the abs value.
+                        :commission (cost-line (Math/abs (double (or (:mp-commission pnl-cur) 0.0)))
+                                               (Math/abs (double (or (:mp-commission pnl-prev) 0.0)))
+                                               revenue-src revenue-as-of cost-missing?)
                         :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
                         :ads        (cost-line (:ad-spend  pnl-cur) (:ad-spend  pnl-prev) revenue-src revenue-as-of)
                         :other      (cost-line (sum-other-costs pnl-cur) (sum-other-costs pnl-prev) revenue-src revenue-as-of)

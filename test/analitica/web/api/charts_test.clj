@@ -109,6 +109,7 @@
                   pnl/calculate (fn [_ & _]
                                   {:revenue 10000.0 :wb-reward 1000.0 :logistics 500.0
                                    :storage 200.0 :cogs 3000.0 :ad-spend 500.0
+                                   :mp-commission -1500.0
                                    :net-profit 4800.0})]
       (let [result (charts/report-chart-data :pnl :last-7-days :marketplace :wb)]
         (is (map? result))
@@ -117,7 +118,10 @@
         (is (= 7 (count (:labels result))))
         (is (= 1 (count (:datasets result))))
         (is (= "P&L" (:label (first (:datasets result)))))
-        (is (= 7 (count (:data (first (:datasets result)))))))))
+        (is (= 7 (count (:data (first (:datasets result))))))
+        ;; canon F-1: «Комиссия МП» bar = :mp-commission (already negative),
+        ;; NOT −:wb-reward (PVZ reimbursement) — they differ in the stub.
+        (is (= -1500.0 (second (:data (first (:datasets result)))))))))
 
   (testing "report-chart-data for stock returns bar chart structure"
     ;; Stock chart requires actual domain functions, so we test structure only

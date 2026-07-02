@@ -178,8 +178,11 @@
                                     :from from :to to)]
         {:labels ["Выручка" "Комиссия МП" "Логистика" "Хранение" "Себестоимость" "Реклама" "Чистая прибыль"]
          :datasets [{:label "P&L"
+                     ;; canon F-1: «Комиссия МП» is :mp-commission (already
+                     ;; sign-negative from pnl/calculate); :wb-reward is the
+                     ;; PVZ reimbursement, not the commission.
                      :data [(:revenue pnl-data)
-                            (- (:wb-reward pnl-data))
+                            (:mp-commission pnl-data)
                             (- (:logistics pnl-data))
                             (- (:storage pnl-data))
                             (- (:cogs pnl-data))
