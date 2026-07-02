@@ -203,3 +203,12 @@
       (is (= "total" (first (:columns r))))
       (let [months (rest (:columns r))]
         (is (= months (reverse (sort months))))))))
+
+(deftest months-in-range-guards
+  (testing "reversed range throws instead of looping forever (audit H1)"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (#'cf/months-in-range "2026-05-01" "2026-01-31"))))
+  (testing "single-month and multi-month ranges still work"
+    (is (= ["2026-01"] (#'cf/months-in-range "2026-01-05" "2026-01-20")))
+    ;; newest-first per docstring
+    (is (= ["2026-01" "2025-12"] (#'cf/months-in-range "2025-12-01" "2026-01-31")))))

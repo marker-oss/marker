@@ -92,21 +92,36 @@
 ;; §1 ДДС — GET /api/v1/treasury/cashflow
 ;; ---------------------------------------------------------------------------
 
+(def ^:private iso-date-re #"\d{4}-\d{2}-\d{2}")
+
 (defn get-cashflow
   "GET /api/v1/treasury/cashflow?from&to&group-by&account-ids&mode
-   Returns the derived ДДС matrix (cashflow-api.edn §1). Cells are decimal-strings."
+   Returns the derived ДДС matrix (cashflow-api.edn §1). Cells are decimal-strings.
+   from/to are required ISO dates with from <= to — a reversed range used to
+   drive months-in-range into an unbounded loop (audit 2026-07-02 H1)."
   [req]
-  (let [p        (params-of req)
-        from     (or (:from p) (get p "from"))
-        to       (or (:to p) (get p "to"))
-        group-by (->kw (or (:group-by p) (get p "group-by")))
-        mode     (->kw (or (:mode p) (get p "mode")))
-        acc-ids  (account-ids-of (or (:account-ids p) (get p "account-ids")))
-        opts     (cond-> {:from from :to to}
-                   group-by (assoc :group-by group-by)
-                   mode     (assoc :mode mode)
-                   (seq acc-ids) (assoc :account-ids acc-ids))]
-    {:status 200 :body (cashflow/report opts)}))
+  (let [p    (params-of req)
+        from (or (:from p) (get p "from"))
+        to   (or (:to p) (get p "to"))]
+    (cond
+      (not (and (string? from) (re-matches iso-date-re from)
+                (string? to)   (re-matches iso-date-re to)))
+      {:status 422
+       :body   {:ok false :error "from/to are required ISO dates (YYYY-MM-DD)"}}
+
+      (pos? (compare from to))
+      {:status 422
+       :body   {:ok false :error "from must be <= to"}}
+
+      :else
+      (let [group-by (->kw (or (:group-by p) (get p "group-by")))
+            mode     (->kw (or (:mode p) (get p "mode")))
+            acc-ids  (account-ids-of (or (:account-ids p) (get p "account-ids")))
+            opts     (cond-> {:from from :to to}
+                       group-by (assoc :group-by group-by)
+                       mode     (assoc :mode mode)
+                       (seq acc-ids) (assoc :account-ids acc-ids))]
+        {:status 200 :body (cashflow/report opts)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; §5 Categories — GET /api/v1/treasury/categories (read-only taxonomy)

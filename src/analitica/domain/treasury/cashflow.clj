@@ -65,15 +65,27 @@
       (m/d "0.00"))))
 
 (defn- months-in-range
-  "All YYYY-MM strings from `from`..`to` inclusive, newest-first."
+  "All YYYY-MM strings from `from`..`to` inclusive, newest-first.
+   Throws ex-info when from > to: the loop below only terminates on
+   equality, so a reversed range would otherwise walk to year 9999,
+   wrap, and cycle forever while growing acc (audit 2026-07-02 H1)."
   [from to]
   (let [ym (fn [d] (subs d 0 7))
         start (ym from)
         end   (ym to)]
+    (when (pos? (compare start end))
+      (throw (ex-info "from is after to" {:from from :to to})))
     (loop [cur start acc []]
       (let [acc' (conj acc cur)]
-        (if (= cur end)
+        (cond
+          (= cur end)
           (vec (reverse acc'))
+
+          ;; belt-and-suspenders: 1200 months = 100 years; runaway input.
+          (> (count acc') 1200)
+          (throw (ex-info "month range too large" {:from from :to to}))
+
+          :else
           (let [y (Integer/parseInt (subs cur 0 4))
                 mo (Integer/parseInt (subs cur 5 7))
                 [y' mo'] (if (= mo 12) [(inc y) 1] [y (inc mo)])]

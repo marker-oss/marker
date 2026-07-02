@@ -482,3 +482,20 @@
       (let [op (ops/get-op op-id)]
         (is (= "salary" (:category op)))
         (is (= :manual (:category-source op)))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H1 — cashflow param validation (reversed range = DoS loop)
+;; ---------------------------------------------------------------------------
+
+(deftest cashflow-param-validation
+  (testing "reversed range → 422, not an infinite loop"
+    (let [resp (api/get-cashflow {:params {:from "2026-05-01" :to "2026-01-31"}})]
+      (is (= 422 (:status resp)))
+      (is (false? (get-in resp [:body :ok])))))
+  (testing "missing params → 422, not NPE-500"
+    (is (= 422 (:status (api/get-cashflow {:params {}}))))
+    (is (= 422 (:status (api/get-cashflow {:params {:from "2026-01-01"}})))))
+  (testing "malformed dates → 422"
+    (is (= 422 (:status (api/get-cashflow {:params {:from "garbage" :to "2026-06-30"}})))))
+  (testing "valid range still 200"
+    (is (= 200 (:status (api/get-cashflow {:params {:from "2026-01-01" :to "2026-06-30"}}))))))
