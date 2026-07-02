@@ -1,0 +1,52 @@
+;; Fixture: ≥3 ad_spend records across :ozon/:wb/:ym
+;; Used by US1 tests (T013, T014, T015, T016b).
+;;
+;; Σ :spend = 100.0 + 200.0 + 300.0 = 600.0
+;; One :attribution-source :spread (ym row)
+;; One :article nil (ozon account-level residue)
+;;
+;; All event-dates within April 2026 so tests can query {:from "2026-04-01" :to "2026-04-30"}.
+
+[{:marketplace        :ozon
+  :event-date         "2026-04-10"
+  :campaign-id        "C001"
+  :campaign-type      "SEARCH_PROMO"
+  :article            "ART-A"
+  :sku                "11111111"
+  :spend              100.0
+  :bonus-spend        0.0
+  :attribution-source :api
+  :basis              "Ozon Performance daily moneySpent (cash); per-SKU direct"}
+
+ {:marketplace        :ozon
+  :event-date         "2026-04-11"
+  :campaign-id        "C001-acct"
+  :campaign-type      "BANNER"
+  :article            nil
+  :sku                nil
+  :spend              50.0
+  :bonus-spend        10.0
+  :attribution-source :api
+  :basis              "Ozon Performance account-level — no per-article attribution"}
+
+ {:marketplace        :wb
+  :event-date         "2026-04-12"
+  :campaign-id        "W001"
+  :campaign-type      "AUTO_SEARCH"
+  :article            "ART-B"
+  :sku                "22222222"
+  :spend              200.0
+  :bonus-spend        0.0
+  :attribution-source :api
+  :basis              "WB Advertising API direct per-article"}
+
+ {:marketplace        :ym
+  :event-date         "2026-04-13"
+  :campaign-id        "Y001"
+  :campaign-type      "SMART"
+  :article            "ART-C"
+  :sku                "33333333"
+  :spend              300.0
+  :bonus-spend        20.0
+  :attribution-source :spread
+  :basis              "YM Performance revenue-weighted spread"}]

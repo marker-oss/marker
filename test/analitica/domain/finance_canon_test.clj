@@ -260,6 +260,9 @@
     ;; wb-reward: A(75) + B(24) = 99
     (testing "total-wb-reward = 99.0"
       (is (= 99.0 (:total-wb-reward t))))
+    ;; mp-commission (Σ over sales lines): A(5×15) + B(3×8) = 99
+    (testing "total-mp-commission = 99.0"
+      (is (= 99.0 (:total-mp-commission t))))
     ;; logistics: A(6) + B(1.5) + C(0.5) = 8.0
     (testing "total-logistics = 8.0"
       (is (= 8.0 (:total-logistics t))))
@@ -272,6 +275,20 @@
     ;; articles-count: 3 distinct articles
     (testing "articles-count = 3"
       (is (= 3 (:articles-count t))))))
+
+;; Regression guard: :total-mp-commission must be the real MP commission
+;; (Σ :mp-commission), NOT :wb-reward (ppvz_reward = PVZ pickup income).
+;; The finance-breakdown metrics endpoint conflated the two (commission bug,
+;; 2026-06-25). Use a fixture where the two differ so the test actually bites.
+(deftest total-mp-commission-distinct-from-wb-reward
+  (let [rows [{:marketplace :wb :article "X" :operation "sale" :quantity 1
+               :retail-amount 100.0 :for-pay 80.0
+               :mp-commission 10.0 :wb-reward 99.0}]
+        t    (finance/totals rows)]
+    (testing "commission uses :mp-commission, not :wb-reward"
+      (is (= 10.0 (:total-mp-commission t)))
+      (is (= 99.0 (:total-wb-reward t)))
+      (is (not= (:total-mp-commission t) (:total-wb-reward t))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Finance.8 — by-report-id weekly split

@@ -91,14 +91,14 @@
       (is (= {:from "2026-05-14" :to "2026-05-14"} p)))))
 
 (deftest period-last-7-days
-  (testing "Последние 7 дней → today-7 to today (mirrors backend last-7-days)"
+  (testing "Последние 7 дней → 7 inclusive days (mirrors backend resolve-preset minusDays 6)"
     (let [p (api/resolve-period "Последние 7 дней" may-15)]
-      (is (= {:from "2026-05-08" :to "2026-05-15"} p)))))
+      (is (= {:from "2026-05-09" :to "2026-05-15"} p)))))
 
 (deftest period-last-30-days
-  (testing "Последние 30 дней → today-30 to today (mirrors backend last-30-days)"
+  (testing "Последние 30 дней → 30 inclusive days (mirrors backend resolve-preset minusDays 29)"
     (let [p (api/resolve-period "Последние 30 дней" may-15)]
-      (is (= {:from "2026-04-15" :to "2026-05-15"} p)))))
+      (is (= {:from "2026-04-16" :to "2026-05-15"} p)))))
 
 (deftest period-this-month
   (testing "Этот месяц → first of month to today"
@@ -177,8 +177,8 @@
     (is (= "01.04–30.04" (api/format-period-range "Прошлый месяц" may-15)))))
 
 (deftest format-period-range-last-7-days
-  (testing "Последние 7 дней → 08.05–15.05"
-    (is (= "08.05–15.05" (api/format-period-range "Последние 7 дней" may-15)))))
+  (testing "Последние 7 дней → 09.05–15.05 (7 inclusive days)"
+    (is (= "09.05–15.05" (api/format-period-range "Последние 7 дней" may-15)))))
 
 (deftest format-period-range-this-year
   (testing "Этот год → 01.01–15.05 (same year, no year suffix)"
@@ -219,3 +219,18 @@
   (with-redefs [api/api-key (constantly "T-KEY")]
     (let [m (api/put-xhrio "/api/x" {:a 1} [:ok] [:err])]
       (is (= "T-KEY" (get-in m [:headers "X-API-Key"]))))))
+
+;; ---------------------------------------------------------------------------
+;; Period presets — inclusive spans (audit P2: «7 дней» rendered 8 days)
+;; ---------------------------------------------------------------------------
+
+(deftest period-presets-span-exactly-n-days
+  (let [now  (js/Date. 2026 5 15)                       ;; 2026-06-15, mid-month
+        span (fn [{:keys [from to]}]
+               (inc (js/Math.round (/ (- (.getTime (js/Date. to))
+                                         (.getTime (js/Date. from)))
+                                      86400000))))]
+    (testing "«Последние 7 дней» covers exactly 7 calendar days incl. today"
+      (is (= 7 (span (api/resolve-period "Последние 7 дней" now)))))
+    (testing "«Последние 30 дней» covers exactly 30 calendar days incl. today"
+      (is (= 30 (span (api/resolve-period "Последние 30 дней" now)))))))

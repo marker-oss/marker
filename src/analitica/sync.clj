@@ -45,7 +45,7 @@
   [(:rrd-id f) (:report-id f) (:date-from f) (:date-to f) (:event-date f)
    (:article f) (:nm-id f) (:barcode f) (:subject f) (:brand f)
    (:operation f) (:doc-type f) (:quantity f)
-   (:retail-price f) (:retail-amount f) (:sale-percent f)
+   (:retail-price f) (:retail-amount f) (:net-sales f) (:sale-percent f)
    (:commission-pct f) (:mp-commission f) (:wb-reward f)
    (:wb-kvw-prc f) (:spp-prc f) (:price-with-disc f)
    (:delivery-amount f) (:return-amount f) (:delivery-cost f)
@@ -67,7 +67,7 @@
   [:rrd_id :report_id :date_from :date_to :event_date
    :article :nm_id :barcode
    :subject :brand :operation :doc_type :quantity
-   :retail_price :retail_amount :sale_percent
+   :retail_price :retail_amount :net_sales :sale_percent
    :commission_pct :mp_commission :wb_reward
    :wb_kvw_prc :spp_prc :price_with_disc
    :delivery_amount :return_amount :delivery_cost

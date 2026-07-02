@@ -99,6 +99,24 @@
 (defn ozon-config []
   (get-in (config) [:marketplaces :ozon]))
 
+(defn ozon-performance-config
+  "Ozon Performance (advertising) credentials, or nil when the feature is
+   not configured.
+
+   Spec 011-ozon-performance-ads / FR-005: the advertising subsystem is
+   OPT-IN and activates only when BOTH `:client-id` and `:client-secret`
+   are present (and non-blank) under [:marketplaces :ozon :performance].
+   A partial credential (e.g. an unresolved `#prop` resolving to nil/\"\")
+   is treated as NOT configured → nil, so the feature stays off rather than
+   half-booting. `core/register-marketplaces!` builds `OzonPerfClient` only
+   when this returns non-nil."
+  []
+  (let [{:keys [client-id client-secret]}
+        (get-in (config) [:marketplaces :ozon :performance])
+        present? (fn [v] (and (string? v) (seq v)))]
+    (when (and (present? client-id) (present? client-secret))
+      {:client-id client-id :client-secret client-secret})))
+
 (defn ym-config []
   (get-in (config) [:marketplaces :ym]))
 
@@ -112,3 +130,35 @@
   []
   (merge default-audit-tolerance
          (get-in (config) [:audit :tolerance])))
+
+;; ---------------------------------------------------------------------------
+;; 018-platform-seams: telemetry + tariffs getters (T010)
+;; All values resolved via aero #prop (NOT #env) — .env loaded as JVM system
+;; properties by load-env-file! above (memory: env_loaded_as_system_properties).
+;; Default: telemetry off so self-host without a collector works normally (SC-005).
+;; ---------------------------------------------------------------------------
+
+(def ^:private default-telemetry-config
+  "Default telemetry config — off so absence of a collector never fails requests."
+  {:telemetry/enabled   false
+   :telemetry/endpoint  nil
+   :telemetry/publisher :otlp})
+
+(defn telemetry-config
+  "Return telemetry configuration from config.edn [:telemetry].
+   Falls back to default-off when key is absent (so a stale config.edn does
+   not break startup — SC-005 fail-open default)."
+  []
+  (merge default-telemetry-config
+         (get-in (config) [:telemetry])))
+
+(def ^:private default-tariffs-config
+  "Default tariffs config — open edition with no enforcement."
+  {:tariffs/edition "free"})
+
+(defn tariffs-config
+  "Return tariffs configuration from config.edn [:tariffs].
+   Falls back to free/open edition when key is absent."
+  []
+  (merge default-tariffs-config
+         (get-in (config) [:tariffs])))

@@ -10,6 +10,7 @@
             [marker.state.events :as events]
             [marker.ui.chrome    :refer [delta mp-badge sparkline]]
             [marker.ui.icons     :refer [icon]]
+            [marker.ui.basis     :refer [coverage-banner]]
             [marker.util.format  :as fmt]))
 
 (defn- safe-num [v] (if (and (some? v) (not (js/isNaN v))) v 0))
@@ -124,28 +125,44 @@
                 "Выручка " (sort-icon :revenue))
              ($ :th {:class "num tbl-sortable" :on-click #(sort-click! :margin)}
                 "Маржа " (sort-icon :margin))
+             ;; FR-P4.2: макс-ДРР (рекламный потолок) per article.
+             ($ :th {:class "num tbl-sortable" :on-click #(sort-click! :max-drr-pct)}
+                "Макс-ДРР " (sort-icon :max-drr-pct))
              ($ :th {:class "num tbl-sortable" :on-click #(sort-click! :stock)}
                 "Остаток " (sort-icon :stock))
              ($ :th)))
        ($ :tbody
           (for [s sorted]
-            ($ :tr {:key      (:id s)
-                    :style    {:cursor "pointer"}
-                    :on-click #(rf/dispatch [::events/open-sheet-and-load (:id s)])}
-               ($ :td
-                  ($ :span {:class "tbl-link"} (:id s))
-                  " · "
-                  (or (:name s) ""))
-               ($ :td
-                  (for [m (:mp s)]
-                    ($ mp-badge {:key (name m) :mp m})))
-               ($ :td {:class "num mono"} (fmt/format-int (safe-num (:orders s))))
-               ($ :td {:class "num mono"} (fmt/format-rub (safe-num (:revenue s))))
-               ($ :td {:class "num mono"} (fmt/format-pct (safe-num (:margin s))))
-               ($ :td {:class "num mono"} (fmt/format-int (safe-num (:stock s))))
-               ($ :td
-                  (when (seq (:spark s))
-                    ($ sparkline {:data (:spark s) :width 60 :height 20})))))))))
+            (let [over? (:over-ceiling? s)]
+              ($ :tr {:key      (:id s)
+                      :style    {:cursor "pointer"}
+                      :on-click #(rf/dispatch [::events/open-sheet-and-load (:id s)])}
+                 ($ :td
+                    ($ :span {:class "tbl-link"} (:id s))
+                    " · "
+                    (or (:name s) ""))
+                 ($ :td
+                    (for [m (:mp s)]
+                      ($ mp-badge {:key (name m) :mp m})))
+                 ($ :td {:class "num mono"} (fmt/format-int (safe-num (:orders s))))
+                 ($ :td {:class "num mono"} (fmt/format-rub (safe-num (:revenue s))))
+                 ($ :td {:class "num mono"} (fmt/format-pct (safe-num (:margin s))))
+                 ;; FR-P4.2: макс-ДРР + over-ceiling marker. Red ДРР when the
+                 ;; article's actual ДРР breaches its own break-even ceiling.
+                 ($ :td {:class "num mono"
+                         :title (when over? "Фактический ДРР выше предельного — реклама в убыток")
+                         :style (when over? {:color "var(--color-delta-negative)" :font-weight 600})}
+                    (if (some? (:max-drr-pct s))
+                      (fmt/format-pct (:max-drr-pct s))
+                      "—")
+                    (when over?
+                      ($ :span {:class "badge badge-danger"
+                                :style {:margin-left "6px" :font-size "10px"}}
+                         "⚠")))
+                 ($ :td {:class "num mono"} (fmt/format-int (safe-num (:stock s))))
+                 ($ :td
+                    (when (seq (:spark s))
+                      ($ sparkline {:data (:spark s) :width 60 :height 20}))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Page root
@@ -156,6 +173,7 @@
         period      (use-subscribe [::subs/period])
         compare?    (use-subscribe [::subs/compare])
         skus-raw    (use-subscribe [::subs/sku-list-data])
+        envelope    (use-subscribe [::subs/sku-list-envelope])
         loading?    (use-subscribe [::subs/sku-list-loading?])
         api-errors  (use-subscribe [::subs/api-errors])
         error-msg   (get-in api-errors ["/api/v1/marker/sku-list" :message])
@@ -186,14 +204,26 @@
             visible (filterv (fn [s]
                                (or (empty? mps)
                                    (some (set mps) (:mp s))))
-                             skus)]
+                             skus)
+            empty-data? (= :empty (:completeness envelope))]
 
         ($ :div {:class "page-content"}
            (when error-msg
              ($ error-banner {:message  error-msg
                               :on-retry #(do (rf/dispatch [::events/clear-cache])
                                               (rf/dispatch [::events/load-sku-list fs]))}))
-           ($ :section {:class "card section-card"}
+           ;; LT3: honesty banner from the backend envelope.
+           ($ coverage-banner {:completeness (:completeness envelope)
+                               :date-basis   (:date-basis envelope)
+                               :preliminary? (:preliminary? envelope)})
+           (if empty-data?
+             ;; No-data window: show empty-state instead of an empty grid that
+             ;; reads like a real (but empty) catalogue.
+             ($ :section {:class "card section-card"}
+                ($ :div {:style {:text-align "center" :padding "48px 24px"
+                                 :color "var(--color-fg-muted)" :font-size "14px"}}
+                   "За выбранный период нет данных по товарам."))
+             ($ :section {:class "card section-card"}
               ($ :div {:class "section-head"}
                  ($ :div
                     ($ :h3 {:class "section-title"} "Каталог товаров")
@@ -225,4 +255,4 @@
                                  :gap                   "14px"}}
                    (for [s visible]
                      ($ sku-card {:key (:id s) :sku s})))
-                ($ sku-list {:visible visible}))))))))
+                ($ sku-list {:visible visible})))))))))

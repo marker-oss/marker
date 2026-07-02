@@ -84,6 +84,7 @@
       quantity           INTEGER,
       retail_price       REAL,
       retail_amount      REAL,
+      net_sales          REAL,
       sale_percent       REAL,
       commission_pct     REAL,
       mp_commission      REAL,
@@ -434,13 +435,18 @@
       updated_at      TEXT NOT NULL
     )"
 
+   ;; spec 017 US4: sku column added ('' = MP-level aggregate, backward compat).
+   ;; Fresh DDL uses 4-column PK covering the sku dimension. Existing prod DBs
+   ;; are migrated via ALTER TABLE + uq_monthly_plans_sku UNIQUE index (see init!
+   ;; migration block). CREATE UNIQUE INDEX is idempotent via IF NOT EXISTS.
    "CREATE TABLE IF NOT EXISTS monthly_plans (
       period_month TEXT NOT NULL,
       marketplace  TEXT NOT NULL,
       metric       TEXT NOT NULL,
+      sku          TEXT NOT NULL DEFAULT '',
       target_value REAL NOT NULL,
       updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (period_month, marketplace, metric)
+      PRIMARY KEY (period_month, marketplace, metric, sku)
     )"
    "CREATE INDEX IF NOT EXISTS idx_monthly_plans_period
       ON monthly_plans(period_month)"
@@ -470,7 +476,168 @@
       content_type TEXT,
       size         INTEGER,
       stored_path  TEXT
-    )"])
+    )"
+
+   ;; spec 015 — management-basis layer: taxes (УСН/НДС) + OPEX
+   "CREATE TABLE IF NOT EXISTS tax_config (
+      year                INTEGER NOT NULL,
+      month               INTEGER NOT NULL,
+      taxation_type       TEXT NOT NULL DEFAULT 'none',
+      usn_rate            REAL NOT NULL DEFAULT 0,
+      vat_rate            REAL NOT NULL DEFAULT 0,
+      official_cost_price INTEGER NOT NULL DEFAULT 1,
+      updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (year, month)
+    )"
+
+   "CREATE TABLE IF NOT EXISTS opex_rows (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_month TEXT NOT NULL,
+      category     TEXT NOT NULL,
+      amount       REAL NOT NULL,
+      marketplace  TEXT,
+      note         TEXT,
+      source       TEXT NOT NULL DEFAULT 'manual',
+      rule_id      INTEGER,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_opex_period ON opex_rows(period_month)"
+   "CREATE INDEX IF NOT EXISTS idx_opex_period_mp ON opex_rows(period_month, marketplace)"
+   "CREATE UNIQUE INDEX IF NOT EXISTS idx_opex_rule_period ON opex_rows(rule_id, period_month) WHERE rule_id IS NOT NULL"
+
+   ;; spec 017 — Telegram digest bot: per-chat subscription registry
+   "CREATE TABLE IF NOT EXISTS bot_subscriptions (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id         TEXT    NOT NULL,
+      label           TEXT,
+      cadences        TEXT    NOT NULL DEFAULT 'daily',
+      metrics         TEXT    NOT NULL DEFAULT '',
+      show_movers     INTEGER NOT NULL DEFAULT 1,
+      marketplace     TEXT    NOT NULL DEFAULT 'all',
+      gate_when_empty TEXT    NOT NULL DEFAULT 'skip',
+      status          TEXT    NOT NULL DEFAULT 'active',
+      created_at      TEXT    NOT NULL,
+      updated_at      TEXT    NOT NULL,
+      UNIQUE(chat_id)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_bot_subs_status ON bot_subscriptions(status)"
+
+   ;; spec 017 — per-(chat,cadence,period) delivery audit + idempotency gate
+   "CREATE TABLE IF NOT EXISTS bot_deliveries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id    TEXT    NOT NULL,
+      cadence    TEXT    NOT NULL,
+      period     TEXT    NOT NULL,
+      outcome    TEXT    NOT NULL,
+      detail     TEXT,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      sent_at    TEXT    NOT NULL,
+      UNIQUE(chat_id, cadence, period)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_bot_deliv_lookup ON bot_deliveries(chat_id, cadence, period)"
+
+   "CREATE TABLE IF NOT EXISTS opex_auto_rules (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      category       TEXT NOT NULL,
+      amount         REAL NOT NULL,
+      marketplace    TEXT,
+      cadence        TEXT NOT NULL DEFAULT 'monthly',
+      effective_from TEXT NOT NULL,
+      effective_to   TEXT,
+      note           TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_opex_auto_active ON opex_auto_rules(effective_from, effective_to)"
+
+   ;; spec 016 US5 — user-defined metric constructor (persistence).
+   ;; :formula is a SAFE EDN-AST stored as its pr-str form (parsed back with
+   ;; edn/read-string on read). All additive; validated at save via valid-formula?.
+   "CREATE TABLE IF NOT EXISTS user_metrics (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug              TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      formula           TEXT NOT NULL,          -- pr-str of the EDN-AST
+      suffix            TEXT,                   -- Suffix enum name (rub|pct|qty|days|ratio)
+      filter_type       TEXT,                   -- FilterType enum name (text-contains|number-range)
+      positive_if_grow  INTEGER,                -- 1=profit-like, 0=cost-like, NULL=neutral
+      basis             TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(slug)
+    )"
+   "CREATE INDEX IF NOT EXISTS idx_user_metrics_slug ON user_metrics(slug)"
+
+   ;; ── Treasury ledger (spec 019) — ДДС / ДЗ-КЗ / реестр операций ──────────
+   ;; Money columns are TEXT (decimal-string "0.00"), NOT REAL — the whole
+   ;; point of the precise ledger path (FR-019). All additive
+   ;; CREATE TABLE/INDEX IF NOT EXISTS: idempotent, non-destructive (P5).
+   ;; Reuses the 015 category taxonomy (slug string in operations.category /
+   ;; auto_rules.category — one shared taxonomy, §3.A). data-model.md §5.
+   "CREATE TABLE IF NOT EXISTS treasury_accounts (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      marketplace  TEXT,
+      kind         TEXT,
+      currency     TEXT NOT NULL DEFAULT 'RUB',
+      archived_at  TEXT,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_counterparties (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      kind         TEXT,
+      archived_at  TEXT,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_operations (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      op_date             TEXT NOT NULL,
+      amount              TEXT NOT NULL,               -- decimal-string \"0.00\" (FR-019)
+      currency            TEXT NOT NULL DEFAULT 'RUB',
+      direction           TEXT NOT NULL,               -- income|expense|transfer
+      account_id          INTEGER NOT NULL,
+      transfer_account_id INTEGER,
+      counterparty_id     INTEGER,
+      category            TEXT,                         -- taxonomy slug (§3.A); NULL ⇒ uncategorised
+      category_source     TEXT,                         -- manual|rule|seed
+      applied_rule_id     INTEGER,
+      confirmed           INTEGER NOT NULL DEFAULT 1,   -- 1=actual, 0=planned
+      regular             INTEGER NOT NULL DEFAULT 0,
+      description         TEXT,
+      source              TEXT,                         -- manual|seed:cash_flow_periods|ingest:<mp>
+      created_at          TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_auto_rules (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_field  TEXT NOT NULL,                       -- counterparty|account|description
+      match_op     TEXT NOT NULL,                       -- equals|contains
+      match_value  TEXT NOT NULL,
+      category     TEXT NOT NULL,                        -- target slug (§3.A)
+      priority     INTEGER NOT NULL DEFAULT 100,         -- lower = higher precedence
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      created_at   TEXT NOT NULL
+    )"
+
+   "CREATE TABLE IF NOT EXISTS treasury_obligations (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      direction            TEXT NOT NULL,               -- receivable|payable
+      amount               TEXT NOT NULL,               -- decimal-string (FR-019)
+      remaining_amount     TEXT NOT NULL,               -- decimal-string; 0.00 ⇒ settled
+      currency             TEXT NOT NULL DEFAULT 'RUB',
+      counterparty_id      INTEGER,
+      issue_date           TEXT,
+      due_date             TEXT NOT NULL,
+      settled_operation_id INTEGER,
+      confirmed            INTEGER NOT NULL DEFAULT 1,
+      created_at           TEXT NOT NULL
+    )"
+
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_acc_date ON treasury_operations(account_id, op_date)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_category ON treasury_operations(category)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_op_confirmed ON treasury_operations(confirmed, op_date)"
+   "CREATE INDEX IF NOT EXISTS idx_treasury_obl_due ON treasury_obligations(direction, due_date)"])
 
 ;; ---------------------------------------------------------------------------
 ;; Init
@@ -623,6 +790,15 @@
       (when-not has-ad-cost?
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN ad_cost REAL DEFAULT 0"])
         (println "Migration: finance.ad_cost column added")))
+    ;; Migration (012-ym-revenue-forpay-basis): add finance.net_sales column.
+    ;; YM post-discount BUYER amount (gross = MARKETPLACE lives in retail_amount);
+    ;; WB/Ozon stay NULL (net == gross). Additive, idempotent via PRAGMA check.
+    (let [info          (jdbc/execute! ds ["PRAGMA table_info(finance)"]
+                                       {:builder-fn rs/as-unqualified-maps})
+          has-net-sales? (some #(= "net_sales" (:name %)) info)]
+      (when-not has-net-sales?
+        (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN net_sales REAL"])
+        (println "Migration: finance.net_sales column added")))
     ;; Migration (RFC-6, 2026-04-28): rename finance.wb_commission →
     ;; finance.mp_commission. The field is cross-MP (Ozon and YM also use
     ;; it for MP commission RUB) — the WB-prefixed legacy name was misleading.
@@ -683,6 +859,51 @@
         (jdbc/execute! ds ["ALTER TABLE finance ADD COLUMN event_date_source
                             TEXT NOT NULL DEFAULT 'api'"])
         (println "Migration: finance.event_date_source column added")))
+    ;; Spec 011-ozon-performance-ads (§2.1/§2.2): advertising canon tables.
+    ;; Both are NEW, additive tables — CREATE TABLE IF NOT EXISTS only, no
+    ;; ALTER/DROP on existing product tables (P5). The shared §3.B ad-canon
+    ;; (011 = first producer, 018 = owner of the definition) lands in
+    ;; `ad_spend`; `ad_campaign_stats` holds per-campaign/per-day raw stats
+    ;; for the P1 efficiency report. Idempotent via IF NOT EXISTS.
+    ;;
+    ;; NOTE (§2.1): campaign_id / article are nullable, and SQLite treats NULL
+    ;; PK components as DISTINCT — so a bare INSERT OR REPLACE is NOT idempotent
+    ;; for account-level (NULL,NULL) rows. Re-materialize MUST use the
+    ;; DELETE(marketplace,period) → INSERT pattern (respread-ozon-finance!) to
+    ;; dedup those rows; see delete-ad-spend! / materialize-ozon-ad-cost!.
+    (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS ad_spend (
+                          marketplace        TEXT    NOT NULL,
+                          event_date         TEXT    NOT NULL,
+                          campaign_id        TEXT,
+                          campaign_type      TEXT,
+                          article            TEXT,
+                          sku                TEXT,
+                          spend              REAL    NOT NULL DEFAULT 0,
+                          bonus_spend        REAL    NOT NULL DEFAULT 0,
+                          attribution_source TEXT    NOT NULL DEFAULT 'api',
+                          basis              TEXT,
+                          synced_at          TEXT    NOT NULL,
+                          PRIMARY KEY (marketplace, event_date, campaign_id, article)
+                        )"])
+    (jdbc/execute! ds ["CREATE INDEX IF NOT EXISTS idx_ad_spend_lookup
+                        ON ad_spend(marketplace, event_date)"])
+    (jdbc/execute! ds ["CREATE TABLE IF NOT EXISTS ad_campaign_stats (
+                          marketplace     TEXT    NOT NULL,
+                          campaign_id     TEXT    NOT NULL,
+                          campaign_type   TEXT,
+                          campaign_name   TEXT,
+                          stat_date       TEXT    NOT NULL,
+                          views           INTEGER NOT NULL DEFAULT 0,
+                          clicks          INTEGER NOT NULL DEFAULT 0,
+                          add_to_cart     INTEGER NOT NULL DEFAULT 0,
+                          orders          INTEGER NOT NULL DEFAULT 0,
+                          orders_revenue  REAL    NOT NULL DEFAULT 0,
+                          spend           REAL    NOT NULL DEFAULT 0,
+                          bonus_spend     REAL    NOT NULL DEFAULT 0,
+                          synced_at       TEXT    NOT NULL,
+                          PRIMARY KEY (marketplace, campaign_id, stat_date)
+                        )"])
+    (println "Migration: ad_spend / ad_campaign_stats tables ensured")
     ;; Phase 4 (2026-05-05): split Ozon delivery_cost into separate cost
     ;; columns so finance rows align row-by-row with LK Накопления columns
     ;; «Логистика» / «Обратная логистика» / «Обработка отправления».
@@ -791,6 +1012,19 @@
                      ["INSERT OR IGNORE INTO sync_schedule (id, created_at, updated_at)
                        VALUES (1, ?, ?)"
                       now-str now-str]))
+    ;; spec 017 — per-SKU plan targets: add monthly_plans.sku column if absent.
+    ;; sku='' (DEFAULT) = existing MP-level aggregate — all existing rows keep
+    ;; their meaning without backfill. SQLite cannot alter the PRIMARY KEY via
+    ;; ALTER, so a UNIQUE index covers the 4-dimension upsert key instead.
+    ;; Idempotent via PRAGMA check; additive (P5 — no destructive changes).
+    (let [info    (jdbc/execute! ds ["PRAGMA table_info('monthly_plans')"]
+                                  {:builder-fn rs/as-unqualified-maps})
+          has-sku? (some #(= "sku" (:name %)) info)]
+      (when-not has-sku?
+        (jdbc/execute! ds ["ALTER TABLE monthly_plans ADD COLUMN sku TEXT NOT NULL DEFAULT ''"])
+        (println "Migration: monthly_plans.sku column added (spec 017)")))
+    (jdbc/execute! ds ["CREATE UNIQUE INDEX IF NOT EXISTS uq_monthly_plans_sku
+                        ON monthly_plans(period_month, marketplace, metric, sku)"])
     (println "SQLite database initialized: analitica.db (WAL mode enabled)")
     ds))
 
@@ -909,6 +1143,97 @@
                 params (into [sql] (mapcat identity chunk))]
             (jdbc/execute! tx params))))
       (count rows))))
+
+;; ---------------------------------------------------------------------------
+;; Advertising canon helpers (spec 011-ozon-performance-ads §2.1/§2.2)
+;;
+;; `ad_spend` feeds finance.ad_cost; `ad_campaign_stats` feeds the P1
+;; efficiency report. Both use natural-key PKs → INSERT OR REPLACE via
+;; `insert-batch!`. Because `ad_spend` has nullable PK components (SQLite
+;; treats NULL PK parts as distinct), account-level rows are NOT deduped by
+;; INSERT OR REPLACE — re-materialize MUST DELETE the (marketplace, period)
+;; window first (delete-ad-spend!) then INSERT (materialize.clj pattern).
+;; ---------------------------------------------------------------------------
+
+(def ^:private ad-spend-columns
+  [:marketplace :event-date :campaign-id :campaign-type :article :sku
+   :spend :bonus-spend :attribution-source :basis :synced-at])
+
+(defn- ->db-name
+  "Coerce a keyword canon value (e.g. :ozon, :api) to its plain string name for
+   storage. Passes strings/nil through unchanged. Keeps the in-memory §3.B canon
+   keyword-typed while persisting clean 'ozon'/'api' strings (a raw keyword would
+   be stored WITH its colon → ':ozon', breaking name-based WHERE filters)."
+  [v]
+  (cond (keyword? v) (name v)
+        :else        v))
+
+(defn insert-ad-spend!
+  "Insert attributed ad-spend rows (§3.B canon). Each row is a map with
+   kebab keys matching `ad-spend-columns`. INSERT OR REPLACE on the natural
+   PK (marketplace, event_date, campaign_id, article).
+
+   `:marketplace` and `:attribution-source` arrive as canon keywords (:ozon /
+   :api / :spread) and are stored as plain strings so name-based WHERE filters
+   (get-ad-spend / materialize) match."
+  [rows]
+  (insert-batch! :ad_spend
+                 [:marketplace :event_date :campaign_id :campaign_type
+                  :article :sku :spend :bonus_spend :attribution_source
+                  :basis :synced_at]
+                 ;; ad-spend-columns index map: 0 marketplace … 8 attribution-source.
+                 (mapv (fn [r]
+                         (-> (mapv r ad-spend-columns)
+                             (assoc 0 (->db-name (:marketplace r)))
+                             (assoc 8 (->db-name (:attribution-source r)))))
+                       rows)))
+
+(defn delete-ad-spend!
+  "Delete every ad_spend row for `marketplace` whose event_date falls in
+   [from..to]. Called before re-INSERT so account-level (NULL,NULL) rows do
+   not accumulate on re-materialize (idempotency contract, data-model §2.1)."
+  [marketplace from to]
+  (execute! ["DELETE FROM ad_spend
+              WHERE marketplace = ? AND event_date >= ? AND event_date <= ?"
+             (name marketplace) from to]))
+
+(defn get-ad-spend
+  "Return ad_spend rows for `marketplace` with event_date in [from..to],
+   as kebab maps ordered by event_date, article."
+  [marketplace from to]
+  (query ["SELECT * FROM ad_spend
+           WHERE marketplace = ? AND event_date >= ? AND event_date <= ?
+           ORDER BY event_date, article"
+          (name marketplace) from to]))
+
+(def ^:private ad-campaign-stats-columns
+  [:marketplace :campaign-id :campaign-type :campaign-name :stat-date
+   :views :clicks :add-to-cart :orders :orders-revenue :spend :bonus-spend
+   :synced-at])
+
+(defn insert-ad-campaign-stats!
+  "Insert per-campaign/per-day stat rows (§2.2). PK (marketplace,
+   campaign_id, stat_date) is fully NOT NULL → INSERT OR REPLACE is
+   idempotent for reruns."
+  [rows]
+  (insert-batch! :ad_campaign_stats
+                 [:marketplace :campaign_id :campaign_type :campaign_name
+                  :stat_date :views :clicks :add_to_cart :orders
+                  :orders_revenue :spend :bonus_spend :synced_at]
+                 ;; index 0 = marketplace (canon keyword → plain string).
+                 (mapv (fn [r]
+                         (-> (mapv r ad-campaign-stats-columns)
+                             (assoc 0 (->db-name (:marketplace r)))))
+                       rows)))
+
+(defn get-ad-campaign-stats
+  "Return ad_campaign_stats rows for `marketplace` with stat_date in
+   [from..to], as kebab maps ordered by campaign_id, stat_date."
+  [marketplace from to]
+  (query ["SELECT * FROM ad_campaign_stats
+           WHERE marketplace = ? AND stat_date >= ? AND stat_date <= ?
+           ORDER BY campaign_id, stat_date"
+          (name marketplace) from to]))
 
 ;; ---------------------------------------------------------------------------
 ;; Raw data helpers
@@ -1039,3 +1364,233 @@
   (when (seq pairs)
     (insert-batch! :ozon_sku_map [:sku :offer_id]
                    (mapv (fn [[sku offer-id]] [sku offer-id]) pairs))))
+
+;; ---------------------------------------------------------------------------
+;; Treasury ledger — low-level CRUD (spec 019, T010).
+;;
+;; Money columns are TEXT decimal-strings (\"0.00\", FR-019). This layer NEVER
+;; parses money into a number — it reads/writes the raw string; parsing to
+;; BigDecimal happens ONLY in the domain via analitica.util.math/d. Booleans
+;; are stored as SQLite INTEGER 0/1 and returned as 0/1 (domain coerces).
+;; Soft-archive (R11/FR-026) is a helper here (sets archived_at, no cascade).
+;; ---------------------------------------------------------------------------
+
+(def ^:private treasury-last-rowid
+  (keyword "last_insert_rowid()"))
+
+(defn- treasury-insert!
+  "INSERT a single row map (kebab keys → snake columns) into `table`.
+   Returns the new row id. Columns are passed as-is (caller supplies snake-case
+   column keywords)."
+  [table columns row]
+  (let [cols (mapv name columns)
+        sql  (str "INSERT INTO " (name table) " (" (clojure.string/join "," cols) ") "
+                  "VALUES (" (clojure.string/join "," (repeat (count cols) "?")) ")")
+        res  (jdbc/execute-one! (ds) (into [sql] (map #(get row %) columns))
+                                {:return-keys true})]
+    (get res treasury-last-rowid)))
+
+(defn treasury-insert-account!
+  "Insert a treasury_accounts row. `row` keys: :name :marketplace :kind
+   :currency :created-at. Returns new id."
+  [row]
+  (treasury-insert! :treasury_accounts
+                    [:name :marketplace :kind :currency :created_at]
+                    {:name        (:name row)
+                     :marketplace (:marketplace row)
+                     :kind        (:kind row)
+                     :currency    (:currency row)
+                     :created_at  (:created-at row)}))
+
+(defn treasury-list-accounts
+  "Return treasury_accounts rows as kebab maps (money/strings raw). When
+   `include-archived?` is false, archived accounts are excluded."
+  [include-archived?]
+  (query [(str "SELECT id, name, marketplace, kind, currency, archived_at, created_at
+                  FROM treasury_accounts"
+               (when-not include-archived? " WHERE archived_at IS NULL")
+               " ORDER BY id")]))
+
+(defn treasury-account-op-count
+  "Count operations referencing `account-id` as source or transfer target."
+  [account-id]
+  (-> (query ["SELECT COUNT(*) AS n FROM treasury_operations
+                WHERE account_id = ? OR transfer_account_id = ?"
+              account-id account-id])
+      first :n))
+
+(defn treasury-delete-account!
+  "Hard-delete account `id`."
+  [id]
+  (execute! ["DELETE FROM treasury_accounts WHERE id = ?" id]))
+
+(defn treasury-archive-account!
+  "Soft-archive account `id` (set archived_at)."
+  [id ts]
+  (execute! ["UPDATE treasury_accounts SET archived_at = ? WHERE id = ?" ts id]))
+
+(defn treasury-insert-counterparty!
+  "Insert a treasury_counterparties row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_counterparties
+                    [:name :kind :created_at]
+                    {:name       (:name row)
+                     :kind       (:kind row)
+                     :created_at (:created-at row)}))
+
+(defn treasury-list-counterparties
+  "Return treasury_counterparties rows as kebab maps, each with :operation-count."
+  [include-archived?]
+  (query [(str "SELECT c.id, c.name, c.kind, c.archived_at, c.created_at,
+                       (SELECT COUNT(*) FROM treasury_operations o
+                          WHERE o.counterparty_id = c.id) AS operation_count
+                  FROM treasury_counterparties c"
+               (when-not include-archived? " WHERE c.archived_at IS NULL")
+               " ORDER BY c.id")]))
+
+(defn treasury-counterparty-op-count
+  [counterparty-id]
+  (-> (query ["SELECT COUNT(*) AS n FROM treasury_operations WHERE counterparty_id = ?"
+              counterparty-id])
+      first :n))
+
+(defn treasury-delete-counterparty!
+  [id]
+  (execute! ["DELETE FROM treasury_counterparties WHERE id = ?" id]))
+
+(defn treasury-archive-counterparty!
+  [id ts]
+  (execute! ["UPDATE treasury_counterparties SET archived_at = ? WHERE id = ?" ts id]))
+
+(def ^:private treasury-operation-columns
+  [:op_date :amount :currency :direction :account_id :transfer_account_id
+   :counterparty_id :category :category_source :applied_rule_id
+   :confirmed :regular :description :source :created_at])
+
+(defn treasury-insert-operation!
+  "Insert a treasury_operations row. `row` uses kebab keys; :amount is a raw
+   \"0.00\" string; :direction/:category-source are stored as plain strings;
+   :confirmed/:regular are stored as 0/1. Returns new id."
+  [row]
+  (treasury-insert! :treasury_operations
+                    treasury-operation-columns
+                    {:op_date             (:op-date row)
+                     :amount              (:amount row)
+                     :currency            (:currency row)
+                     :direction           (:direction row)
+                     :account_id          (:account-id row)
+                     :transfer_account_id (:transfer-account-id row)
+                     :counterparty_id     (:counterparty-id row)
+                     :category            (:category row)
+                     :category_source     (:category-source row)
+                     :applied_rule_id     (:applied-rule-id row)
+                     :confirmed           (:confirmed row)
+                     :regular             (:regular row)
+                     :description         (:description row)
+                     :source              (:source row)
+                     :created_at          (:created-at row)}))
+
+(defn treasury-get-operation
+  "Return a single treasury_operations row by id as a kebab map (raw strings)."
+  [id]
+  (first (query ["SELECT * FROM treasury_operations WHERE id = ?" id])))
+
+(defn treasury-update-operation!
+  "Update selected columns of operation `id`. `set-map` uses snake-case column
+   keywords → values. No-op when empty."
+  [id set-map]
+  (when (seq set-map)
+    (let [cols   (keys set-map)
+          assign (clojure.string/join ", " (map #(str (name %) " = ?") cols))
+          params (into (mapv #(get set-map %) cols) [id])]
+      (execute! (into [(str "UPDATE treasury_operations SET " assign " WHERE id = ?")]
+                      params)))))
+
+(defn treasury-query-operations
+  "Return treasury_operations rows (kebab maps, raw strings) for the given
+   WHERE clause + params. `where` is a SQL fragment WITHOUT the WHERE keyword
+   (may be empty). Ordered by op_date DESC, id DESC (newest-first)."
+  [where params]
+  (query (into [(str "SELECT * FROM treasury_operations"
+                     (when (seq where) (str " WHERE " where))
+                     " ORDER BY op_date DESC, id DESC")]
+               params)))
+
+;; ---------------------------------------------------------------------------
+;; Treasury auto-rules CRUD
+;; ---------------------------------------------------------------------------
+
+(defn treasury-insert-auto-rule!
+  "Insert a treasury_auto_rules row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_auto_rules
+                    [:match_field :match_op :match_value :category :priority :enabled :created_at]
+                    {:match_field  (:match-field row)
+                     :match_op     (:match-op row)
+                     :match_value  (:match-value row)
+                     :category     (:category row)
+                     :priority     (:priority row)
+                     :enabled      (if (:enabled row) 1 0)
+                     :created_at   (:created-at row)}))
+
+(defn treasury-list-auto-rules
+  "Return all treasury_auto_rules rows, ordered by priority ASC, id ASC
+   (the classifier precedence order)."
+  []
+  (query ["SELECT id, match_field, match_op, match_value, category, priority, enabled, created_at
+             FROM treasury_auto_rules
+            ORDER BY priority ASC, id ASC"]))
+
+;; ---------------------------------------------------------------------------
+;; Treasury obligations CRUD
+;; ---------------------------------------------------------------------------
+
+(defn treasury-insert-obligation!
+  "Insert a treasury_obligations row. Returns new id."
+  [row]
+  (treasury-insert! :treasury_obligations
+                    [:direction :amount :remaining_amount :currency
+                     :counterparty_id :issue_date :due_date
+                     :settled_operation_id :confirmed :created_at]
+                    {:direction             (:direction row)
+                     :amount                (:amount row)
+                     :remaining_amount      (:remaining-amount row)
+                     :currency              (:currency row)
+                     :counterparty_id       (:counterparty-id row)
+                     :issue_date            (:issue-date row)
+                     :due_date              (:due-date row)
+                     :settled_operation_id  (:settled-operation-id row)
+                     :confirmed             (if (:confirmed row) 1 0)
+                     :created_at            (:created-at row)}))
+
+(defn treasury-get-obligation
+  "Return a single treasury_obligations row by id."
+  [id]
+  (first (query ["SELECT * FROM treasury_obligations WHERE id = ?" id])))
+
+(defn treasury-update-obligation!
+  "Update selected columns of obligation `id`. `set-map` uses snake-case column
+   keywords → values."
+  [id set-map]
+  (when (seq set-map)
+    (let [cols   (keys set-map)
+          assign (clojure.string/join ", " (map #(str (name %) " = ?") cols))
+          params (into (mapv #(get set-map %) cols) [id])]
+      (execute! (into [(str "UPDATE treasury_obligations SET " assign " WHERE id = ?")]
+                      params)))))
+
+(defn treasury-query-obligations
+  "Return treasury_obligations rows for the given WHERE clause + params,
+   each carrying :counterparty-name via LEFT JOIN (contract obligations-api
+   §3 lists it; the SPA fell back to «Контрагент #N» without it).
+   `where` may be empty; where-columns are unqualified obligation columns,
+   so they stay valid against the aliased o.* select. Ordered by due_date
+   ASC, id ASC."
+  [where params]
+  (query (into [(str "SELECT o.*, c.name AS counterparty_name
+                      FROM treasury_obligations o
+                      LEFT JOIN treasury_counterparties c
+                             ON c.id = o.counterparty_id"
+                     (when (seq where) (str " WHERE " where))
+                     " ORDER BY o.due_date ASC, o.id ASC")]
+               params)))

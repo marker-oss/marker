@@ -262,6 +262,37 @@
       (is (not= 600.0 (:avg-price z))))))
 
 ;; ---------------------------------------------------------------------------
+;; FR-002 — avg-price denominator must be Σ units, not row count
+;; ---------------------------------------------------------------------------
+
+(deftest avg-price-divides-by-sum-quantity
+  ;; Two rows WITH :quantity — denominator must be (1+2)=3, not 2.
+  (let [data [{:type :sale :article "Q" :finished-price 100.0 :quantity 1}
+              {:type :sale :article "Q" :finished-price 200.0 :quantity 2}]]
+    (testing "group-and-sum: avg-price = (100+200)/(1+2) = 100.0 ;; before-would-be 150.0"
+      (let [row (first (sales/by-article data))]
+        (is (= 100.0 (:avg-price row))
+            (str "Expected 100.0, got " (:avg-price row)))))
+    (testing "totals: avg-price = (100+200)/(1+2) = 100.0 ;; before-would-be 150.0"
+      (let [t (sales/totals data)]
+        (is (= 100.0 (:avg-price t))
+            (str "Expected 100.0, got " (:avg-price t)))))))
+
+(deftest avg-price-wb-unchanged-coalesce-1
+  ;; Same two rows WITHOUT :quantity — unit-qty coalesces to 1 each,
+  ;; so Σqty = count = 2. WB behavior must be byte-identical to before.
+  (let [data [{:type :sale :article "Q" :finished-price 100.0}
+              {:type :sale :article "Q" :finished-price 200.0}]]
+    (testing "group-and-sum: avg-price = (100+200)/2 = 150.0 (WB zero-regression)"
+      (let [row (first (sales/by-article data))]
+        (is (= 150.0 (:avg-price row))
+            (str "Expected 150.0, got " (:avg-price row)))))
+    (testing "totals: avg-price = (100+200)/2 = 150.0 (WB zero-regression)"
+      (let [t (sales/totals data)]
+        (is (= 150.0 (:avg-price t))
+            (str "Expected 150.0, got " (:avg-price t)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Sales.4 — empty input → zero totals
 ;; ---------------------------------------------------------------------------
 

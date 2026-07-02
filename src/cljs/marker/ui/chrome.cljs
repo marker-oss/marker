@@ -9,6 +9,7 @@
   (:require [clojure.string :as str]
             [uix.core :refer [$ defui use-state use-effect use-ref use-memo]]
             [marker.ui.icons :refer [icon]]
+            [marker.ui.basis :as basis]
             [marker.mock     :as mock]
             [marker.api      :as api]
             [marker.state.db :as db]
@@ -28,6 +29,8 @@
     :default-tab "skus"}
    {:id "dynamics" :label "Динамика"       :icon :layers
     :default-tab "trends"}
+   {:id "treasury" :label "Казначейство"   :icon :save
+    :default-tab "cashflow"}
    {:id "sync"      :label "Синхронизация"  :icon :refresh}
    {:id "settings"  :label "Настройки"      :icon :settings}])
 
@@ -84,12 +87,34 @@
 
 ;; ============= Topbar =============
 
+(defui coverage-chip
+  "Topbar honesty chip — declares the data-coverage of the active page.
+   Props: :coverage {:completeness #{:empty :full :estimated} :date-basis map
+                     :preliminary? bool}.
+   Hidden (renders nothing) when coverage is nil — i.e. the page has no
+   finance envelope. Reuses tokens.css .chip + .badge-neutral/.badge-warning
+   only; the basis-tooltip is the title. LT3 / specs/010 P0-A."
+  [{:keys [coverage]}]
+  (when coverage
+    (let [completeness (:completeness coverage)
+          preliminary? (:preliminary? coverage)
+          label        (basis/coverage-label completeness preliminary?)
+          badge-cls    (basis/coverage-badge-class completeness preliminary?)
+          ;; The chip carries the same date-basis composition tooltip the KPI
+          ;; tiles use — reuse the single source of truth.
+          tip          (basis/basis-tooltip coverage)]
+      ($ :span {:class (str "chip " badge-cls)
+                :title (or tip "Покрытие данными за выбранный период")
+                :style {:cursor "help"}}
+         label))))
+
 (defui topbar
   "Top application bar.
    Props: :crumbs (vec of strings), :on-search (fn), :on-theme (fn),
           :theme (\"light\"|\"dark\"), :on-sidebar-toggle (fn), :on-sync (fn),
-          :on-tweaks (fn) — opens the tweaks panel."
-  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync on-tweaks]}]
+          :on-tweaks (fn) — opens the tweaks panel,
+          :coverage (map | nil) — active-page honesty envelope for the chip."
+  [{:keys [crumbs on-search on-theme theme on-sidebar-toggle on-sync on-tweaks coverage]}]
   ($ :div {:class "topbar"}
      ($ :button {:class    "icon-btn"
                  :title    "Свернуть"
@@ -106,6 +131,7 @@
                 ($ :a {:href "#"} c))))
          crumbs))
      ($ :div {:class "spacer"})
+     ($ coverage-chip {:coverage coverage})
      ($ :button {:class    "search-trigger"
                  :on-click on-search}
         ($ icon {:name :search :size 14})
@@ -409,19 +435,29 @@
           :sub (string, optional secondary label), :spark (vec of numbers, optional),
           :compare? (bool, default false), :inverted? (bool, default false),
           :badge (string, optional — small inline tag next to label, e.g. '≈')
-          :badge-title (string, optional — hover tooltip for the badge)."
-  [{:keys [label value delta-pct sub spark compare? inverted? badge badge-title]}]
+          :badge-title (string, optional — hover tooltip for the badge)
+          :warn-badge (string, optional — warning-flavoured tag, e.g. 'реклама не загружена')
+          :warn-badge-title (string, optional — hover tooltip for the warning badge)."
+  [{:keys [label value delta-pct sub spark compare? inverted? badge badge-title
+           warn-badge warn-badge-title]}]
   ($ :div {:class "kpi" :style {:position "relative"}}
      ($ :div {:class "kpi-label"}
         label
         (when badge
-          ($ :span {:class "tag tag-sm tag-info"
+          ($ :span {:class "tag tag-sm tag-info badge badge-info"
                     :title (or badge-title "Предварительное значение — будет уточнено")
                     :style {:margin-left "6px"
                             :font-size "10px"
                             :font-family "var(--font-mono)"
                             :cursor "help"}}
-             badge)))
+             badge))
+        (when warn-badge
+          ($ :span {:class "tag tag-sm badge badge-warning"
+                    :title (or warn-badge-title "Данные неполные — значение завышено")
+                    :style {:margin-left "6px"
+                            :font-size "10px"
+                            :cursor "help"}}
+             warn-badge)))
      ($ :div {:class "kpi-value"} value)
      ($ :div {:class "kpi-foot"}
         (when compare?

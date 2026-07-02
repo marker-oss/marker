@@ -1,0 +1,96 @@
+;; Synthetic YM order fixture for spec 012 US1 transform invariants.
+;; CORRECTED basis (owner-approved 2026-07-01): gross = BUYER + subsidy,
+;; net-sales = BUYER, for_pay = BUYER - non-ad commissions (subsidy NOT in payout).
+;; Feed directly to analitica.marketplace.ym.transform/->finance-from-order-stats.
+;;
+;; Cases (one order each):
+;;   (a) BUYER + one SUBSIDY ACCRUAL       — gross = BUYER + subsidy (bridge)
+;;   (b) loss-making SKU                    — BUYER - commissions < 0 (negative payout)
+;;   (c) 4 duplicate ACCRUAL subsidies      — dedup: 2x SUBSIDY + 2x YANDEX_CASHBACK
+;;   (d) no subsidy                         — gross == BUYER (no inflation)
+;;   (e) CANCELLED_BEFORE_PROCESSING        — adjustment, for_pay = 0.0
+[
+ ;; ---- (a) BUYER with a SUBSIDY-ACCRUAL: gross = BUYER + subsidy ----------
+ ;; BUYER 3741, subsidy 2804 -> gross 6545, net 3741. Mirrors real 3451-1/Синий54.
+ {:id 900001
+  :status "DELIVERED"
+  :creationDate "2026-04-17"
+  :statusUpdateDate "2026-04-30T11:32:59.619+03:00"
+  :subsidies [{:amount 2804.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+  :commissions [{:type "FEE" :actual 756.19}
+                {:type "PAYMENT_TRANSFER" :actual 104.72}
+                {:type "AGENCY" :actual 0.12}
+                {:type "DELIVERY_TO_CUSTOMER" :actual 425.25}
+                {:type "AUCTION_PROMOTION" :actual 2.25}]
+  :items [{:shopSku "SUB-A"
+           :marketSku 4561041468
+           :count 1
+           :prices [{:type "MARKETPLACE" :costPerItem 2804.0 :total 2804.0}
+                    {:type "BUYER" :costPerItem 3741.0 :total 3741.0}]}]}
+
+ ;; ---- (b) loss-making SKU: BUYER - commissions < 0 (negative for_pay) ----
+ ;; BUYER 2544, commissions (non-ad) 3113 -> for_pay = 2544 - 3113 = -569.
+ ;; No promo subsidy here, so gross = BUYER = 2544.
+ {:id 900002
+  :status "DELIVERED"
+  :creationDate "2026-04-10"
+  :statusUpdateDate "2026-04-20T09:00:00.000+03:00"
+  :subsidies []
+  :commissions [{:type "FEE" :actual 900.0}
+                {:type "PAYMENT_TRANSFER" :actual 213.0}
+                {:type "DELIVERY_TO_CUSTOMER" :actual 2000.0}
+                {:type "AUCTION_PROMOTION" :actual 3.2}]
+  :items [{:shopSku "LOSS-B"
+           :marketSku 4561015607
+           :count 1
+           :prices [{:type "MARKETPLACE" :costPerItem 2544.0 :total 2544.0}
+                    {:type "BUYER" :costPerItem 2544.0 :total 2544.0}]}]}
+
+ ;; ---- (c) 4 duplicate ACCRUAL subsidies for one item --------------------
+ ;; 2x SUBSIDY/ACCRUAL 1000 (same logical subsidy, dup'd) + 2x YANDEX_CASHBACK.
+ ;; dedup-subsidies groups by (type, operationType), takes FIRST per group:
+ ;;   -> one SUBSIDY/ACCRUAL 1000 counted (cashback is NOT part of gross subsidy).
+ ;; gross = BUYER 2000 + 1000 = 3000, net = 2000.
+ {:id 900003
+  :status "DELIVERED"
+  :creationDate "2026-04-05"
+  :statusUpdateDate "2026-04-15T12:00:00.000+03:00"
+  :subsidies [{:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+              {:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+              {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}
+              {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}]
+  :commissions [{:type "FEE" :actual 400.0}
+                {:type "PAYMENT_TRANSFER" :actual 56.0}]
+  :items [{:shopSku "DEDUP-C"
+           :marketSku 4561099999
+           :count 1
+           :prices [{:type "MARKETPLACE" :costPerItem 1000.0 :total 1000.0}
+                    {:type "BUYER" :costPerItem 2000.0 :total 2000.0}]}]}
+
+ ;; ---- (d) no subsidy: gross == BUYER (no inflation) ---------------------
+ ;; No :subsidies key at all. gross = net = BUYER 1500.
+ {:id 900004
+  :status "DELIVERED"
+  :creationDate "2026-04-08"
+  :statusUpdateDate "2026-04-18T08:00:00.000+03:00"
+  :commissions [{:type "FEE" :actual 300.0}
+                {:type "PAYMENT_TRANSFER" :actual 42.0}]
+  :items [{:shopSku "NOSUB-D"
+           :marketSku 4561088888
+           :count 1
+           :prices [{:type "MARKETPLACE" :costPerItem 1500.0 :total 1500.0}
+                    {:type "BUYER" :costPerItem 1500.0 :total 1500.0}]}]}
+
+ ;; ---- (e) CANCELLED_BEFORE_PROCESSING: adjustment, for_pay = 0.0 --------
+ {:id 900005
+  :status "CANCELLED_BEFORE_PROCESSING"
+  :creationDate "2026-04-30"
+  :statusUpdateDate "2026-04-30T23:40:03.271+03:00"
+  :subsidies []
+  :commissions []
+  :items [{:shopSku "CANC-E"
+           :marketSku 4561030894
+           :count 1
+           :prices [{:type "MARKETPLACE" :costPerItem 2023.0 :total 2023.0}
+                    {:type "BUYER" :costPerItem 2877.0 :total 2877.0}]}]}
+]

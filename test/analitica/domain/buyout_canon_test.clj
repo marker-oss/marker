@@ -228,3 +228,109 @@
         (is (empty? rows)))
       (testing "result has zero elements"
         (is (= 0 (count rows)))))))
+
+;; ---------------------------------------------------------------------------
+;; §FR-006 — refusals counted in buyout (non-return) denominator
+;; ---------------------------------------------------------------------------
+
+(deftest refusals-counted-in-non-return-denom
+  ;; Contract: 3 sale + 1 return + 1 refusal for one article
+  ;; non-return rate (analyze :buyout-rate) = 3/(3+1+1) = 60.0
+  ;; before-would-be 75.0  (refusal was invisible, denom was 3+1=4)
+  (let [fx-refusal [{:type :sale    :article "F" :subject "shoes"}
+                    {:type :sale    :article "F" :subject "shoes"}
+                    {:type :sale    :article "F" :subject "shoes"}
+                    {:type :return  :article "F" :subject "shoes"}
+                    {:type :refusal :article "F" :subject "shoes"}]]
+    (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-refusal)]
+      (let [rows (buyout/analyze [:last-7-days])
+            f    (first (filter #(= "F" (:article %)) rows))]
+
+        (testing "analyze row carries :refused count"
+          (is (= 1 (:refused f))
+              ":refused must equal count of :refusal type items"))
+
+        (testing "analyze :buyout-rate uses enlarged denominator (sold / (sold+returned+refused))"
+          (is (= 60.0 (:buyout-rate f))
+              ;; 3/(3+1+1) = 60.0  ;; before-would-be 75.0
+              "buyout-rate must be 60.0 with refusal in denom, not 75.0"))
+
+        (testing "analyze :ordered includes refused in total ops"
+          (is (= 5 (:ordered f))
+              "ordered = sold+returned+refused = 5"))
+
+        (testing "aggregate :non-return-rate includes refused in denominator"
+          (let [agg (buyout/aggregate rows)]
+            (is (= 60.0 (:non-return-rate agg))
+                ;; 3/(3+1+1) = 60.0  ;; before-would-be 75.0
+                "aggregate non-return-rate must be 60.0 with refusal counted"))))))
+
+  (testing "no-refusal rows: refused=0, totals unchanged (WB zero-regression)"
+    ;; Pure :sale + :return with no :refusal — refused must be 0 and metrics unchanged
+    (let [fx-no-refusal [{:type :sale   :article "G" :subject "bags"}
+                         {:type :sale   :article "G" :subject "bags"}
+                         {:type :return :article "G" :subject "bags"}]]
+      (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-no-refusal)]
+        (let [rows (buyout/analyze [:last-7-days])
+              g    (first rows)]
+          (is (= 0 (:refused g))
+              "refused must be 0 when no :refusal rows present")
+          (is (= 66.67 (:buyout-rate g))
+              "buyout-rate = 2/(2+1) = 66.67, unchanged from before"))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-008 — :non-return-rate canonical key + :buyout-rate alias co-present
+;; ---------------------------------------------------------------------------
+
+(deftest non-return-rate-key-renamed
+  ;; FR-008 contract: analyze rows carry BOTH :non-return-rate (canonical) and
+  ;; :buyout-rate (deprecated alias) with the same numeric value.
+  ;; Sort and filter must work on :non-return-rate.
+  (with-redefs [sales/fetch-sales (fn [_period & _opts] fx)]
+    (let [rows (buyout/analyze [:last-7-days])
+          a    (find-article rows "A")
+          b    (find-article rows "B")
+          e    (find-article rows "E")]
+
+      (testing "each row carries :non-return-rate (canonical key)"
+        (doseq [row rows]
+          (is (contains? row :non-return-rate)
+              (str "Article " (:article row) " missing :non-return-rate"))))
+
+      (testing "each row carries :buyout-rate (deprecated alias)"
+        (doseq [row rows]
+          (is (contains? row :buyout-rate)
+              (str "Article " (:article row) " missing :buyout-rate alias"))))
+
+      (testing ":non-return-rate and :buyout-rate have identical numeric values"
+        (doseq [row rows]
+          (is (= (:non-return-rate row) (:buyout-rate row))
+              (str "Article " (:article row)
+                   ": :non-return-rate=" (:non-return-rate row)
+                   " != :buyout-rate=" (:buyout-rate row)))))
+
+      (testing "Article A: :non-return-rate = 80.0"
+        (is (= 80.0 (:non-return-rate a))))
+
+      (testing "Article B: :non-return-rate = 50.0"
+        (is (= 50.0 (:non-return-rate b))))
+
+      (testing "Article E: :non-return-rate = 20.0"
+        (is (= 20.0 (:non-return-rate e))))
+
+      (testing "rows are sorted ascending by :non-return-rate (first = E = 20.0)"
+        (is (= "E" (:article (first rows)))))
+
+      (testing "sort by :non-return-rate gives same order as sort by :buyout-rate (values are identical)"
+        (let [by-nrr (map :article (sort-by :non-return-rate rows))
+              by-br  (map :article (sort-by :buyout-rate rows))]
+          (is (= by-nrr by-br))))
+
+      (testing "alias-aware filter (or :non-return-rate :buyout-rate) works for low-rate detection"
+        (let [low (filter #(and (>= (:ordered %) 3)
+                               (< (or (:non-return-rate %) (:buyout-rate %) 100) 70))
+                          rows)
+              low-articles (set (map :article low))]
+          (is (contains? low-articles "B") "B (50%) should be in low")
+          (is (contains? low-articles "E") "E (20%) should be in low")
+          (is (= 2 (count low)) "exactly 2 articles flagged low"))))))

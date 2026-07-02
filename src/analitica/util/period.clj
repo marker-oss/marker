@@ -1,8 +1,8 @@
 (ns analitica.util.period
   "Pure period helpers for the new UI period picker.
 
-   - `resolve-preset` — 5 named presets (last-7-days / last-30-days / this-month /
-                        prev-month / custom) → [from-date to-date] (LocalDate vec).
+   - `resolve-preset` — 6 named presets (last-7-days / last-30-days / last-week /
+                        this-month / prev-month / custom) → [from-date to-date] (LocalDate vec).
    - `compare-period` — same-length prior period ending the day before :from.
    - `parse-url-state` — extract {:from :to :preset :compare :marketplace} from query params.
    - `default-state` — default {:preset :last-30-days :compare :none :marketplace \"all\"}.
@@ -27,9 +27,9 @@
   (str d))
 
 (def presets
-  "5 named presets (minimal set per Q-presets design decision).
-   :last-7-days / :last-30-days / :this-month / :prev-month / :custom"
-  [:last-7-days :last-30-days :this-month :prev-month :custom])
+  "Named presets for the period picker.
+   :last-7-days / :last-30-days / :last-week / :this-month / :prev-month / :custom"
+  [:last-7-days :last-30-days :last-week :this-month :prev-month :custom])
 
 (defn resolve-preset
   "Return [from-date to-date] as LocalDate for a preset.
@@ -46,6 +46,9 @@
                            first-of-prev (.withDayOfMonth last-month 1)]
                        [first-of-prev
                         (.withDayOfMonth last-month (.lengthOfMonth last-month))])
+       :last-week    (let [dow (.getValue (.getDayOfWeek td))
+                           last-monday (.minusDays td (+ 7 (dec dow)))]
+                       [last-monday (.plusDays last-monday 6)])
        :custom       nil
        nil))))
 

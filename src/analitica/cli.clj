@@ -23,6 +23,7 @@
             [analitica.domain.geography :as geo]
             [analitica.domain.trends :as trends]
             [analitica.domain.buyout :as buyout]
+            [analitica.domain.treasury.seed :as treasury-seed]
             [analitica.audit.rules :as audit-rules]
             [analitica.audit.report :as audit-report]
             [analitica.audit.rule-impl :as audit-rule-impl]
@@ -237,6 +238,8 @@
       :prices  (ingest/ingest! :prices  :marketplace mp)
       :regions  (ingest/ingest! :regions  :period period :marketplace mp)
       :cashflow (ingest/ingest! :cashflow :period period :marketplace mp)
+      :ad-stats (ingest/ingest! :ad-stats :period period :marketplace mp)
+      :ad_stats (ingest/ingest! :ad-stats :period period :marketplace mp)
       (println "Unknown ingest target:" (first args)))))
 
 (defn- handle-materialize [args opts]
@@ -285,6 +288,32 @@
       :cashflow (materialize/rebuild! :cashflow :period period :marketplace mp)
       (println "Unknown rebuild target:" (first args)))))
 
+(defn- arg-value
+  "Read the value following `flag` in a raw args vector (e.g. --period 2026-04).
+   nil if the flag is absent or has no following token."
+  [args flag]
+  (->> (partition 2 1 args)
+       (some (fn [[a b]] (when (= a flag) b)))))
+
+(defn- handle-rematerialize-ym-finance
+  "spec 012 US3: re-run YM finance materialize under the corrected price basis
+   (gross = BUYER + subsidy, net = BUYER, for-pay = BUYER − commissions).
+   `--period YYYY-MM` re-materializes one month; `--all` re-materializes every
+   stored YM period. Marketplace is always :ym (WB/Ozon untouched — INV-5).
+
+   `--all` is not a shared cli-option, and --period after a subcommand is
+   dropped by the top-level :in-order parse (see reparse-subcommand-args), so
+   both are read straight from the raw args vector."
+  [args _opts]
+  (let [all?   (boolean (some #{"--all"} args))
+        ;; period resolved against stored raw batches by month prefix in
+        ;; materialize/rematerialize-ym-finance! (no YearMonth parsing).
+        period (or (arg-value args "--period") (arg-value args "-p"))]
+    (cond
+      all?   (materialize/rematerialize-ym-finance! :all true)
+      period (materialize/rematerialize-ym-finance! :period period)
+      :else  (println "rematerialize-ym-finance: pass --period YYYY-MM or --all"))))
+
 (defn- handle-report [args opts]
   (let [[args opts] (reparse-subcommand-args args opts)
         what   (first args)
@@ -313,8 +342,8 @@
                   (geo/export-excel period export :marketplace mp)
                   (geo/report period :marketplace mp))
       "trends"  (trends/daily period :marketplace mp)
-      "wow"     (trends/wow :marketplace mp)
-      "mom"     (trends/mom :marketplace mp)
+      "wow"     (trends/wow period :marketplace mp)
+      "mom"     (trends/mom period :marketplace mp)
       "buyout"  (if export
                   (buyout/export-excel period export :marketplace mp)
                   (buyout/report period :marketplace mp))
@@ -341,6 +370,8 @@ Commands:
 
   audit <subcommand>    Calculation audit: reconciliation, KPI, verdicts, fixtures
     subcommands: reconcile, kpi, verdict, fixture (use `audit help` for details)
+
+  treasury seed         Seed ledger from cash_flow_periods (-m ozon -p 2026-04 | -f/-t)
 
   1c                    Load cost prices from 1C CSV into SQLite
 
@@ -1214,6 +1245,41 @@ Currently registered schemas:")
           (schema-help)
           3))))
 
+(defn- month-bounds
+  "\"2026-04\" → {:from \"2026-04-01\" :to \"2026-04-30\"}."
+  [ym]
+  (let [ld (java.time.LocalDate/parse (str ym "-01"))]
+    {:from (str ld)
+     :to   (str (.withDayOfMonth ld (.lengthOfMonth ld)))}))
+
+(defn- handle-treasury
+  "Dispatch for `treasury <subcommand>`. seed: requires -f/-t dates or
+   -p YYYY-MM (named periods are not accepted — seeding wants explicit
+   bounds)."
+  [args opts]
+  (let [[args opts] (reparse-subcommand-args args opts)
+        what (first args)]
+    (case what
+      "seed"
+      (let [{:keys [from to period marketplace]} opts
+            window (cond
+                     (and from to)
+                     {:from from :to to}
+
+                     (and period (re-matches #"\d{4}-\d{2}" period))
+                     (month-bounds period)
+
+                     :else nil)]
+        (if-not window
+          (println "treasury seed: pass -f FROM -t TO or -p YYYY-MM (explicit dates required)")
+          (let [r (treasury-seed/seed! marketplace (:from window) (:to window))]
+            (println (format "Seeded %s %s..%s: %d buckets → %d ops (replaced %d)"
+                             marketplace (:from window) (:to window)
+                             (:buckets r) (:ops r) (:deleted r)))
+            (println (format "  income %s | expense %s | transfer→bank %s"
+                             (:income r) (:expense r) (:transfer r))))))
+      (println "Unknown treasury subcommand:" what "— available: seed"))))
+
 (defn -main [& args]
   (let [{:keys [options arguments errors]} (parse-opts args cli-options :in-order true)
         command (first arguments)
@@ -1228,6 +1294,7 @@ Currently registered schemas:")
         (case command
           "ingest"      (handle-ingest rest-args options)
           "materialize" (handle-materialize rest-args options)
+          "rematerialize-ym-finance" (handle-rematerialize-ym-finance rest-args options)
           "rebuild"     (handle-rebuild rest-args options)
           "report"      (handle-report rest-args options)
           "audit"       (let [code (handle-audit rest-args options)]
@@ -1236,6 +1303,7 @@ Currently registered schemas:")
           "schema"      (let [code (handle-schema rest-args options)]
                           (when (and (integer? code) (not (zero? code)))
                             (System/exit code)))
+          "treasury"    (handle-treasury rest-args options)
           "1c"          (sync/sync-1c!)
           "menu"        (menu)
           "status"      (sync/status)

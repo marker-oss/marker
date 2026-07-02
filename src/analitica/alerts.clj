@@ -19,7 +19,7 @@
 (def thresholds
   {:out-of-stock-days          7        ; days-of-cover below this fires
    :out-of-stock-min-daily     1        ; avg-daily-sales must be at least this
-   :returns-spike-buyout-max   70.0     ; buyout-rate below this fires (percent)
+   :returns-spike-buyout-max   70.0     ; non-return-rate below this fires (percent)
    :margin-drop-abs-pct        15.0     ; absolute margin drop in pct-points fires
    :top-mover-growth-pct       30.0     ; revenue growth above this fires
    :zero-sales-days            3})      ; days with 0 sales for top-SKU rule
@@ -136,24 +136,25 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- rule-returns-spike
-  "Fires when any article's buyout-rate < threshold (70%).
-   Picks the article with the lowest buyout-rate (worst first).
-   buyout-data: rows from (buyout/analyze period)"
+  "Fires when any article's non-return-rate (sales-only: sold/ops) < threshold (70%).
+   Picks the article with the lowest non-return-rate (worst first).
+   buyout-data: rows from (buyout/analyze period).
+   Alias-aware: reads :non-return-rate with :buyout-rate fallback (deprecated)."
   [current-buyout]
   (let [max-rate (:returns-spike-buyout-max thresholds)]
     (->> current-buyout
          (filter (fn [b]
-                   (let [r (:buyout-rate b)]
+                   (let [r (or (:non-return-rate b) (:buyout-rate b))]
                      (and (some? r) (< r max-rate)))))
          ;; Sort by worst rate first for delta ordering
-         (sort-by :buyout-rate)
+         (sort-by (fn [b] (or (:non-return-rate b) (:buyout-rate b))))
          (map (fn [b]
-                (let [rate (double (:buyout-rate b))]
+                (let [rate (double (or (:non-return-rate b) (:buyout-rate b)))]
                   {:rule         :RETURNS_SPIKE
                    :severity     :yellow
                    :delta        (- rate)  ; negative = lower rate = more urgent
-                   :title        (format "Низкий выкуп: %.0f%%" rate)
-                   :body         (format "Выкуп упал до %.0f%% (норма 80-90%%)" rate)
+                   :title        (format "Высокий процент невозвратов: %.0f%%" rate)
+                   :body         (format "Доля невозвратов упала до %.0f%% (норма 80-90%%)" rate)
                    :action-route "/reports/buyout"
                    :action-label "Смотреть выкуп"}))))))
 

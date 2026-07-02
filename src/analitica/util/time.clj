@@ -1,4 +1,6 @@
 (ns analitica.util.time
+  (:require [analitica.util.period :as period]
+            [clojure.string :as str])
   (:import [java.time LocalDate LocalDateTime ZonedDateTime]
            [java.time.format DateTimeFormatter]
            [java.time.temporal ChronoUnit]))
@@ -38,13 +40,15 @@
     (case kw
       :today      [(format-date t) (format-date t)]
       :yesterday  (let [y (.minusDays t 1)] [(format-date y) (format-date y)])
-      :last-7-days  [(format-date (days-ago 7)) (format-date t)]
-      :last-30-days [(format-date (days-ago 30)) (format-date t)]
+      :last-7-days  (let [[f t2] (period/resolve-preset :last-7-days t)]
+                      [(period/format-date f) (period/format-date t2)])
+      :last-30-days (let [[f t2] (period/resolve-preset :last-30-days t)]
+                      [(period/format-date f) (period/format-date t2)])
       :this-week    (let [dow (.getValue (.getDayOfWeek t))
                           mon (.minusDays t (dec dow))]
                       [(format-date mon) (format-date t)])
-      :this-month   (let [first-day (.withDayOfMonth t 1)]
-                      [(format-date first-day) (format-date t)])
+      :this-month   (let [[f t2] (period/resolve-preset :this-month t)]
+                      [(period/format-date f) (period/format-date t2)])
       (throw (ex-info (str "Unknown period: " kw) {:period kw})))))
 
 (defn days-between [^LocalDate a ^LocalDate b]
@@ -92,11 +96,8 @@
     (throw (ex-info "Period cannot be nil" {:period s}))
 
     (= s "last-week")
-    (let [t (today)
-          dow (.getValue (.getDayOfWeek t))
-          last-monday (.minusDays t (+ 7 (dec dow)))
-          last-sunday (.plusDays last-monday 6)]
-      [(format-date last-monday) (format-date last-sunday)])
+    (let [[f t] (period/resolve-preset :last-week)]
+      [(period/format-date f) (period/format-date t)])
 
     (= s "last-7-days")
     (period :last-7-days)
@@ -108,7 +109,7 @@
     (period :this-month)
 
     (re-matches #"\d{4}-\d{2}-\d{2},\d{4}-\d{2}-\d{2}" s)
-    (let [[from to] (clojure.string/split s #",")]
+    (let [[from to] (str/split s #",")]
       (try
         (parse-date from)
         (parse-date to)
@@ -126,11 +127,17 @@
 (defn resolve-period
   "Normalize a period argument to [from to] date-string pair.
 
-   Accepts: keyword (looked up via `period`), 2-vector [from to],
-   or map {:from :to}."
+   Accepts: keyword (looked up via `period` or `period/resolve-preset`),
+   2-vector [from to], or map {:from :to}."
   [p]
   (cond
-    (keyword? p) (period p)
+    (keyword? p) (let [local-presets #{:today :yesterday :last-7-days :last-30-days
+                                       :this-week :this-month}]
+                   (if (contains? local-presets p)
+                     (period p)
+                     (if-let [[f t] (period/resolve-preset p)]
+                       [(period/format-date f) (period/format-date t)]
+                       (throw (ex-info (str "Unknown period keyword: " p) {:period p})))))
     (vector? p)  p
     (map? p)     [(:from p) (:to p)]
     :else (throw (ex-info "Unrecognized period" {:period p}))))

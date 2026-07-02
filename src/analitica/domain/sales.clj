@@ -82,7 +82,7 @@
                  :avg-price     (math/round2
                                  (math/safe-div
                                   (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
-                                  (count sales)))
+                                  (reduce + 0 (map math/unit-qty sales))))
                  ;; First non-nil marketplace wins so callers (top-
                  ;; movers/fallers, sku-list per-MP badges) can render
                  ;; the right MP chip.
@@ -139,7 +139,7 @@
      :revenue        (math/round2 (reduce + 0.0 (map revenue-of sales)))
      :avg-price      (math/round2 (math/safe-div
                                    (reduce + 0.0 (map #(or (:finished-price %) (:total-price %) 0) sales))
-                                   (count sales)))
+                                   (reduce + 0 (map math/unit-qty sales))))
      :return-rate    (math/percentage (count returns) (+ (count sales) (count returns)))
      ;; Disambiguate cross-MP article-code collisions per Sales.7.3.
      ;; Two marketplaces can use the same `:article` string for different

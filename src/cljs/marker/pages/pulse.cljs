@@ -14,6 +14,19 @@
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
+            ;; 016 US1: descriptor-driven KPI rendering — same primitives the
+            ;; reports/P&L tables use, so a metric shows the SAME ⓘ hint and the
+            ;; SAME ₽/%/шт/× suffix everywhere (declare-once / render-everywhere).
+            [marker.ui.metric-hint :refer [metric-hint]]
+            ;; LT3: honesty markers live in marker.ui.basis (single source of
+            ;; truth). prelim-badge/basis-tooltip/flat-heavy?/format-date-short
+            ;; were private here — now shared.
+            [marker.ui.basis       :refer [prelim-badge
+                                           basis-tooltip flat-heavy?
+                                           format-date-short
+                                           preliminary-missing?
+                                           preliminary-missing-text
+                                           preliminary-missing-tooltip]]
             [marker.util.format    :as fmt]
             [clojure.string        :as str]))
 
@@ -25,8 +38,18 @@
 (def ^:private ozon-color "#0891b2")
 (def ^:private ym-color   "#ca8a04")
 
-(def ^:private day-labels
-  (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range 30)))
+(defn- day-labels-from
+  "Chart x-axis labels from the backend :charts :dates (ISO strings) → dd.MM.
+   Falls back to bare day ordinals when dates are absent — NOT a fabricated
+   month (audit M1: labels were hardcoded to «.05» for every period)."
+  [dates n]
+  (if (seq dates)
+    (mapv (fn [d]
+            (if (and (string? d) (>= (count d) 10))
+              (str (subs d 8 10) "." (subs d 5 7))
+              (str d)))
+          dates)
+    (mapv #(str (inc %)) (range n))))
 
 (defn- css-var [name]
   (let [v (.getPropertyValue (js/getComputedStyle js/document.documentElement) name)]
@@ -51,39 +74,73 @@
   [v fmt-fn]
   (if (nil? v) "—" (fmt-fn v)))
 
-(defn- prelim-badge
-  "Badge string for a KPI tile whose value is an ESTIMATE — either a
-   preliminary source (Ozon cash-flow overlay) or a date-basis flagged
-   :estimated (materially flat/spread-distributed finance, P0-A Part A).
-   Both mean a sub-period slice of this number has weak day-level meaning."
+;; flat-heavy? / prelim-badge / basis-tooltip / format-date-short moved to
+;; marker.ui.basis (LT3 — shared honesty markers). Referred above.
+
+(defn- ad-cost-missing?
+  "True when this KPI's profit/margin was computed with NO ad-cost data
+   loaded (FR-P1.4 / FR-P1.5) — the headline therefore over-states profit."
   [kpi]
-  (when (or (= :preliminary (:source kpi))
-            (= :estimated   (:completeness kpi)))
-    "≈"))
+  (= :missing (:ad-cost-source kpi)))
 
-(defn- basis-tooltip
-  "Human tooltip describing a KPI's date-basis composition, e.g.
-   'Основа: 53% распределено равномерно, 47% по продажам, 0% фактические даты'."
+(defn- ad-data-missing-text
+  "FR-P4.3: when ROAS / ДРР was computed with NO ad-cost data
+   (`:ad-cost-source = :missing`), the value is meaningless — render an
+   honest «нет данных» phrase instead of a real-looking 0/— number."
   [kpi]
-  (when-let [b (:date-basis kpi)]
-    (let [sum (+ (or (:api b) 0) (or (:spread b) 0) (or (:flat b) 0))
-          pct #(str (js/Math.round (* 100 (or % 0))) "%")]
-      (cond
-        ;; No realization rows at all → the number is a preliminary cash-flow
-        ;; estimate (recent window before the MP report is published).
-        (zero? sum)
-        "Предварительная оценка: realization-отчёт ещё не опубликован"
+  (when (ad-cost-missing? kpi)
+    "данные о рекламе отсутствуют"))
 
-        :else
-        (str "Основа значения: "
-             (pct (:flat b))   " равномерно распределено (без дневного смысла), "
-             (pct (:spread b)) " по продажам, "
-             (pct (:api b))    " фактические даты")))))
+;; ---------------------------------------------------------------------------
+;; Canonical KPI descriptors (016 US1 / FR-003 — declare-once, render-everywhere)
+;;
+;; The /pulse-summary KPI maps carry {:value :delta-pct :spark :source …} but
+;; NOT :hint / :suffix. Until the backend attaches full descriptors, this is the
+;; single local source of the canonical formula-hint + display suffix for each
+;; Pulse KPI, so the SAME metric shows the SAME ⓘ text and the SAME ₽/%/шт/×
+;; unit here as in the reports/P&L tables. Hints/units follow the conventions in
+;; docs/canonical-formulas.md (ДРР/ROAS §3.9/P&L.2, avg-check Trends, buyout /
+;; non-return-rate batch 014, margin = post-ads operational margin).
+;; Suffixes map onto marker.util.format/format-suffixed: :rub :pct :qty :mul.
+;; descriptor-hint / descriptor-suffix below PREFER a :hint / :suffix shipped
+;; on the KPI map itself (forward-compat with backend descriptors) and fall
+;; back to this local map — so no change is needed here when the backend
+;; starts attaching full descriptors.
+;; ---------------------------------------------------------------------------
 
-(defn- format-date-short
-  "Truncate ISO date/datetime to YYYY-MM-DD for compact display."
-  [iso]
-  (when iso (subs (str iso) 0 10)))
+(def ^:private kpi-descriptors
+  {:revenue    {:suffix :rub :hint "Выручка = сумма for-pay-net по реализации (финансы). Пока realization-отчёт не опубликован — оценка из cash-flow. Basis: gross realisation."}
+   :profit     {:suffix :rub :hint "Чистая прибыль = выручка − комиссия МП − логистика − себестоимость − реклама − прочие прямые расходы. N/A без себестоимости/рекламы. Basis: net profit."}
+   :orders     {:suffix :qty :hint "Заказано = число заказанных штук за период (события заказа, не операции)."}
+   :purchases  {:suffix :qty :hint "Доставлено = число доставленных покупателю штук за период."}
+   :realized   {:suffix :qty :hint "Реализовано = число штук, попавших в realization-отчёт МП (финансовый факт продажи)."}
+   :returned   {:suffix :qty :hint "Возвращено = число возвращённых штук за период. Рост — неблагоприятен."}
+   :margin     {:suffix :pct :hint "Маржа = чистая прибыль ÷ выручка × 100 — операционная маржа после всех прямых расходов и рекламы. Basis: net profit."}
+   :avg-check  {:suffix :rub :hint "Средний чек = выручка ÷ число продаж (Σ количества). Δ% не показывается — отношение средних статистически некорректно."}
+   :buyout     {:suffix :pct :hint "Выкуп = выкуплено ÷ заказано × 100. Заказной funnel (сверяется с ЛК МП)."}
+   :cancel     {:suffix :pct :hint "% отмен = отменено ÷ заказано × 100. Рост — неблагоприятен."}
+   :non-return {:suffix :pct :hint "Доля невозвратов = выкуплено ÷ доставлено × 100 (sales-only: продажи + возвраты). Отличается от «Выкупа» по заказам."}
+   :roas       {:suffix :mul :hint "ROAS = выручка ÷ рекламные расходы. Безразмерное отношение (напр. 3,4×). N/A без данных о рекламе."}
+   :drr        {:suffix :pct :hint "ДРР = рекламные расходы ÷ выручка × 100 (единый базис §3.9/P&L.2). Рост — неблагоприятен. N/A без данных о рекламе."}})
+
+(defn- descriptor-hint
+  "Canonical formula-hint for KPI `k`. Prefers a backend-attached :hint on
+   the KPI map itself; falls back to the local kpi-descriptors entry."
+  [kpi k]
+  (or (:hint kpi) (get-in kpi-descriptors [k :hint])))
+
+(defn- descriptor-suffix
+  "Canonical display unit (:rub / :pct / :qty / :mul) for KPI `k`.
+   Prefers a backend-attached :suffix; falls back to kpi-descriptors."
+  [kpi k]
+  (or (:suffix kpi) (get-in kpi-descriptors [k :suffix])))
+
+(defn- kpi-value
+  "016 US1 / FR-003: format a KPI's raw :value through the SAME descriptor
+   suffix the reports tables use (format-suffixed), so a metric shows the
+   SAME ₽ / % / шт / × unit everywhere. nil value → «—» (never 0)."
+  [kpi k]
+  (fmt/format-suffixed (:value kpi) (descriptor-suffix kpi k)))
 
 ;; ---------------------------------------------------------------------------
 ;; Alert card
@@ -104,7 +161,7 @@
 ;; Revenue line chart
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private revenue-chart [{:keys [compare? rev-spark rev-prev-spark]}]
+(defui ^:private revenue-chart [{:keys [compare? rev-spark rev-prev-spark dates]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -115,10 +172,7 @@
                base-font     #js{:family "Inter" :size 11}
                data          (safe-spark rev-spark)
                prev-data     (safe-spark rev-prev-spark)
-               labels        (if (seq data)
-                               (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05")
-                                     (range (count data)))
-                               day-labels)
+               labels        (day-labels-from dates (count data))
                datasets      (clj->js
                               (cond-> [{:label           "Выручка"
                                         :data            data
@@ -166,14 +220,14 @@
                                                                          :border #js{:display false}
                                                                          :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     [rev-spark rev-prev-spark compare?])
+     [rev-spark rev-prev-spark compare? dates])
     ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
 ;; Stacked bar — orders by MP
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private orders-bar [{:keys [mp-filter orders-by-mp]}]
+(defui ^:private orders-bar [{:keys [mp-filter orders-by-mp dates]}]
   (let [canvas-ref (use-ref nil)]
     (use-effect
      (fn []
@@ -189,7 +243,7 @@
                ym-data   (when (active? :ym)   (safe-spark (:ym orders-by-mp)))
                n         (max (count wb-data) (count oz-data) (count ym-data) 30)
                zero-pad  (fn [v] (or v (vec (repeat n 0))))
-               labels    (mapv #(str (-> (inc %) str (.padStart 2 "0")) ".05") (range n))
+               labels    (day-labels-from dates n)
                datasets  (clj->js
                           [{:label           "WB"
                             :data            (zero-pad wb-data)
@@ -239,7 +293,7 @@
                                                                      :border      #js{:display false}
                                                                      :beginAtZero true}}}})]
            (fn [] (.destroy chart)))))
-     [mp-filter orders-by-mp])
+     [mp-filter orders-by-mp dates])
     ($ :canvas (assoc {} :ref canvas-ref))))
 
 ;; ---------------------------------------------------------------------------
@@ -288,7 +342,8 @@
 ;; Plan-fact card
 ;; ---------------------------------------------------------------------------
 
-(defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark]}]
+(defui ^:private plan-fact-card [{:keys [compare? mp-filter forecast rev-spark rev-prev-spark
+                                         rev-source rev-spark-source dates]}]
   (let [plan       (:month-plan  forecast)
         fact       (safe-num (:month-fact forecast))
         projection (safe-num (:projection forecast))
@@ -339,10 +394,19 @@
                ($ :span "0")
                ($ :span "50%")
                ($ :span "100% цель"))))
+       ;; FR-P1.3: when the sparkline source differs from the tile/headline
+       ;; source, the chart is LIVE SALES while the headline is REALIZED
+       ;; finance. Annotate so they aren't read as the same series.
+       (when (and rev-spark-source rev-source
+                  (not= rev-spark-source rev-source))
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "12px" :font-size "12px"}}
+            "График — продажи, live · число выше — реализация (финансы)"))
        ($ :div {:style {:margin-top "18px" :height "220px"}}
           ($ revenue-chart {:compare?      compare?
                             :rev-spark     rev-spark
-                            :rev-prev-spark rev-prev-spark})))))
+                            :rev-prev-spark rev-prev-spark
+                            :dates          dates})))))
 
 ;; ---------------------------------------------------------------------------
 ;; MP structure card (donut + legend)
@@ -494,96 +558,165 @@
         non-return (:non-return k)
         roas      (:roas k)
         drr       (:drr k)
+        drr-ceiling (:drr-ceiling k)
+        ;; FR-P4.2: actual ДРР is over the break-even ceiling when both are
+        ;; present and drr > ceiling. The dedicated drr-ceiling-card renders
+        ;; headroom; here we only need the over-ceiling flag + ceiling sub-text.
+        drr-val      (:value drr)
+        ceiling-val  (:value drr-ceiling)
+        over-ceiling? (boolean (and (some? drr-val) (some? ceiling-val)
+                                    (> drr-val ceiling-val)))
         ;; Conversion = purchases/orders × 100. Shown as sub-text on the
         ;; orders card. Hidden when orders=0 (would divide by zero).
         order-cnt (safe-num (:value orders))
         purch-cnt (safe-num (:value purchases))
         conv-pct  (when (pos? order-cnt)
                     (* 100.0 (/ purch-cnt order-cnt)))
-        cards  [{:label       "Выручка"
-                 :value       (fmt/format-rub (safe-num (:value rev)))
+        ;; FR-P1.4: when realization is absent on a recent finance KPI, show
+        ;; "реализация отсутствует" instead of a misleading real-looking 0.
+        none-text  "реализация отсутствует"
+        cards  [{:k           :revenue
+                 :kpi         rev
+                 :label       "Выручка"
+                 :value       (if (= :none (:source rev))
+                                none-text
+                                (kpi-value rev :revenue))
                  :delta       (:delta-pct rev)
                  :spark       (safe-spark (:spark rev))
                  :sub         "WoW"
                  :badge       (prelim-badge rev)
                  :badge-title (basis-tooltip rev)}
-                {:label       "Чистая прибыль"
-                 :value       (fmt/format-rub (safe-num (:value profit)))
-                 :delta       (:delta-pct profit)
+                {:k           :profit
+                 :kpi         profit
+                 :label       "Чистая прибыль"
+                 :value       (cond
+                                (preliminary-missing? profit) preliminary-missing-text
+                                (= :none (:source profit))    none-text
+                                :else (kpi-value profit :profit))
+                 :delta       (when-not (preliminary-missing? profit) (:delta-pct profit))
                  :spark       (safe-spark (:spark profit))
                  :sub         "WoW"
-                 :badge       (prelim-badge profit)
-                 :badge-title (basis-tooltip profit)}
-                {:label     "Заказано"
-                 :value     (str (fmt/format-int order-cnt) " шт")
+                 :badge       (if (preliminary-missing? profit) "≈" (prelim-badge profit))
+                 :badge-title (if (preliminary-missing? profit)
+                                preliminary-missing-tooltip
+                                (basis-tooltip profit))
+                 :warn-badge       (when (ad-cost-missing? profit) "реклама не загружена")
+                 :warn-badge-title "Реклама не загружена — прибыль завышена"}
+                {:k         :orders
+                 :kpi       orders
+                 :label     "Заказано"
+                 :value     (kpi-value orders :orders)
                  :delta     (:delta-pct orders)
                  :spark     (safe-spark (:spark orders))
                  :sub       (if conv-pct
                               (str "конв. " (fmt/format-pct conv-pct))
                               "WoW")
                  :badge     (prelim-badge orders)}
-                {:label     "Доставлено"
-                 :value     (str (fmt/format-int purch-cnt) " шт")
+                {:k         :purchases
+                 :kpi       purchases
+                 :label     "Доставлено"
+                 :value     (kpi-value purchases :purchases)
                  :delta     (:delta-pct purchases)
                  :spark     (safe-spark (:spark purchases))
                  :sub       "WoW"
                  :badge     (prelim-badge purchases)}
-                {:label     "Реализовано"
-                 :value     (str (fmt/format-int (safe-num (:value realized))) " шт")
+                {:k         :realized
+                 :kpi       realized
+                 :label     "Реализовано"
+                 :value     (kpi-value realized :realized)
                  :delta     (:delta-pct realized)
                  :spark     (safe-spark (:spark realized))
                  :sub       "WoW"
                  :badge     (prelim-badge realized)}
-                {:label     "Возвращено"
-                 :value     (str (fmt/format-int (safe-num (:value returned))) " шт")
+                {:k         :returned
+                 :kpi       returned
+                 :label     "Возвращено"
+                 :value     (kpi-value returned :returned)
                  :delta     (:delta-pct returned)
                  :spark     (safe-spark (:spark returned))
                  :sub       "WoW"
                  :badge     (prelim-badge returned)
                  :inverted? true}
-                {:label       "Маржа"
-                 :value       (fmt/format-pct (safe-num (:value margin)))
-                 :delta       (:delta-pct margin)
+                {:k           :margin
+                 :kpi         margin
+                 :label       "Маржа"
+                 :value       (cond
+                                (preliminary-missing? margin) preliminary-missing-text
+                                (= :none (:source margin))    none-text
+                                :else (kpi-value margin :margin))
+                 :delta       (when-not (preliminary-missing? margin) (:delta-pct margin))
                  :sub         "WoW"
-                 :badge       (prelim-badge margin)
-                 :badge-title (basis-tooltip margin)}
-                {:label     "Средний чек"
-                 :value     (fmt/format-rub (safe-num (:value check)))
+                 :badge       (if (preliminary-missing? margin) "≈" (prelim-badge margin))
+                 :badge-title (if (preliminary-missing? margin)
+                                preliminary-missing-tooltip
+                                (basis-tooltip margin))
+                 :warn-badge       (when (ad-cost-missing? margin) "реклама не загружена")
+                 :warn-badge-title "Реклама не загружена — маржа завышена"}
+                {:k         :avg-check
+                 :kpi       check
+                 :label     "Средний чек"
+                 :value     (kpi-value check :avg-check)
                  :delta     (:delta-pct check)
                  :sub       "WoW"
                  :badge     (prelim-badge check)}
-                {:label     "Выкуп"
-                 :value     (fmt/format-pct (safe-num (:value buyout)))
+                {:k         :buyout
+                 :kpi       buyout
+                 :label     "Выкуп"
+                 :value     (kpi-value buyout :buyout)
                  :delta     (:delta-pct buyout)
                  :sub       "от заказов"
                  :badge     (prelim-badge buyout)}
-                {:label     "% отмен"
-                 :value     (fmt/format-pct (safe-num (:value cancel)))
+                {:k         :cancel
+                 :kpi       cancel
+                 :label     "% отмен"
+                 :value     (kpi-value cancel :cancel)
                  :delta     (:delta-pct cancel)
                  :sub       "от заказов"
                  :inverted? true
                  :badge     (prelim-badge cancel)}
-                {:label     "Доля невозвратов"
-                 :value     (fmt/format-pct (safe-num (:value non-return)))
+                {:k         :non-return
+                 :kpi       non-return
+                 :label     "Доля невозвратов"
+                 :value     (kpi-value non-return :non-return)
                  :delta     (:delta-pct non-return)
                  :sub       "от доставленных"
                  :badge     (prelim-badge non-return)}
-                {:label     "ROAS"
-                 :value     (or-ndash (:value roas) fmt/format-mul)
+                {:k         :roas
+                 :kpi       roas
+                 :label     "ROAS"
+                 :value     (or (ad-data-missing-text roas)
+                                (kpi-value roas :roas))
                  :delta     (:delta-pct roas)
                  :sub       "WoW"
                  :badge     (prelim-badge roas)}
-                {:label     "ДРР"
-                 :value     (or-ndash (:value drr) fmt/format-pct)
+                {:k         :drr
+                 :kpi       drr
+                 :label     "ДРР"
+                 :value     (or (ad-data-missing-text drr)
+                                (kpi-value drr :drr))
                  :delta     (:delta-pct drr)
-                 :sub       "WoW"
+                 :sub       (cond
+                              (some? ceiling-val)
+                              (str "макс. " (fmt/format-pct ceiling-val))
+                              :else "WoW")
                  :inverted? true
-                 :badge     (prelim-badge drr)}]
+                 :badge     (prelim-badge drr)
+                 ;; FR-P4.2: visibly flag when actual ДРР breaches the ceiling.
+                 :warn-badge       (when over-ceiling? "над потолком")
+                 :warn-badge-title (when over-ceiling?
+                                     (str "ДРР выше предельного "
+                                          (fmt/format-pct ceiling-val)
+                                          " — реклама съедает прибыль"))}]
         ;; orders/purchases excluded: backend always returns :canon or :legacy-* for
         ;; those — they cannot be :preliminary, so they don't trigger the footnote.
         any-preliminary? (some #(or (= :preliminary (:source %))
-                                    (= :estimated (:completeness %)))
-                               [rev profit margin check buyout roas drr])]
+                                    (= :estimated (:completeness %))
+                                    (flat-heavy? %))
+                               [rev profit margin check buyout roas drr])
+        ;; LT5: profit/margin carry :preliminary-missing when Ozon's preliminary
+        ;; window has revenue (cash-flow) but commission/COGS are not yet published.
+        cost-missing?    (or (preliminary-missing? profit)
+                             (preliminary-missing? margin))]
     ($ :section {:class "card section-card"}
        ($ :div {:class "section-head"}
           ($ :div
@@ -600,21 +733,101 @@
                 ($ :span {:class "dot-status green"})
                 " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted? badge badge-title]} cards]
-            ($ kpi-card {:key         label
-                         :label       label
-                         :value       value
-                         :delta-pct   delta
-                         :sub         sub
-                         :spark       spark
-                         :compare?    compare?
-                         :inverted?   (boolean inverted?)
-                         :badge       badge
-                         :badge-title badge-title})))
+          (for [{:keys [k kpi label value delta sub spark inverted? badge badge-title
+                        warn-badge warn-badge-title]} cards]
+            ;; 016 US1: the ⓘ formula-hint sits right next to the label — the
+            ;; same metric-hint primitive the reports/P&L tables render, fed by
+            ;; the same descriptor (declare-once / render-everywhere).
+            ($ kpi-card {:key              label
+                         :label            ($ :span {:style {:display     "inline-flex"
+                                                             :align-items "center"}}
+                                              label
+                                              ($ metric-hint {:hint (descriptor-hint kpi k)}))
+                         :value            value
+                         :delta-pct        delta
+                         :sub              sub
+                         :spark            spark
+                         :compare?         compare?
+                         :inverted?        (boolean inverted?)
+                         :badge            badge
+                         :badge-title      badge-title
+                         :warn-badge       warn-badge
+                         :warn-badge-title warn-badge-title})))
        (when any-preliminary?
          ($ :div {:class "section-subtitle"
                   :style {:margin-top "12px" :font-size "12px"}}
-            "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП")))))
+            "≈ предварительная оценка по неполным данным; финал — после публикации отчёта МП"))
+       (when cost-missing?
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "6px" :font-size "12px"}}
+            "Прибыль, маржа и часть расходов недоступны за предварительный период (не ноль) — комиссия и себестоимость появятся после публикации realization-отчёта Ozon"))
+       (when (or (ad-cost-missing? profit) (ad-cost-missing? margin))
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "6px" :font-size "12px"}}
+            "Реклама не загружена — прибыль и маржа показаны как верхняя граница")))))
+
+;; ---------------------------------------------------------------------------
+;; ДРР-ceiling card (FR-P4.2 / FR-P4.3)
+;; ---------------------------------------------------------------------------
+
+(defui ^:private drr-ceiling-card [{:keys [kpis]}]
+  (let [k        (or kpis {})
+        drr      (:drr k)
+        ceiling  (:drr-ceiling k)
+        drr-val  (:value drr)
+        ceil-val (:value ceiling)
+        ;; FR-P4.3: ad-cost missing → ДРР is meaningless, show honest copy.
+        missing? (ad-cost-missing? drr)
+        over?    (boolean (and (some? drr-val) (some? ceil-val)
+                               (> drr-val ceil-val)))
+        headroom (when (and (some? drr-val) (some? ceil-val))
+                   (- ceil-val drr-val))]
+    ($ :section {:class "card section-card"}
+       ($ :div {:class "section-head"}
+          ($ :div
+             ($ :h3 {:class "section-title"} "Рекламный потолок (макс-ДРР)")
+             ($ :div {:class "section-subtitle"}
+                "предельная доля рекламных расходов до нулевой прибыли"))
+          (cond
+            missing? ($ :span {:class "badge badge-neutral"} "нет данных о рекламе")
+            over?    ($ :span {:class "badge badge-danger"} "⚠ над потолком")
+            (some? headroom) ($ :span {:class "badge badge-success"} "в пределах")))
+       (if missing?
+         ($ :div {:style {:color "var(--color-fg-muted)" :font-size "13px" :padding "10px 2px"}}
+            "Данные о рекламе отсутствуют — фактический ДРР и запас до потолка рассчитать нельзя. "
+            "Загрузите рекламную статистику маркетплейса.")
+         ($ :div {:style {:display "flex" :flex-wrap "wrap" :gap "28px" :padding "6px 2px"}}
+            ;; Actual ДРР — red when over ceiling.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Фактический ДРР")
+               ($ :div {:style {:font-size   "28px"
+                                :font-weight 700
+                                :color       (if over?
+                                               "var(--color-delta-negative)"
+                                               "var(--color-fg-primary)")}}
+                  (or-ndash drr-val fmt/format-pct)))
+            ;; Ceiling.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Потолок (макс-ДРР)")
+               ($ :div {:style {:font-size "28px" :font-weight 700}}
+                  (or-ndash ceil-val fmt/format-pct)))
+            ;; Headroom — запас до потолка.
+            ($ :div
+               ($ :div {:class "section-subtitle" :style {:font-size "12px"}} "Запас до потолка")
+               ($ :div {:style {:font-size   "28px"
+                                :font-weight 700
+                                :color       (cond
+                                               (nil? headroom) "inherit"
+                                               (neg? headroom) "var(--color-delta-negative)"
+                                               :else           "var(--color-delta-positive)")}}
+                  (if (some? headroom)
+                    (str (when (pos? headroom) "+") (fmt/format-pct headroom))
+                    "—")))))
+       (when over?
+         ($ :div {:class "section-subtitle"
+                  :style {:margin-top "8px" :font-size "12px"
+                          :color "var(--color-delta-negative)"}}
+            "Фактический ДРР превысил предельный — реклама работает в убыток по марже")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Cost breakdown section
@@ -632,10 +845,13 @@
           ($ :h3 {:class "section-title"} "Расходы периода"))
        ($ :div {:class "cost-breakdown" :style {:display "flex" :flex-direction "column" :gap "8px"}}
           (for [{:keys [k label]} rows
-                :let [line (get c k)
-                      v    (safe-num (:value line))
-                      src  (:source line)
-                      pct  (:delta-pct line)]]
+                :let [line     (get c k)
+                      src      (:source line)
+                      missing? (preliminary-missing? line)
+                      ;; LT5: guard nil — never coerce a :preliminary-missing
+                      ;; cost to 0 ₽; render the honest «нет данных» text.
+                      v        (safe-num (:value line))
+                      pct      (:delta-pct line)]]
             ($ :div {:key   (name k)
                      :style {:display         "flex"
                              :justify-content "space-between"
@@ -644,30 +860,51 @@
                              :border-bottom   "1px solid var(--color-border-subtle)"}}
                ($ :span {:style {:color "var(--color-fg-secondary)"}}
                   label
-                  (when (= :preliminary src)
+                  (cond
+                    missing?
+                    ($ :span {:class "badge badge-warning"
+                              :title preliminary-missing-tooltip
+                              :style {:margin-left "6px" :cursor "help"}} "≈")
+                    (= :preliminary src)
                     ($ :span {:style {:margin-left "6px"}} "≈")))
-               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
-                  ($ :span {:style {:font-weight 500}}
-                     (fmt/format-rub v))
-                  (when (and pct (not (js/isNaN pct)))
-                    ($ delta {:pct pct :inverted true})))))
+               (if missing?
+                 ($ :span {:title preliminary-missing-tooltip
+                           :style {:color "var(--color-fg-muted)" :cursor "help"
+                                   :font-size "12px"}}
+                    preliminary-missing-text)
+                 ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                    ($ :span {:style {:font-weight 500}}
+                       (fmt/format-rub v))
+                    (when (and pct (not (js/isNaN pct)))
+                      ($ delta {:pct pct :inverted true}))))))
           ;; Total row (bold, no border-bottom)
-          (let [total (get c :total)
-                tv    (safe-num (:value total))
-                tsrc  (:source total)
-                tpct  (:delta-pct total)]
+          (let [total     (get c :total)
+                tsrc      (:source total)
+                tmissing? (preliminary-missing? total)
+                tv        (safe-num (:value total))
+                tpct      (:delta-pct total)]
             ($ :div {:style {:display         "flex"
                              :justify-content "space-between"
                              :align-items     "baseline"
                              :padding         "12px 0 4px 0"
                              :font-weight     600}}
                ($ :span "Итого расходов"
-                  (when (= :preliminary tsrc)
+                  (cond
+                    tmissing?
+                    ($ :span {:class "badge badge-warning"
+                              :title preliminary-missing-tooltip
+                              :style {:margin-left "6px" :cursor "help"}} "≈")
+                    (= :preliminary tsrc)
                     ($ :span {:style {:margin-left "6px"}} "≈")))
-               ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
-                  ($ :span (fmt/format-rub tv))
-                  (when (and tpct (not (js/isNaN tpct)))
-                    ($ delta {:pct tpct :inverted true})))))))))
+               (if tmissing?
+                 ($ :span {:title preliminary-missing-tooltip
+                           :style {:color "var(--color-fg-muted)" :cursor "help"
+                                   :font-weight 500 :font-size "12px"}}
+                    preliminary-missing-text)
+                 ($ :div {:style {:display "flex" :gap "12px" :align-items "baseline"}}
+                    ($ :span (fmt/format-rub tv))
+                    (when (and tpct (not (js/isNaN tpct)))
+                      ($ delta {:pct tpct :inverted true}))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Loading skeleton helpers
@@ -789,7 +1026,11 @@
             rev-prev-spark (safe-spark (:revenue-prev-30d charts))
             orders-by-mp   (or (:orders-by-mp charts) {})
             preliminary?   (boolean (:preliminary? data))
-            prelim-as-of   (:preliminary-as-of data)]
+            prelim-as-of   (:preliminary-as-of data)
+            ;; LT5: Ozon preliminary windows publish revenue (cash-flow) but not
+            ;; commission/COGS — profit/margin then carry :preliminary-missing.
+            cost-missing?  (or (preliminary-missing? (:profit kpis))
+                               (preliminary-missing? (:margin kpis)))]
         ($ :div {:class "page-content"}
 
            ;; Error banner overlay (data available but stale load failed)
@@ -820,7 +1061,13 @@
                       "Часть выручки рассчитана из cash-flow Ozon, пока не опубликован realization-отчёт. "
                       "Цифры уточнятся после его выхода"
                       (when prelim-as-of (str " (последняя точка: " (format-date-short prelim-as-of) ")"))
-                      "."))))
+                      ".")
+                   ;; LT5: when commission/COGS are structurally absent, profit/margin
+                   ;; and part of costs are «нет данных» — NOT zero. Make that explicit.
+                   (when cost-missing?
+                     ($ :div {:style {:margin-top "6px"}}
+                        "Комиссия, себестоимость, прибыль и маржа за этот период недоступны (не ноль) — "
+                        "появятся после публикации realization-отчёта Ozon.")))))
 
            ;; Cost-coverage warning — when registered cost-prices cover
            ;; less than 90% of articles with sales, profit / margin are
@@ -849,16 +1096,22 @@
                            :preliminary?      preliminary?
                            :preliminary-as-of prelim-as-of})
 
+           ;; ДРР-ceiling card (actual vs макс-ДРР + headroom)
+           ($ drr-ceiling-card {:kpis kpis})
+
            ;; Cost breakdown
            ($ cost-breakdown-section {:costs (:costs data)})
 
            ;; Plan-fact + Donut
            ($ :div {:class "grid-12"}
-              ($ plan-fact-card {:compare?       compare?
-                                 :mp-filter      mp-filter
-                                 :forecast       forecast
-                                 :rev-spark      rev-spark
-                                 :rev-prev-spark rev-prev-spark})
+              ($ plan-fact-card {:compare?         compare?
+                                 :mp-filter        mp-filter
+                                 :forecast         forecast
+                                 :rev-spark        rev-spark
+                                 :rev-prev-spark   rev-prev-spark
+                                 :rev-source       (:source (:revenue kpis))
+                                 :rev-spark-source (:spark-source (:revenue kpis))
+                                 :dates            (:dates charts)})
               ($ mp-structure-card {:mp-filter mp-filter
                                     :mp-share  (:mp-share charts)}))
 
@@ -876,7 +1129,8 @@
                           ($ icon {:name :more-h}))))
                  ($ :div {:style {:height "240px"}}
                     ($ orders-bar {:mp-filter    mp-filter
-                                   :orders-by-mp orders-by-mp})))
+                                   :orders-by-mp orders-by-mp
+                                   :dates        (:dates charts)})))
               ($ movers-tabs {:movers movers :fallers fallers}))
 
            ;; Critical stocks

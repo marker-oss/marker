@@ -21,9 +21,10 @@
   {:revenue revenue :net-profit net-profit})
 
 (defn- buyout-row [article buyout-rate ordered]
-  {:article     article
-   :buyout-rate buyout-rate
-   :ordered     ordered})
+  {:article          article
+   :non-return-rate  buyout-rate  ; canonical key (FR-008)
+   :buyout-rate      buyout-rate  ; deprecated alias kept for one release
+   :ordered          ordered})
 
 ;; ---------------------------------------------------------------------------
 ;; 2.1 Rule: TOP_MOVER
@@ -85,8 +86,8 @@
 
 (deftest test-returns-spike-fires-on-low-buyout
   (testing "RETURNS_SPIKE fires when buyout rate < 70%"
-    (let [buyout-data [{:article "art-1" :buyout-rate 62.0 :ordered 100}
-                       {:article "art-2" :buyout-rate 85.0 :ordered 50}]
+    (let [buyout-data [{:article "art-1" :non-return-rate 62.0 :buyout-rate 62.0 :ordered 100}
+                       {:article "art-2" :non-return-rate 85.0 :buyout-rate 85.0 :ordered 50}]
           data {:current-sales-by-article []
                 :prev-sales-by-article    []
                 :stocks-with-turnover     []
@@ -101,8 +102,8 @@
 
 (deftest test-returns-spike-no-fire-on-normal-buyout
   (testing "RETURNS_SPIKE does NOT fire when buyout rate >= 80%"
-    (let [buyout-data [{:article "art-1" :buyout-rate 82.0 :ordered 100}
-                       {:article "art-2" :buyout-rate 95.0 :ordered 50}]
+    (let [buyout-data [{:article "art-1" :non-return-rate 82.0 :buyout-rate 82.0 :ordered 100}
+                       {:article "art-2" :non-return-rate 95.0 :buyout-rate 95.0 :ordered 50}]
           data {:current-sales-by-article []
                 :prev-sales-by-article    []
                 :stocks-with-turnover     []
@@ -117,7 +118,7 @@
 
 (deftest test-returns-spike-ignores-nil-buyout
   (testing "RETURNS_SPIKE does NOT throw for nil buyout-rate rows"
-    (let [buyout-data [{:article "art-1" :buyout-rate nil :ordered 0}]
+    (let [buyout-data [{:article "art-1" :non-return-rate nil :buyout-rate nil :ordered 0}]
           data {:current-sales-by-article []
                 :prev-sales-by-article    []
                 :stocks-with-turnover     []
@@ -327,7 +328,7 @@
                                  {:article (str "art-" i) :name (str "Product " i)
                                   :size "M" :days-of-cover 2.0 :avg-daily-sales 5.0}))
           many-buyout (into [] (for [i (range 20)]
-                                 {:article (str "art-" i) :buyout-rate 50.0 :ordered 100}))
+                                 {:article (str "art-" i) :non-return-rate 50.0 :buyout-rate 50.0 :ordered 100}))
           many-top-10 (into [] (for [i (range 10)]
                                  {:article (str "art-top-" i) :rank (inc i)
                                   :name (str "Top " i) :revenue (* (- 10 i) 10000)}))
@@ -347,7 +348,7 @@
   (testing "detect-alerts puts RED alerts before YELLOW before GREEN"
     (let [stocks [{:article "art-1" :name "Product A" :size "M"
                    :days-of-cover 3.0 :avg-daily-sales 5.0}]
-          buyout [{:article "art-2" :buyout-rate 62.0 :ordered 100}]
+          buyout [{:article "art-2" :non-return-rate 62.0 :buyout-rate 62.0 :ordered 100}]
           curr   [{:article "art-3" :group "art-3" :revenue 2000.0}]
           prev   [{:article "art-3" :group "art-3" :revenue 1000.0}]
           data {:current-sales-by-article curr
@@ -418,7 +419,7 @@
 (deftest returns-spike-not-fires-on-exactly-0.7-test
   (testing "RETURNS_SPIKE does NOT fire when buyout-rate is exactly 70.0 (= threshold)"
     ;; Threshold is :returns-spike-buyout-max 70.0; rule uses < (strict), so 70.0 must NOT fire
-    (let [buyout-data [{:article "art-1" :buyout-rate 70.0 :ordered 100}]
+    (let [buyout-data [{:article "art-1" :non-return-rate 70.0 :buyout-rate 70.0 :ordered 100}]
           data {:current-sales-by-article []
                 :prev-sales-by-article    []
                 :stocks-with-turnover     []
@@ -490,3 +491,22 @@
         (is (contains? a :body))
         (is (contains? a :action-route))
         (is (contains? a :action-label))))))
+
+;; ---------------------------------------------------------------------------
+;; FR-008 alias-awareness: row with ONLY :non-return-rate (no :buyout-rate) must fire
+;; ---------------------------------------------------------------------------
+
+(deftest test-returns-spike-fires-on-non-return-rate-only
+  (testing "RETURNS_SPIKE fires on row that has :non-return-rate but NOT :buyout-rate (alias dropped)"
+    (let [buyout-data [{:article "art-new" :non-return-rate 55.0 :ordered 80}]
+          data {:current-sales-by-article []
+                :prev-sales-by-article    []
+                :stocks-with-turnover     []
+                :current-pnl              (pnl-map 10000 2000)
+                :prev-pnl                 (pnl-map 10000 2000)
+                :current-buyout           buyout-data
+                :sales-last-3-days        []
+                :top-10-by-revenue        []}
+          alerts (alerts/detect-alerts data)]
+      (is (some #(= :RETURNS_SPIKE (:rule %)) alerts)
+          "RETURNS_SPIKE must fire when row has :non-return-rate=55 even without :buyout-rate key"))))

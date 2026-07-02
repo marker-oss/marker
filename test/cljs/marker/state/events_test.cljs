@@ -219,7 +219,7 @@
     (is (true? (:marker/pulse-loading? (db))) "loading flag set")
     ;; Simulate success callback
     (let [fake-data {:alerts [] :kpis {:revenue {:value 1000}} :forecast {}}
-          ckey      [:pulse [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pulse [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pulse-data-loaded ckey fake-data])
       (is (false? (:marker/pulse-loading? (db)))  "loading cleared after data loaded")
       (is (= fake-data (:marker/pulse-data (db)))  "data written to :marker/pulse-data")
@@ -231,7 +231,7 @@
     (swap! rf-db/app-db assoc :marker/pnl-loading? true)
     (let [fake-data {:rows [{:key :revenue :label "Выручка" :cur 1000 :prev 900 :group "income"}]
                     :sku-detail []}
-          ckey      [:pnl [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pnl [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pnl-data-loaded ckey fake-data])
       (is (false? (:marker/pnl-loading? (db)))   "loading cleared")
       (is (= fake-data (:marker/pnl-data (db)))   "data written to :marker/pnl-data"))))
@@ -242,7 +242,7 @@
     (swap! rf-db/app-db assoc :marker/sku-list-loading? true)
     (let [skus      [{:id "ART-001" :name "Товар 1" :mp [:wb] :revenue 50000}]
           fake-resp {:skus skus}
-          ckey      [:sku-list [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:sku-list [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/sku-list-data-loaded ckey fake-resp])
       (is (false? (:marker/sku-list-loading? (db))) "loading cleared")
       (is (= skus (:marker/sku-list-data (db)))      "skus vector written directly"))))
@@ -391,7 +391,7 @@
     (swap! rf-db/app-db assoc :marker/sync-state
            {:kind :running :section "Pulse" :elapsed "0s" :progress 30})
     (let [fake-data {:alerts [] :kpis {:revenue {:value 5000}} :forecast {}}
-          ckey      [:pulse [:wb :ozon :ym] "Последние 30 дней" false]]
+          ckey      [:pulse [:ozon :wb :ym] "Последние 30 дней" false]]
       (rf/dispatch-sync [::events/pulse-data-loaded ckey fake-data])
       (is (= fake-data (:marker/pulse-data (db)))  "pulse data written")
       (is (false? (:marker/pulse-loading? (db)))   "loading flag cleared")))
@@ -431,3 +431,266 @@
     (rf/dispatch-sync [::events/refresh-finished :failure])
     (is (nil? (:marker/sync-state (db)))
         "sync-state cleared to nil on refresh failure")))
+
+;; ---------------------------------------------------------------------------
+;; 013 Frontend — new feature events.
+;;
+;; :http-xhrio can't fire a real request in node-test, so we stub it with a
+;; no-op effect. This lets us dispatch load/mutation events and assert their
+;; synchronous :db writes + :fx dispatch chains without touching the network.
+;; The real effect handler is registered by requiring marker.api; we just
+;; shadow it inside this fixture scope.
+;; ---------------------------------------------------------------------------
+
+(defn- with-stubbed-http
+  "Run f with :http-xhrio stubbed to a no-op, restoring nothing afterwards
+   (each test re-installs the stub; the app never runs the real effect in
+   node-test anyway)."
+  [f]
+  (rf/reg-fx :http-xhrio (fn [_] nil))
+  (f))
+
+;; --- 019 Treasury cashflow: load sets loading?, loaded stores + clears ---
+
+(deftest treasury-cashflow-load-sets-loading
+  (testing "::load-treasury-cashflow sets :marker/treasury-cashflow-loading? true"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (is (false? (:marker/treasury-cashflow-loading? (db))) "starts false")
+        (rf/dispatch-sync [::events/load-treasury-cashflow
+                           {:from "2026-06-01" :to "2026-06-30" :group-by :category}])
+        (is (true? (:marker/treasury-cashflow-loading? (db)))
+            "loading? set true while request in flight")))))
+
+(deftest treasury-cashflow-loaded-stores-and-clears
+  (testing "::treasury-cashflow-loaded stores data and clears loading?"
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/treasury-cashflow-loading? true)
+    (let [url  "/api/v1/treasury/cashflow?from=2026-06-01"
+          data {:mode :actual :group-by :category
+                :columns ["total" "2026-06"]
+                :rows [{:key :sales :label "Продажи" :activity-type :operating
+                        :cells {"total" "1000.00" "2026-06" "1000.00"}}]
+                :net {:label "Итого" :cells {"total" "1000.00"}}
+                :uncategorised-count 0}]
+      (rf/dispatch-sync [::events/treasury-cashflow-loaded url data])
+      (is (false? (:marker/treasury-cashflow-loading? (db))) "loading cleared")
+      (is (= data (:marker/treasury-cashflow (db))) "data written to slice")
+      ;; decimal cells preserved as strings (never parseFloat'd)
+      (is (= "1000.00"
+             (get-in (db) [:marker/treasury-cashflow :rows 0 :cells "total"]))
+          "decimal cell kept as string"))))
+
+(deftest treasury-cashflow-load-failed-clears-loading
+  (testing "::treasury-cashflow-load-failed clears loading? (half A)"
+    ;; The [::api-error url] side is a queued :dispatch — async under
+    ;; dispatch-sync — so it's covered separately via ::api-error directly.
+    (rf/dispatch-sync [::events/initialize-db])
+    (swap! rf-db/app-db assoc :marker/treasury-cashflow-loading? true)
+    (let [url     "/api/v1/treasury/cashflow?from=2026-06-01"
+          failure {:status 500 :status-text "Server Error" :response nil}]
+      (rf/dispatch-sync [::events/treasury-cashflow-load-failed url failure])
+      (is (false? (:marker/treasury-cashflow-loading? (db)))
+          "loading cleared on failure"))))
+
+;; --- 019 Treasury operations: save success re-dispatches load ---
+;; :fx [:dispatch ...] is async under dispatch-sync (see pulse tests), so we
+;; verify the two halves separately: (A) ::load-treasury-operations — the event
+;; the mutated handler re-dispatches — sets loading? true synchronously.
+
+(deftest load-treasury-operations-sets-loading
+  (testing "::load-treasury-operations sets :marker/treasury-operations-loading? true"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (is (false? (:marker/treasury-operations-loading? (db))) "starts false")
+        (rf/dispatch-sync [::events/load-treasury-operations {:page 1 :page-size 50}])
+        (is (true? (:marker/treasury-operations-loading? (db)))
+            "operations-loading? true while request in flight")
+        (is (= {:page 1 :page-size 50}
+               (:marker/treasury-operations-filters (db)))
+            "filters remembered for post-mutation refresh")))))
+
+;; --- 015 tax config load stores shape ---
+
+(deftest tax-config-loaded-stores-shape
+  (testing "::load-tax-config sets loading?; ::tax-config-loaded stores the map"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (rf/dispatch-sync [::events/load-tax-config 2026])
+        (is (true? (:marker/tax-config-loading? (db))) "loading? true during load")
+        (let [url  "/api/v1/settings/tax?year=2026"
+              data {:year 2026
+                    :months [{:month 1 :taxation-type :usn-income
+                              :usn-rate 6 :vat-rate 0 :official-cost-price 0}]}]
+          (rf/dispatch-sync [::events/tax-config-loaded url data])
+          (is (false? (:marker/tax-config-loading? (db))) "loading cleared")
+          (is (= data (:marker/tax-config (db))) "tax-config stored")
+          (is (= :usn-income
+                 (get-in (db) [:marker/tax-config :months 0 :taxation-type]))
+              "month row shape preserved"))))))
+
+;; --- 015 save-tax-config: ::tax-config-saved's :fx re-dispatches the load.
+;; The re-dispatch is async under dispatch-sync; we verify the load half
+;; (::load-tax-config sets loading? true) directly here.
+
+(deftest load-tax-config-sets-loading
+  (testing "::load-tax-config sets :marker/tax-config-loading? true"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (is (false? (:marker/tax-config-loading? (db))) "starts false")
+        (rf/dispatch-sync [::events/load-tax-config 2026])
+        (is (true? (:marker/tax-config-loading? (db)))
+            "tax-config-loading? true while request in flight")))))
+
+;; --- 017 bot settings load stores shape ---
+
+(deftest bot-settings-loaded-stores-shape
+  (testing "::load-bot-settings sets loading?; ::bot-settings-loaded stores map"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (rf/dispatch-sync [::events/load-bot-settings])
+        (is (true? (:marker/bot-settings-loading? (db))) "loading? true during load")
+        (let [url  "/api/v1/bot/subscriptions"
+              data {:subscriptions [{:chat-id "123" :label "Owner"
+                                     :cadences [:daily] :metrics [:revenue]
+                                     :show-movers? true :marketplace :wb
+                                     :gate-when-empty true}]
+                    :bot-configured? true :max-metrics 10}]
+          (rf/dispatch-sync [::events/bot-settings-loaded url data])
+          (is (false? (:marker/bot-settings-loading? (db))) "loading cleared")
+          (is (= data (:marker/bot-settings (db))) "bot-settings stored")
+          (is (true? (get-in (db) [:marker/bot-settings :bot-configured?]))
+              "bot-configured? flag preserved"))))))
+
+;; --- 016 user metrics load stores shape ---
+
+(deftest user-metrics-loaded-stores-shape
+  (testing "::load-user-metrics sets loading?; ::user-metrics-loaded stores map"
+    (with-stubbed-http
+      (fn []
+        (rf/dispatch-sync [::events/initialize-db])
+        (rf/dispatch-sync [::events/load-user-metrics])
+        (is (true? (:marker/user-metrics-loading? (db))) "loading? true during load")
+        (let [url  "/api/v1/metrics"
+              data {:metrics [{:id 1 :slug "romi" :name "ROMI" :formula "..."
+                               :suffix "%" :filter-type :none
+                               :positive-if-grow true :basis :net}]}]
+          (rf/dispatch-sync [::events/user-metrics-loaded url data])
+          (is (false? (:marker/user-metrics-loading? (db))) "loading cleared")
+          (is (= data (:marker/user-metrics (db))) "user-metrics stored"))))))
+
+;; --- 013 default-db has all the new feature keys ---
+
+(deftest default-db-has-013-frontend-keys
+  (testing "initialize-db produces the 013 feature keys with correct defaults"
+    (rf/dispatch-sync [::events/initialize-db])
+    (doseq [k [:marker/tax-config :marker/opex :marker/opex-auto-rules
+               :marker/user-metrics :marker/bot-settings
+               :marker/plan-fact :marker/plan-import-preview
+               :marker/treasury-cashflow :marker/treasury-operations
+               :marker/treasury-accounts :marker/treasury-counterparties
+               :marker/treasury-obligations-summary
+               :marker/treasury-obligations-dynamics
+               :marker/treasury-obligations :marker/treasury-auto-rules
+               :marker/treasury-classify-result]]
+      (is (nil? (get (db) k)) (str k " starts nil")))
+    (doseq [k [:marker/tax-config-loading? :marker/opex-loading?
+               :marker/user-metrics-loading? :marker/bot-settings-loading?
+               :marker/plan-fact-loading?
+               :marker/treasury-cashflow-loading?
+               :marker/treasury-operations-loading?
+               :marker/treasury-obligations-loading?]]
+      (is (false? (get (db) k)) (str k " starts false")))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H1 — Sync button page→loader mapping (post-nav-restructure)
+;; ---------------------------------------------------------------------------
+
+(deftest page->load-maps-current-nav-shapes
+  (let [ctx {:fs {:mp-filter [:wb]} :treasury-filters {} :obligations-filters {:mode :with-planned}
+             :plan-period "2026-07" :plan-mp :wb}
+        ev  (fn [page] (:event (events/page->load page ctx)))]
+    (testing "single-page + sectioned pages resolve to their loaders"
+      (is (= ::events/load-pulse            (first (ev :pulse))))
+      (is (= ::events/load-pnl              (first (ev [:finance :pnl]))))
+      (is (= ::events/load-reconciliation   (first (ev [:finance :reconciliation]))))
+      (is (= ::events/load-plan-fact        (first (ev [:finance :plan-fact]))))
+      (is (= ::events/load-sku-list         (first (ev [:products :skus]))))
+      (is (= ::events/load-stocks-overview  (first (ev [:products :stocks]))))
+      (is (= ::events/load-treasury-cashflow    (first (ev [:treasury :cashflow]))))
+      (is (= ::events/load-treasury-operations  (first (ev [:treasury :registry]))))
+      (is (= ::events/load-treasury-obligations (first (ev [:treasury :obligations])))))
+    (testing "report-backed tabs route through ::load-report with the right type"
+      (is (= [::events/load-report :ue]      (take 2 (ev [:finance :unit-table]))))
+      (is (= [::events/load-report :returns] (take 2 (ev [:finance :returns]))))
+      (is (= [::events/load-report :abc]     (take 2 (ev [:products :abc]))))
+      (is (= [::events/load-report :buyout]  (take 2 (ev [:dynamics :buyout])))))
+    (testing "dataset-less pages return nil event (so the spinner can resolve)"
+      (is (nil? (ev :settings)))
+      (is (nil? (ev :sync)))
+      (is (nil? (ev [:finance :unit-calc])))
+      (is (nil? (ev [:products :cost-prices]))))
+    (testing "plan-fact forwards period+mp; treasury forwards filters"
+      (is (= [::events/load-plan-fact "2026-07" :wb] (ev [:finance :plan-fact]))))))
+
+(deftest sync-and-refresh-resolves-spinner-on-dataless-page
+  (testing "on a page with no server dataset, Sync clears cache and immediately
+            marks the sync finished instead of leaving it stuck :running"
+    (reset! rf-db/app-db {:marker/page :settings
+                          :marker/mp-filter [:wb] :marker/period "x" :marker/compare false
+                          :marker/cache {:some :thing}})
+    (rf/dispatch-sync [::events/sync-and-refresh])
+    ;; refresh-finished (:success) sets sync-state to {:kind :success ...}
+    ;; and it is never left at :running.
+    (is (not= :running (:kind (:marker/sync-state (db)))))
+    (is (= {} (:marker/cache (db))) "cache cleared")))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H3 — stale (out-of-order) responses must not overwrite the
+;; visible slice when the user has since changed filters.
+;; ---------------------------------------------------------------------------
+
+(deftest stale-response-does-not-overwrite-visible-slice
+  (testing "a pulse response keyed for [:wb] arriving after the user switched
+            to all-MP updates only the cache, not :marker/pulse-data"
+    ;; current filters = all three MPs
+    (reset! rf-db/app-db {:marker/mp-filter [:wb :ozon :ym]
+                          :marker/period "P" :marker/compare false
+                          :marker/pulse-data {:marker :current-allmp}
+                          :marker/pulse-loading? true})
+    ;; a slow response for the OLD [:wb]-only filter arrives now
+    (let [stale-ckey [:pulse [:wb] "P" false]]
+      (rf/dispatch-sync [::events/pulse-data-loaded stale-ckey {:marker :stale-wb}])
+      (is (= {:marker :current-allmp} (:marker/pulse-data (db)))
+          "visible slice untouched by the stale response")
+      (is (= {:marker :stale-wb} (get-in (db) [:marker/cache stale-ckey]))
+          "stale response still cached for when those filters return")))
+  (testing "a matching response DOES update the visible slice"
+    (reset! rf-db/app-db {:marker/mp-filter [:wb] :marker/period "P" :marker/compare false
+                          :marker/pulse-loading? true})
+    (let [ckey [:pulse [:wb] "P" false]]
+      (rf/dispatch-sync [::events/pulse-data-loaded ckey {:marker :fresh-wb}])
+      (is (= {:marker :fresh-wb} (:marker/pulse-data (db)))))))
+
+;; ---------------------------------------------------------------------------
+;; Treasury: op mutation refreshes list + balances + cashflow (audit P2)
+;; ---------------------------------------------------------------------------
+
+(deftest treasury-operation-mutated-refreshes-all-three
+  (let [filters {:page 2 :direction "expense"}
+        fx-map  (events/treasury-operation-mutated-fx
+                  {:db {:marker/treasury-operations-filters filters}} nil)
+        fx      (:fx fx-map)
+        events* (map (comp first second) fx)]
+    (testing "ops list reloads with stored filters"
+      (is (= [::events/load-treasury-operations filters] (second (first fx)))))
+    (testing "accounts (derived balances) and cashflow reload too"
+      (is (some #{::events/load-treasury-accounts} events*))
+      (is (some #{::events/load-treasury-cashflow} events*)))
+    (testing "exactly three dispatches"
+      (is (= 3 (count fx))))))

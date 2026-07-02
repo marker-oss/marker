@@ -213,3 +213,27 @@
       (is (= 175.0 agg))
       (is (= 175.0 (reduce + 0.0 (vals per-art)))
           "Per-article totals must reconcile with aggregate ad-spend."))))
+
+;; ---------------------------------------------------------------------------
+;; FR-P1.5: ad-cost-source flag — :missing vs :canonical vs :legacy
+;; ---------------------------------------------------------------------------
+
+(deftest ad-cost-source-distinguishes-missing-from-zero
+  (testing "pnl/calculate tags ad-cost provenance"
+    (testing ":missing when no finance rows exist (empty DB, no seeded rows)"
+      ;; Fresh temp DB has no finance rows — both ad-cost paths return nothing.
+      ;; The numeric value must still be 0.0; the source tag must be :missing.
+      (let [r (pnl/calculate [] :marketplace :ym :from (:from april) :to (:to april))]
+        (is (= :missing (:ad-cost-source r))
+            "Empty DB → neither canonical nor legacy matched → :missing")
+        (is (== 0.0 (:ad-spend r))
+            "Numeric ad-spend unchanged at 0.0 when missing")))
+
+    (testing ":canonical when finance.ad_cost rows exist for the period"
+      (seed-row! {:rrd-id 50 :event-date "2026-04-03" :ad-cost 75.0})
+      (let [fin (finance/fetch-finance april :marketplace :ym :source :db)
+            r   (pnl/calculate fin :marketplace :ym :from (:from april) :to (:to april))]
+        (is (= :canonical (:ad-cost-source r))
+            "Seeded ad_cost row → canonical path → :canonical")
+        (is (== 75.0 (:ad-spend r))
+            "Numeric ad-spend matches seeded value")))))

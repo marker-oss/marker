@@ -89,9 +89,10 @@
     (with-redefs [sales/fetch-sales (fn [_period & _opts] fx-orders)]
       (let [rows (buyout/analyze [:last-7-days])
             a    (first (filter #(= "A" (:article %)) rows))]
-        (is (= #{:article :subject :ordered :total-ops :bought :returned :buyout-rate}
+        (is (= #{:article :subject :ordered :total-ops :bought :returned :refused
+                 :non-return-rate :buyout-rate}
                (set (keys a)))
-            "Backward-compat: legacy :ordered + canonical :total-ops alias both present (§Buyout.6.1)")))))
+            "Backward-compat: legacy :ordered + canonical :total-ops alias present (§Buyout.6.1); FR-008 emits canonical :non-return-rate + deprecated :buyout-rate alias")))))
 
 ;; ---------------------------------------------------------------------------
 ;; §Buyout.8 — aggregate rates for the Pulse headline (P0-B, specs/010)

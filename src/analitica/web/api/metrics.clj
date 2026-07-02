@@ -365,7 +365,7 @@
           pnl-data (pnl/calculate finance-data
                                   :marketplace marketplace
                                   :from from :to to)
-          finance-breakdown {:commission (:total-wb-reward finance-totals)
+          finance-breakdown {:commission (:total-mp-commission finance-totals)
                              :logistics (:total-logistics finance-totals)
                              :storage (:total-storage finance-totals)
                              :profit (:net-profit pnl-data)}

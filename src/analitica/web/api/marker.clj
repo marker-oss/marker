@@ -13,12 +13,15 @@
    Every handler returns a plain Clojure map; the wrap-transit-response
    middleware (registered in server.clj) encodes it as transit-json when the
    client sends Accept: application/transit+json."
-  (:require [analitica.domain.finance     :as finance]
-            [analitica.domain.pnl         :as pnl]
-            [analitica.domain.preliminary :as prelim]
+  (:require [analitica.domain.finance         :as finance]
+            [analitica.domain.pnl             :as pnl]
+            [analitica.domain.plan            :as plan]
+            [analitica.domain.preliminary     :as prelim]
+            [analitica.domain.reconciliation  :as reconciliation]
             [analitica.domain.sales       :as sales]
             [analitica.domain.stock       :as stock]
             [analitica.domain.buyout      :as buyout]
+            [analitica.domain.cost-price  :as cost-price]
             [analitica.alerts             :as alerts]
             [analitica.canonical.events.query :as canon]
             [analitica.util.period        :as period]
@@ -27,7 +30,9 @@
             [analitica.web.api.charts     :as charts]
             [analitica.web.api.report     :as report]
             [analitica.web.report-schemas :as rs]
-            [clojure.string               :as str]))
+            [analitica.platform.capability :as cap]
+            [clojure.string               :as str]
+            [com.brunobonacci.mulog       :as mu]))
 
 ;; ---------------------------------------------------------------------------
 ;; Parameter parsing helpers
@@ -80,21 +85,44 @@
 (defn- compute-pnl
   "Compute P&L for fin-data over period-map.
    Accepts an optional cf-adjustments map (from pnl/load-cf-adjustments);
-   when supplied, pnl/calculate adds the P&L.6 cf-* / adjusted-* fields."
+   when supplied, pnl/calculate adds the P&L.6 cf-* / adjusted-* fields.
+
+   015 T039: the 5-arity also threads an optional `management` block (from
+   pnl/load-management-adjustments) as :management to pnl/calculate, so the
+   result carries the management-layer keys (:tax :vat :opex :profit …). When
+   `management` is nil the output is byte-for-byte identical to the pre-015
+   result (SC-006 / INV-4); the management keys simply aren't emitted."
   ([fin-data period-map marketplace]
-   (compute-pnl fin-data period-map marketplace nil))
+   (compute-pnl fin-data period-map marketplace nil nil))
   ([fin-data period-map marketplace cf-adjustments]
+   (compute-pnl fin-data period-map marketplace cf-adjustments nil))
+  ([fin-data period-map marketplace cf-adjustments management]
    (try
      (apply pnl/calculate
             fin-data
             (cond-> [:marketplace marketplace
                      :from        (:from period-map)
                      :to          (:to  period-map)]
-              cf-adjustments (conj :cf-adjustments cf-adjustments)))
+              cf-adjustments (conj :cf-adjustments cf-adjustments)
+              management     (conj :management management)))
      (catch Exception _
        {:revenue 0.0 :net-profit 0.0 :gross-profit 0.0 :margin-net 0.0
         :ad-spend 0.0 :cogs 0.0 :logistics 0.0 :for-pay 0.0
-        :sales-qty 0 :returns-qty 0 :buyout-rate 0.0 :avg-check 0.0}))))
+        :sales-qty 0 :returns-qty 0
+        :non-return-rate 0.0 :buyout-rate 0.0  ; FR-008: :non-return-rate canonical; :buyout-rate alias
+        :avg-check 0.0}))))
+
+;; ---------------------------------------------------------------------------
+;; 015 T039 — management-layer keys forwarded verbatim into the pnl-handler
+;; response envelope. These are exactly the keys pnl/calculate emits when a
+;; :management block is supplied (contracts/tax-opex-api.md §3). Absent from
+;; the response when management is inert-nil (they simply aren't in pnl-cur).
+;; ---------------------------------------------------------------------------
+
+(def ^:private management-response-keys
+  [:management-configured? :tax-base :tax :vat :opex :opex-by-category
+   :profit :profit-without-expense :management-margin :margin-without-expense
+   :management-zero-reason])
 
 (defn- with-prelim
   "Apply Ozon preliminary overlay to a pnl-result.
@@ -157,9 +185,33 @@
           (range days))))
 
 (defn- revenue-spark
-  "30-element daily revenue list for the period."
+  "Daily revenue list for the period (one element per day).
+   Sourced from sales rows — legacy fallback when finance rows are unavailable."
   [sales-data from to]
   (let [by-day (sales-by-day-map sales-data)
+        dates  (date-range-seq from to)]
+    (mapv #(double (get by-day % 0.0)) dates)))
+
+(defn- realization-revenue-spark
+  "Daily for_pay spark derived from already-fetched finance rows.
+
+   LT4 (BUG B): aligns the Pulse chart basis with :month-fact. The
+   headline rev-cur comes from pnl/calculate over fin-cur (realization
+   rows); the chart must use the same rows so chart-total ≈ month-fact.
+
+   Groups fin-cur by event_date (first 10 chars), sums for_pay. Falls
+   back to 0.0 for days with no finance rows. When fin-cur is empty,
+   returns a zero-filled vector of (period-length) elements."
+  [fin-cur from to]
+  (let [by-day (->> fin-cur
+                    (group-by (fn [r]
+                                (let [d (or (:event_date r) (:event-date r) "")]
+                                  (if (>= (count d) 10) (subs d 0 10) d))))
+                    (into {} (map (fn [[d rows]]
+                                    [d (reduce + 0.0
+                                               (map (fn [r]
+                                                      (or (:for-pay r) (:for_pay r) 0.0))
+                                                    rows))]))))
         dates  (date-range-seq from to)]
     (mapv #(double (get by-day % 0.0)) dates)))
 
@@ -220,20 +272,34 @@
 
 (defn- cost-line
   "Build a cost-breakdown line with consistent shape.
-   :source is :none when cur is zero (nothing to attribute)."
-  [cur prev source as-of]
-  {:value     (math/round2 (or cur 0))
-   :delta-pct (math/pct-delta (or cur 0) (or prev 0))
-   :source    (if (and source (pos? (or cur 0))) source :none)
-   :as-of     as-of})
+   :source is :none when cur is zero (nothing to attribute).
+
+   5-arg arity (missing? = true): LT5 honesty path for costs that are
+   absent in a preliminary Ozon window (commission/COGS not yet published).
+   Returns {:value nil :source :preliminary-missing :delta-pct nil :as-of as-of}.
+   The nil value signals «нет данных» to the UI — never to be summed into totals."
+  ([cur prev source as-of]
+   {:value     (math/round2 (or cur 0))
+    :delta-pct (math/pct-delta (or cur 0) (or prev 0))
+    :source    (if (and source (pos? (or cur 0))) source :none)
+    :as-of     as-of})
+  ([_cur _prev _source as-of missing?]
+   (if missing?
+     {:value     nil
+      :delta-pct nil
+      :source    :preliminary-missing
+      :as-of     as-of}
+     (cost-line _cur _prev _source as-of))))
 
 (defn- sum-other-costs
-  "Storage + acceptance + penalties + deduction + additional."
+  "Storage + acceptance + penalties + deduction − additional.
+   :additional (доплаты) is a seller CREDIT — pnl/calculate adds it back
+   to gross-profit — so it reduces «Прочее», not inflates it (audit N1)."
   [pnl]
-  (+ (or (:storage    pnl) 0)
-     (or (:acceptance pnl) 0)
-     (or (:penalties  pnl) 0)
-     (or (:deduction  pnl) 0)
+  (- (+ (or (:storage    pnl) 0)
+        (or (:acceptance pnl) 0)
+        (or (:penalties  pnl) 0)
+        (or (:deduction  pnl) 0))
      (or (:additional pnl) 0)))
 
 (defn- sum-total-costs
@@ -244,6 +310,66 @@
      (or (:logistics pnl) 0)
      (or (:ad-spend  pnl) 0)
      (sum-other-costs pnl)))
+
+(defn- gmroi-net-profit
+  "MP-level NET profit for one article — the GMROI numerator (canon
+   Stock.GMROI.1 / 016 FR-009): for-pay − COGS − logistics − storage −
+   penalties − acceptance − deduction + additional − ads. `fa` is a
+   finance/by-article row. Audit N3: the previous for-pay − cogs − ads
+   omitted logistics/storage/penalties and overstated GMROI."
+  [fa ads]
+  (math/round2
+    (+ (- (or (:for-pay fa) 0.0)
+          (or (:total-cost fa) 0.0)
+          (or (:logistics fa) 0.0)
+          (or (:storage fa) 0.0)
+          (or (:penalties fa) 0.0)
+          (or (:acceptance fa) 0.0)
+          (or (:deduction fa) 0.0)
+          (or ads 0.0))
+       (or (:additional fa) 0.0))))
+
+;; ---------------------------------------------------------------------------
+
+(defn basis-note
+  "Note for a finance KPI given its date-basis split and the window length
+   in days. Returns :flat-heavy-subperiod when a sub-month window leans on
+   flat (guess-distributed) rows that carry no per-day meaning. nil otherwise."
+  [fin-basis window-days]
+  (when (and (< window-days 28) (>= (double (or (:flat fin-basis) 0.0)) 0.2))
+    :flat-heavy-subperiod))
+
+(defn- empty-finance?
+  "True when the monetary sum of |for-pay| across `rows` is zero.
+   Mirrors the `amt` fn inside finance/date-basis-split (tolerant of both
+   :for-pay and :for_pay key spellings). Used as the :empty guard in
+   basis-envelope and the sku-list/pnl/sku-detail call sites."
+  [rows]
+  (let [amt (fn [r] (Math/abs (double (or (:for-pay r) (:for_pay r) 0.0))))]
+    (zero? (reduce + 0.0 (map amt rows)))))
+
+(defn basis-envelope
+  "Return the basis-contract fragment {:date-basis ... :completeness ...}
+   for any finance handler response envelope.
+
+   Completeness decision tree (LT3, specs/010 P0-A):
+     1. zero monetary sum        → :empty      (no data; window not yet published
+                                                or genuinely no sales)
+     2. preliminary? is true     → :estimated  (at least one MP says «preliminary»)
+     3. flat fraction >= 0.2     → :estimated  (day-level meaning is a guess)
+     4. else                     → :full
+
+   Pass preliminary? as false when the handler has no per-MP preliminary
+   signal (sku-list) — completeness falls back to flat-threshold only."
+  [rows preliminary?]
+  (let [fin-basis    (finance/date-basis-split rows)
+        completeness (cond
+                       (empty-finance? rows)      :empty
+                       preliminary?               :estimated
+                       (>= (:flat fin-basis) 0.2) :estimated
+                       :else                      :full)]
+    {:date-basis   fin-basis
+     :completeness completeness}))
 
 ;; ---------------------------------------------------------------------------
 
@@ -370,6 +496,10 @@
    rows (regardless of any user-side MP filter). Always returns the
    three keys; missing MPs read as 0.
 
+   Weighting is by Σ unit-qty (analitica.util.math/unit-qty), not row
+   count. On quantity-less rows (e.g. WB sales table) unit-qty coalesces
+   to 1, so the result is byte-identical to the old row-count behaviour.
+
    This widget is structural — the donut shows where the seller's
    revenue comes from across MPs. Independent of MP filter so the user
    can see the full picture even when they've narrowed the rest of the
@@ -380,7 +510,7 @@
                    (group-by :marketplace)
                    (into {} (map (fn [[mp rows]]
                                    [(keyword (or mp "wb"))
-                                    (count rows)]))))
+                                    (reduce + 0 (map math/unit-qty rows))]))))
         total (max 1 (reduce + 0 (vals by-mp)))]
     {:wb   (math/round2 (* 100.0 (/ (double (get by-mp :wb 0)) total)))
      :ozon (math/round2 (* 100.0 (/ (double (get by-mp :ozon 0)) total)))
@@ -410,6 +540,14 @@
     (math/round2 (* (/ (double revenue) days-so-far) days-total))
     0.0))
 
+(defn- pulse-capability-envelope
+  "Add :capabilities alongside the existing honesty-envelope keys.
+   Caller context is nil (single-API-key open edition — FR-028 forward seam).
+   The slot is placed NEXT TO :completeness/:date-basis/:preliminary? (FR-027/P6);
+   it never replaces them and never truncates payload (FR-017/SC-006)."
+  [response-map]
+  (merge response-map (cap/capabilities-for nil)))
+
 (defn pulse-summary
   "Handler for GET /api/v1/marker/pulse-summary"
   [request]
@@ -430,8 +568,12 @@
           ;; the rest of the Ozon cash-flow service costs land on Pulse
           ;; net-profit too. Without this Pulse silently overstated
           ;; Ozon profit vs the canonical P&L tile.
-          fin-cur    (load-finance period mp1)
-          sales-cur  (load-sales  period mp1)
+          ;; US2 T025: data-load inner trace — wraps finance + sales DB fetches.
+          ;; mu/trace emits a span nested under the outer request span context
+          ;; (set by wrap-request-trace via mu/with-context). Only allow-list
+          ;; attributes — no per-SKU/article labels (FR-014).
+          fin-cur    (mu/trace :marker/data-load {} (load-finance period mp1))
+          sales-cur  (mu/trace :marker/data-load {} (load-sales   period mp1))
           cf-adj-cur (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
                           (catch Exception _ nil))
           pnl-cur    (-> (compute-pnl fin-cur period mp1 cf-adj-cur)
@@ -477,13 +619,22 @@
                            vec)
 
           ;; Sparks
-          ;;   rev-spark    — daily revenue from sales (currency)
+          ;;   rev-spark    — daily revenue spark for :revenue-30d chart (LT4 BUG B:
+          ;;                  sourced from finance rows so chart-total ≈ :month-fact).
+          ;;                  When finance is empty (no data yet) falls back to the
+          ;;                  sales-table spark so the chart is never blank on a live
+          ;;                  window that has sales but not yet realization.
           ;;   purch-spark  — daily settled-purchase count (sales rows of type :sale)
           ;;   ord-spark    — daily orders count from the orders table
           ;; The :orders and :purchases KPI cards each get their own spark
           ;; — they are different counters and previously both received
           ;; purch-spark, hiding the order-vs-purchase delta visually.
-          rev-spark   (revenue-spark sales-cur from to)
+          real-spark  (realization-revenue-spark fin-cur from to)
+          rev-spark   (if (every? zero? real-spark)
+                        ;; Finance rows absent or all-zero: fall back to sales spark
+                        ;; so the chart still shows something on a fresh window.
+                        (revenue-spark sales-cur from to)
+                        real-spark)
           purch-spark (orders-spark  sales-cur from to)
           ord-spark   (orders-count-spark from to mp1)
 
@@ -606,7 +757,14 @@
           ;; WB/YM are 100% :api; this fires mostly on Ozon / all-MP views.
           ;; ---------------------------------------------------------------------------
           fin-basis        (finance/date-basis-split fin-cur)
+          window-days      (period/days-between from to)
+          ;; NOTE: this cond MUST mirror basis-envelope's completeness tree
+          ;; (see basis-envelope above) so the two honesty paths don't diverge.
+          ;; In particular the `:empty` guard (empty-finance? first) is what
+          ;; stops the coverage chip from reading «полные данные» on a window
+          ;; with no monetary data at all. LT3 / specs/010 P0-A.
           fin-completeness (cond
+                             (empty-finance? fin-cur)   :empty
                              preliminary?               :estimated
                              (>= (:flat fin-basis) 0.2) :estimated
                              :else                      :full)
@@ -657,18 +815,40 @@
           ;; Pulse ad-spend (canonical PnL). Below the noise threshold,
           ;; ROAS/ДРР return nil → UI renders «—» (avoids 7-digit ROAS
           ;; from 0.25 ₽ ad-stats artefacts; fixes Bugs #4+#5).
-          ad-cur      (or (:ad-spend pnl-cur) 0.0)]
+          ad-cur      (or (:ad-spend pnl-cur) 0.0)
+          ad-cost-src (:ad-cost-source pnl-cur)
 
-      {:alerts          alert-list
+          ;; LT5 honesty: Ozon preliminary window may have logistics/storage
+          ;; published but commission/COGS absent (realization not yet out).
+          ;; When stamped by maybe-overlay-preliminary, do NOT fabricate
+          ;; a partial-cost profit/margin or surface a false zero.
+          ;; Domain pnl-result keeps numeric 0 (safe for sum-total-costs/
+          ;; what-if/exports); nil is applied ONLY here in presentation.
+          cost-missing? (= :preliminary-missing (:cost-source pnl-cur))
+          ;; US2 T025 / US3 T032: response-map bound so we can wrap it in
+          ;; compute+encode traces and merge the capability-slot (FR-027/P6).
+          response-map
+          (mu/trace :marker/compute {}
+            {:alerts          alert-list
        :kpis            {:revenue   (-> (build-kpi rev-cur rev-prev rev-spark revenue-src revenue-as-of)
-                                        (assoc :date-basis fin-basis :completeness fin-completeness))
-                         :profit    (-> (build-kpi (:net-profit pnl-cur) (:net-profit pnl-prev) [])
-                                        (assoc :source (if (pos? (or (:net-profit pnl-cur) 0.0))
-                                                          revenue-src
-                                                          :none)
+                                        (assoc :date-basis fin-basis :completeness fin-completeness
+                                               :basis-note (basis-note fin-basis window-days)
+                                               :spark-source :sales))
+                         :profit    (-> (build-kpi (when-not cost-missing? (:net-profit pnl-cur))
+                                                   (:net-profit pnl-prev) [])
+                                        ;; LT5 / I1: build-kpi resolves a nil :value to 0.0; under
+                                        ;; :preliminary-missing force it back to nil so profit reads
+                                        ;; «нет данных», never a fabricated 0 ₽ (matches :margin below).
+                                        (assoc :value (when-not cost-missing? (or (:net-profit pnl-cur) 0.0))
+                                               :source (cond
+                                                          cost-missing?                              :preliminary-missing
+                                                          (pos? (or (:net-profit pnl-cur) 0.0))     revenue-src
+                                                          :else                                      :none)
                                                :as-of revenue-as-of
                                                :date-basis fin-basis
-                                               :completeness fin-completeness))
+                                               :completeness fin-completeness
+                                               :basis-note (basis-note fin-basis window-days)
+                                               :ad-cost-source ad-cost-src))
                          :orders    {:value     orders-cur
                                      :delta-pct (math/pct-delta orders-cur orders-prev)
                                      :spark     ord-spark
@@ -692,17 +872,22 @@
                                      :spark     []
                                      :source    returned-src
                                      :as-of     nil}
-                         :margin    {:value     (or (:margin-net pnl-cur) 0.0)
-                                     :delta-pct (math/pct-delta
-                                                  (or (:margin-net pnl-cur) 0.0)
-                                                  (or (:margin-net pnl-prev) 0.0))
+                         :margin    {:value     (when-not cost-missing?
+                                                  (or (:margin-net pnl-cur) 0.0))
+                                     :delta-pct (when-not cost-missing?
+                                                  (math/pct-delta
+                                                    (or (:margin-net pnl-cur) 0.0)
+                                                    (or (:margin-net pnl-prev) 0.0)))
                                      :spark     []
-                                     :source    (if (pos? (or (:margin-net pnl-cur) 0.0))
-                                                  revenue-src
-                                                  :none)
+                                     :source    (cond
+                                                  cost-missing?                              :preliminary-missing
+                                                  (pos? (or (:margin-net pnl-cur) 0.0))     revenue-src
+                                                  :else                                      :none)
                                      :as-of     revenue-as-of
                                      :date-basis fin-basis
-                                     :completeness fin-completeness}
+                                     :completeness fin-completeness
+                                     :basis-note (basis-note fin-basis window-days)
+                                     :ad-cost-source ad-cost-src}
                          :avg-check {:value     ac-cur
                                      :delta-pct (math/pct-delta ac-cur ac-prev)
                                      :spark     []
@@ -739,26 +924,70 @@
                                                               (:returned buyout-agg)))
                                                    :realization :none)
                                       :as-of     nil}
-                         :roas      {:value     (math/roas rev-cur ad-cur)
-                                     :delta-pct nil
-                                     :spark     []
-                                     :source    revenue-src
-                                     :as-of     revenue-as-of}
-                         :drr       {:value     (math/drr rev-cur ad-cur)
-                                     :delta-pct nil
-                                     :spark     []
-                                     :source    revenue-src
-                                     :as-of     revenue-as-of}}
-       :costs           {:cogs       (cost-line (:cogs      pnl-cur) (:cogs      pnl-prev) revenue-src revenue-as-of)
-                        :commission (cost-line (:wb-reward pnl-cur) (:wb-reward pnl-prev) revenue-src revenue-as-of)
+                         :roas      {:value          (math/roas rev-cur ad-cur)
+                                     :delta-pct      nil
+                                     :spark          []
+                                     :source         revenue-src
+                                     :as-of          revenue-as-of
+                                     :ad-cost-source ad-cost-src}
+                         :drr       {:value          (math/drr rev-cur ad-cur)
+                                     :delta-pct      nil
+                                     :spark          []
+                                     :source         revenue-src
+                                     :as-of          revenue-as-of
+                                     :ad-cost-source ad-cost-src}
+                         ;; max-ДРР ceiling — the break-even ad-spend rate.
+                         ;; Formula (mirrors UE.7): (net-profit + ad-spend) / revenue × 100.
+                         ;; When ads are at this ceiling the article hits exactly 0 profit.
+                         ;; Above it → over-ceiling? true. Source follows revenue.
+                         :drr-ceiling {:value  (math/percentage
+                                                 (+ (or (:net-profit pnl-cur) 0.0) ad-cur)
+                                                 rev-cur)
+                                       :delta-pct nil
+                                       :spark     []
+                                       :source    revenue-src
+                                       :as-of     revenue-as-of}}
+       ;; LT5: when cost-missing? (Ozon preliminary, commission/COGS unpublished),
+       ;; render :cogs/:commission with nil value + :preliminary-missing source.
+       ;; :logistics/:ads/:other ARE published in the realization window → stay real.
+       ;; :total is also :preliminary-missing (incomplete; lists :known-components).
+       ;; Domain sum-total-costs/what-if/exports continue to use numeric 0 from pnl-cur.
+       :costs           {:cogs       (cost-line (:cogs         pnl-cur) (:cogs         pnl-prev) revenue-src revenue-as-of cost-missing?)
+                        ;; :mp-commission arrives sign-negative from pnl/calculate;
+                        ;; the costs block lists positive magnitudes and cost-line
+                        ;; gates :source on pos? — feed it the abs value.
+                        :commission (cost-line (Math/abs (double (or (:mp-commission pnl-cur) 0.0)))
+                                               (Math/abs (double (or (:mp-commission pnl-prev) 0.0)))
+                                               revenue-src revenue-as-of cost-missing?)
                         :logistics  (cost-line (:logistics pnl-cur) (:logistics pnl-prev) revenue-src revenue-as-of)
                         :ads        (cost-line (:ad-spend  pnl-cur) (:ad-spend  pnl-prev) revenue-src revenue-as-of)
                         :other      (cost-line (sum-other-costs pnl-cur) (sum-other-costs pnl-prev) revenue-src revenue-as-of)
-                        :total      (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of)}
-       :forecast        {:month-plan nil           ; TODO: wire to domain.plan DB once plans exist
+                        :total      (if cost-missing?
+                                      {:value            nil
+                                       :delta-pct        nil
+                                       :source           :preliminary-missing
+                                       :as-of            revenue-as-of
+                                       :known-components [:logistics :ads :other]}
+                                      (cost-line (sum-total-costs pnl-cur) (sum-total-costs pnl-prev) revenue-src revenue-as-of))}
+       ;; 017 plans: revenue target for the month of `to`, honoring the MP
+       ;; filter (per-MP row wins; falls back to the cross-MP "all" row).
+       ;; nil when no plan is set — the SPA hides the plan line honestly.
+       :forecast        {:month-plan (try
+                                       (let [month (subs to 0 7)
+                                             rows  (plan/fetch-plans month)]
+                                         (some-> (plan/lookup-plan
+                                                   rows
+                                                   {:period-month month
+                                                    :marketplace  (or mp1 :all)
+                                                    :metric       :revenue})
+                                                 double math/round2))
+                                       (catch Exception _ nil))
                          :month-fact (math/round2 rev-cur)
                          :projection projection}
-       :charts          (cond-> {:revenue-30d  rev-spark
+       ;; :dates — the ISO day axis all daily series are built on. The SPA
+       ;; used to fabricate «NN.05» labels for every period (audit M1).
+       :charts          (cond-> {:dates        (date-range-seq from to)
+                                 :revenue-30d  rev-spark
                                  :orders-by-mp orders-by-mp
                                  :mp-share     mp-share}
                           do-compare (assoc :revenue-prev-30d (or rev-prev-spark [])))
@@ -773,6 +1002,11 @@
        ;; materialized). UI can render a "preliminary" badge.
        :preliminary?    preliminary?
        :preliminary-as-of (or (:preliminary-as-of pnl-cur) nil)
+       ;; LT3: top-level honesty envelope (mirrors pnl/sku-list/reports). The
+       ;; SPA's ::subs/active-coverage reads this to drive the topbar coverage
+       ;; chip; :empty here suppresses the «полные данные» lie on a no-data Pulse.
+       :completeness    fin-completeness
+       :date-basis      fin-basis
        ;; Cost-price coverage warning. cost_prices table is sparse
        ;; (~9% of articles have a registered cost). For any sale row
        ;; without cost-price, line-cost defaults to 0 → cogs = 0 → P&L
@@ -794,7 +1028,12 @@
                           {:articles-with-cost arts-with
                            :articles-total     arts-total
                            :coverage-pct       pct
-                           :complete?          (>= pct 90.0)})})
+                           :complete?          (>= pct 90.0)})})]
+      ;; US2 T025: encode inner trace wraps final encoding step.
+      ;; US3 T032: merge :capabilities NEXT TO :completeness/:date-basis/:preliminary?
+      ;; (FR-027/P6) — pulse-capability-envelope is additive, never truncates payload.
+      (mu/trace :marker/encode {}
+        (pulse-capability-envelope response-map)))
     (catch Exception e
       {:error (.getMessage e)})))
 
@@ -860,32 +1099,94 @@
 
           today    (java.time.LocalDate/now)
           from-d   (.minusDays today 30)
+          from-iso (str from-d)
+          to-iso   (str today)
           sales    (try (sales/fetch-sales
-                          {:from (str from-d) :to (str today)}
+                          {:from from-iso :to to-iso}
                           :marketplace mps)
                         (catch Exception _ []))
           enriched (try (stock/with-turnover by-art sales 30)
                         (catch Exception _ by-art))
+
+          ;; ── 016-US2 capitalization / GMROI (parity with sku-list-handler) ──
+          ;; Cost basis lookup (nil ⇒ N/A → SPA renders "—", FR-013).
+          cost-fn      (fn [art] (cost-price/get-price art))
+          ;; Period (last-30d) weighted-avg retail per article for cap-by-price.
+          wavg-by-art  (->> (group-by :article sales)
+                            (map (fn [[art rows]] [art (stock/wavg-retail rows)]))
+                            (into {}))
+          ;; Capitalization aggregate + totals (VR-c1/FR-014).
+          cap-result   (stock/capitalize stocks
+                                          :cost-fn cost-fn
+                                          :price-fn #(get wavg-by-art %))
+          cap-by-art   (->> (:per-sku cap-result)
+                            (map (fn [c] [(:article c) c]))
+                            (into {}))
+          ;; Finance for the same 30d window → per-article net-profit for GMROI
+          ;; (full MP-level net profit — see gmroi-net-profit, audit N3).
+          fin          (load-finance {:from from-iso :to to-iso} mps)
+          fin-by-art   (try (finance/by-article fin) (catch Exception _ []))
+          fin-map      (->> fin-by-art
+                            (map (fn [a] [(or (:article a) "") a]))
+                            (into {}))
+          ads-by-art   (try (pnl/ad-spend-by-article from-iso to-iso mps)
+                            (catch Exception _ {}))
+          ;; stocks_history for the window — without it every GMROI was
+          ;; :not-applicable on this endpoint (audit N4: :history [] was passed).
+          history-by-art (try (group-by :article
+                                        (stock/fetch-history from-iso to-iso
+                                                             :marketplace mps))
+                              (catch Exception _ {}))
+          ;; 30-day inclusive window (from-d .. today) — annualization/coverage.
+          days-in-period 31
+
           by-art*  (mapv (fn [r]
-                           (let [d (:days-left r)]
-                             {:article       (:article r)
-                              :subject       (:subject r)
-                              :quantity      (or (:quantity r) 0)
-                              :quantity-full (or (:quantity-full r) 0)
-                              :in-way-to     (or (:in-way-to r) 0)
-                              :in-way-from   (or (:in-way-from r) 0)
-                              :warehouses    (or (:warehouses r) 0)
-                              :daily-rate    (or (:daily-rate r) 0.0)
-                              :days          d
-                              :status        (days->status d)}))
+                           (let [art (:article r)
+                                 d   (:days-left r)
+                                 cap (get cap-by-art art)
+                                 fa  (get fin-map art)
+                                 ads (or (get ads-by-art art) 0.0)
+                                 ;; nil cost basis ⇒ net-profit + gmroi N/A (FR-013).
+                                 net-profit (when (:unit-cost-basis cap)
+                                              (gmroi-net-profit fa ads))
+                                 gmroi-map  (stock/gmroi-inputs
+                                              {:article         art
+                                               :unit-cost-basis (:unit-cost-basis cap)
+                                               :net-profit      net-profit
+                                               :history         (get history-by-art art [])
+                                               :days-in-period  days-in-period})]
+                             {:article          art
+                              :subject          (:subject r)
+                              :quantity         (or (:quantity r) 0)
+                              :quantity-full    (or (:quantity-full r) 0)
+                              :in-way-to        (or (:in-way-to r) 0)
+                              :in-way-from      (or (:in-way-from r) 0)
+                              :warehouses       (or (:warehouses r) 0)
+                              :daily-rate       (or (:daily-rate r) 0.0)
+                              :days             d
+                              :status           (days->status d)
+                              ;; 016-US2 capitalization + GMROI + coverage
+                              :cap-by-cost      (:cap-by-cost cap)
+                              :cap-by-price     (:cap-by-price cap)
+                              :days-of-cover    d
+                              :gmroi            (:gmroi gmroi-map)
+                              :gmroi-annualized (:gmroi-annualized gmroi-map)
+                              ;; SC-004: partial coverage is surfaced, not hidden.
+                              :gmroi-covered-days (:covered-days gmroi-map)}))
                          enriched)
 
-          totals  {:quantity      (reduce + 0 (map :quantity by-wh))
-                   :quantity-full (reduce + 0 (map :quantity-full by-wh))
-                   :in-way-to     (reduce + 0 (map :in-way-to by-wh))
-                   :in-way-from   (reduce + 0 (map :in-way-from by-wh))
-                   :warehouses    (count by-wh)
-                   :articles      (count by-art)}]
+          totals  (merge
+                    {:quantity      (reduce + 0 (map :quantity by-wh))
+                     :quantity-full (reduce + 0 (map :quantity-full by-wh))
+                     :in-way-to     (reduce + 0 (map :in-way-to by-wh))
+                     :in-way-from   (reduce + 0 (map :in-way-from by-wh))
+                     :warehouses    (count by-wh)
+                     :articles      (count by-art)}
+                    ;; 016-US2 capitalization totals (contracts/stock-capitalization.edn):
+                    ;; :cap-by-cost-total / :cap-by-price-total / :stock-qty-total / :na-cost-count.
+                    (select-keys (:totals cap-result)
+                                 [:cap-by-cost-total :cap-by-price-total
+                                  :stock-qty-total :na-cost-count]))]
       {:status 200
        :body   {:totals       totals
                 :by-warehouse (vec by-wh)
@@ -955,6 +1256,7 @@
   [[:revenue       "Выручка (розница)"        "income"]
    [:wb-reward     "Возмещение ПВЗ"            "income"]
    [:for-pay       "К выплате от МП"           "subtotal"]
+   [:mp-commission "Комиссия МП"               "cost"]
    [:cogs          "Себестоимость"             "cost"]
    [:logistics     "Логистика"                 "cost"]
    [:storage       "Хранение"                  "cost"]
@@ -978,16 +1280,21 @@
 
           fin-cur  (load-finance period mp1)
           fin-prev (load-finance prev   mp1)
-          pnl-cur  (compute-pnl fin-cur  period mp1)
           pnl-prev (compute-pnl fin-prev prev   mp1)
 
-          cf-adj   (try (pnl/load-cf-adjustments (:from period) (:to period) mp1)
+          ;; 015 T039: assemble the generalised management block (cf + OPEX +
+          ;; tax-config) for the current window. :cf carries the Ozon cash-flow
+          ;; adjustments (nil for WB/YM) — this SUPERSEDES the standalone
+          ;; load-cf-adjustments call; the :cf key is the same map. When no
+          ;; tax/opex is configured, :configured? is false and the management
+          ;; keys are inert (profit == net-profit, FR-016).
+          mgmt-blk (try (pnl/load-management-adjustments (:from period) (:to period) mp1)
                         (catch Exception _ nil))
-          ;; Recompute with CF adjustments when available (adds P&L.6 cf-*/adjusted-* fields).
-          ;; pnl/calculate accepts :cf-adjustments; compute-pnl 4-arity passes it through.
-          pnl-cur  (if cf-adj
-                     (compute-pnl fin-cur period mp1 cf-adj)
-                     pnl-cur)
+          cf-adj   (:cf mgmt-blk)
+          ;; Current-period P&L WITH cf-adjustments AND the management layer.
+          ;; pnl/calculate accepts :cf-adjustments + :management; compute-pnl
+          ;; 5-arity passes both through.
+          pnl-cur  (compute-pnl fin-cur period mp1 cf-adj mgmt-blk)
 
           ;; Apply preliminary overlay so Ozon shows a meaningful number
           ;; while realization is delayed. Per-MP=:ozon swaps revenue
@@ -1004,6 +1311,16 @@
                             :group group})
                          pnl-row-defs)
 
+          ;; ── 016-US3 layered P&L waterfall (§0.1 LOCKED GROSS top-line) ──
+          ;; Pure re-composition of pnl-cur; netProfit == pnl :net-profit by
+          ;; construction. ?compare=true attaches per-line deltas vs prev period.
+          compare? (contains? #{"true" "1" "yes"}
+                              (some-> (or (:compare params) (get params "compare"))
+                                      clojure.core/str str/lower-case))
+          wf       (if compare?
+                     (pnl/waterfall pnl-cur :comparison pnl-prev)
+                     (pnl/waterfall pnl-cur))
+
           ;; Per-SKU breakdown via finance/by-article
           by-art   (try (finance/by-article fin-cur) (catch Exception _ []))
           ads-by-art (try (pnl/ad-spend-by-article (:from period) (:to period) mp1)
@@ -1015,14 +1332,21 @@
                               :mp         [(keyword (or (:marketplace a) :wb))]
                               :revenue    (or (:revenue a) 0.0)
                               :cogs       (or (:total-cost a) 0.0)
-                              :commission (or (:deduction a) 0.0)
+                              :commission (- (Math/abs (double (or (:mp-commission a) 0.0))))
                               :ads        (or (get ads-by-art art) 0.0)
                               :net        (or (:for-pay a) 0.0)}))
                          by-art)]
-      {:rows              rows
-       :sku-detail        sku-det
-       :preliminary?      (boolean (:preliminary? pnl-cur))
-       :preliminary-as-of (:preliminary-as-of pnl-cur)})
+      (merge {:rows              rows
+              :waterfall         (:waterfall wf)
+              :sku-detail        sku-det
+              :preliminary?      (boolean (:preliminary? pnl-cur))
+              :preliminary-as-of (:preliminary-as-of pnl-cur)}
+             (basis-envelope fin-cur (boolean (:preliminary? pnl-cur)))
+             ;; 015 T039: surface the management-layer keys (tax/opex/profit …)
+             ;; at the response top level (contract §3). Only the keys actually
+             ;; present on pnl-cur are copied — when management is inert-nil
+             ;; none exist and the response is byte-identical to pre-015.
+             (select-keys pnl-cur management-response-keys)))
     (catch Exception e
       {:rows [] :sku-detail [] :error (.getMessage e)})))
 
@@ -1043,6 +1367,19 @@
              (or (pos? (or (:revenue s) 0))
                  (pos? (or (:orders s) 0))))
            skus))
+
+(defn- max-drr-numerator
+  "Break-even ad-spend numerator for max-ДРР ceiling (FR-005 / UE.7).
+   Returns for-pay − cogs − logistics − storage − penalties − acceptance.
+   All variable-cost fields coalesce to 0 when absent.
+   When all variable costs are zero the result equals the old gross-margin
+   proxy (for-pay − cogs), preserving WB/quantity-less behaviour."
+  [for-pay cogs logistics storage penalties acceptance]
+  (- for-pay cogs
+     (or logistics   0.0)
+     (or storage     0.0)
+     (or penalties   0.0)
+     (or acceptance  0.0)))
 
 (defn sku-list-handler
   "Handler for GET /api/v1/marker/sku-list"
@@ -1079,6 +1416,40 @@
           ad-total  (or (:ad-spend pnl-cur) 0.0)
           ads-by-art (try (pnl/ad-spend-by-article from to mp1) (catch Exception _ {}))
 
+          ;; P0-B basis contract: «Выкуп» is ORDER-based (sold/placed) on every
+          ;; surface — same basis as the Pulse headline. The sales-basis rate
+          ;; (sold/(sold+returns)) structurally cannot see cancellations and
+          ;; read 97% here vs 40% on Pulse for the same SKU.
+          buyout-by-art (try
+                          (let [orows (db/orders-by-article from to :marketplace mp1)
+                                omap  (into {} (map (juxt :article identity) orows))]
+                            (->> (buyout/analyze period :marketplace mp1
+                                                 :orders-by-article omap)
+                                 (map (juxt :article :true-buyout-rate))
+                                 (into {})))
+                          (catch Exception _ {}))
+
+          ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
+          ;; days-in-period for annualization + turnover daily-rate.
+          days-in-period (try (inc (.until (period/parse-date from) (period/parse-date to)
+                                           java.time.temporal.ChronoUnit/DAYS))
+                              (catch Exception _ 30))
+          ;; cost basis lookup (nil ⇒ N/A, FR-013).
+          cost-fn        (fn [art] (cost-price/get-price art))
+          ;; period weighted-avg retail per article (FR-008, NOT last-full-week).
+          wavg-by-art    (->> (group-by :article sales-cur)
+                              (map (fn [[art rows]] [art (stock/wavg-retail rows)]))
+                              (into {}))
+          ;; per-day stocks_history for the window, grouped by article (coverage-aware GMROI).
+          history-rows   (try (stock/fetch-history from to :marketplace mp1) (catch Exception _ []))
+          history-by-art (group-by :article history-rows)
+          ;; capitalization aggregate + totals (VR-c1/FR-014).
+          cap-result     (stock/capitalize stocks :cost-fn cost-fn
+                                            :price-fn #(get wavg-by-art %))
+          cap-by-art     (->> (:per-sku cap-result)
+                              (map (fn [c] [(:article c) c]))
+                              (into {}))
+
           skus      (mapv (fn [a]
                             (let [art       (or (:article a) "")
                                   rev       (or (:revenue a) 0.0)
@@ -1086,27 +1457,70 @@
                                   stk       (get stock-map art)
                                   qty-full  (or (:quantity-full stk) 0)
                                   orders    (or (:sales-qty a) 0)
-                                  returns   (or (:returns-qty a) 0)
                                   for-pay   (or (:for-pay a) 0.0)
                                   cogs      (or (:total-cost a) 0.0)
-                                  margin    (math/percentage
-                                              (- for-pay cogs)
-                                              (max 1.0 for-pay))
-                                  buyout    (math/percentage orders (+ orders returns))
                                   ads       (or (get ads-by-art art) 0.0)
-                                  roas      (math/roas rev ads)]
-                              {:id        art
-                               :name      (or (:subject a) art)
-                               :mp        [(keyword (or (:marketplace a) :wb))]
-                               :revenue   rev
-                               :orders    orders
-                               :margin    (or margin 0.0)
-                               :buyout    (or buyout 0.0)
-                               :stock     qty-full
-                               :delta-pct (math/pct-delta rev prev-r)
-                               :ads-cost  ads
-                               :roas      roas
-                               :spark     []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
+                                  ;; canon margin_net_pct: full MP net profit /
+                                  ;; revenue (same numerator as GMROI, audit N3)
+                                  ;; — retires the (for-pay−cogs)/max(1,for-pay)
+                                  ;; third margin definition.
+                                  margin    (math/percentage (gmroi-net-profit a ads) rev)
+                                  buyout    (get buyout-by-art art)
+                                  roas      (math/roas rev ads)
+                                  ;; max-ДРР ceiling (FR-005 / UE.7).
+                                  ;; Numerator = for-pay − cogs − logistics − storage − penalties − acceptance.
+                                  ;; These fields ARE carried by finance/by-article rows (article-row, finance.clj).
+                                  ;; max-drr-pct = numerator / revenue × 100 (break-even ad-spend rate).
+                                  logistics-a   (or (:logistics   a) 0.0)
+                                  storage-a     (or (:storage     a) 0.0)
+                                  penalties-a   (or (:penalties   a) 0.0)
+                                  acceptance-a  (or (:acceptance  a) 0.0)
+                                  max-drr-numer (max-drr-numerator for-pay cogs logistics-a storage-a penalties-a acceptance-a)
+                                  max-drr-pct   (math/percentage max-drr-numer rev)
+                                  drr-pct         (math/percentage ads rev)
+                                  drr-headroom    (math/round2 (- (or max-drr-pct 0.0)
+                                                                   (or drr-pct 0.0)))
+                                  over-ceiling?   (boolean (and max-drr-pct drr-pct
+                                                                (> drr-pct max-drr-pct)))
+                                  ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
+                                  cap           (get cap-by-art art)
+                                  ;; per-SKU MP-level NET profit (TS-def GMROI numerator,
+                                  ;; full cost set — audit N3). nil when no cost basis
+                                  ;; (FR-013 propagation).
+                                  net-profit    (when (:unit-cost-basis cap)
+                                                  (gmroi-net-profit a ads))
+                                  gmroi-map     (stock/gmroi-inputs
+                                                  {:article         art
+                                                   :unit-cost-basis (:unit-cost-basis cap)
+                                                   :net-profit      net-profit
+                                                   :history         (get history-by-art art [])
+                                                   :days-in-period  days-in-period})
+                                  ;; turnover Σqty from finance sales-qty (orders) over the period.
+                                  daily-rate    (math/safe-div orders days-in-period)
+                                  days-of-cover (when (pos? daily-rate)
+                                                  (math/round2 (/ (double qty-full) daily-rate)))]
+                              {:id               art
+                               :name             (or (:subject a) art)
+                               :mp               [(keyword (or (:marketplace a) :wb))]
+                               :revenue          rev
+                               :orders           orders
+                               :margin           (or margin 0.0)
+                               :buyout           (or buyout 0.0)
+                               :stock            qty-full
+                               :delta-pct        (math/pct-delta rev prev-r)
+                               :ads-cost         ads
+                               :roas             roas
+                               :max-drr-pct      max-drr-pct
+                               :drr-headroom-pct drr-headroom
+                               :over-ceiling?    over-ceiling?
+                               ;; capitalization + coverage-aware GMROI + turnover
+                               :cap-by-cost      (:cap-by-cost cap)
+                               :cap-by-price     (:cap-by-price cap)
+                               :gmroi            (:gmroi gmroi-map)
+                               :gmroi-annualized (:gmroi-annualized gmroi-map)
+                               :covered-days     (:covered-days gmroi-map)
+                               :days-of-cover    days-of-cover
+                               :spark            []}))  ; TODO: per-article daily spark expensive — defer to Phase 8
                           by-art)
           ;; Default: drop orphan service-only SKUs (revenue=0 AND orders=0).
           ;; Pass ?include-orphans=true to see them.
@@ -1119,7 +1533,11 @@
                        true   (drop offset)
                        limit  (take limit)
                        true   vec)]
-      {:skus skus-paged})
+      (merge {:skus   skus-paged
+              ;; 016-US2 totals (T022) per contracts/stock-capitalization.edn:
+              ;; :cap-by-cost-total / :cap-by-price-total / :stock-qty-total / :na-cost-count.
+              :totals (:totals cap-result)}
+             (basis-envelope fin-cur false)))
     (catch Exception e
       {:skus [] :error (.getMessage e)})))
 
@@ -1216,24 +1634,35 @@
                        (filterv some? [(some-> mp1 keyword) :wb])
                        [:wb])]
 
+      (let [rev-val       (or (:revenue pnl-cur) 0.0)
+            ads-val       (or (:ad-spend pnl-cur) 0.0)
+            np-val        (or (:net-profit pnl-cur) 0.0)
+            max-drr-pct   (math/percentage (+ np-val ads-val) (if (pos? rev-val) rev-val 1.0))
+            drr-pct       (math/percentage ads-val (if (pos? rev-val) rev-val 1.0))
+            over-ceiling? (boolean (and (pos? rev-val) max-drr-pct drr-pct (> drr-pct max-drr-pct)))
+            basis-env     (basis-envelope fin-art (boolean (:preliminary? pnl-cur)))]
       {:id       sku-id
        :name     subject
        :nm-id    nm-id
        :subject  subject
        :mp       (vec mps-list)
-       :kpis     {:revenue {:value     (or (:revenue pnl-cur) 0.0)
-                             :delta-pct (math/pct-delta
-                                          (or (:revenue pnl-cur) 0.0)
-                                          (or (:revenue pnl-prev) 0.0))}
-                  :orders  {:value (or (:sales-qty agg) 0)}
-                  :margin  {:value (or (:margin-net pnl-cur) 0.0)}
-                  :ads     {:value (or (:ad-spend pnl-cur) 0.0)}}
+       :kpis     {:revenue     {:value     rev-val
+                                :delta-pct (math/pct-delta
+                                             rev-val
+                                             (or (:revenue pnl-prev) 0.0))}
+                  :orders      {:value (or (:sales-qty agg) 0)}
+                  :margin      {:value (or (:margin-net pnl-cur) 0.0)}
+                  :ads         {:value ads-val}
+                  :max-drr-pct {:value max-drr-pct}}
+       :over-ceiling?   over-ceiling?
        :revenue-30d  rev-spark
        :plan-fact    {:plan       nil
                       :fact       (math/round2 (or (:revenue pnl-cur) 0.0))
                       :projection proj}
        :stocks-by-mp (if (seq stk-by-mp) stk-by-mp [])
-       :preliminary? (boolean (:preliminary? pnl-cur))})
+       :preliminary? (boolean (:preliminary? pnl-cur))
+       :date-basis   (:date-basis   basis-env)
+       :completeness (:completeness basis-env)}))
     (catch Exception e
       {:id    (get-in request [:params :sku-id] "")
        :error (.getMessage e)})))
@@ -1451,20 +1880,48 @@
                                               :article     article
                                               :compare     (compare-flag params))
               schema      (rs/get-schema rtype)
-              compare-blk (:compare data)]
+              compare-blk (:compare data)
+              ;; ── 016 US5 — user-metric constructor ──
+              ;; Merge saved user-metric descriptors into :columns and compute
+              ;; each row's value via eval-user-metric BEFORE returning (i.e.
+              ;; before any client-side sort/filter/pagination), so a user
+              ;; metric renders / sorts / filters exactly like a built-in column.
+              ;; Additive: when no user metrics exist, columns/rows are unchanged.
+              ;; Fetch the metrics ONCE: descriptors (for :columns) come from
+              ;; user-metric->descriptor; row values come from the metric's
+              ;; :slug + :formula via eval-user-metric.
+              user-metrics (try (rs/fetch-user-metrics) (catch Exception _ []))
+              user-descs   (mapv rs/user-metric->descriptor user-metrics)
+              enrich-user  (fn [rows]
+                             (if (seq user-metrics)
+                               (mapv (fn [row]
+                                       (reduce (fn [r {:keys [slug formula]}]
+                                                 (assoc r slug (rs/eval-user-metric formula row)))
+                                               row user-metrics))
+                                     rows)
+                               rows))
+              ;; LT3: compute honesty envelope (single source of truth).
+              ;; One extra load-finance call; reports don't expose raw finance
+              ;; rows from report-data, so we fetch separately.
+              fin-env     (load-finance period mp1)
+              pnl-env     (compute-pnl  fin-env period mp1)
+              env         (basis-envelope fin-env (boolean (:preliminary? pnl-env)))]
           {:status 200
-           :body   (cond-> {:report-type rtype
-                            :columns     (vec (:columns schema))
-                            :rows        (vec (:rows data))
-                            :totals      (or (:totals data) {})
-                            :schema      (select-keys schema
-                                                      [:id :title :rows-mode
-                                                       :supports-compare?
-                                                       :supports-period?
-                                                       :supports-marketplace?
-                                                       :tabs :presets :kpi
-                                                       :drill-down :chart])}
-                     compare-blk (assoc :compare {:rows   (vec (:rows compare-blk))
+           :body   (cond-> {:report-type  rtype
+                            :columns      (into (vec (:columns schema)) user-descs)
+                            :rows         (enrich-user (vec (:rows data)))
+                            :totals       (or (:totals data) {})
+                            :schema       (select-keys schema
+                                                       [:id :title :rows-mode
+                                                        :supports-compare?
+                                                        :supports-period?
+                                                        :supports-marketplace?
+                                                        :tabs :presets :kpi
+                                                        :drill-down :chart])
+                            :completeness (:completeness env)
+                            :date-basis   (:date-basis   env)
+                            :preliminary? (boolean (:preliminary? pnl-env))}
+                     compare-blk (assoc :compare {:rows   (enrich-user (vec (:rows compare-blk)))
                                                   :totals (or (:totals compare-blk) {})}))})))
     (catch Exception e
       {:status 500
@@ -1510,5 +1967,37 @@
                                            :marketplace mp1
                                            :compare     compare-kw)}))
     (catch Exception e
+      {:status 500
+       :body   {:error (.getMessage e)}})))
+
+;; ---------------------------------------------------------------------------
+;; B6. reconciliation (FR-P4.6)
+;; ---------------------------------------------------------------------------
+
+(defn reconciliation-handler
+  "Handler for GET /api/v1/marker/reconciliation
+
+   Query params:
+     from        YYYY-MM-DD (required; falls back to last-30-days default)
+     to          YYYY-MM-DD (required; falls back to last-30-days default)
+     mp          single marketplace keyword: wb | ozon | ym (optional; nil = all MPs)
+
+   Returns:
+     {:pnl-total    double
+      :payout-total double
+      :delta        double   ; payout − pnl
+      :per-article  [{:article :pnl :payout :delta} ...]}"
+  [request]
+  (try
+    (let [params  (:params request)
+          period  (parse-period-params params)
+          mp1     (let [mps (parse-mp-param params)]
+                    (when (and mps (= 1 (count mps))) (first mps)))]
+      {:status 200
+       :body   (reconciliation/pnl-vs-payout (:from period) (:to period) mp1)})
+    (catch Exception e
+      (mu/log ::reconciliation-error
+              :error-message (.getMessage e)
+              :error-type    (type e))
       {:status 500
        :body   {:error (.getMessage e)}})))

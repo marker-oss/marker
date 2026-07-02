@@ -6,7 +6,7 @@
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.middleware.content-type :refer [wrap-content-type]]
             [ring.middleware.resource :as resource]
-            [compojure.core :refer [defroutes GET POST PUT]]
+            [compojure.core :refer [defroutes GET POST PUT DELETE]]
             [compojure.route :as route]
             [hiccup.core]
             [analitica.config :as config]
@@ -41,8 +41,14 @@
             [analitica.web.api.search :as search-api]
             [analitica.web.api.marker :as marker-api]
             [analitica.web.api.settings :as settings-api]
+            [analitica.web.api.tax-opex :as tax-opex-api]
+            [analitica.web.api.treasury :as treasury-api]
+            [analitica.web.api.bot :as bot-api]
+            [analitica.web.api.plan :as plan-api]
+            [analitica.web.api.user-metrics :as user-metrics-api]
             [analitica.web.api.feedback :as feedback-api]
             [analitica.web.middleware.transit :as transit-mw]
+            [analitica.web.middleware.trace :as trace-mw]
             [analitica.web.report-schemas :as rs]
             [analitica.domain.losses :as losses]
             [analitica.util.safe :as safe]
@@ -1300,6 +1306,79 @@
     (settings-api/put-marketplace (assoc-in req [:body :marketplace] mp)))
 
   ;; ---------------------------------------------------------------------------
+  ;; OPEX auto-rules API  (/api/v1/opex/auto-rules)
+  ;; spec 015 US5 (T060) — auto-rule CRUD (materialize-rules! triggered by GET opex)
+  ;; NOTE: more-specific /auto-rules route MUST precede any /:id catch-all
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/opex/auto-rules"     req (tax-opex-api/get-auto-rules req))
+  (POST   "/api/v1/opex/auto-rules"     req (tax-opex-api/post-auto-rule req))
+  (DELETE "/api/v1/opex/auto-rules/:id" req (tax-opex-api/delete-auto-rule req))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Base Tax + OPEX API  (spec 015)  — /api/v1/settings/tax, /api/v1/opex
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/settings/tax" req (tax-opex-api/get-tax req))
+  (PUT    "/api/v1/settings/tax" req (tax-opex-api/put-tax req))
+  (GET    "/api/v1/opex"         req (tax-opex-api/get-opex req))
+  (POST   "/api/v1/opex"         req (tax-opex-api/post-opex req))
+  (DELETE "/api/v1/opex/:id"     req (tax-opex-api/delete-opex req))
+
+  ;; ---------------------------------------------------------------------------
+  ;; User-defined metrics CRUD  (spec 016 US5)  — /api/v1/metrics
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/metrics"     req (user-metrics-api/get-metrics req))
+  (POST   "/api/v1/metrics"     req (user-metrics-api/post-metric req))
+  (DELETE "/api/v1/metrics/:id" req (user-metrics-api/delete-metric req))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Treasury / cash-flow API  (spec 019)  — /api/v1/treasury/*
+  ;; ROUTE ORDER: literal/more-specific paths MUST precede :id / wildcard
+  ;; catch-alls so they are not shadowed (obligations subroutes, auto-rules
+  ;; classify, operations/:id).
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/treasury/cashflow"       req (treasury-api/get-cashflow req))
+  (GET    "/api/v1/treasury/categories"     req (treasury-api/get-categories req))
+  (GET    "/api/v1/treasury/operations"     req (treasury-api/get-operations req))
+  (POST   "/api/v1/treasury/operations"     req (treasury-api/post-operation req))
+  (PUT    "/api/v1/treasury/operations/:id" req (treasury-api/put-operation req))
+  (GET    "/api/v1/treasury/accounts"       req (treasury-api/get-accounts req))
+  (POST   "/api/v1/treasury/accounts"       req (treasury-api/post-account req))
+  (DELETE "/api/v1/treasury/accounts/:id"   req (treasury-api/delete-account req))
+  (GET    "/api/v1/treasury/counterparties" req (treasury-api/get-counterparties req))
+  (POST   "/api/v1/treasury/counterparties" req (treasury-api/post-counterparty req))
+  ;; obligations — specific subroutes BEFORE the bare /obligations
+  (GET    "/api/v1/treasury/obligations/summary"     req (treasury-api/get-obligations-summary req))
+  (GET    "/api/v1/treasury/obligations/dynamics"    req (treasury-api/get-obligations-dynamics req))
+  (POST   "/api/v1/treasury/obligations/:id/settle"  req (treasury-api/settle-obligation req))
+  (GET    "/api/v1/treasury/obligations"             req (treasury-api/get-obligations req))
+  (POST   "/api/v1/treasury/obligations"             req (treasury-api/post-obligation req))
+  ;; auto-rules — classify BEFORE the bare /auto-rules
+  (POST   "/api/v1/treasury/auto-rules/classify" req (treasury-api/classify-auto-rules req))
+  (GET    "/api/v1/treasury/auto-rules"          req (treasury-api/get-auto-rules req))
+  (POST   "/api/v1/treasury/auto-rules"          req (treasury-api/post-auto-rule req))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Bot-settings API  (spec 017)  — /api/v1/bot/*
+  ;; ROUTE ORDER: collection routes (GET/POST /subscriptions) BEFORE the
+  ;; :chat-id routes so they are not shadowed by the :chat-id catch-all.
+  ;; Mutating routes key on :chat-id (registry keys by chat_id UNIQUE).
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/bot/subscriptions"          req (bot-api/get-subscriptions req))
+  (POST   "/api/v1/bot/subscriptions"          req (bot-api/post-subscription req))
+  (PUT    "/api/v1/bot/subscriptions/:chat-id" req (bot-api/put-subscription req))
+  (DELETE "/api/v1/bot/subscriptions/:chat-id" req (bot-api/delete-subscription req))
+  (POST   "/api/v1/bot/test"                   req (bot-api/post-test req))
+  (POST   "/api/v1/bot/max-request"            req (bot-api/post-max-request req))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Per-SKU Plan/Fact API  (spec 017)  — /api/v1/plan/sku (+ multipart import)
+  ;; preview/import are multipart POSTs (wrap-multipart-params applied globally).
+  ;; ---------------------------------------------------------------------------
+  (GET    "/api/v1/plan/sku"         req (plan-api/get-plan-sku req))
+  (POST   "/api/v1/plan/sku/preview" req (plan-api/preview-plan-sku req))
+  (POST   "/api/v1/plan/sku/import"  req (plan-api/import-plan-sku req))
+
+  ;; ---------------------------------------------------------------------------
   ;; Feedback API  (/api/v1/feedback)
   ;; ---------------------------------------------------------------------------
   (POST "/api/v1/feedback" req (feedback-api/submit req))
@@ -1316,6 +1395,7 @@
   (GET  "/api/v1/marker/sku-list"          req {:status 200 :body (marker-api/sku-list-handler req)})
   (GET  "/api/v1/marker/sku-detail/:sku-id" req {:status 200 :body (marker-api/sku-detail-handler req)})
   (GET  "/api/v1/marker/unit-baseline"      req {:status 200 :body (marker-api/unit-baseline-handler req)})
+  (GET  "/api/v1/marker/reconciliation"    req (marker-api/reconciliation-handler req))
   (POST "/api/v1/marker/what-if-recalc"    req (marker-api/what-if-handler req))
 
   ;; Phase 9 — generic schema-driven reports endpoint.
@@ -1394,6 +1474,7 @@
       (transit-mw/wrap-transit-response) ; encode outgoing maps to transit when requested
       (wrap-json-response)               ; fallback: encode maps to JSON for all other requests
       (auth/wrap-api-key)
+      (trace-mw/wrap-request-trace)           ; US2: per-request telemetry span (T024)
       (wrap-cors :access-control-allow-origin (cors-origin-patterns)
                  :access-control-allow-methods [:get :post :put :delete :options])
       (body-limit/wrap-content-length-limit)

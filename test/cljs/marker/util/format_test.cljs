@@ -2,7 +2,8 @@
   "Unit tests for marker.util.format — pure function coverage.
    Run via: shadow-cljs compile test  (target :node-test, autorun true)"
   (:require [cljs.test :refer [deftest is testing run-tests]]
-            [marker.util.format :as fmt]))
+            [marker.util.format :as fmt]
+            [marker.ui.metric-hint :as mh]))
 
 ;; ---- format-rub ----
 
@@ -112,3 +113,108 @@
     (is (= "2,5×" (fmt/format-mul 2.5))))
   (testing "nil"
     (is (= "—" (fmt/format-mul nil)))))
+
+;; ---- format-days ----
+
+(deftest format-days-basic
+  (testing "day count with Дн. suffix"
+    (is (= (str "12 Дн.") (fmt/format-days 12))))
+  (testing "thousands separated"
+    (is (= (str "1 000 Дн.") (fmt/format-days 1000))))
+  (testing "nil returns em-dash"
+    (is (= "—" (fmt/format-days nil))))
+  (testing "NaN returns em-dash"
+    (is (= "—" (fmt/format-days js/NaN)))))
+
+;; ---- format-suffixed ----
+
+(deftest format-suffixed-suffixes
+  (testing ":rub"
+    (is (= (str "1 234 ₽") (fmt/format-suffixed 1234 :rub))))
+  (testing ":pct"
+    (is (= "12,3%" (fmt/format-suffixed 12.3 :pct))))
+  (testing ":qty"
+    (is (= (str "42 шт") (fmt/format-suffixed 42 :qty))))
+  (testing ":days"
+    (is (= (str "7 Дн.") (fmt/format-suffixed 7 :days))))
+  (testing ":mul"
+    (is (= "1,5×" (fmt/format-suffixed 1.5 :mul))))
+  (testing ":none → plain int"
+    (is (= (str "1 000") (fmt/format-suffixed 1000 :none))))
+  (testing "nil suffix → plain int"
+    (is (= (str "1 000") (fmt/format-suffixed 1000 nil))))
+  (testing "unknown suffix → plain int"
+    (is (= (str "1 000") (fmt/format-suffixed 1000 :bananas)))))
+
+(deftest format-suffixed-nil-value
+  (testing "nil value ALWAYS → em-dash regardless of suffix"
+    (is (= "—" (fmt/format-suffixed nil :rub)))
+    (is (= "—" (fmt/format-suffixed nil :pct)))
+    (is (= "—" (fmt/format-suffixed nil :qty)))
+    (is (= "—" (fmt/format-suffixed nil :days)))
+    (is (= "—" (fmt/format-suffixed nil :mul)))
+    (is (= "—" (fmt/format-suffixed nil :none)))
+    (is (= "—" (fmt/format-suffixed nil nil)))))
+
+;; ---- format-decimal-str / format-decimal-rub ----
+
+(deftest format-decimal-str-precision
+  (testing "negative decimal string → grouped unicode-minus, fraction dropped"
+    (is (= (str "−742 000") (fmt/format-decimal-str "-742000.00"))))
+  (testing "positive decimal string grouped, rounded half-up"
+    (is (= (str "1 234 568") (fmt/format-decimal-str "1234567.99"))))
+  (testing "no fractional part"
+    (is (= (str "500") (fmt/format-decimal-str "500"))))
+  (testing "explicit plus sign stripped"
+    (is (= (str "1 000") (fmt/format-decimal-str "+1000.00"))))
+  (testing "precision beyond js double is preserved in integer grouping"
+    (is (= (str "9 007 199 254 740 993")
+           (fmt/format-decimal-str "9007199254740993.00"))))
+  (testing "nil / blank → em-dash"
+    (is (= "—" (fmt/format-decimal-str nil)))
+    (is (= "—" (fmt/format-decimal-str "")))))
+
+(deftest format-decimal-rub-basic
+  (testing "appends ruble unit"
+    (is (= (str "−742 000 ₽") (fmt/format-decimal-rub "-742000.00"))))
+  (testing "positive with unit"
+    (is (= (str "1 000 ₽") (fmt/format-decimal-rub "1000.00"))))
+  (testing "nil / blank → em-dash"
+    (is (= "—" (fmt/format-decimal-rub nil)))
+    (is (= "—" (fmt/format-decimal-rub "")))))
+
+(deftest format-decimal-str-rounds-half-up
+  (testing "fraction ≥ .50 bumps the ruble (string-exact, no parseFloat)"
+    (is (= "1" (fmt/format-decimal-str "0.75")))
+    (is (= (str "1 000") (fmt/format-decimal-str "999.99")))
+    (is (= (str "742 000") (fmt/format-decimal-str "742000.49"))))
+  (testing "negative rounds on magnitude with unicode minus"
+    (is (= (str "−1") (fmt/format-decimal-str "-0.75"))))
+  (testing "never renders «−0»"
+    (is (= "0" (fmt/format-decimal-str "-0.25")))
+    (is (= "0" (fmt/format-decimal-str "-0.00")))))
+
+;; ---- delta-class (marker.ui.metric-hint) truth table ----
+
+(deftest delta-class-positive-if-grow
+  (testing "revenue-like: growth good"
+    (is (= "up"   (mh/delta-class 10 true)))
+    (is (= "down" (mh/delta-class -10 true)))))
+
+(deftest delta-class-cost-like
+  (testing "cost-like: growth bad → inverted colours"
+    (is (= "down" (mh/delta-class 10 false)))
+    (is (= "up"   (mh/delta-class -10 false)))))
+
+(deftest delta-class-flat
+  (testing "nil delta → flat"
+    (is (= "flat" (mh/delta-class nil true)))
+    (is (= "flat" (mh/delta-class nil false))))
+  (testing "zero delta → flat"
+    (is (= "flat" (mh/delta-class 0 true)))
+    (is (= "flat" (mh/delta-class 0 false))))
+  (testing "within neutral band → flat"
+    (is (= "flat" (mh/delta-class 0.01 true)))
+    (is (= "flat" (mh/delta-class -0.01 false))))
+  (testing "NaN → flat"
+    (is (= "flat" (mh/delta-class js/NaN true)))))

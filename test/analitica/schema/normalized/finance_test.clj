@@ -55,3 +55,21 @@
                  "\nFirst 3 errors: " (vec (take 3 bad)))))
       (do (println "  (skipped — no ANALITICA_TEST_DB / ANALITICA_DB set)")
           (is true "skipped — no DB configured")))))
+
+;; ---------------------------------------------------------------------------
+;; T005 (spec 012) — :net-sales optional key + YM negative :for-pay
+;; ---------------------------------------------------------------------------
+
+(deftest net-sales-optional-key
+  (testing "FinanceRow accepts optional :net-sales (spec 012)"
+    (is (sut/valid? (assoc minimal-row :net-sales 1700.0)) "present numeric")
+    (is (sut/valid? (assoc minimal-row :net-sales nil))    "explicit nil")
+    (is (sut/valid? minimal-row)                           "absent (optional)")))
+
+(deftest ym-negative-for-pay-allowed
+  (testing "YM sale row :for-pay may be negative (loss-making SKU — FR-005/RFC-15 exception)"
+    (let [row (assoc minimal-row :marketplace :ym :for-pay -569.4 :net-sales 2544.0)]
+      (is (sut/valid? row))
+      (is (nil? (sut/explain row)))))
+  (testing "WB row without :net-sales remains valid (net == gross)"
+    (is (sut/valid? (assoc minimal-row :marketplace :wb)))))

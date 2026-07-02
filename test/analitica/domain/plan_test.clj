@@ -3,6 +3,10 @@
             [analitica.domain.plan :as plan]
             analitica.test-helpers))
 
+;; ---------------------------------------------------------------------------
+;; US4 — Per-SKU plan targets, precedence, variance, import parser
+;; ---------------------------------------------------------------------------
+
 (use-fixtures :once analitica.test-helpers/with-test-db)
 
 (deftest run-rate-mid-month-uses-7d-velocity
@@ -196,3 +200,266 @@
   (plan/delete-plan! {:period-month "2026-05"
                       :marketplace "wb" :metric "revenue"})
   (is (zero? (count (plan/fetch-plans "2026-05")))))
+
+;; ---------------------------------------------------------------------------
+;; Per-SKU round-trip
+;; ---------------------------------------------------------------------------
+
+(deftest save-plan-sku-insert-then-fetch
+  (testing "Per-SKU row round-trips through SQLite"
+    (plan/clear-month! "2026-06")
+    (plan/save-plan! {:period-month "2026-06"
+                      :marketplace  "wb"
+                      :metric       "revenue"
+                      :sku          "ART-001"
+                      :target-value 120000.0})
+    (let [rows (plan/fetch-plans "2026-06")]
+      (is (= 1 (count rows)))
+      (is (= "ART-001" (-> rows first :sku)))
+      (is (= 120000.0  (-> rows first :target-value))))))
+
+(deftest save-plan-sku-upsert-overwrites-same-key
+  (testing "Same (period, mp, metric, sku) upserts — last write wins"
+    (plan/clear-month! "2026-06")
+    (plan/save-plan! {:period-month "2026-06" :marketplace "wb"
+                      :metric "revenue" :sku "ART-001" :target-value 100.0})
+    (plan/save-plan! {:period-month "2026-06" :marketplace "wb"
+                      :metric "revenue" :sku "ART-001" :target-value 250.0})
+    (let [rows (plan/fetch-plans "2026-06")]
+      (is (= 1 (count rows)))
+      (is (= 250.0 (-> rows first :target-value))))))
+
+(deftest save-plan-sku-and-mp-aggregate-coexist
+  (testing "Per-SKU row and MP-aggregate row (sku='') are distinct keys"
+    (plan/clear-month! "2026-06")
+    (plan/save-plan! {:period-month "2026-06" :marketplace "wb"
+                      :metric "revenue" :target-value 500000.0})
+    (plan/save-plan! {:period-month "2026-06" :marketplace "wb"
+                      :metric "revenue" :sku "ART-001" :target-value 120000.0})
+    (let [rows (plan/fetch-plans "2026-06")]
+      (is (= 2 (count rows))))))
+
+;; ---------------------------------------------------------------------------
+;; lookup-plan-sku — most-specific precedence
+;; ---------------------------------------------------------------------------
+
+(deftest lookup-plan-sku-per-sku-beats-per-mp
+  (testing "Per-SKU target (sku=ART-001) wins over per-MP aggregate (sku='')"
+    (let [rows [{:period-month "2026-06" :marketplace "wb" :metric "revenue"
+                 :sku "ART-001" :target-value 120000.0}
+                {:period-month "2026-06" :marketplace "wb" :metric "revenue"
+                 :sku "" :target-value 500000.0}]]
+      (is (= 120000.0
+             (plan/lookup-plan-sku rows {:period-month "2026-06"
+                                         :marketplace  :wb
+                                         :metric       :revenue
+                                         :sku          "ART-001"}))))))
+
+(deftest lookup-plan-sku-falls-back-to-per-mp
+  (testing "When no per-SKU row exists, falls back to per-MP aggregate (sku='')"
+    (let [rows [{:period-month "2026-06" :marketplace "wb" :metric "revenue"
+                 :sku "" :target-value 500000.0}]]
+      (is (= 500000.0
+             (plan/lookup-plan-sku rows {:period-month "2026-06"
+                                         :marketplace  :wb
+                                         :metric       :revenue
+                                         :sku          "ART-002"}))))))
+
+(deftest lookup-plan-sku-falls-back-to-all-mp
+  (testing "No per-SKU, no per-MP → falls back to all-MP aggregate"
+    (let [rows [{:period-month "2026-06" :marketplace "all" :metric "revenue"
+                 :sku "" :target-value 999000.0}]]
+      (is (= 999000.0
+             (plan/lookup-plan-sku rows {:period-month "2026-06"
+                                         :marketplace  :wb
+                                         :metric       :revenue
+                                         :sku          "ART-001"}))))))
+
+(deftest lookup-plan-sku-returns-nil-when-no-match
+  (is (nil? (plan/lookup-plan-sku [] {:period-month "2026-06"
+                                       :marketplace  :wb
+                                       :metric       :revenue
+                                       :sku          "ART-001"}))))
+
+(deftest lookup-plan-sku-per-sku-per-mp-beats-per-sku-all-mp
+  (testing "Full precedence: (mp, sku) > (mp, '') > (all, '')"
+    (let [rows [{:period-month "2026-06" :marketplace "wb"  :metric "revenue"
+                 :sku "ART-001" :target-value 120000.0}
+                {:period-month "2026-06" :marketplace "wb"  :metric "revenue"
+                 :sku "" :target-value 500000.0}
+                {:period-month "2026-06" :marketplace "all" :metric "revenue"
+                 :sku "" :target-value 999000.0}]]
+      ;; most-specific wins
+      (is (= 120000.0
+             (plan/lookup-plan-sku rows {:period-month "2026-06"
+                                         :marketplace  :wb
+                                         :metric       :revenue
+                                         :sku          "ART-001"})))
+      ;; per-MP aggregate wins over all-MP when no per-SKU match
+      (is (= 500000.0
+             (plan/lookup-plan-sku rows {:period-month "2026-06"
+                                         :marketplace  :wb
+                                         :metric       :revenue
+                                         :sku          "ART-999"}))))))
+
+;; ---------------------------------------------------------------------------
+;; variance computation
+;; ---------------------------------------------------------------------------
+
+(deftest variance-plan-nil-yields-nil-fields
+  (testing "plan=nil → variance-abs and variance-pct both nil (not −100%)"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :revenue
+                                       :plan nil :actual 50000.0})]
+      (is (nil? (:variance-abs row)))
+      (is (nil? (:variance-pct row))))))
+
+(deftest variance-plan-zero-actual-is-full-miss
+  (testing "plan>0, actual=0 → variance-abs=−plan, variance-pct=−100.0"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :revenue
+                                       :plan 100000.0 :actual 0.0})]
+      (is (= -100000.0 (:variance-abs row)))
+      (is (= -100.0    (:variance-pct row))))))
+
+(deftest variance-normal-calculation
+  (testing "Normal case: actual=120000, plan=100000 → abs=+20000, pct=+20.0"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :revenue
+                                       :plan 100000.0 :actual 120000.0})]
+      (is (= 20000.0 (:variance-abs row)))
+      (is (= 20.0    (:variance-pct row))))))
+
+(deftest variance-underperformance
+  (testing "actual=80000, plan=100000 → abs=−20000, pct=−20.0"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :revenue
+                                       :plan 100000.0 :actual 80000.0})]
+      (is (= -20000.0 (:variance-abs row)))
+      (is (= -20.0    (:variance-pct row))))))
+
+(deftest variance-plan-zero-pct-nil
+  (testing "plan=0 (edge) → variance-pct=nil to avoid divide-by-zero"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :revenue
+                                       :plan 0.0 :actual 50000.0})]
+      ;; plan=0 is unusual (import rejects non-positive), but guard is present
+      (is (nil? (:variance-pct row))))))
+
+(deftest variance-preserves-sku-and-metric
+  (testing "PlanFactRow shape: :sku and :metric are passed through"
+    (let [row (plan/compute-variance {:sku "ART-001" :metric :orders
+                                       :plan 500.0 :actual 450.0})]
+      (is (= "ART-001" (:sku row)))
+      (is (= :orders   (:metric row))))))
+
+;; ---------------------------------------------------------------------------
+;; import parser (parse-import-rows)
+;; ---------------------------------------------------------------------------
+
+(def ^:private valid-skus #{"ART-001" "ART-002" "ART-003"})
+
+(deftest import-parser-accepts-valid-rows
+  (testing "Valid CSV rows are all loaded, outcome totals correct"
+    (let [raw  [{:sku "ART-001" :metric "revenue"      :target-value "100000"}
+                {:sku "ART-002" :metric "gross_profit" :target-value "20000"}
+                {:sku "ART-003" :metric "orders"       :target-value "50"}]
+          out  (plan/parse-import-rows raw {:period-month "2026-06"
+                                            :marketplace  "wb"
+                                            :known-skus   valid-skus})]
+      (is (= 3 (:total out)))
+      (is (= 3 (:loaded out)))
+      (is (= 0 (:rejected out)))
+      (is (empty? (:errors out))))))
+
+(deftest import-parser-rejects-unknown-sku
+  (testing "SKU not in catalogue → rejected with reason"
+    (let [raw [{:sku "UNKNOWN-X" :metric "revenue" :target-value "5000"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 1 (:rejected out)))
+      (is (= 0 (:loaded out)))
+      (is (= "UNKNOWN-X" (-> out :errors first :sku))))))
+
+(deftest import-parser-rejects-unknown-metric
+  (testing "Metric string not in canonical slug set → rejected"
+    (let [raw [{:sku "ART-001" :metric "made_up_metric" :target-value "5000"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 1 (:rejected out)))
+      (is (some? (-> out :errors first :reason))))))
+
+(deftest import-parser-rejects-non-positive-target
+  (testing "target_value ≤ 0 → rejected"
+    (let [raw-neg  [{:sku "ART-001" :metric "revenue" :target-value "-1"}]
+          raw-zero [{:sku "ART-001" :metric "revenue" :target-value "0"}]
+          out-neg  (plan/parse-import-rows raw-neg  {:period-month "2026-06"
+                                                     :marketplace  "wb"
+                                                     :known-skus   valid-skus})
+          out-zero (plan/parse-import-rows raw-zero {:period-month "2026-06"
+                                                     :marketplace  "wb"
+                                                     :known-skus   valid-skus})]
+      (is (= 1 (:rejected out-neg)))
+      (is (= 1 (:rejected out-zero))))))
+
+(deftest import-parser-rejects-non-numeric-target
+  (testing "target_value not parseable as number → rejected"
+    (let [raw [{:sku "ART-001" :metric "revenue" :target-value "abc"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 1 (:rejected out))))))
+
+(deftest import-parser-coerces-comma-decimal
+  (testing "target_value with comma separator (e.g. '100,50') is parsed as 100.5"
+    (let [raw [{:sku "ART-001" :metric "revenue" :target-value "100,50"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 1 (:loaded out)))
+      (is (== 100.5 (-> out :rows first :target-value))
+          "parsed value should equal 100.5"))))
+
+(deftest import-parser-coerces-interim-metric-strings
+  (testing "Interim strings coerce to canonical keyword slugs"
+    (let [raw [{:sku "ART-001" :metric "gross_profit"      :target-value "20000"}
+               {:sku "ART-002" :metric "profit_margin_pct" :target-value "15"}
+               {:sku "ART-003" :metric "ad_spend"          :target-value "5000"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 3 (:loaded out)))
+      (let [metrics (mapv :metric (:rows out))]
+        (is (= :gross-margin  (nth metrics 0)))
+        (is (= :margin-pct    (nth metrics 1)))
+        (is (= :advertising   (nth metrics 2)))))))
+
+(deftest import-parser-mixed-ok-bad-returns-both
+  (testing "Mix of valid and invalid rows: outcome correctly splits ok/bad"
+    (let [raw [{:sku "ART-001" :metric "revenue" :target-value "100000"}
+               {:sku "GHOST"   :metric "revenue" :target-value "999"}
+               {:sku "ART-002" :metric "orders"  :target-value "bad"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 3 (:total out)))
+      (is (= 1 (:loaded out)))
+      (is (= 2 (:rejected out)))
+      (is (= 2 (count (:errors out)))))))
+
+(deftest import-parser-duplicate-last-wins
+  (testing "Duplicate (period,mp,metric,sku) within file → last-wins on output rows"
+    (let [raw [{:sku "ART-001" :metric "revenue" :target-value "100000"}
+               {:sku "ART-001" :metric "revenue" :target-value "200000"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 2 (:total out)))
+      ;; both are "valid" — last-wins dedup happens at upsert level;
+      ;; parse-import-rows reports both as loaded (dedup is DB responsibility)
+      (is (= 2 (:loaded out))))))
+
+(deftest import-parser-empty-sku-string-is-rejected
+  (testing "Empty SKU string is rejected as unknown SKU"
+    (let [raw [{:sku "" :metric "revenue" :target-value "50000"}]
+          out (plan/parse-import-rows raw {:period-month "2026-06"
+                                           :marketplace  "wb"
+                                           :known-skus   valid-skus})]
+      (is (= 1 (:rejected out))))))

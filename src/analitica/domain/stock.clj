@@ -83,7 +83,13 @@
   (let [sales-by-art (->> sales-data
                           (filter #(= :sale (:type %)))
                           (group-by :article)
-                          (map (fn [[art items]] [art (count items)]))
+                          ;; FR-012 (R4): turnover base = Σ(sold quantity), NOT (count items).
+                          ;; A single 5-unit sale must count as 5 units of velocity, not 1
+                          ;; event. `math/unit-qty` coalesces a quantity-less WB row to 1
+                          ;; unit, preserving the old count semantics ONLY where quantity is
+                          ;; genuinely absent (so WB is not regressed).
+                          (map (fn [[art items]]
+                                 [art (reduce + 0 (map math/unit-qty items))]))
                           (into {}))]
     (->> stock-by-article
          (map (fn [s]
@@ -102,6 +108,136 @@
                                  (nil? a) 1
                                  (nil? b) -1
                                  :else (compare a b)))))))
+
+;; ---------------------------------------------------------------------------
+;; 016-US2 — Inventory capitalization + coverage-aware GMROI
+;;
+;; Pure functions (DB-agnostic) so every money formula has a fixture invariant
+;; test (spec 016 P3/P7). The DB-reading orchestrator `capitalization` sits at
+;; the bottom and simply wires cost_prices + stocks + stocks_history + sales
+;; into these pure fns; the web handler consumes its output verbatim.
+;; ---------------------------------------------------------------------------
+
+(defn capitalization-by-cost
+  "Capitalization by cost for ONE SKU (FR-007/FR-013):
+     unit-cost-basis × stock-qty
+   `unit-cost-basis` = cost + fulfilment + VAT (scalar from cost_prices).
+   Returns nil when the basis is nil (missing cost-price) — rendered '—',
+   NEVER a real 0 (FR-013 N/A discipline)."
+  [unit-cost-basis stock-qty]
+  (when (some? unit-cost-basis)
+    (math/round2 (* (double unit-cost-basis) (or stock-qty 0)))))
+
+(defn capitalization-by-price
+  "Capitalization by price for ONE SKU (FR-008):
+     period-weighted-avg-retail × stock-qty
+   The weighted-avg is over the SELECTED period (configurable window), NOT a
+   fixed last-full-week snapshot (§10.6 AVOID). Returns nil when no price."
+  [wavg-price stock-qty]
+  (when (some? wavg-price)
+    (math/round2 (* (double wavg-price) (or stock-qty 0)))))
+
+(defn wavg-retail
+  "Revenue-weighted average retail price over a seq of period sale rows for
+   one article: Σ(retail-amount) / Σ(quantity). Returns nil when no units
+   were sold (denominator 0), so cap-by-price becomes N/A rather than 0."
+  [sale-rows]
+  (let [units   (reduce + 0 (map math/unit-qty sale-rows))
+        revenue (reduce + 0.0 (map #(or (:retail-amount %) 0.0) sale-rows))]
+    (when (pos? units)
+      (math/round2 (/ revenue units)))))
+
+(defn- covered-daily-caps
+  "Per-day capitalization-by-cost over COVERED days only (FR-010).
+   A day is COVERED iff it has a `stocks_history` row carrying collected
+   (non-zero) stock. Days with no collected stock are excluded from BOTH the
+   numerator basis (this series) AND the denominator (its count). History rows
+   may span multiple warehouses per day → summed per snapshot-date first.
+
+   Returns a vector of per-day cap-by-cost doubles (empty ⇒ zero coverage)."
+  [unit-cost-basis history-rows]
+  (if (nil? unit-cost-basis)
+    []
+    (->> history-rows
+         (group-by :snapshot-date)
+         (map (fn [[_date rows]]
+                (reduce + 0 (map #(or (:quantity %) 0) rows))))
+         (filter pos?)                       ; collected (non-zero) stock only
+         (mapv #(math/round2 (* (double unit-cost-basis) %))))))
+
+(defn gmroi-inputs
+  "Coverage-aware GMROI for ONE SKU over a period (FR-009/FR-010/FR-011/FR-013).
+
+   Args map:
+     :article          identifier (echoed back)
+     :unit-cost-basis  scalar cost basis (nil ⇒ N/A)
+     :net-profit       MP-level net profit for the period (TS-def numerator,
+                       NOT textbook gross-margin — FR-009)
+     :history          stocks_history rows for the SKU in the window
+     :days-in-period   integer day count of the selected period
+
+   Returns:
+     {:article :net-profit :daily-cap-series :covered-days :avg-inventory
+      :gmroi :gmroi-annualized}
+
+   Semantics:
+     avg-inventory = mean(per-day cap-by-cost over COVERED days only).
+     gmroi         = net-profit / avg-inventory.
+     Zero covered days OR nil cost-basis OR nil net-profit ⇒ :not-applicable
+       (NEVER 0 or ∞, FR-013).
+     gmroi-annualized = gmroi × (365 / days-in-period)."
+  [{:keys [article unit-cost-basis net-profit history days-in-period]}]
+  (let [series       (covered-daily-caps unit-cost-basis history)
+        covered-days (count series)
+        avg-inv      (when (pos? covered-days)
+                       (math/round2 (/ (reduce + 0.0 series) covered-days)))
+        gmroi        (if (and avg-inv (pos? avg-inv) (some? net-profit))
+                       (math/round2 (/ (double net-profit) avg-inv))
+                       :not-applicable)
+        annualized   (if (and (number? gmroi) (pos? (or days-in-period 0)))
+                       (math/round2 (* gmroi (/ 365.0 days-in-period)))
+                       :not-applicable)]
+    {:article          article
+     :net-profit       net-profit
+     :daily-cap-series series
+     :covered-days     covered-days
+     :avg-inventory    avg-inv
+     :gmroi            gmroi
+     :gmroi-annualized annualized}))
+
+(defn capitalize
+  "Aggregate capitalization-by-cost / by-price + totals over a seq of raw
+   `stocks` rows (FR-007/FR-008/FR-013/FR-014). Pure — takes lookup fns so it
+   is DB-agnostic and fixture-testable.
+
+   Args:
+     stocks    raw stock rows (multiple warehouses per article)
+     :cost-fn  (fn [article] -> unit-cost-basis|nil)   default: const nil
+     :price-fn (fn [article] -> wavg-retail|nil)        default: const nil
+
+   Returns {:per-sku [Capitalization…] :totals {…}} matching
+   contracts/stock-capitalization.edn. `:stock-qty` = :quantity-full (incl.
+   in-transit) so `:stock-qty-total` ties to `(:total-full (totals stocks))`."
+  [stocks & {:keys [cost-fn price-fn] :or {cost-fn (constantly nil)
+                                           price-fn (constantly nil)}}]
+  (let [per-sku (->> (by-article stocks)
+                     (mapv (fn [s]
+                             (let [art   (:article s)
+                                   qty   (or (:quantity-full s) 0)
+                                   basis (cost-fn art)
+                                   price (price-fn art)]
+                               {:article         art
+                                :stock-qty       qty
+                                :unit-cost-basis basis
+                                :cap-by-cost     (capitalization-by-cost basis qty)
+                                :wavg-price      price
+                                :cap-by-price    (capitalization-by-price price qty)}))))]
+    {:per-sku per-sku
+     :totals  {:cap-by-cost-total  (math/round2 (reduce + 0.0 (keep :cap-by-cost per-sku)))
+               :cap-by-price-total (math/round2 (reduce + 0.0 (keep :cap-by-price per-sku)))
+               :stock-qty-total    (:total-full (totals stocks))
+               :sku-count          (count per-sku)
+               :na-cost-count      (count (filter #(nil? (:cap-by-cost %)) per-sku))}}))
 
 ;; ---------------------------------------------------------------------------
 ;; Reports

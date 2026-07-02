@@ -2,6 +2,7 @@
   (:require [analitica.domain.sales :as sales]
             [analitica.domain.finance :as finance]
             [analitica.domain.pnl :as pnl]
+            [analitica.domain.trends :as trends]
             [analitica.util.time :as t]
             [analitica.util.period :as period]))
 
@@ -177,8 +178,11 @@
                                     :from from :to to)]
         {:labels ["Выручка" "Комиссия МП" "Логистика" "Хранение" "Себестоимость" "Реклама" "Чистая прибыль"]
          :datasets [{:label "P&L"
+                     ;; canon F-1: «Комиссия МП» is :mp-commission (already
+                     ;; sign-negative from pnl/calculate); :wb-reward is the
+                     ;; PVZ reimbursement, not the commission.
                      :data [(:revenue pnl-data)
-                            (- (:wb-reward pnl-data))
+                            (:mp-commission pnl-data)
                             (- (:logistics pnl-data))
                             (- (:storage pnl-data))
                             (- (:cogs pnl-data))
@@ -241,26 +245,22 @@
             ;; Take articles with at least 3 operations, sorted by buyout rate
             filtered (->> buyout-data
                           (filter #(>= (:ordered %) 3))
-                          (sort-by :buyout-rate)
+                          (sort-by (fn [b] (or (:non-return-rate b) (:buyout-rate b))))
                           (take 20))
             labels (mapv :article filtered)
-            data (mapv :buyout-rate filtered)]
+            data (mapv (fn [b] (or (:non-return-rate b) (:buyout-rate b))) filtered)]
         {:labels labels
-         :datasets [{:label "% выкупа"
+         :datasets [{:label "Доля невозвратов"
                      :data data}]})
       
-      ;; Trends: grouped bar chart - WoW and MoM
+      ;; Trends: single period-vs-previous bar chart (LT4: period + marketplace forwarded)
       :trends
-      (let [wow-data ((requiring-resolve 'analitica.domain.trends/wow))
-            mom-data ((requiring-resolve 'analitica.domain.trends/mom))
-            labels (mapv :metric wow-data)
-            wow-values (mapv :change-pct wow-data)
-            mom-values (mapv :change-pct mom-data)]
+      (let [data   (trends/wow period :marketplace marketplace)
+            labels (mapv :metric data)
+            values (mapv :change-pct data)]
         {:labels labels
-         :datasets [{:label "WoW %"
-                     :data wow-values}
-                    {:label "MoM %"
-                     :data mom-values}]})
+         :datasets [{:label "Изм.% к предыдущему периоду"
+                     :data values}]})
       
       ;; Default: empty chart
       {:labels []

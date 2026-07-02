@@ -157,7 +157,7 @@
 (defn- normalize-ozon-operation [op-type]
   (case op-type
     "OperationAgentDeliveredToCustomer"        "sale"
-    "OperationAgentDeliveredToCustomerCanceled" "sale"
+    "OperationAgentDeliveredToCustomerCanceled" "return"
     "ClientReturnAgentOperation"               "return"
     "OperationReturnGoodsFBSofRMS"             "return"
     "other"))

@@ -103,14 +103,32 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest parse-coverage-cell-map
-  (testing "valid map returns normalised map"
-    (let [result (parse-coverage-cell {:from "2026-04-01" :to "2026-04-30" :days 30})]
-      (is (= "2026-04-01" (:from result)))
-      (is (= "2026-04-30" (:to result)))
-      (is (= 30           (:days result)))))
-  (testing "map without days defaults days to 0"
-    (let [result (parse-coverage-cell {:from "2026-04-01" :to "2026-04-30"})]
-      (is (= 0 (:days result))))))
+  (testing "valid descriptor map returns normalised map with new shape"
+    (let [cell   {:kind "event-stream" :status "full"
+                  :present 30 :expected 30
+                  :span {:from "2026-04-01" :to "2026-04-30"}
+                  :holes []}
+          result (parse-coverage-cell cell)]
+      (is (= "event-stream"  (:kind result)))
+      (is (= "full"          (:status result)))
+      (is (= 30              (:present result)))
+      (is (= {:from "2026-04-01" :to "2026-04-30"} (:span result)))
+      (is (= []              (:holes result)))))
+  (testing "descriptor with keyword kind/status is coerced to strings"
+    (let [cell   {:kind :snapshot :status :partial
+                  :present 10 :expected 30
+                  :as-of "2026-04-30"}
+          result (parse-coverage-cell cell)]
+      (is (= "snapshot" (:kind result)))
+      (is (= "partial"  (:status result)))
+      (is (= "2026-04-30" (:as-of result)))))
+  (testing "descriptor with :status absent returns map with nil :status"
+    (let [result (parse-coverage-cell {:kind "event-stream" :present 5})]
+      (is (= "event-stream" (:kind result)))
+      (is (nil? (:status result)))))
+  (testing "descriptor with :status \"missing\" returns nil"
+    (let [result (parse-coverage-cell {:kind "event-stream" :status "missing"})]
+      (is (nil? result)))))
 
 (deftest parse-coverage-cell-absent
   (testing "nil returns nil"

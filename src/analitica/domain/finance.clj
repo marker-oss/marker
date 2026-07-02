@@ -154,14 +154,20 @@
   [article lines storage-by-article]
   (let [sales-lines  (filter sale-row? lines)
         return-lines (filter return-row? lines)
-        ;; Linear in quantity: cost-per-unit × units. The previous
-        ;; `(max 1 (or quantity 1))` clamp silently overstated cogs by
-        ;; 30× for spread rows (quantity = 1/30 → floored to 1). It also
-        ;; charged a unit cost for service rows where quantity = 0/nil.
-        ;; See finance-cogs-test for regression coverage.
-        total-cost   (reduce + 0.0
-                       (map #(* (line-cost %) (or (:quantity %) 0))
-                            sales-lines))
+        ;; FR-004 net-of-returns COGS, computed PER LINE at each line's own unit
+        ;; cost, then returned units credited back at their own unit cost, clamp ≥0.
+        ;; Per-line (NOT a single first-line cost × net-units) is required because one
+        ;; :article can span barcodes with DIFFERENT 1C costs — a size-suffixed finance
+        ;; article ("6405/Голубой48") misses the strict 1C article key so each line
+        ;; falls through to its own per-barcode cost. Per-line keeps Σ by-sku ==
+        ;; by-article (P7) and is order-independent. The earlier gross formula ignored
+        ;; returns; the even-older `(max 1 qty)` clamp overstated 30× for spread rows
+        ;; (quantity = 1/30 → floored to 1). See finance-cogs-test for regression coverage.
+        ;; (Edge: an article where one barcode's in-period returns exceed its own sales
+        ;; can differ from Σ by-sku by that per-barcode clamp — rare, documented.)
+        sales-cost   (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) sales-lines))
+        returns-cost (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) return-lines))
+        total-cost   (max 0.0 (- sales-cost returns-cost))
         ;; First non-nil :marketplace wins; cross-MP article collisions
         ;; (rare but possible per Sales.7.3) collapse to whichever MP
         ;; appears first in the row order. Caller should disambiguate
@@ -174,6 +180,10 @@
      :sales-qty     (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
      :returns-qty   (reduce + 0 (map #(or (:quantity %) 0) return-lines))
      :revenue       (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
+     ;; spec 012: net-sales = Σ BUYER×qty (post-discount). YM carries this;
+     ;; WB/Ozon rows have :net-sales nil (== gross) → coalesce to 0 so their
+     ;; aggregate is 0.0 and :revenue (retail-amount) is untouched.
+     :net-sales     (math/round2 (reduce + 0.0 (map #(or (:net-sales %) 0) sales-lines)))
      :wb-reward     (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
      :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
      :acquiring     (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
@@ -215,6 +225,7 @@
    :sales-qty     0
    :returns-qty   0
    :revenue       0.0
+   :net-sales     0.0
    :wb-reward     0.0
    :mp-commission 0.0
    :acquiring     0.0
@@ -260,15 +271,14 @@
        (map (fn [[[article barcode] lines]]
               (let [sales-lines  (filter sale-row? lines)
                     return-lines (filter return-row? lines)
-                    ;; Linear in quantity: cost-per-unit × units. The previous
-                    ;; `(max 1 (or quantity 1))` clamp silently overstated cogs
-                    ;; by 30× for Ozon spread rows (quantity = 1/30 → floored
-                    ;; to 1) and fabricated cogs for service rows where
-                    ;; quantity = 0/nil. Mirrors the by-article fix in commit
-                    ;; 2f8bd50; see by-sku-cogs-* tests in finance-cogs-test.
-                    total-cost   (reduce + 0.0
-                                   (map #(* (line-cost %) (or (:quantity %) 0))
-                                        sales-lines))]
+                    ;; FR-004 net-of-returns COGS, per line at each line's own unit
+                    ;; cost minus returned units at their own cost, clamp ≥0. Per-line
+                    ;; matches the by-article path so Σ by-sku == by-article (P7). A
+                    ;; [article,barcode] group is cost-homogeneous, but per-line keeps
+                    ;; the two paths formula-identical. See by-sku-cogs-* in finance-cogs-test.
+                    sku-sales-cost   (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) sales-lines))
+                    sku-returns-cost (reduce + 0.0 (map #(* (line-cost %) (or (:quantity %) 0)) return-lines))
+                    total-cost       (max 0.0 (- sku-sales-cost sku-returns-cost))]
                 {:article     article
                  :barcode     barcode
                  :tech-size   (when (and size-map barcode) (get size-map barcode))
@@ -277,6 +287,8 @@
                  :sales-qty   (reduce + 0 (map #(or (:quantity %) 0) sales-lines))
                  :returns-qty (reduce + 0 (map #(or (:quantity %) 0) return-lines))
                  :revenue     (math/round2 (reduce + 0.0 (map #(or (:retail-amount %) 0) sales-lines)))
+                 ;; spec 012: net-sales = Σ BUYER×qty; nil-safe for WB/Ozon.
+                 :net-sales   (math/round2 (reduce + 0.0 (map #(or (:net-sales %) 0) sales-lines)))
                  :wb-reward   (math/round2 (reduce + 0.0 (map #(or (:wb-reward %) 0) lines)))
                  :mp-commission (math/round2 (reduce + 0.0 (map #(or (:mp-commission %) 0) sales-lines)))
                  :acquiring   (math/round2 (reduce + 0.0 (map #(or (:acquiring-fee %) 0) lines)))
@@ -307,6 +319,11 @@
   (let [articles (by-article finance-data)]
     {:total-revenue     (math/round2 (reduce + 0.0 (map :revenue articles)))
      :total-wb-reward   (math/round2 (reduce + 0.0 (map :wb-reward articles)))
+     ;; :total-mp-commission = real marketplace commission (Σ :mp-commission over
+     ;; sales lines). Distinct from :total-wb-reward (ppvz_reward = PVZ pickup
+     ;; income). Aggregated like :total-logistics so the sign convention matches
+     ;; its sibling cost fields in finance breakdowns.
+     :total-mp-commission (math/round2 (reduce + 0.0 (map :mp-commission articles)))
      :total-acquiring   (math/round2 (reduce + 0.0 (map :acquiring articles)))
      :total-spp         (math/round2 (reduce + 0.0 (map :spp-amount articles)))
      :total-logistics   (math/round2 (reduce + 0.0 (map :logistics articles)))

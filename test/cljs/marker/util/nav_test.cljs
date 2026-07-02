@@ -33,8 +33,8 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest section-tabs-listing
-  (testing "finance section lists 7 tabs in order"
-    (is (= [:pnl :unit-calc :unit-table :returns :losses :finance :plan-fact]
+  (testing "finance section lists 8 tabs in order"
+    (is (= [:pnl :unit-calc :unit-table :returns :losses :finance :reconciliation :plan-fact]
            (mapv :id (nav/section-tabs :finance)))))
   (testing "products section lists 5 tabs in order"
     (is (= [:skus :stocks :abc :cost-prices :storage]

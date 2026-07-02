@@ -3,6 +3,9 @@
             [analitica.marketplace.ozon.client :as client]
             [analitica.marketplace.ozon.api :as api]
             [analitica.marketplace.ozon.transform :as transform]
+            [analitica.marketplace.ozon.performance.api :as perf-api]
+            [analitica.marketplace.registry :as registry]
+            [analitica.config :as config]
             [analitica.db :as db])
   (:import [analitica.marketplace.ozon.client OzonClient]))
 
@@ -128,7 +131,18 @@
             (recur (inc attempts)))))))
 
   (fetch-ad-campaigns [_this]
-    [])
+    ;; Spec 011 US2 (T032): delegate to the Ozon Performance client when
+    ;; advertising is configured AND registered; otherwise the baseline empty
+    ;; stub (no creds ⇒ [] ⇒ ad_cost=0, byte-for-byte pre-feature behaviour).
+    ;; This is NOT the primary ad ingest path (ingest-ozon-ads! is) — it only
+    ;; surfaces the campaign list to the legacy domain/ads campaign helper.
+    (if-let [perf (try (when (config/ozon-performance-config)
+                         (try (registry/get-marketplace :ozon-performance)
+                              (catch Exception _ nil)))
+                       (catch Exception _ nil))]
+      (try (perf-api/list-campaigns perf)
+           (catch Exception _ []))
+      []))
 
   (fetch-prices [this]
     (let [items     (api/product-list this)

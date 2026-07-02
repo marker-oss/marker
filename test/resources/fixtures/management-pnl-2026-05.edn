@@ -1,0 +1,9 @@
+{;; Fixture: closed month 2026-05, used by 015 invariant tests (quickstart.md §1)
+ ;; net-profit = revenue − cogs − all MP fees (frozen basis, P&L.1–P&L.6 untouched)
+ :net-profit  700000.0
+ :for-pay     830000.0    ; cash-flow base (УСН Доходы tax-base = for_pay)
+ :revenue     1000000.0   ; gross retail revenue (НДС vat-base = revenue)
+ :cogs        300000.0    ; cost of goods sold (УСН Д−Р deductible when official-cost-price true)
+ :gross-profit 700000.0   ; placeholder — real gross derived by pnl/calculate from above
+ :period-month "2026-05"
+ :marketplace  :ozon}

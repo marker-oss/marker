@@ -114,3 +114,62 @@
       (is (some? (:last-run-at row)) "last-run-at should be populated after fire!")
       (is (= "abc-run-id" (:last-run-id row))
           "last-run-id should match the returned run-id"))))
+
+;; ---------------------------------------------------------------------------
+;; Coverage gap detection + backfill (audit 2026-07-02 P0-2)
+;; ---------------------------------------------------------------------------
+
+(deftest month-seq-inclusive
+  (is (= ["2026-01"] (scheduler/month-seq "2026-01" "2026-01")))
+  (is (= ["2025-12" "2026-01" "2026-02"]
+         (scheduler/month-seq "2025-12" "2026-02"))))
+
+(deftest missing-months-pure
+  (testing "months absent from the present set, edges included"
+    (is (= ["2026-02" "2026-03"]
+           (scheduler/missing-months #{"2026-01" "2026-04"} "2026-01" "2026-04")))
+    (is (= [] (scheduler/missing-months #{"2026-01" "2026-02"} "2026-01" "2026-02")))
+    (is (= ["2026-01" "2026-02" "2026-03"]
+           (scheduler/missing-months #{} "2026-01" "2026-03")))))
+
+(defn- seed-finance-month! [mp event-date]
+  (db/execute!
+    ["INSERT INTO finance (rrd_id, marketplace, date_from, date_to, event_date,
+                           retail_amount, for_pay, synced_at)
+      VALUES (?, ?, ?, ?, ?, 100.0, 90.0, '2026-06-01T00:00:00')"
+     (Math/abs (.hashCode (str mp event-date))) (name mp)
+     event-date event-date event-date]))
+
+(deftest detect-finance-gaps-finds-empty-month
+  (testing "a month with rows is not a gap; an empty interior month is"
+    ;; as-of 2026-06-15, lookback 90d ⇒ covers Mar/Apr/May/Jun.
+    (db/execute! ["DELETE FROM finance WHERE marketplace='wb'"])
+    (seed-finance-month! :wb "2026-04-10")   ; April present
+    (seed-finance-month! :wb "2026-06-05")   ; June (current, partial) present
+    (let [gaps (->> (scheduler/detect-finance-gaps "2026-06-15" 90)
+                    (filter #(= :wb (:marketplace %))))
+          months (set (map :month gaps))]
+      (is (contains? months "2026-05") "empty May flagged as a gap")
+      (is (contains? months "2026-03") "empty March flagged as a gap")
+      (is (not (contains? months "2026-04")) "April has data → not a gap")
+      (is (not (contains? months "2026-06")) "current partial month never a gap")
+      (let [may (first (filter #(= "2026-05" (:month %)) gaps))]
+        (is (= "2026-05-01" (:from may)))
+        (is (= "2026-05-31" (:to may)))))))
+
+(deftest backfill-gaps-invokes-sync-per-gap-idempotently
+  (testing "backfill-gaps! calls the injected start-sync! once per gap with its window"
+    (db/execute! ["DELETE FROM finance WHERE marketplace='wb'"])
+    (db/execute! ["DELETE FROM finance WHERE marketplace='ozon'"])
+    (db/execute! ["DELETE FROM finance WHERE marketplace='ym'"])
+    (seed-finance-month! :wb "2026-05-10")
+    (seed-finance-month! :ozon "2026-05-10")
+    (seed-finance-month! :ym "2026-05-10")
+    (let [calls (atom [])
+          fake  (fn [what & {:keys [marketplace period]}]
+                  (swap! calls conj [what marketplace period]))]
+      ;; as-of 2026-05-20, lookback 40d ⇒ only April+May; April empty for all → 3 gaps.
+      (scheduler/backfill-gaps! fake "2026-05-20" 40)
+      (is (= 3 (count @calls)) "one backfill per (mp, empty April)")
+      (is (every? #(= :finance (first %)) @calls))
+      (is (every? #(= ["2026-04-01" "2026-04-30"] (nth % 2)) @calls)))))

@@ -6,6 +6,7 @@
    over order-level :status. This namespace exercises the full 9-row
    matrix from data-model.md §4."
   (:require [clojure.test :refer [deftest testing is]]
+            [clojure.edn :as edn]
             [analitica.marketplace.ym.transform :as transform]))
 
 ;; ---------------------------------------------------------------------------
@@ -231,8 +232,13 @@
     (is (= "Москва"              (:region row))     "region from order.deliveryRegion.name")
     (is (= 3766.0                (:total-price row)) "BUYER.total = gross buyer price")
     (is (= 3766.0                (:finished-price row)) "BUYER.costPerItem per unit")
-    (is (= 2531.0 (:for-pay row))
-        "MARKETPLACE.total (2874) minus bidFee (343) = net seller payout")
+    ;; Audit 2026-07-02 P1: for_pay is the BUYER amount, not MARKETPLACE − bidFee.
+    ;; bidFee is the bid CAP (351× the real ad charge) and MARKETPLACE is a
+    ;; subsidy proxy; the orders endpoint has no commission breakdown, so the
+    ;; sales table uses the buyer-paid price (commission-netted payout lives in
+    ;; the finance table via order-stats).
+    (is (= 3766.0 (:for-pay row))
+        "for_pay = BUYER.total (sales-table basis; not MP−bidFee)")
     (is (= :sale (:type row)))
     (is (= 1     (:quantity row)))))
 
@@ -265,7 +271,7 @@
       (is (= 1 (count out)))
       (is (= :return (:type (first out))))
       (is (= 500.0 (:total-price (first out))))
-      (is (= 350.0 (:for-pay (first out))) "MARKETPLACE 400 − bidFee 50 = 350"))))
+      (is (= 500.0 (:for-pay (first out))) "for_pay = BUYER.total (P1 basis; not MP−bidFee)"))))
 
 (deftest multi-item-order-produces-row-per-item
   (testing "Multi-item order with mixed item-level statuses splits cleanly"
@@ -304,3 +310,374 @@
       (is (nil? (:total-price (first out))))
       (is (nil? (:for-pay (first out)))
           "No MARKETPLACE price → nil for-pay; never silently 0"))))
+
+;; ---------------------------------------------------------------------------
+;; FR-P4.5: price-basis-mismatch? flag
+;;
+;; YM revenue uses the MARKETPLACE price (shown to customer) while for-pay
+;; uses the BUYER price minus commissions. When they differ beyond rounding,
+;; the margin denominator (MARKETPLACE) and numerator (BUYER-based) are on
+;; different bases, overstating seller economics. We flag — never reconcile.
+;; ---------------------------------------------------------------------------
+
+(deftest price-basis-mismatch-flagged-when-buyer-differs-from-marketplace
+  (testing "BUYER total 800 ≠ MARKETPLACE total 1000 → :price-basis-mismatch? true"
+    (let [order {:id 10 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU1" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 800.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (true? (:price-basis-mismatch? row))
+          "MARKETPLACE 1000 ≠ BUYER 800 → flagged"))))
+
+(deftest price-basis-mismatch-false-when-prices-equal
+  (testing "BUYER total 1000 = MARKETPLACE total 1000 → :price-basis-mismatch? false"
+    (let [order {:id 11 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU2" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 1000.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "equal prices → no mismatch"))))
+
+(deftest price-basis-mismatch-false-when-marketplace-absent
+  (testing "Only BUYER price present (no MARKETPLACE entry) → :price-basis-mismatch? false"
+    (let [order {:id 12 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU3" :count 1
+                          :prices [{:type "BUYER" :total 900.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "missing MARKETPLACE → cannot compare → no flag"))))
+
+(deftest price-basis-mismatch-false-within-epsilon
+  (testing "BUYER 1000.005 vs MARKETPLACE 1000.0 — within 0.01 epsilon → false"
+    (let [order {:id 13 :status "DELIVERED" :creationDate "2026-04-15"
+                 :commissions []
+                 :items [{:shopSku "SKU4" :count 1
+                          :prices [{:type "MARKETPLACE" :total 1000.0}
+                                   {:type "BUYER"       :total 1000.005}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (false? (:price-basis-mismatch? row))
+          "difference 0.005 < epsilon 0.01 → no flag"))))
+
+;; ===========================================================================
+;; Spec 012 — YM revenue / for-pay price-basis alignment (US1)
+;;
+;; CORRECTED basis (owner-approved 2026-07-01, after ground-truth reconciliation
+;; against the TrueStats anchor). The ORIGINAL spec said gross = MARKETPLACE —
+;; DISPROVED: the YM MARKETPLACE price field is a per-item SUBSIDY proxy, not a
+;; pre-discount price. Resolved formula:
+;;   net-sales     = BUYER × qty                         (== TS `sales`)
+;;   subsidy       = Σ SUBSIDY-type ACCRUAL (dedup'd), split per-item
+;;   gross         = (BUYER + subsidy) × qty  -> :retail-amount  (== TS `realisation`)
+;;   :retail-price = BUYER + subsidy (per-unit)
+;;   for_pay       = BUYER − all-comm  (subsidy is a bridge, NOT payout income)
+;;                   sale branch: no Math/abs (negative allowed); return: +abs; adjustment: 0.0
+;; ===========================================================================
+
+(def ^:private basis-fixture
+  (delay (edn/read-string (slurp "test/resources/ym/ym-orders-basis.edn"))))
+
+(defn- fixture-rows []
+  (transform/->finance-from-order-stats @basis-fixture))
+
+(defn- row-for [rows sku]
+  (first (filter #(= sku (:article %)) rows)))
+
+;; ---- T010: for_pay ≤ gross for every SKU (INV-1 / FR-006 / SC-001) --------
+;;
+;; ⚠️ NOT a structural invariant. for_pay = BUYER − Σ(non-ad commissions);
+;; gross = BUYER + subsidy. So for_pay ≤ gross iff (Σ non-ad commissions +
+;; subsidy) ≥ 0. In the NORMAL case (commissions are debits ≥ 0, subsidy ≥ 0)
+;; the invariant holds. It does NOT hold when YM emits a net-NEGATIVE commission
+;; total (a FEE reversal that legitimately raises payout above gross) with zero
+;; subsidy — see `net-negative-commissions-lift-payout-above-gross` below, which
+;; pins the real unclamped behaviour. The basis fixture contains only
+;; normal-case orders (Σ non-ad commissions ≥ 0), so the invariant holds here.
+
+(deftest for-pay-le-gross-per-sku
+  (testing "every basis-fixture row (Σ non-ad commissions ≥ 0, the normal case): :for-pay ≤ :retail-amount (gross)"
+    (let [rows (fixture-rows)]
+      (is (seq rows) "fixture must produce rows")
+      (doseq [row rows]
+        (is (<= (double (:for-pay row)) (double (:retail-amount row)))
+            (str "SKU " (:article row)
+                 " for-pay " (:for-pay row)
+                 " must be ≤ gross " (:retail-amount row)
+                 " (holds because Σ non-ad commissions ≥ 0 for all basis-fixture orders)"))))))
+
+;; ---- Adversarial R1: for_pay ≤ gross is NOT structural --------------------
+;; YM can emit a net-NEGATIVE non-ad commission total — a FEE REVERSAL (a
+;; negative `:actual`) that legitimately RAISES the payout ABOVE gross. We must
+;; NOT clamp (clamping would hide real seller cash). This fixture pins the
+;; ACTUAL unclamped for_pay (> gross) so nobody "fixes" the invariant into a
+;; false clamp.
+
+(deftest net-negative-commissions-lift-payout-above-gross
+  (testing "net-negative all-comm + zero subsidy → for_pay > gross, UNCLAMPED (real cash)"
+    (let [order {:id 800001 :status "DELIVERED" :creationDate "2026-04-11"
+                 :statusUpdateDate "2026-04-21T10:00:00.000+03:00"
+                 :subsidies []                       ; zero subsidy → gross = BUYER
+                 ;; FEE reversal: YM refunds a previously-charged fee as a
+                 ;; NEGATIVE actual. Net non-ad commissions = -300 (a credit).
+                 :commissions [{:type "FEE" :actual -500.0}
+                               {:type "PAYMENT_TRANSFER" :actual 200.0}]
+                 :items [{:shopSku "REV-A" :count 1
+                          :prices [{:type "BUYER" :costPerItem 1000.0 :total 1000.0}
+                                   {:type "MARKETPLACE" :costPerItem 1000.0 :total 1000.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (some? row))
+      (is (= :sale (:operation-kind row)))
+      ;; gross = BUYER + subsidy(0) = 1000; net = BUYER = 1000.
+      (is (= 1000.0 (double (:retail-amount row))) "gross = BUYER, no subsidy")
+      ;; all-comm = (-500 + 200) = -300 ; for_pay = 1000 − (−300) = 1300.
+      (is (= 1300.0 (double (:for-pay row)))
+          "for_pay = BUYER − Σnon-ad-comm = 1000 − (−300) = 1300 (UNCLAMPED)")
+      (is (> (double (:for-pay row)) (double (:retail-amount row)))
+          "for_pay LEGITIMATELY exceeds gross when commissions net-negative — do NOT clamp"))))
+
+;; ---- Adversarial R1b: return with commissions > refund (Math/abs branch) ---
+;; On a return, raw-for-pay = BUYER − all-comm can be NEGATIVE when commissions
+;; exceed the refund. The :return branch applies (Math/abs raw-for-pay), so the
+;; stored payout is the POSITIVE magnitude (netted against the sale leg at
+;; aggregation). This fixture documents that Math/abs behaviour explicitly.
+
+(deftest return-commissions-exceed-refund-abs-branch
+  (testing "return where all-comm > BUYER → raw-for-pay < 0 → stored as Math/abs (positive magnitude)"
+    (let [order {:id 800002 :status "RETURNED" :creationDate "2026-04-09"
+                 :statusUpdateDate "2026-04-19T10:00:00.000+03:00"
+                 :subsidies []
+                 ;; commissions 700 exceed BUYER 500 → raw-for-pay = -200.
+                 :commissions [{:type "FEE" :actual 500.0}
+                               {:type "PAYMENT_TRANSFER" :actual 200.0}]
+                 :items [{:shopSku "RET-A" :count 1
+                          :details [{:itemStatus "RETURNED"}]
+                          :prices [{:type "BUYER" :costPerItem 500.0 :total 500.0}
+                                   {:type "MARKETPLACE" :costPerItem 500.0 :total 500.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (some? row))
+      (is (= :return (:operation-kind row)))
+      ;; raw-for-pay = 500 − 700 = -200 ; return branch → Math/abs → 200.
+      (is (= 200.0 (double (:for-pay row)))
+          "return branch stores Math/abs of a negative raw-for-pay (200), not −200"))))
+
+;; ---- T011: negative payout allowed (INV-2 / FR-005 / SC-006) --------------
+
+(deftest negative-payout-allowed
+  (testing "loss-making SKU (BUYER − commissions < 0) → sale row :for-pay < 0, NOT Math/abs'd"
+    (let [row (row-for (fixture-rows) "LOSS-B")]
+      (is (some? row) "loss-making fixture row present")
+      (is (= :sale (:operation-kind row)))
+      ;; BUYER 2544 − (FEE 900 + PAYMENT_TRANSFER 213 + DELIVERY 2000) = -569.0
+      (is (neg? (double (:for-pay row)))
+          (str ":for-pay must be negative (real cash impact), got " (:for-pay row)))
+      (is (< (double (:for-pay row)) -500.0)
+          "≈ -569, confirms no Math/abs clamp"))))
+
+;; ---- T012: subsidy is a bridge, not payout income (INV-3 / FR-004) --------
+
+(deftest subsidy-is-bridge-not-income
+  (testing "subsidy NOT added to for_pay; gross = net + subsidy (net + subsidy ≈ retail-amount)"
+    (let [row (row-for (fixture-rows) "SUB-A")]
+      (is (some? row))
+      ;; net = BUYER 3741, subsidy 2804, gross should be 6545.
+      (is (= 3741.0 (double (:net-sales row))) "net-sales = BUYER × qty")
+      (is (= 6545.0 (double (:retail-amount row))) "gross = (BUYER + subsidy) × qty")
+      (is (<= (Math/abs (- (+ (double (:net-sales row)) 2804.0)
+                           (double (:retail-amount row))))
+              0.01)
+          "bridge closes: net + subsidy ≈ gross")
+      ;; for_pay = BUYER − all-comm (non-ad). Subsidy must NOT inflate it.
+      ;; all-comm = 756.19 + 104.72 + 0.12 + 425.25 = 1286.28 → for_pay ≈ 2454.72.
+      (is (<= (Math/abs (- (double (:for-pay row)) 2454.72)) 0.01)
+          (str "for_pay = BUYER − all-comm (subsidy excluded), got " (:for-pay row)))
+      (is (< (double (:for-pay row)) (double (:net-sales row)))
+          "for_pay < net (subsidy did not lift payout above buyer-paid)"))))
+
+;; ---- T013: dedup subsidies (INV-4 / FR-007 / FR-008) ----------------------
+
+(deftest dedup-subsidies
+  (testing "4 ACCRUAL entries (2× SUBSIDY dup + 2× YANDEX_CASHBACK) → each logical subsidy once"
+    ;; DEDUP-C: BUYER 2000, subsidies 2×{SUBSIDY ACCRUAL 1000} + 2×{CASHBACK ACCRUAL 150}.
+    ;; dedup by (type, operationType) FIRST-per-group → one SUBSIDY/ACCRUAL 1000.
+    ;; Cashback is NOT part of gross subsidy. gross = 2000 + 1000 = 3000.
+    (let [row (row-for (fixture-rows) "DEDUP-C")]
+      (is (some? row))
+      (is (= 2000.0 (double (:net-sales row))) "net = BUYER × qty")
+      (is (= 3000.0 (double (:retail-amount row)))
+          "gross = BUYER + ONE deduped SUBSIDY (1000), not 2×1000 nor cashback-inflated"))
+    ;; Direct helper check on the raw subsidies vector.
+    (let [subs [{:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                {:amount 1000.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}
+                {:amount 150.0 :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}]
+          deduped (#'transform/dedup-subsidies subs)]
+      ;; deduped total (SUBSIDY only, first-per-group) = 1000.
+      (is (= 1000.0 (double deduped))
+          "dedup-subsidies counts one SUBSIDY/ACCRUAL, excludes cashback from gross bridge"))))
+
+;; ---- Adversarial R3: dedup must be ORDER-INDEPENDENT ----------------------
+;; The v1 "first-per-group" rule is order-dependent when a (type, operationType)
+;; group carries DIFFERENT amounts (observed in real data). dedup-subsidies now
+;; sorts each group deterministically before taking the representative, so
+;; feeding the same subsidies in a different order yields the SAME net accrual.
+
+(deftest dedup-subsidies-order-independent
+  (testing "reversing subsidy order yields identical deduped SUBSIDY accrual (different amounts in group)"
+    (let [subs     [{:amount 1200.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                    {:amount 800.0  :type "SUBSIDY" :operationType "ACCRUAL"}
+                    {:amount 150.0  :type "YANDEX_CASHBACK" :operationType "ACCRUAL"}]
+          forward  (#'transform/dedup-subsidies subs)
+          reversed (#'transform/dedup-subsidies (reverse subs))
+          shuffled (#'transform/dedup-subsidies [(nth subs 1) (nth subs 2) (nth subs 0)])]
+      (is (= forward reversed)
+          "dedup-subsidies is order-independent: forward == reversed")
+      (is (= forward shuffled)
+          "dedup-subsidies is order-independent: forward == shuffled")
+      ;; deterministic representative = smaller amount (800), cashback excluded.
+      (is (= 800.0 (double forward))
+          "with differing amounts in a group, dedup takes the deterministic (min) representative")))
+  (testing "end-to-end: gross for a 2-differing-SUBSIDY order is the same regardless of subsidy order"
+    (let [mk (fn [subs]
+               {:id 810001 :status "DELIVERED" :creationDate "2026-04-06"
+                :statusUpdateDate "2026-04-16T10:00:00.000+03:00"
+                :subsidies subs
+                :commissions [{:type "FEE" :actual 100.0}]
+                :items [{:shopSku "ORD-IND" :count 1
+                         :prices [{:type "BUYER" :total 2000.0}
+                                  {:type "MARKETPLACE" :total 900.0}]}]})
+          subs [{:amount 900.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                {:amount 600.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+          [fwd] (transform/->finance-from-order-stats [(mk subs)])
+          [rev] (transform/->finance-from-order-stats [(mk (reverse subs))])]
+      (is (= (:retail-amount fwd) (:retail-amount rev))
+          "gross is order-independent across subsidy input order")
+      (is (= 2600.0 (double (:retail-amount fwd)))
+          "gross = BUYER 2000 + deterministic min subsidy 600 = 2600"))))
+
+;; ---- T014: gross = BUYER + subsidy, net = BUYER (R4 / FR-001 / FR-002) -----
+;; ⚠️ Supersedes the OLD `sale-row-extracts-nested-prices` expectation that
+;;    :retail-amount = BUYER. That was against the legacy ->sales path AND is
+;;    now the wrong basis for the finance path. This is the finance-path test.
+
+(deftest gross-is-buyer-plus-subsidy-net-is-buyer
+  (testing "BUYER + subsidy = gross; BUYER = net; retail-price = BUYER + subsidy per-unit"
+    (let [row (row-for (fixture-rows) "SUB-A")]
+      (is (some? row))
+      (is (= 3741.0 (double (:net-sales row)))    ":net-sales = BUYER × qty")
+      (is (= 6545.0 (double (:retail-amount row))) ":retail-amount = (BUYER + subsidy) × qty")
+      (is (= 6545.0 (double (:retail-price row)))  ":retail-price = BUYER + subsidy per-unit (qty=1)"))))
+
+;; ---- T015: missing subsidy → gross = BUYER (no inflation) -----------------
+
+(deftest missing-subsidy-gross-is-buyer
+  (testing "order with no subsidy → gross = BUYER (no inflation); invariant holds"
+    (let [row (row-for (fixture-rows) "NOSUB-D")]
+      (is (some? row))
+      (is (= 1500.0 (double (:net-sales row))))
+      (is (= 1500.0 (double (:retail-amount row))) "no subsidy → gross == BUYER")
+      (is (= 1500.0 (double (:retail-price row))))
+      (is (<= (double (:for-pay row)) (double (:retail-amount row)))
+          "invariant for_pay ≤ gross still holds"))))
+
+;; ---- Adversarial R5: net-negative subsidy is floored to 0 in gross --------
+;; `subsidy-per-item` uses `(max 0.0 subsidy-net)`, so when the SUBSIDY ledger
+;; nets NEGATIVE (a DEDUCTION exceeding the ACCRUAL — e.g. a subsidy claw-back on
+;; a return), it is floored to 0.0 rather than SUBTRACTED from gross. Effect:
+;; gross = BUYER (the negative subsidy does not pull gross below net). This
+;; fixture documents that floor so the behaviour is intentional, not accidental.
+
+(deftest net-negative-subsidy-floored-to-zero-in-gross
+  (testing "SUBSIDY DEDUCTION > ACCRUAL (net-negative subsidy) → floored to 0; gross = BUYER, not BUYER−|subsidy|"
+    (let [order {:id 800005 :status "RETURNED" :creationDate "2026-04-07"
+                 :statusUpdateDate "2026-04-17T10:00:00.000+03:00"
+                 ;; net subsidy = +200 (ACCRUAL) − 500 (DEDUCTION) = −300.
+                 :subsidies [{:amount 200.0 :type "SUBSIDY" :operationType "ACCRUAL"}
+                             {:amount 500.0 :type "SUBSIDY" :operationType "DEDUCTION"}]
+                 :commissions [{:type "FEE" :actual 100.0}]
+                 :items [{:shopSku "NEGSUB-F" :count 1
+                          :details [{:itemStatus "RETURNED"}]
+                          :prices [{:type "BUYER" :total 1500.0}
+                                   {:type "MARKETPLACE" :total 1500.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      (is (some? row))
+      ;; dedup-subsidies returns −300; subsidy-per-item = (max 0.0 −300) = 0.
+      (is (= 1500.0 (double (:net-sales row))) "net = BUYER")
+      (is (= 1500.0 (double (:retail-amount row)))
+          "gross floored to BUYER: net-negative subsidy is NOT subtracted from gross (max 0.0 floor)"))))
+
+;; ---- T016: adjustment (cancelled) → for_pay 0.0 ---------------------------
+
+(deftest adjustment-row-zero-payout
+  (testing "CANCELLED_BEFORE_PROCESSING → :operation-kind :adjustment, :for-pay 0.0"
+    (let [row (row-for (fixture-rows) "CANC-E")]
+      (is (some? row))
+      (is (= :adjustment (:operation-kind row)))
+      (is (= 0.0 (double (:for-pay row))) "cancelled → payout clamped to 0.0"))))
+
+;; ---- count>1 guard: ×qty applied exactly once -----------------------------
+
+(deftest multi-count-qty-applied-once
+  (testing "count=2 order → gross/net scale by qty exactly once (not double-applied)"
+    (let [order {:id 900010 :status "DELIVERED" :creationDate "2026-04-12"
+                 :statusUpdateDate "2026-04-22T10:00:00.000+03:00"
+                 :subsidies [{:amount 500.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+                 :commissions [{:type "FEE" :actual 100.0}]
+                 :items [{:shopSku "QTY2" :count 2
+                          :prices [{:type "MARKETPLACE" :costPerItem 500.0 :total 1000.0}
+                                   {:type "BUYER" :costPerItem 1000.0 :total 2000.0}]}]}
+          [row] (transform/->finance-from-order-stats [order])]
+      ;; price-by-type returns :total (line total = 2000 for BUYER, i.e. already ×qty).
+      ;; The corrected block must NOT multiply the line-total by qty again.
+      ;; net = BUYER line-total 2000; subsidy 500 (order-level, added once).
+      (is (= 2 (:quantity row)))
+      (is (= 2000.0 (double (:net-sales row)))
+          "net = BUYER :total (line-total), qty not double-applied")
+      (is (= 2500.0 (double (:retail-amount row)))
+          "gross = BUYER line-total 2000 + subsidy 500 = 2500")
+      (is (<= (double (:for-pay row)) (double (:retail-amount row)))))))
+
+;; ---- T025 (US3): event-date is statusUpdateDate-based, unmoved by basis ----
+;; INV-8: the corrected monetary block must not shift :event-date. event-date
+;; is derived from statusUpdateDate (subs 0..10); changing the monetary inputs
+;; (prices/subsidy/commissions) leaves it identical, so re-materialization does
+;; NOT move rows between months.
+
+(deftest event-date-unchanged
+  (testing ":event-date = statusUpdateDate[0..10] on the basis fixture (SUB-A April 30)"
+    (let [rows (transform/->finance-from-order-stats
+                (edn/read-string (slurp "test/resources/ym/ym-orders-basis.edn")))
+          by-sku (into {} (map (juxt :article identity) rows))]
+      ;; Fixture statusUpdateDate values → expected event-date per SKU.
+      (is (= "2026-04-30" (:event-date (get by-sku "SUB-A"))))
+      (is (= "2026-04-20" (:event-date (get by-sku "LOSS-B"))))
+      (is (= "2026-04-15" (:event-date (get by-sku "DEDUP-C"))))
+      (is (= "2026-04-18" (:event-date (get by-sku "NOSUB-D"))))
+      (is (= "2026-04-30" (:event-date (get by-sku "CANC-E"))))))
+
+  (testing "changing the monetary block (prices/subsidy/commissions) does not move event-date"
+    (let [base  {:id 700001 :status "DELIVERED" :creationDate "2026-04-01"
+                 :statusUpdateDate "2026-04-25T14:00:00.000+03:00"
+                 :subsidies [{:amount 300.0 :type "SUBSIDY" :operationType "ACCRUAL"}]
+                 :commissions [{:type "FEE" :actual 100.0}]
+                 :items [{:shopSku "ED-1" :count 1
+                          :prices [{:type "BUYER" :total 1000.0}
+                                   {:type "MARKETPLACE" :total 300.0}]}]}
+          ;; a second order with a WILDLY different monetary profile but the
+          ;; SAME statusUpdateDate — event-date must be identical.
+          bumped (-> base
+                     (assoc :subsidies [{:amount 9999.0 :type "SUBSIDY" :operationType "ACCRUAL"}])
+                     (assoc :commissions [{:type "FEE" :actual 5000.0}])
+                     (assoc-in [:items 0 :prices]
+                               [{:type "BUYER" :total 8000.0}
+                                {:type "MARKETPLACE" :total 4000.0}]))
+          [r1] (transform/->finance-from-order-stats [base])
+          [r2] (transform/->finance-from-order-stats [bumped])]
+      (is (= "2026-04-25" (:event-date r1)))
+      (is (= (:event-date r1) (:event-date r2))
+          "event-date is independent of the monetary basis (statusUpdateDate-based)")
+      ;; sanity: the monetary values DID change (so the test isn't vacuous).
+      (is (not= (:retail-amount r1) (:retail-amount r2))))))

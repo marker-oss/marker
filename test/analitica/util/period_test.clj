@@ -74,3 +74,10 @@
       (is (= :last-30-days (:preset s)))
       (is (= :none (:compare s)))
       (is (= "all" (:marketplace s))))))
+
+(deftest resolve-preset-includes-last-week
+  (testing "last-week = previous complete Mon..Sun (matches legacy time/parse-period)"
+    (let [today (p/parse-date "2026-06-25")            ; Thursday
+          [f t] (p/resolve-preset :last-week today)]
+      (is (= "2026-06-15" (p/format-date f)))           ; prev Monday
+      (is (= "2026-06-21" (p/format-date t))))))

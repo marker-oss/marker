@@ -229,6 +229,69 @@
       (is (= 200.0 (:profit-per-sale s))
           "1600 RUB profit / 8 net units = 200 RUB per kept unit"))))
 
+;; ---------------------------------------------------------------------------
+;; UE.10 — break-even ДРР / max-drr-pct (FR-P4.2)
+;; ---------------------------------------------------------------------------
+
+(deftest max-drr-per-article
+  (testing "break-even ДРР = (profit-before-ads)/revenue; headroom & over-ceiling"
+    ;; One article: revenue 2000, for-pay 315, no cost-prices (test env has no DB),
+    ;; so total-cost=0. No logistics/storage/penalties etc.
+    ;; profit-before-ads = for-pay − 0 = 315
+    ;; max-drr-pct = 315 / 2000 × 100 = 15.75 %
+    ;; ad-spend = 0 → drr-pct = 0 → headroom = 15.75, over-ceiling = false
+    (let [raw [{:article "X" :operation "sale" :quantity 1
+                :retail-amount 2000.0 :for-pay 315.0
+                :delivery-cost 0.0 :penalty 0.0 :acceptance 0.0
+                :deduction 0.0 :additional-payment 0.0
+                :wb-reward 0.0 :acquiring-fee 0.0 :storage-fee 0.0}]
+          rows (ue/calculate raw
+                             :ad-spend-by-article {"X" 0.0})
+          r    (first rows)]
+      (is (== 15.75 (:max-drr-pct r))
+          (str "Expected max-drr-pct 15.75, got " (:max-drr-pct r)))
+      (is (== 15.75 (:drr-headroom-pct r))
+          "actual drr 0 → headroom = max-drr-pct")
+      (is (false? (:over-ceiling? r))
+          "ad-spend 0 cannot exceed ceiling"))))
+
+(deftest max-drr-over-ceiling
+  (testing "over-ceiling? true when actual drr-pct > max-drr-pct"
+    ;; revenue 1000, for-pay 600, total-cost=0 (no DB in tests), everything else 0.
+    ;; profit-before-ads = 600 → max-drr = 60%
+    ;; ad-spend = 700 → drr = 700/1000 × 100 = 70% > 60% → over-ceiling
+    ;; headroom = 60 - 70 = -10 (negative)
+    (let [raw [{:article "Y" :operation "sale" :quantity 1
+                :retail-amount 1000.0 :for-pay 600.0
+                :delivery-cost 0.0 :penalty 0.0 :acceptance 0.0
+                :deduction 0.0 :additional-payment 0.0
+                :wb-reward 0.0 :acquiring-fee 0.0 :storage-fee 0.0}]
+          rows (ue/calculate raw
+                             :ad-spend-by-article {"Y" 700.0})
+          r    (first rows)]
+      (is (true? (:over-ceiling? r))
+          "drr 70% should exceed max-drr-pct 60%")
+      (is (neg? (:drr-headroom-pct r))
+          "headroom negative when over ceiling"))))
+
+(deftest max-drr-totals-rollup
+  (testing "totals :max-drr-pct and :drr-headroom-pct are period-level rollup"
+    ;; Same fixture as max-drr-per-article: revenue 2000, for-pay 315,
+    ;; total-cost=0 (no DB). profit-before-ads = 315, ad-spend = 0.
+    ;; Period max-drr = 315/2000 × 100 = 15.75%, drr = 0, headroom = 15.75
+    (let [raw [{:article "X" :operation "sale" :quantity 1
+                :retail-amount 2000.0 :for-pay 315.0
+                :delivery-cost 0.0 :penalty 0.0 :acceptance 0.0
+                :deduction 0.0 :additional-payment 0.0
+                :wb-reward 0.0 :acquiring-fee 0.0 :storage-fee 0.0}]
+          ue-rows (ue/calculate raw
+                                :ad-spend-by-article {"X" 0.0})
+          s (ue/totals ue-rows)]
+      (is (== 15.75 (:max-drr-pct s))
+          (str "totals max-drr-pct expected 15.75, got " (:max-drr-pct s)))
+      (is (== 15.75 (:drr-headroom-pct s))
+          (str "totals drr-headroom-pct expected 15.75, got " (:drr-headroom-pct s))))))
+
 (deftest profit-matches-pnl-reconcile
   (testing "UE total-profit matches hand-computed P&L gross-profit from same finance rows"
     ;; pnl/calculate queries the DB for ad-spend, which makes it non-hermetic in

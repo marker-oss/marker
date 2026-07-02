@@ -10,7 +10,7 @@
    [:sale-id     :string]
    [:date        :string]
    [:article     :string]
-   [:type        [:enum :sale :return :cancel]]
+   [:type        [:enum :sale :return :cancel :refusal]]
    [:marketplace [:enum :wb :ozon :ym]]
 
    [:nm-id           {:optional true} [:maybe [:or :int :double]]]

@@ -1,10 +1,12 @@
 (ns analitica.ingest
   "Ingest layer: fetch raw data from marketplace APIs and save to raw_data table.
    Does NOT transform data — stores the raw API responses as JSON."
-  (:require [analitica.db :as db]
+  (:require [analitica.config :as config]
+            [analitica.db :as db]
             [analitica.marketplace.registry :as registry]
             [analitica.marketplace.wb.api :as wb-api]
             [analitica.marketplace.ozon.api :as ozon-api]
+            [analitica.marketplace.ozon.performance.api :as perf-api]
             [analitica.marketplace.ym.api :as ym-api]
             [analitica.marketplace.ym.client :as ym-client]
             [analitica.schema.validator :as schema-validator]
@@ -751,10 +753,140 @@
             0
             chunks)))
 
+;; ---------------------------------------------------------------------------
+;; Ozon Performance (advertising) ingest — spec 011 US1 (T020)
+;; ---------------------------------------------------------------------------
+
+(defn- perf-client
+  "Resolve the registered OzonPerfClient, or nil if the Performance feature is
+   not configured / not registered. (`core/register-marketplaces!` registers
+   :ozon-performance only when both credential parts are present.)
+   Defensive: any error resolving config/registry ⇒ nil (feature stays off)."
+  []
+  (try
+    (when (config/ozon-performance-config)
+      (try (registry/get-marketplace :ozon-performance)
+           (catch Exception _ nil)))
+    (catch Exception _ nil)))
+
+(defn- do-ingest-ozon-ads!
+  "The raw fetch+persist body of ingest-ozon-ads!, without the optionality /
+   failure-isolation guards. Kept separate so the guards live in one place.
+
+   The raw payload bundles campaigns + daily rows in one batch so materialize
+   knows each campaign's advObjectType (SKU vs BANNER) alongside its spend:
+     {:campaigns [Campaign …] :daily-rows [DailyStatRow …]}
+   `db/insert-raw!` is INSERT-OR-REPLACE on the natural key (source,
+   entity_type, date_from, date_to) → re-ingest is idempotent (FR-007).
+
+   T038 (P1): when `fetch-stats?` is true, also run the async statistics report
+   (create → poll → download) and persist per-campaign/per-day efficiency rows
+   as raw_data entity_type :ad_campaign_stats. Gated behind the flag so the P0
+   daily-stats path remains synchronous and fast by default."
+  [client from to & {:keys [fetch-stats?] :or {fetch-stats? false}}]
+  (let [_          (perf-api/get-token client)
+        campaigns  (perf-api/list-campaigns client)
+        camp-ids   (mapv :id campaigns)
+        daily-rows (if (seq camp-ids)
+                     (perf-api/daily-stats client camp-ids from to)
+                     [])]
+    (db/insert-raw! :ozon :ad_performance from to
+                    {:campaigns campaigns :daily-rows daily-rows})
+    (println (str "Ingested Ozon ad_performance " from " .. " to
+                  " (" (count campaigns) " campaign(s), "
+                  (count daily-rows) " daily row(s))"))
+    ;; T038 (P1): async statistics report — per-SKU efficiency counters.
+    ;; Runs only when fetch-stats? is true. Non-fatal: a failure here is caught
+    ;; by the outer try/catch in ingest-ozon-ads! (failure-isolation, FR-006).
+    (let [stat-rows
+          (when (and fetch-stats? (seq camp-ids))
+            (let [rows (perf-api/fetch-statistics-report client camp-ids from to
+                                                         :poll-ms 0)]
+              ;; Persist as raw_data :ad_campaign_stats. INSERT-OR-REPLACE on
+              ;; the natural key (source, entity_type, date_from, date_to) →
+              ;; re-ingest is idempotent (FR-007).
+              (db/insert-raw! :ozon :ad_campaign_stats from to
+                              {:campaigns campaigns :stat-rows rows})
+              (println (str "  Ingested Ozon ad_campaign_stats: "
+                            (count rows) " stat row(s)"))
+              rows))]
+      {:campaigns  (count campaigns)
+       :daily-rows (count daily-rows)
+       :stat-rows  (count (or stat-rows []))
+       :status     :ok})))
+
+(defn ingest-ozon-ads!
+  "Fetch Ozon Performance advertising data (token → campaigns → daily stats)
+   and persist it as raw_data (source='ozon', entity_type=:ad_performance).
+
+   Arities:
+     [from to]                     — resolve the registered OzonPerfClient from
+                                     config; when Performance is NOT configured,
+                                     short-circuit with {:status :not-configured}.
+     [from to & opts]              — same but accepts keyword opts (see below).
+     [client from to & opts]       — use an explicit client (or test stub).
+
+   Opts:
+     :fetch-stats? (default false) — T038 (P1): also run the async statistics
+       report (create → poll → download) for per-SKU/per-campaign efficiency
+       counters, persisted as raw_data :ad_campaign_stats. Gated so the P0
+       daily-stats path stays synchronous and fast by default.
+
+   OPTIONALITY (FR-005): no credentials ⇒ {:status :not-configured} + one info
+   line; nothing is fetched or written; finance.ad_cost stays 0.
+
+   FAILURE-ISOLATION (FR-006/SC-005): the entire fetch is wrapped in try/catch.
+   An advertising error (auth 401, timeout, 503) is logged via mu/log
+   ::ad-ingest-failed and returned as {:status :ad-unavailable :error …};
+   finance.ad_cost is NOT touched and the Seller ingest is unaffected. A 401 is
+   retried once inside the client (single token refresh) before it surfaces here.
+
+   READ-ONLY (FR-010): only campaign-list + daily-stats reads are issued.
+
+   Returns {:campaigns N :daily-rows M :stat-rows K :status :ok}
+        or {:status :not-configured}
+        or {:status :ad-unavailable :error \"…\"}."
+  ([from to]
+   (if-let [client (perf-client)]
+     (ingest-ozon-ads! client from to)
+     (do (println "Ozon Performance not configured — skipping ad_stats")
+         {:status :not-configured})))
+  ([client from to & {:keys [fetch-stats?] :or {fetch-stats? false}}]
+   (try
+     (do-ingest-ozon-ads! client from to :fetch-stats? fetch-stats?)
+     (catch Exception e
+       (mu/log ::ad-ingest-failed
+               :marketplace :ozon
+               :period [from to]
+               :error (.getMessage e))
+       (println (str "  WARNING: Ozon Performance ad_stats unavailable for "
+                     from " .. " to " — " (.getMessage e)
+                     " (isolated; finance.ad_cost untouched)"))
+       {:status :ad-unavailable :error (.getMessage e)}))))
+
+(defn ingest-ad-stats!
+  "Marketplace-generic :ad-stats entry-point (spec 011 T029). Dispatches the
+   ad_stats verb by marketplace:
+     :wb   → ingest-ads! (WB campaigns/fullstats — existing, chunked ≤31d).
+     :ozon → ingest-ozon-ads! (Ozon Performance — resolves the period to
+             [from to] then runs the optional/isolated Performance ingest).
+   Any other marketplace has no advertising source yet → no-op {:status :none}.
+
+   Supports `clj -M:run ingest :ad-stats --marketplace ozon --period …` and the
+   REPL `(ingest! :ad-stats :marketplace :ozon :period …)`."
+  [period & {:keys [marketplace] :or {marketplace :wb}}]
+  (case marketplace
+    :wb   (ingest-ads! period :marketplace :wb)
+    :ozon (let [[from to] (resolve-period period)]
+            (ingest-ozon-ads! from to))
+    (do (println (str "No ad_stats source for marketplace " (name marketplace)))
+        {:status :none})))
+
 (defn ingest!
   "Ingest raw data from marketplace API to raw_data table.
    Usage:
      (ingest! :finance :period :last-30-days :marketplace :wb)
+     (ingest! :ad-stats :period :last-30-days :marketplace :ozon)
      (ingest! :all :period :last-30-days :marketplace :ozon)"
   [what & {:keys [period marketplace] :or {marketplace :wb}}]
   (println (str "\n=== Ingest: " (name what) " ==="))
@@ -767,8 +899,8 @@
     :stats    (ingest-product-stats! period :marketplace marketplace)
     :prices   (ingest-prices! :marketplace marketplace)
     :regions  (ingest-regions! period :marketplace marketplace)
-    :ad-stats (ingest-ads!     period :marketplace marketplace)
-    :ad_stats (ingest-ads!     period :marketplace marketplace)
+    :ad-stats (ingest-ad-stats! period :marketplace marketplace)
+    :ad_stats (ingest-ad-stats! period :marketplace marketplace)
     :cashflow (ingest-cashflow! period :marketplace marketplace)
     :all      (let [p       (or period :last-30-days)
                     safe-do (fn [label f]
@@ -786,5 +918,10 @@
                   (safe-do "regions"  #(ingest-regions! p :marketplace marketplace))
                   (safe-do "ad_stats" #(ingest-ads!     p :marketplace marketplace)))
                 (when (= marketplace :ozon)
-                  (safe-do "cashflow" #(ingest-cashflow! p :marketplace marketplace)))
+                  (safe-do "cashflow" #(ingest-cashflow! p :marketplace marketplace))
+                  ;; Spec 011 US2 (T030): Ozon Performance ad_stats — non-fatal
+                  ;; and self-isolating (returns :not-configured/:ad-unavailable
+                  ;; without throwing); safe-do is an extra guard.
+                  (let [[from to] (resolve-period p)]
+                    (safe-do "ad_stats" #(ingest-ozon-ads! from to))))
                 (println "=== Ingest complete ==="))))

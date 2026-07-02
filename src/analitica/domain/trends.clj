@@ -53,38 +53,77 @@
       :change (math/round2 (- (math/safe-div cur-rev cur-sales) (math/safe-div prev-rev prev-sales)))
       :change-pct nil}]))
 
+(defn- resolve-period-window
+  "Return [from-str to-str] from a period arg.
+   Accepts a keyword (delegates to t/period), a {:from :to} map, or a
+   [from to] vector. When nil, defaults to the last 7 days ending today."
+  [period]
+  (cond
+    (nil? period)     (let [today (t/format-date (t/today))]
+                        [(t/format-date (t/days-ago 7)) today])
+    (keyword? period) (t/period period)
+    (vector? period)  period
+    :else             [(:from period) (:to period)]))
+
+(defn- prev-window
+  "Given [cur-from cur-to] (ISO strings), return [prev-from prev-to] —
+   the equal-length span ending the day before cur-from.
+
+   Canon §Trends.1 (LT4): previous = same-length window immediately
+   before the selected period, so chart/table share one consistent
+   «выбранный период vs предыдущий равный период» comparison."
+  [cur-from cur-to]
+  (let [from-d  (java.time.LocalDate/parse cur-from)
+        to-d    (java.time.LocalDate/parse cur-to)
+        n-days  (inc (.until from-d to-d java.time.temporal.ChronoUnit/DAYS))
+        p-to    (.minusDays from-d 1)
+        p-from  (.minusDays p-to (dec n-days))]
+    [(t/format-date p-from) (t/format-date p-to)]))
+
 (defn wow
-  "Week-over-week comparison. Optional `:marketplace` scopes the SQL filter."
-  [& {:keys [marketplace]}]
-  (let [today    (t/today)
-        cur-end  (t/format-date today)
-        cur-start (t/format-date (t/days-ago 7))
-        prev-end (t/format-date (t/days-ago 7))
-        prev-start (t/format-date (t/days-ago 14))
+  "Period-vs-preceding-equal-period comparison, defaulting to a 7-day window.
+
+   Canon §Trends.1 (LT4): a single «выбранный период vs предыдущий равный
+   период» series replaces the old hardcoded WoW/MoM pair.  When `period`
+   is omitted the window falls back to the last 7 days ending today.
+
+   Args:
+     period      — keyword, {:from :to} map, [from to] vector, or nil
+     :marketplace — optional; scopes the SQL filter in weekly-sales"
+  [period & {:keys [marketplace]}]
+  (let [[cur-start cur-end] (resolve-period-window period)
+        [prev-start prev-end] (prev-window cur-start cur-end)
         current  (weekly-sales cur-start cur-end :marketplace marketplace)
         previous (weekly-sales prev-start prev-end :marketplace marketplace)
-        comp     (compare-periods current previous "Текущая неделя" "Прошлая неделя")]
-    (table/print-summary "ТРЕНД: НЕДЕЛЯ К НЕДЕЛЕ (WoW)" [])
+        comp     (compare-periods current previous "Текущий период" "Предыдущий период")]
+    (table/print-summary "ТРЕНД: ПЕРИОД К ПЕРИОДУ" [])
     (table/print-table
-     [[:metric "Метрика"] [:previous "Прошлая"] [:current "Текущая"]
+     [[:metric "Метрика"] [:previous "Предыдущий"] [:current "Текущий"]
       [:change "Изм."] [:change-pct "Изм.%"]]
      comp)
     comp))
 
 (defn mom
-  "Month-over-month comparison. Optional `:marketplace` scopes the SQL filter."
-  [& {:keys [marketplace]}]
-  (let [today    (t/today)
-        cur-end  (t/format-date today)
-        cur-start (t/format-date (t/days-ago 30))
-        prev-end (t/format-date (t/days-ago 30))
-        prev-start (t/format-date (t/days-ago 60))
+  "Period-vs-preceding-equal-period comparison, defaulting to a 30-day window.
+
+   Alias for `wow` with a 30-day fallback — both now share the same
+   period-aware logic. Canon §Trends.1 (LT4).
+
+   Args:
+     period      — keyword, {:from :to} map, [from to] vector, or nil
+     :marketplace — optional; scopes the SQL filter in weekly-sales"
+  [period & {:keys [marketplace]}]
+  (let [[cur-start cur-end] (if (nil? period)
+                               [(t/format-date (t/days-ago 30))
+                                (t/format-date (t/today))]
+                               (resolve-period-window period))
+        [prev-start prev-end] (prev-window cur-start cur-end)
         current  (weekly-sales cur-start cur-end :marketplace marketplace)
         previous (weekly-sales prev-start prev-end :marketplace marketplace)
-        comp     (compare-periods current previous "Текущий месяц" "Прошлый месяц")]
-    (table/print-summary "ТРЕНД: МЕСЯЦ К МЕСЯЦУ (MoM)" [])
+        comp     (compare-periods current previous "Текущий период" "Предыдущий период")]
+    (table/print-summary "ТРЕНД: ПЕРИОД К ПЕРИОДУ" [])
     (table/print-table
-     [[:metric "Метрика"] [:previous "Прошлый"] [:current "Текущий"]
+     [[:metric "Метрика"] [:previous "Предыдущий"] [:current "Текущий"]
       [:change "Изм."] [:change-pct "Изм.%"]]
      comp)
     comp))

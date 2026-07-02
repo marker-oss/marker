@@ -12,6 +12,7 @@
             [analitica.domain.geography :as geography]
             [analitica.domain.trends :as trends]
             [analitica.util.time :as t]
+            [analitica.util.math :as math]
             [analitica.util.period :as period]
             [analitica.util.safe :as safe]
             [analitica.web.report-schemas :as rs]))
@@ -24,6 +25,100 @@
   "Convert period to [from to] date strings. Handles keyword, vector, and map."
   [period]
   (t/resolve-period period))
+
+;; ---------------------------------------------------------------------------
+;; Totals aggregation helpers (LT1)
+;; ---------------------------------------------------------------------------
+
+(defn- sales-totals
+  "Aggregate :sales rows → schema :kpi keys."
+  [rows]
+  (safe/safely
+    {:total-revenue  (math/round2 (reduce + 0.0 (map #(or (:revenue %) 0.0) rows)))
+     :total-sales    (reduce + 0 (map #(or (:sales-count %) 0) rows))
+     :total-returns  (reduce + 0 (map #(or (:returns-count %) 0) rows))}
+    {}
+    ::sales-totals-failed))
+
+(defn- abc-totals
+  "Aggregate :abc rows → schema :kpi keys."
+  [rows]
+  (safe/safely
+    {:total-revenue (math/round2 (reduce + 0.0 (map #(or (:revenue %) 0.0) rows)))
+     :a-count       (count (filter #(= "A" (:abc-category %)) rows))
+     :b-count       (count (filter #(= "B" (:abc-category %)) rows))
+     :c-count       (count (filter #(= "C" (:abc-category %)) rows))}
+    {}
+    ::abc-totals-failed))
+
+(defn- returns-totals
+  "Aggregate :returns rows → schema :kpi keys.
+   avg-return-rate = percentage(returned, sold+returned); nil when denom=0."
+  [rows]
+  (safe/safely
+    (let [sold     (reduce + 0 (map #(or (:sold %) 0) rows))
+          returned (reduce + 0 (map #(or (:returned %) 0) rows))]
+      {:total-sold      sold
+       :total-returned  returned
+       :avg-return-rate (math/percentage returned (+ sold returned))})
+    {}
+    ::returns-totals-failed))
+
+(defn- buyout-totals
+  "Aggregate :buyout rows → schema :kpi keys.
+   :total-ordered = Σ :placed when orders data is present, else Σ :ordered (sold+returned ops).
+   avg-buyout-rate = percentage(bought, ordered); nil when denom=0."
+  [rows]
+  (safe/safely
+    (let [bought  (reduce + 0 (map #(or (:bought %) 0) rows))
+          placed  (reduce + 0 (map #(or (:placed %) 0) rows))
+          ordered (reduce + 0 (map #(or (:ordered %) 0) rows))
+          ;; Use placed when orders data is present, else fall back to sold+returned ops
+          denom   (if (pos? placed) placed ordered)]
+      {:total-ordered   denom
+       :total-bought    bought
+       :avg-buyout-rate (math/percentage bought denom)})
+    {}
+    ::buyout-totals-failed))
+
+(defn- trends-totals
+  "Extract KPI values from :trends rows by matching against stable metric label strings.
+   NOTE: trends rows have no stable machine key — only Russian :metric label strings
+   produced by domain.trends/compare-periods. We match against the fixed set of 4 labels
+   that compare-periods always emits. This is a fragility: if labels change, these keys
+   will be nil (not throw). :profit-current is always nil because compare-periods does not
+   emit a profit row (only sales-qty, returns-qty, revenue, avg-check). Key is present with
+   nil so the frontend can honestly hide the tile."
+  [rows]
+  (safe/safely
+    (let [by-metric (into {} (map (juxt :metric identity) rows))]
+      {:revenue-current (get-in by-metric ["Выручка" :current])
+       :orders-current  (get-in by-metric ["Продажи шт" :current])
+       ;; No profit row in compare-periods output — emit key with nil so tile is hidden
+       :profit-current  nil})
+    {}
+    ::trends-totals-failed))
+
+(defn- stock-totals
+  "Aggregate :stock rows → schema :kpi keys.
+   :sku-count = distinct article count (rows are already per-article from by-article)."
+  [rows]
+  (safe/safely
+    {:total-quantity  (reduce + 0 (map #(or (:quantity %) 0) rows))
+     :total-in-way-to (reduce + 0 (map #(or (:in-way-to %) 0) rows))
+     :sku-count       (count rows)}
+    {}
+    ::stock-totals-failed))
+
+(defn- geo-totals
+  "Aggregate :geo rows → schema :kpi keys."
+  [rows]
+  (safe/safely
+    {:total-sum    (math/round2 (reduce + 0.0 (map #(or (:sum %) 0.0) rows)))
+     :total-qty    (reduce + 0 (map #(or (:qty %) 0) rows))
+     :region-count (count rows)}
+    {}
+    ::geo-totals-failed))
 
 ;; ---------------------------------------------------------------------------
 ;; Report data functions
@@ -40,7 +135,7 @@
                                           :marketplace marketplace
                                           :source :db)
             rows (sales/by-day sales-data)]
-        {:rows (vec rows) :totals {}})
+        {:rows (vec rows) :totals (sales-totals rows)})
 
       ;; Finance report
       :finance
@@ -99,13 +194,13 @@
                                                 :marketplace marketplace
                                                 :source :db)
             rows (abc/analyze-by finance-data :revenue)]
-        {:rows (vec rows) :totals {}})
+        {:rows (vec rows) :totals (abc-totals rows)})
 
       ;; Stock report
       :stock
       (let [stocks (stock/fetch-stocks :marketplace marketplace :source :db)
             rows (stock/by-article stocks)]
-        {:rows (vec rows) :totals {}})
+        {:rows (vec rows) :totals (stock-totals rows)})
 
       ;; Returns report
       :returns
@@ -113,7 +208,7 @@
                                           :marketplace marketplace
                                           :source :db)
             rows (returns/by-article sales-data)]
-        {:rows (vec rows) :totals {}})
+        {:rows (vec rows) :totals (returns-totals rows)})
 
       ;; Buyout analysis. Per §Buyout.7, when `orders-by-article` is wired in,
       ;; rows expose `:placed`, `:cancelled`, `:cancel-rate`, `:true-buyout-rate`
@@ -121,11 +216,11 @@
       :buyout
       (let [[from to]    (resolve-dates period)
             orders-rows  (db/orders-by-article from to :marketplace marketplace)
-            orders-map   (into {} (map (juxt :article identity) orders-rows))]
-        {:rows (vec (buyout/analyze period
-                                    :marketplace marketplace
-                                    :orders-by-article orders-map))
-         :totals {}})
+            orders-map   (into {} (map (juxt :article identity) orders-rows))
+            rows         (vec (buyout/analyze period
+                                              :marketplace marketplace
+                                              :orders-by-article orders-map))]
+        {:rows rows :totals (buyout-totals rows)})
 
       ;; Geography report — :combined covers WB (region_sales) + YM/Ozon
       ;; (sales table per-event region) without double-counting WB.
@@ -134,15 +229,21 @@
                                                  :source      :combined
                                                  :marketplace marketplace)
             rows (geography/by-region region-data)]
-        {:rows (vec rows) :totals {}})
+        {:rows (vec rows) :totals (geo-totals rows)})
 
-      ;; Trends report
+      ;; Trends report — LT4: thread `period` so wow/mom respect the picker
       :trends
       (case (or trend-type :wow)
-        :wow   {:rows (vec (trends/wow              :marketplace marketplace)) :totals {}}
-        :mom   {:rows (vec (trends/mom              :marketplace marketplace)) :totals {}}
-        :daily {:rows (vec (trends/daily period     :marketplace marketplace)) :totals {}}
-        {:rows (vec (trends/wow :marketplace marketplace)) :totals {}})
+        :wow   (let [rows (vec (trends/wow period :marketplace marketplace))]
+                 {:rows rows :totals (trends-totals rows)})
+        :mom   (let [rows (vec (trends/mom period :marketplace marketplace))]
+                 {:rows rows :totals (trends-totals rows)})
+        :daily (let [rows (vec (trends/daily period :marketplace marketplace))]
+                 ;; daily rows have :day/:sales/:returns/:revenue — no :metric key,
+                 ;; so trends-totals returns {:revenue-current nil :orders-current nil :profit-current nil}
+                 {:rows rows :totals (trends-totals rows)})
+        (let [rows (vec (trends/wow period :marketplace marketplace))]
+          {:rows rows :totals (trends-totals rows)}))
 
       ;; Unknown report type
       {:rows [] :totals {}})

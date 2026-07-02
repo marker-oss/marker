@@ -65,7 +65,7 @@
             row         (first rows)]
         {:article     article
          :kpi         (select-keys row [:revenue :profit :margin-pct :drr-pct
-                                        :sales-qty :buyout-rate])
+                                        :sales-qty :non-return-rate])
          :breakdown   (select-keys row [:wb-reward :logistics :storage :acceptance
                                         :penalties :acquiring :deduction
                                         :ad-spend :total-cost])

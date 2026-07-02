@@ -129,10 +129,14 @@
    We flatten this into one entry per campaign and re-attach the parent
    group's `:type` and `:status` so downstream callers (fullstats) can
    still filter. The `status`/`type` keyword args are kept for
-   compatibility but now act as post-flatten filters; default behaviour
-   matches the legacy default of statuses [9 11] (active campaigns)."
+   compatibility but now act as post-flatten filters.
+
+   Default statuses #{7 9 11} = completed + active + paused. Completed (7)
+   MUST be included: re-syncing a past period after its campaigns finish
+   would otherwise fetch fullstats for nothing, silently zeroing historical
+   WB ad spend (audit 2026-07-02 P0-1a)."
   [client & {:keys [status type]
-             :or   {status #{9 11}}}]
+             :or   {status #{7 9 11}}}]
   (let [resp     (c/get-request client :advert "/adv/v1/promotion/count")
         groups   (or (get resp :adverts) [])
         wanted-s (if (set? status) status (set status))

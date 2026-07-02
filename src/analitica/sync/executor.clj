@@ -12,7 +12,9 @@
             [clojure.string :as str]
             [com.brunobonacci.mulog :as mu])
   (:import [java.util.concurrent
-            Executors ExecutorCompletionService Callable TimeUnit]))
+            Executors ExecutorCompletionService Callable TimeUnit]
+           [java.time LocalDateTime Duration]
+           [java.time.format DateTimeFormatter]))
 
 ;; ---------------------------------------------------------------------------
 ;; Private helpers
@@ -85,12 +87,19 @@
                        :else
                        (let [reason (dep-failure-reason depends-on)]
                          (if reason
-                           (do
-                             (registry/record-skipped! id reason)
-                             (update acc :skipped inc))
-                           ;; Run the task via the runner envelope
-                           (let [row (runner/run-task! id thunk)]
-                             (if (= "ok" (:status row))
+                           (do (registry/record-skipped! id reason)
+                               (update acc :skipped inc))
+                           ;; US2 T026: background-op span (FR-011).
+                           ;; Correlated under run-id via mu/with-context (line 54).
+                           ;; Only allow-list keys — no per-SKU/article labels (FR-014).
+                           (let [t0  (System/currentTimeMillis)
+                                 row (runner/run-task! id thunk)
+                                 ok? (= "ok" (:status row))]
+                             (mu/log :marker/background-op
+                                     :operation   :sync
+                                     :outcome     (if ok? :success :error)
+                                     :duration-ms (double (- (System/currentTimeMillis) t0)))
+                             (if ok?
                                (update acc :ok inc)
                                (update acc :failed inc)))))))
                    {:ok 0 :failed 0 :skipped 0}
@@ -222,6 +231,34 @@
          :duration-ms (- (System/currentTimeMillis) start-ms)}))))
 
 ;; ---------------------------------------------------------------------------
+;; FR-P2.8 — stuck-sync detection
+;; ---------------------------------------------------------------------------
+
+(def ^:private iso-fmt
+  (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss"))
+
+(defn stuck?
+  "Pure classifier: true iff the run is in status 'running' AND its age
+   (measured from :started-at) exceeds threshold-min minutes.
+
+   Arguments:
+     run           — map with at least :status and :started-at (ISO string
+                     'yyyy-MM-dd'T'HH:mm:ss', the format stored by registry)
+     now           — java.time.LocalDateTime representing the current instant
+     threshold-min — integer; age in minutes above which the run is stuck
+
+   Returns false when :started-at is nil/missing or status is not 'running'."
+  [run now threshold-min]
+  (let [status     (:status run)
+        started-at (:started-at run)]
+    (boolean
+      (and (= "running" status)
+           started-at
+           (let [started (LocalDateTime/parse started-at iso-fmt)
+                 age-min (/ (.toMillis (Duration/between started now)) 60000.0)]
+             (> age-min threshold-min))))))
+
+;; ---------------------------------------------------------------------------
 ;; Phase 4 — run-summary and recent-runs for the task-matrix API
 ;; ---------------------------------------------------------------------------
 
@@ -288,9 +325,27 @@
          :status      status
          :tasks       task-summaries}))))
 
+(defn- enrich-run
+  "Add :stuck? and :age-min to a run summary map.
+   :age-min is the age of the run in fractional minutes (from :started-at to now).
+   :stuck?  is true when status is 'running' and age-min > 30.
+   Both keys are always present; age-min is nil when :started-at is absent."
+  [run-map]
+  (let [now        (LocalDateTime/now)
+        started-at (:started-at run-map)
+        age-min    (when started-at
+                     (let [started (LocalDateTime/parse started-at iso-fmt)]
+                       (/ (.toMillis (Duration/between started now)) 60000.0)))]
+    (assoc run-map
+           :age-min age-min
+           :stuck?  (stuck? run-map now 30))))
+
 (defn recent-runs
   "Return a vector of the last 10 distinct run-ids ordered by latest started_at DESC,
-   each with the same rollup shape as run-summary.
+   each with the same rollup shape as run-summary, enriched with :stuck? and :age-min.
+
+   :stuck?  — true when status is 'running' and the run is older than 30 minutes
+   :age-min — fractional minutes since :started-at (nil when started-at absent)
 
    Used by GET /api/sync/runs/recent."
   []
@@ -302,4 +357,7 @@
                    ORDER BY last_started DESC
                    LIMIT 10"])
                (catch Exception _ []))]
-    (mapv #(run-summary (:run-id %)) rows)))
+    (mapv (fn [row]
+            (some-> (run-summary (:run-id row))
+                    enrich-run))
+          rows)))

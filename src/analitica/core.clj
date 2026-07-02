@@ -3,6 +3,7 @@
             [analitica.db :as db]
             [analitica.sync :as sync]
             [analitica.sync.scheduler :as scheduler]
+            [analitica.bot.scheduler :as bot-scheduler]
             [analitica.ingest :as ingest]
             [analitica.materialize :as materialize]
             [analitica.marketplace.registry :as registry]
@@ -10,6 +11,7 @@
             [analitica.marketplace.wb.impl]
             [analitica.marketplace.ozon.client :as ozon-client]
             [analitica.marketplace.ozon.impl]
+            [analitica.marketplace.ozon.performance.client :as ozon-perf-client]
             [analitica.marketplace.ym.client :as ym-client]
             [analitica.marketplace.ym.impl]
             [analitica.marketplace.protocol :as proto]
@@ -40,6 +42,13 @@
     (try (registry/register! :ozon (ozon-client/make-client ozon-cfg))
          (catch Exception e
            (println "Warning: Could not register Ozon:" (.getMessage e)))))
+  ;; Spec 011: Ozon Performance (advertising) is OPT-IN — build the client only
+  ;; when BOTH credential parts are present (config/ozon-performance-config
+  ;; ≠ nil). Non-fatal, like Ozon/YM registration (memory init_lives_in_core_start).
+  (when-let [perf-cfg (config/ozon-performance-config)]
+    (try (registry/register! :ozon-performance (ozon-perf-client/make-client perf-cfg))
+         (catch Exception e
+           (println "Warning: Could not register Ozon Performance:" (.getMessage e)))))
   (when-let [ym-cfg (config/ym-config)]
     (try (registry/register! :ym (ym-client/make-client ym-cfg))
          (catch Exception e
@@ -85,6 +94,8 @@
   (sync/status)
   ;; Start the daily auto-refresh scheduler (reads sync_schedule, arms if enabled).
   (scheduler/start!)
+  ;; Start the Telegram digest scheduler (017; idempotent, daemon thread).
+  (bot-scheduler/start!)
   (println "\nTry (help) for available commands."))
 
 (defn mp
@@ -122,8 +133,8 @@
   (stock/risk 14)                       -- out-of-stock risk
   (pnl/report :last-30-days)            -- P&L report
   (geo/report :last-30-days)            -- geography of sales
-  (trends/wow)                          -- week-over-week
-  (trends/mom)                          -- month-over-month
+  (trends/wow :last-7-days)             -- period vs prev equal period (7-day default)
+  (trends/mom :last-30-days)            -- period vs prev equal period (30-day default)
   (trends/daily :last-30-days)          -- daily dynamics
   (buyout/report :last-30-days)         -- buyout rate analysis
   (ads/overview :last-7-days :source :api)  -- sales funnel
