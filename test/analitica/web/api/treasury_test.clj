@@ -499,3 +499,9 @@
     (is (= 422 (:status (api/get-cashflow {:params {:from "garbage" :to "2026-06-30"}})))))
   (testing "valid range still 200"
     (is (= 200 (:status (api/get-cashflow {:params {:from "2026-01-01" :to "2026-06-30"}}))))))
+
+(deftest non-numeric-params-do-not-500
+  (testing "non-numeric id/page params → graceful response, not parseLong 500"
+    (is (contains? #{400 404 422} (:status (api/delete-account {:params {:id "abc"}}))))
+    ;; paging params fall back to defaults instead of throwing
+    (is (= 200 (:status (api/get-operations {:params {:page "abc" :page-size "xyz"}}))))))

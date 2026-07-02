@@ -49,10 +49,13 @@
 (defn- params-of [req]
   (or (:params req) {}))
 
-(defn- parse-id [req]
-  (some-> (or (get-in req [:params :id])
-              (get-in req [:route-params :id]))
-          (Long/parseLong)))
+(defn- parse-id
+  "Route/query :id as a Long, or nil when absent or non-numeric
+   (nil lets handlers answer 4xx instead of a parseLong 500)."
+  [req]
+  (when-let [raw (or (get-in req [:params :id])
+                     (get-in req [:route-params :id]))]
+    (try (Long/parseLong raw) (catch NumberFormatException _ nil))))
 
 (defn- ->kw
   "Coerce a value to a keyword if it is a non-blank string; pass keywords
@@ -66,7 +69,8 @@
 (defn- ->long [v]
   (cond
     (integer? v) (long v)
-    (and (string? v) (not (str/blank? v))) (Long/parseLong v)
+    (and (string? v) (not (str/blank? v)))
+    (try (Long/parseLong v) (catch NumberFormatException _ nil))
     :else nil))
 
 (defn- ->bool
@@ -143,18 +147,20 @@
   [req]
   (let [p   (params-of req)
         get* (fn [k] (or (get p k) (get p (name k))))
+        ;; Gate each assoc on the COERCED value: ?page=abc coerces to nil and
+        ;; must fall back to the default, not flow nil into list-ops (audit M1).
         flt (cond-> {}
               (get* :from)            (assoc :from (get* :from))
               (get* :to)              (assoc :to (get* :to))
-              (get* :account-id)      (assoc :account-id (->long (get* :account-id)))
-              (get* :counterparty-id) (assoc :counterparty-id (->long (get* :counterparty-id)))
+              (->long (get* :account-id))      (assoc :account-id (->long (get* :account-id)))
+              (->long (get* :counterparty-id)) (assoc :counterparty-id (->long (get* :counterparty-id)))
               (get* :category)        (assoc :category (get* :category))
-              (get* :direction)       (assoc :direction (->kw (get* :direction)))
+              (->kw (get* :direction)) (assoc :direction (->kw (get* :direction)))
               (some? (->bool (get* :planned)))   (assoc :planned (->bool (get* :planned)))
               (some? (->bool (get* :confirmed))) (assoc :confirmed (->bool (get* :confirmed)))
               (some? (->bool (get* :regular)))   (assoc :regular (->bool (get* :regular)))
-              (get* :page)            (assoc :page (->long (get* :page)))
-              (get* :page-size)       (assoc :page-size (->long (get* :page-size))))]
+              (->long (get* :page))      (assoc :page (->long (get* :page)))
+              (->long (get* :page-size)) (assoc :page-size (->long (get* :page-size))))]
     {:status 200 :body (ops/list-ops flt)}))
 
 (defn post-operation
@@ -277,11 +283,11 @@
   (let [p    (params-of req)
         get* (fn [k] (or (get p k) (get p (name k))))
         flt  (cond-> {}
-               (get* :direction) (assoc :direction (->kw (get* :direction)))
-               (get* :status)    (assoc :status (->kw (get* :status)))
-               (get* :mode)      (assoc :mode (->kw (get* :mode)))
-               (get* :page)      (assoc :page (->long (get* :page)))
-               (get* :page-size) (assoc :page-size (->long (get* :page-size))))]
+               (->kw (get* :direction)) (assoc :direction (->kw (get* :direction)))
+               (->kw (get* :status))    (assoc :status (->kw (get* :status)))
+               (->kw (get* :mode))      (assoc :mode (->kw (get* :mode)))
+               (->long (get* :page))      (assoc :page (->long (get* :page)))
+               (->long (get* :page-size)) (assoc :page-size (->long (get* :page-size))))]
     {:status 200 :body (obligations/list-obligations flt)}))
 
 (defn post-obligation

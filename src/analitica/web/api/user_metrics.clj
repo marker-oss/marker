@@ -20,10 +20,13 @@
   (let [b (:body req)]
     (if (map? b) b (or (:params req) {}))))
 
-(defn- parse-id [req]
-  (some-> (or (get-in req [:params :id])
-              (get-in req [:route-params :id]))
-          (Long/parseLong)))
+(defn- parse-id
+  "Route/query :id as a Long, or nil when absent or non-numeric
+   (nil lets handlers answer 4xx instead of a parseLong 500)."
+  [req]
+  (when-let [raw (or (get-in req [:params :id])
+                     (get-in req [:route-params :id]))]
+    (try (Long/parseLong raw) (catch NumberFormatException _ nil))))
 
 ;; ---------------------------------------------------------------------------
 ;; GET /api/v1/metrics
