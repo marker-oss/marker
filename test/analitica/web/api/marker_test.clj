@@ -2072,3 +2072,20 @@
       (let [for-pay 1000.0
             gross   (+ (- for-pay 500.0 40.0 100.0 30.0 50.0 20.0) 60.0)]
         (is (= gross (- for-pay 500.0 40.0 (#'marker-api/sum-other-costs pnl))))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 N3 — GMROI numerator must be the FULL MP-level net profit
+;; (canon Stock.GMROI.1 / 016 FR-009), not for-pay − cogs − ads.
+;; ---------------------------------------------------------------------------
+
+(deftest gmroi-numerator-is-full-net-profit
+  (let [fa {:for-pay 1000.0 :total-cost 400.0 :logistics 120.0 :storage 30.0
+            :penalties 10.0 :acceptance 5.0 :deduction 15.0 :additional 20.0}]
+    (testing "all cost components subtracted, additional credited"
+      (is (= (+ (- 1000.0 400.0 120.0 30.0 10.0 5.0 15.0 50.0) 20.0)
+             (#'marker-api/gmroi-net-profit fa 50.0))))
+    (testing "logistics-heavy SKU: new numerator strictly below the old formula"
+      (is (< (#'marker-api/gmroi-net-profit fa 50.0)
+             (- 1000.0 400.0 50.0))))
+    (testing "nil-safe on missing components"
+      (is (= 1000.0 (#'marker-api/gmroi-net-profit {:for-pay 1000.0} nil))))))

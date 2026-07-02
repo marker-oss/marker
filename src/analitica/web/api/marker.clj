@@ -310,6 +310,24 @@
      (or (:ad-spend  pnl) 0)
      (sum-other-costs pnl)))
 
+(defn- gmroi-net-profit
+  "MP-level NET profit for one article — the GMROI numerator (canon
+   Stock.GMROI.1 / 016 FR-009): for-pay − COGS − logistics − storage −
+   penalties − acceptance − deduction + additional − ads. `fa` is a
+   finance/by-article row. Audit N3: the previous for-pay − cogs − ads
+   omitted logistics/storage/penalties and overstated GMROI."
+  [fa ads]
+  (math/round2
+    (+ (- (or (:for-pay fa) 0.0)
+          (or (:total-cost fa) 0.0)
+          (or (:logistics fa) 0.0)
+          (or (:storage fa) 0.0)
+          (or (:penalties fa) 0.0)
+          (or (:acceptance fa) 0.0)
+          (or (:deduction fa) 0.0)
+          (or ads 0.0))
+       (or (:additional fa) 0.0))))
+
 ;; ---------------------------------------------------------------------------
 
 (defn basis-note
@@ -1083,8 +1101,8 @@
           cap-by-art   (->> (:per-sku cap-result)
                             (map (fn [c] [(:article c) c]))
                             (into {}))
-          ;; Finance for the same 30d window → per-article net-profit for GMROI.
-          ;; net-profit = for-pay − total-cost − ad (TS-def GMROI numerator).
+          ;; Finance for the same 30d window → per-article net-profit for GMROI
+          ;; (full MP-level net profit — see gmroi-net-profit, audit N3).
           fin          (load-finance {:from from-iso :to to-iso} mps)
           fin-by-art   (try (finance/by-article fin) (catch Exception _ []))
           fin-map      (->> fin-by-art
@@ -1092,6 +1110,12 @@
                             (into {}))
           ads-by-art   (try (pnl/ad-spend-by-article from-iso to-iso mps)
                             (catch Exception _ {}))
+          ;; stocks_history for the window — without it every GMROI was
+          ;; :not-applicable on this endpoint (audit N4: :history [] was passed).
+          history-by-art (try (group-by :article
+                                        (stock/fetch-history from-iso to-iso
+                                                             :marketplace mps))
+                              (catch Exception _ {}))
           ;; 30-day inclusive window (from-d .. today) — annualization/coverage.
           days-in-period 31
 
@@ -1103,15 +1127,12 @@
                                  ads (or (get ads-by-art art) 0.0)
                                  ;; nil cost basis ⇒ net-profit + gmroi N/A (FR-013).
                                  net-profit (when (:unit-cost-basis cap)
-                                              (math/round2
-                                                (- (or (:for-pay fa) 0.0)
-                                                   (or (:total-cost fa) 0.0)
-                                                   ads)))
+                                              (gmroi-net-profit fa ads))
                                  gmroi-map  (stock/gmroi-inputs
                                               {:article         art
                                                :unit-cost-basis (:unit-cost-basis cap)
                                                :net-profit      net-profit
-                                               :history         []
+                                               :history         (get history-by-art art [])
                                                :days-in-period  days-in-period})]
                              {:article          art
                               :subject          (:subject r)
@@ -1128,7 +1149,9 @@
                               :cap-by-price     (:cap-by-price cap)
                               :days-of-cover    d
                               :gmroi            (:gmroi gmroi-map)
-                              :gmroi-annualized (:gmroi-annualized gmroi-map)}))
+                              :gmroi-annualized (:gmroi-annualized gmroi-map)
+                              ;; SC-004: partial coverage is surfaced, not hidden.
+                              :gmroi-covered-days (:covered-days gmroi-map)}))
                          enriched)
 
           totals  (merge
@@ -1426,10 +1449,11 @@
                                                                 (> drr-pct max-drr-pct)))
                                   ;; ── 016-US2 capitalization / GMROI / turnover (T022) ──
                                   cap           (get cap-by-art art)
-                                  ;; per-SKU MP net profit = gross-profit − ad (TS-def GMROI numerator).
-                                  ;; nil when this SKU has no cost basis (FR-013 propagation).
+                                  ;; per-SKU MP-level NET profit (TS-def GMROI numerator,
+                                  ;; full cost set — audit N3). nil when no cost basis
+                                  ;; (FR-013 propagation).
                                   net-profit    (when (:unit-cost-basis cap)
-                                                  (math/round2 (- for-pay cogs ads)))
+                                                  (gmroi-net-profit a ads))
                                   gmroi-map     (stock/gmroi-inputs
                                                   {:article         art
                                                    :unit-cost-basis (:unit-cost-basis cap)
