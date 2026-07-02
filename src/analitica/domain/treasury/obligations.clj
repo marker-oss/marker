@@ -45,6 +45,9 @@
    :remaining-amount     (:remaining-amount r)
    :currency             (:currency r)
    :counterparty-id      (:counterparty-id r)
+   ;; present when the row came through the list JOIN (contract §3);
+   ;; nil for rows fetched by id or with no counterparty.
+   :counterparty-name    (:counterparty-name r)
    :issue-date           (:issue-date r)
    :due-date             (:due-date r)
    :settled-operation-id (:settled-operation-id r)

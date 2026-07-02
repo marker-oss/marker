@@ -1580,10 +1580,17 @@
                       params)))))
 
 (defn treasury-query-obligations
-  "Return treasury_obligations rows for the given WHERE clause + params.
-   `where` may be empty. Ordered by due_date ASC, id ASC."
+  "Return treasury_obligations rows for the given WHERE clause + params,
+   each carrying :counterparty-name via LEFT JOIN (contract obligations-api
+   §3 lists it; the SPA fell back to «Контрагент #N» without it).
+   `where` may be empty; where-columns are unqualified obligation columns,
+   so they stay valid against the aliased o.* select. Ordered by due_date
+   ASC, id ASC."
   [where params]
-  (query (into [(str "SELECT * FROM treasury_obligations"
+  (query (into [(str "SELECT o.*, c.name AS counterparty_name
+                      FROM treasury_obligations o
+                      LEFT JOIN treasury_counterparties c
+                             ON c.id = o.counterparty_id"
                      (when (seq where) (str " WHERE " where))
-                     " ORDER BY due_date ASC, id ASC")]
+                     " ORDER BY o.due_date ASC, o.id ASC")]
                params)))

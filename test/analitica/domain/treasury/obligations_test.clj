@@ -340,3 +340,24 @@
       (is (= 5 (:total p1)) "total is 5")
       (is (= 2 (count (:obligations p1))) "page 1 has 2 items")
       (is (= 2 (count (:obligations p2))) "page 2 has 2 items"))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 M6 — list rows must carry :counterparty-name (contract §3)
+;; ---------------------------------------------------------------------------
+
+(deftest list-carries-counterparty-name
+  (testing "obligation rows join the counterparty name; nil when none"
+    (let [cp-id (:id (ops/create-counterparty!
+                       {:name "Ozon"}))]
+      (ob/create! {:direction :receivable :amount "1000.00"
+                   :remaining-amount "1000.00" :currency "RUB"
+                   :counterparty-id cp-id
+                   :due-date (days-from-today 10) :confirmed true})
+      (ob/create! {:direction :payable :amount "500.00"
+                   :remaining-amount "500.00" :currency "RUB"
+                   :due-date (days-from-today 5) :confirmed true})
+      (let [{:keys [obligations]} (ob/list-obligations {})
+            named   (first (filter :counterparty-id obligations))
+            unnamed (first (remove :counterparty-id obligations))]
+        (is (= "Ozon" (:counterparty-name named)))
+        (is (nil? (:counterparty-name unnamed)))))))
