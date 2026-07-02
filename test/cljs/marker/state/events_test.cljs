@@ -676,3 +676,21 @@
     (let [ckey [:pulse [:wb] "P" false]]
       (rf/dispatch-sync [::events/pulse-data-loaded ckey {:marker :fresh-wb}])
       (is (= {:marker :fresh-wb} (:marker/pulse-data (db)))))))
+
+;; ---------------------------------------------------------------------------
+;; Treasury: op mutation refreshes list + balances + cashflow (audit P2)
+;; ---------------------------------------------------------------------------
+
+(deftest treasury-operation-mutated-refreshes-all-three
+  (let [filters {:page 2 :direction "expense"}
+        fx-map  (events/treasury-operation-mutated-fx
+                  {:db {:marker/treasury-operations-filters filters}} nil)
+        fx      (:fx fx-map)
+        events* (map (comp first second) fx)]
+    (testing "ops list reloads with stored filters"
+      (is (= [::events/load-treasury-operations filters] (second (first fx)))))
+    (testing "accounts (derived balances) and cashflow reload too"
+      (is (some #{::events/load-treasury-accounts} events*))
+      (is (some #{::events/load-treasury-cashflow} events*)))
+    (testing "exactly three dispatches"
+      (is (= 3 (count fx))))))

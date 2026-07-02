@@ -1187,12 +1187,17 @@
       {:http-xhrio (api/put-xhrio url op [::treasury-operation-mutated]
                                   [::api-error url])})))
 
-(rf/reg-event-fx ::treasury-operation-mutated
-  ;; Refresh both the operations list (using its stored filters) and the
-  ;; cashflow view, since an op changes both.
-  (fn [{:keys [db]} _]
-    {:fx [[:dispatch [::load-treasury-operations
-                      (:marker/treasury-operations-filters db)]]]}))
+(defn treasury-operation-mutated-fx
+  "An op changes the list, every derived account balance, and the ДДС
+   matrix — refresh all three (they share the treasury screen). Named so
+   the fx map is testable without executing the http effects."
+  [{:keys [db]} _]
+  (let [filters (:marker/treasury-operations-filters db)]
+    {:fx [[:dispatch [::load-treasury-operations filters]]
+          [:dispatch [::load-treasury-accounts]]
+          [:dispatch [::load-treasury-cashflow filters]]]}))
+
+(rf/reg-event-fx ::treasury-operation-mutated treasury-operation-mutated-fx)
 
 ;; ---------------------------------------------------------------------------
 ;; 019: Treasury — accounts
