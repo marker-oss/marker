@@ -128,6 +128,10 @@
               response1 (handler request1)]
           (is (= 200 (:status response1))
               "First sync should succeed")
+          ;; The 1c sync runs async and on a fast/empty env (CI) can finish —
+          ;; and clear the flag — before the second request lands. Pin the
+          ;; running state so the 409 branch is what's actually under test.
+          (reset! sync-api/sync-running? true)
           (let [body-str2 (json/write-value-as-string {:what "sales"})
                 request2 {:request-method :post
                           :uri "/api/sync/start"
@@ -137,7 +141,8 @@
                 "Second sync should return 409 Conflict")
             (let [body (json/read-value (:body response2) json/keyword-keys-object-mapper)]
               (is (= "already running" (:error body))
-                  "Error message should indicate sync is already running"))))))))
+                  "Error message should indicate sync is already running"))
+            (reset! sync-api/sync-running? false)))))))
 
 (deftest ^:integration test-sync-start-with-period-and-marketplace
   (testing "POST /api/sync/start with period and marketplace"
