@@ -332,6 +332,58 @@
         (marker-api/stocks-overview-handler {:params {:mp "wb"}})
         (is (= :wb (:marketplace (first @calls))))))))
 
+(deftest stocks-overview-capitalization-gmroi
+  ;; 016-US2: stocks-overview :by-article rows + top-level :totals must carry
+  ;; capitalization (cap-by-cost/cap-by-price), GMROI, and coverage — parity
+  ;; with sku-list-handler. Articles WITH a cost basis get non-nil values;
+  ;; those WITHOUT get nil (SPA renders "—"). 4 capitalization totals present.
+  (with-redefs [analitica.domain.stock/fetch-stocks
+                (fn [& _] fixture-stocks)
+                ;; 30d sales drive wavg-retail (cap-by-price) + turnover.
+                analitica.domain.sales/fetch-sales
+                (fn [& _]
+                  [{:article "A1" :quantity 3 :retail-amount 900.0}
+                   {:article "A2" :quantity 1 :retail-amount 400.0}])
+                ;; A1 has a cost basis; A2 does not (nil ⇒ N/A).
+                analitica.domain.cost-price/get-price
+                (fn ([art] ({"A1" 100.0} art))
+                  ([art _] ({"A1" 100.0} art)))
+                ;; finance drives net-profit numerator for GMROI (A1 only).
+                analitica.domain.finance/fetch-finance
+                (fn [& _]
+                  [{:article "A1" :for-pay 900.0 :total-cost 300.0 :quantity 3
+                    :retail-amount 900.0}])
+                analitica.domain.pnl/ad-spend-by-article
+                (fn [& _] {"A1" 50.0})]
+    (let [resp (marker-api/stocks-overview-handler {:params {:mp "all"}})
+          body (:body resp)
+          a1   (->> body :by-article (filter #(= "A1" (:article %))) first)
+          a2   (->> body :by-article (filter #(= "A2" (:article %))) first)]
+      (is (= 200 (:status resp)))
+      (testing "article WITH cost basis carries capitalization + GMROI"
+        (is (some? (:cap-by-cost a1)))
+        (is (some? (:cap-by-price a1)))
+        ;; cap-by-cost = unit-cost 100 × quantity-full 17 (A1 across two whs).
+        (is (= (* 100.0 17) (:cap-by-cost a1)))
+        (is (contains? a1 :gmroi))
+        (is (contains? a1 :gmroi-annualized))
+        (is (contains? a1 :days-of-cover)))
+      (testing "article WITHOUT cost basis is nil (\"—\"-able)"
+        (is (nil? (:cap-by-cost a2)))
+        ;; no basis ⇒ net-profit + gmroi N/A, never 0/∞ (FR-013).
+        (is (or (nil? (:gmroi a2)) (= :not-applicable (:gmroi a2)))))
+      (testing "top-level :totals carry the 4 capitalization totals"
+        (let [t (:totals body)]
+          (is (contains? t :cap-by-cost-total))
+          (is (contains? t :cap-by-price-total))
+          (is (contains? t :stock-qty-total))
+          (is (contains? t :na-cost-count))
+          ;; A2 has no cost basis ⇒ exactly one N/A SKU.
+          (is (= 1 (:na-cost-count t)))
+          ;; existing inventory totals preserved (additive-only).
+          (is (contains? t :quantity))
+          (is (contains? t :articles)))))))
+
 (deftest stock-article-detail-shape
   (testing "per-article detail returns per-warehouse + history vectors"
     (with-redefs [analitica.domain.stock/fetch-stocks

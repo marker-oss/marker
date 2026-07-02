@@ -1058,32 +1058,89 @@
 
           today    (java.time.LocalDate/now)
           from-d   (.minusDays today 30)
+          from-iso (str from-d)
+          to-iso   (str today)
           sales    (try (sales/fetch-sales
-                          {:from (str from-d) :to (str today)}
+                          {:from from-iso :to to-iso}
                           :marketplace mps)
                         (catch Exception _ []))
           enriched (try (stock/with-turnover by-art sales 30)
                         (catch Exception _ by-art))
+
+          ;; ── 016-US2 capitalization / GMROI (parity with sku-list-handler) ──
+          ;; Cost basis lookup (nil ⇒ N/A → SPA renders "—", FR-013).
+          cost-fn      (fn [art] (cost-price/get-price art))
+          ;; Period (last-30d) weighted-avg retail per article for cap-by-price.
+          wavg-by-art  (->> (group-by :article sales)
+                            (map (fn [[art rows]] [art (stock/wavg-retail rows)]))
+                            (into {}))
+          ;; Capitalization aggregate + totals (VR-c1/FR-014).
+          cap-result   (stock/capitalize stocks
+                                          :cost-fn cost-fn
+                                          :price-fn #(get wavg-by-art %))
+          cap-by-art   (->> (:per-sku cap-result)
+                            (map (fn [c] [(:article c) c]))
+                            (into {}))
+          ;; Finance for the same 30d window → per-article net-profit for GMROI.
+          ;; net-profit = for-pay − total-cost − ad (TS-def GMROI numerator).
+          fin          (load-finance {:from from-iso :to to-iso} mps)
+          fin-by-art   (try (finance/by-article fin) (catch Exception _ []))
+          fin-map      (->> fin-by-art
+                            (map (fn [a] [(or (:article a) "") a]))
+                            (into {}))
+          ads-by-art   (try (pnl/ad-spend-by-article from-iso to-iso mps)
+                            (catch Exception _ {}))
+          ;; 30-day inclusive window (from-d .. today) — annualization/coverage.
+          days-in-period 31
+
           by-art*  (mapv (fn [r]
-                           (let [d (:days-left r)]
-                             {:article       (:article r)
-                              :subject       (:subject r)
-                              :quantity      (or (:quantity r) 0)
-                              :quantity-full (or (:quantity-full r) 0)
-                              :in-way-to     (or (:in-way-to r) 0)
-                              :in-way-from   (or (:in-way-from r) 0)
-                              :warehouses    (or (:warehouses r) 0)
-                              :daily-rate    (or (:daily-rate r) 0.0)
-                              :days          d
-                              :status        (days->status d)}))
+                           (let [art (:article r)
+                                 d   (:days-left r)
+                                 cap (get cap-by-art art)
+                                 fa  (get fin-map art)
+                                 ads (or (get ads-by-art art) 0.0)
+                                 ;; nil cost basis ⇒ net-profit + gmroi N/A (FR-013).
+                                 net-profit (when (:unit-cost-basis cap)
+                                              (math/round2
+                                                (- (or (:for-pay fa) 0.0)
+                                                   (or (:total-cost fa) 0.0)
+                                                   ads)))
+                                 gmroi-map  (stock/gmroi-inputs
+                                              {:article         art
+                                               :unit-cost-basis (:unit-cost-basis cap)
+                                               :net-profit      net-profit
+                                               :history         []
+                                               :days-in-period  days-in-period})]
+                             {:article          art
+                              :subject          (:subject r)
+                              :quantity         (or (:quantity r) 0)
+                              :quantity-full    (or (:quantity-full r) 0)
+                              :in-way-to        (or (:in-way-to r) 0)
+                              :in-way-from      (or (:in-way-from r) 0)
+                              :warehouses       (or (:warehouses r) 0)
+                              :daily-rate       (or (:daily-rate r) 0.0)
+                              :days             d
+                              :status           (days->status d)
+                              ;; 016-US2 capitalization + GMROI + coverage
+                              :cap-by-cost      (:cap-by-cost cap)
+                              :cap-by-price     (:cap-by-price cap)
+                              :days-of-cover    d
+                              :gmroi            (:gmroi gmroi-map)
+                              :gmroi-annualized (:gmroi-annualized gmroi-map)}))
                          enriched)
 
-          totals  {:quantity      (reduce + 0 (map :quantity by-wh))
-                   :quantity-full (reduce + 0 (map :quantity-full by-wh))
-                   :in-way-to     (reduce + 0 (map :in-way-to by-wh))
-                   :in-way-from   (reduce + 0 (map :in-way-from by-wh))
-                   :warehouses    (count by-wh)
-                   :articles      (count by-art)}]
+          totals  (merge
+                    {:quantity      (reduce + 0 (map :quantity by-wh))
+                     :quantity-full (reduce + 0 (map :quantity-full by-wh))
+                     :in-way-to     (reduce + 0 (map :in-way-to by-wh))
+                     :in-way-from   (reduce + 0 (map :in-way-from by-wh))
+                     :warehouses    (count by-wh)
+                     :articles      (count by-art)}
+                    ;; 016-US2 capitalization totals (contracts/stock-capitalization.edn):
+                    ;; :cap-by-cost-total / :cap-by-price-total / :stock-qty-total / :na-cost-count.
+                    (select-keys (:totals cap-result)
+                                 [:cap-by-cost-total :cap-by-price-total
+                                  :stock-qty-total :na-cost-count]))]
       {:status 200
        :body   {:totals       totals
                 :by-warehouse (vec by-wh)
