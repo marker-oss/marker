@@ -14,6 +14,10 @@
             [marker.state.events   :as events]
             [marker.ui.chrome      :refer [sparkline delta mp-badge kpi-card]]
             [marker.ui.icons       :refer [icon]]
+            ;; 016 US1: descriptor-driven KPI rendering — same primitives the
+            ;; reports/P&L tables use, so a metric shows the SAME ⓘ hint and the
+            ;; SAME ₽/%/шт/× suffix everywhere (declare-once / render-everywhere).
+            [marker.ui.metric-hint :refer [metric-hint]]
             ;; LT3: honesty markers live in marker.ui.basis (single source of
             ;; truth). prelim-badge/basis-tooltip/flat-heavy?/format-date-short
             ;; were private here — now shared.
@@ -76,6 +80,57 @@
   [kpi]
   (when (ad-cost-missing? kpi)
     "данные о рекламе отсутствуют"))
+
+;; ---------------------------------------------------------------------------
+;; Canonical KPI descriptors (016 US1 / FR-003 — declare-once, render-everywhere)
+;;
+;; The /pulse-summary KPI maps carry {:value :delta-pct :spark :source …} but
+;; NOT :hint / :suffix. Until the backend attaches full descriptors, this is the
+;; single local source of the canonical formula-hint + display suffix for each
+;; Pulse KPI, so the SAME metric shows the SAME ⓘ text and the SAME ₽/%/шт/×
+;; unit here as in the reports/P&L tables. Hints/units follow the conventions in
+;; docs/canonical-formulas.md (ДРР/ROAS §3.9/P&L.2, avg-check Trends, buyout /
+;; non-return-rate batch 014, margin = post-ads operational margin).
+;; Suffixes map onto marker.util.format/format-suffixed: :rub :pct :qty :mul.
+;; descriptor-hint / descriptor-suffix below PREFER a :hint / :suffix shipped
+;; on the KPI map itself (forward-compat with backend descriptors) and fall
+;; back to this local map — so no change is needed here when the backend
+;; starts attaching full descriptors.
+;; ---------------------------------------------------------------------------
+
+(def ^:private kpi-descriptors
+  {:revenue    {:suffix :rub :hint "Выручка = сумма for-pay-net по реализации (финансы). Пока realization-отчёт не опубликован — оценка из cash-flow. Basis: gross realisation."}
+   :profit     {:suffix :rub :hint "Чистая прибыль = выручка − комиссия МП − логистика − себестоимость − реклама − прочие прямые расходы. N/A без себестоимости/рекламы. Basis: net profit."}
+   :orders     {:suffix :qty :hint "Заказано = число заказанных штук за период (события заказа, не операции)."}
+   :purchases  {:suffix :qty :hint "Доставлено = число доставленных покупателю штук за период."}
+   :realized   {:suffix :qty :hint "Реализовано = число штук, попавших в realization-отчёт МП (финансовый факт продажи)."}
+   :returned   {:suffix :qty :hint "Возвращено = число возвращённых штук за период. Рост — неблагоприятен."}
+   :margin     {:suffix :pct :hint "Маржа = чистая прибыль ÷ выручка × 100 — операционная маржа после всех прямых расходов и рекламы. Basis: net profit."}
+   :avg-check  {:suffix :rub :hint "Средний чек = выручка ÷ число продаж (Σ количества). Δ% не показывается — отношение средних статистически некорректно."}
+   :buyout     {:suffix :pct :hint "Выкуп = выкуплено ÷ заказано × 100. Заказной funnel (сверяется с ЛК МП)."}
+   :cancel     {:suffix :pct :hint "% отмен = отменено ÷ заказано × 100. Рост — неблагоприятен."}
+   :non-return {:suffix :pct :hint "Доля невозвратов = выкуплено ÷ доставлено × 100 (sales-only: продажи + возвраты). Отличается от «Выкупа» по заказам."}
+   :roas       {:suffix :mul :hint "ROAS = выручка ÷ рекламные расходы. Безразмерное отношение (напр. 3,4×). N/A без данных о рекламе."}
+   :drr        {:suffix :pct :hint "ДРР = рекламные расходы ÷ выручка × 100 (единый базис §3.9/P&L.2). Рост — неблагоприятен. N/A без данных о рекламе."}})
+
+(defn- descriptor-hint
+  "Canonical formula-hint for KPI `k`. Prefers a backend-attached :hint on
+   the KPI map itself; falls back to the local kpi-descriptors entry."
+  [kpi k]
+  (or (:hint kpi) (get-in kpi-descriptors [k :hint])))
+
+(defn- descriptor-suffix
+  "Canonical display unit (:rub / :pct / :qty / :mul) for KPI `k`.
+   Prefers a backend-attached :suffix; falls back to kpi-descriptors."
+  [kpi k]
+  (or (:suffix kpi) (get-in kpi-descriptors [k :suffix])))
+
+(defn- kpi-value
+  "016 US1 / FR-003: format a KPI's raw :value through the SAME descriptor
+   suffix the reports tables use (format-suffixed), so a metric shows the
+   SAME ₽ / % / шт / × unit everywhere. nil value → «—» (never 0)."
+  [kpi k]
+  (fmt/format-suffixed (:value kpi) (descriptor-suffix kpi k)))
 
 ;; ---------------------------------------------------------------------------
 ;; Alert card
@@ -512,20 +567,24 @@
         ;; FR-P1.4: when realization is absent on a recent finance KPI, show
         ;; "реализация отсутствует" instead of a misleading real-looking 0.
         none-text  "реализация отсутствует"
-        cards  [{:label       "Выручка"
+        cards  [{:k           :revenue
+                 :kpi         rev
+                 :label       "Выручка"
                  :value       (if (= :none (:source rev))
                                 none-text
-                                (fmt/format-rub (safe-num (:value rev))))
+                                (kpi-value rev :revenue))
                  :delta       (:delta-pct rev)
                  :spark       (safe-spark (:spark rev))
                  :sub         "WoW"
                  :badge       (prelim-badge rev)
                  :badge-title (basis-tooltip rev)}
-                {:label       "Чистая прибыль"
+                {:k           :profit
+                 :kpi         profit
+                 :label       "Чистая прибыль"
                  :value       (cond
                                 (preliminary-missing? profit) preliminary-missing-text
                                 (= :none (:source profit))    none-text
-                                :else (fmt/format-rub (safe-num (:value profit))))
+                                :else (kpi-value profit :profit))
                  :delta       (when-not (preliminary-missing? profit) (:delta-pct profit))
                  :spark       (safe-spark (:spark profit))
                  :sub         "WoW"
@@ -535,38 +594,48 @@
                                 (basis-tooltip profit))
                  :warn-badge       (when (ad-cost-missing? profit) "реклама не загружена")
                  :warn-badge-title "Реклама не загружена — прибыль завышена"}
-                {:label     "Заказано"
-                 :value     (str (fmt/format-int order-cnt) " шт")
+                {:k         :orders
+                 :kpi       orders
+                 :label     "Заказано"
+                 :value     (kpi-value orders :orders)
                  :delta     (:delta-pct orders)
                  :spark     (safe-spark (:spark orders))
                  :sub       (if conv-pct
                               (str "конв. " (fmt/format-pct conv-pct))
                               "WoW")
                  :badge     (prelim-badge orders)}
-                {:label     "Доставлено"
-                 :value     (str (fmt/format-int purch-cnt) " шт")
+                {:k         :purchases
+                 :kpi       purchases
+                 :label     "Доставлено"
+                 :value     (kpi-value purchases :purchases)
                  :delta     (:delta-pct purchases)
                  :spark     (safe-spark (:spark purchases))
                  :sub       "WoW"
                  :badge     (prelim-badge purchases)}
-                {:label     "Реализовано"
-                 :value     (str (fmt/format-int (safe-num (:value realized))) " шт")
+                {:k         :realized
+                 :kpi       realized
+                 :label     "Реализовано"
+                 :value     (kpi-value realized :realized)
                  :delta     (:delta-pct realized)
                  :spark     (safe-spark (:spark realized))
                  :sub       "WoW"
                  :badge     (prelim-badge realized)}
-                {:label     "Возвращено"
-                 :value     (str (fmt/format-int (safe-num (:value returned))) " шт")
+                {:k         :returned
+                 :kpi       returned
+                 :label     "Возвращено"
+                 :value     (kpi-value returned :returned)
                  :delta     (:delta-pct returned)
                  :spark     (safe-spark (:spark returned))
                  :sub       "WoW"
                  :badge     (prelim-badge returned)
                  :inverted? true}
-                {:label       "Маржа"
+                {:k           :margin
+                 :kpi         margin
+                 :label       "Маржа"
                  :value       (cond
                                 (preliminary-missing? margin) preliminary-missing-text
                                 (= :none (:source margin))    none-text
-                                :else (fmt/format-pct (safe-num (:value margin))))
+                                :else (kpi-value margin :margin))
                  :delta       (when-not (preliminary-missing? margin) (:delta-pct margin))
                  :sub         "WoW"
                  :badge       (if (preliminary-missing? margin) "≈" (prelim-badge margin))
@@ -575,36 +644,48 @@
                                 (basis-tooltip margin))
                  :warn-badge       (when (ad-cost-missing? margin) "реклама не загружена")
                  :warn-badge-title "Реклама не загружена — маржа завышена"}
-                {:label     "Средний чек"
-                 :value     (fmt/format-rub (safe-num (:value check)))
+                {:k         :avg-check
+                 :kpi       check
+                 :label     "Средний чек"
+                 :value     (kpi-value check :avg-check)
                  :delta     (:delta-pct check)
                  :sub       "WoW"
                  :badge     (prelim-badge check)}
-                {:label     "Выкуп"
-                 :value     (fmt/format-pct (safe-num (:value buyout)))
+                {:k         :buyout
+                 :kpi       buyout
+                 :label     "Выкуп"
+                 :value     (kpi-value buyout :buyout)
                  :delta     (:delta-pct buyout)
                  :sub       "от заказов"
                  :badge     (prelim-badge buyout)}
-                {:label     "% отмен"
-                 :value     (fmt/format-pct (safe-num (:value cancel)))
+                {:k         :cancel
+                 :kpi       cancel
+                 :label     "% отмен"
+                 :value     (kpi-value cancel :cancel)
                  :delta     (:delta-pct cancel)
                  :sub       "от заказов"
                  :inverted? true
                  :badge     (prelim-badge cancel)}
-                {:label     "Доля невозвратов"
-                 :value     (fmt/format-pct (safe-num (:value non-return)))
+                {:k         :non-return
+                 :kpi       non-return
+                 :label     "Доля невозвратов"
+                 :value     (kpi-value non-return :non-return)
                  :delta     (:delta-pct non-return)
                  :sub       "от доставленных"
                  :badge     (prelim-badge non-return)}
-                {:label     "ROAS"
+                {:k         :roas
+                 :kpi       roas
+                 :label     "ROAS"
                  :value     (or (ad-data-missing-text roas)
-                                (or-ndash (:value roas) fmt/format-mul))
+                                (kpi-value roas :roas))
                  :delta     (:delta-pct roas)
                  :sub       "WoW"
                  :badge     (prelim-badge roas)}
-                {:label     "ДРР"
+                {:k         :drr
+                 :kpi       drr
+                 :label     "ДРР"
                  :value     (or (ad-data-missing-text drr)
-                                (or-ndash (:value drr) fmt/format-pct))
+                                (kpi-value drr :drr))
                  :delta     (:delta-pct drr)
                  :sub       (cond
                               (some? ceiling-val)
@@ -644,10 +725,16 @@
                 ($ :span {:class "dot-status green"})
                 " Данные загружены")))
        ($ :div {:class "kpi-grid"}
-          (for [{:keys [label value delta sub spark inverted? badge badge-title
+          (for [{:keys [k kpi label value delta sub spark inverted? badge badge-title
                         warn-badge warn-badge-title]} cards]
+            ;; 016 US1: the ⓘ formula-hint sits right next to the label — the
+            ;; same metric-hint primitive the reports/P&L tables render, fed by
+            ;; the same descriptor (declare-once / render-everywhere).
             ($ kpi-card {:key              label
-                         :label            label
+                         :label            ($ :span {:style {:display     "inline-flex"
+                                                             :align-items "center"}}
+                                              label
+                                              ($ metric-hint {:hint (descriptor-hint kpi k)}))
                          :value            value
                          :delta-pct        delta
                          :sub              sub
