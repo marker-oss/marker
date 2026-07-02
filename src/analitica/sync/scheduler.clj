@@ -88,6 +88,93 @@
       row)))
 
 ;; ---------------------------------------------------------------------------
+;; Coverage gap detection + backfill (audit 2026-07-02 P0-2)
+;;
+;; "sync ok" ≠ "data complete": the daily last-7-days run never re-fills a
+;; historical hole (e.g. WB finance was empty for all of May 2026 while every
+;; scheduled run reported success). Detect months with NO finance rows across
+;; the recent window and re-ingest exactly those, so a hole self-heals before
+;; the marketplace's report retention expires.
+;;
+;; Month granularity (not day) on purpose: WB finance carries a WEEKLY
+;; date_from, so day-level "present" sets are noisy; a whole empty month is the
+;; real, unambiguous failure mode.
+;; ---------------------------------------------------------------------------
+
+(defn month-seq
+  "Inclusive vector of \"YYYY-MM\" strings from `from-month` to `to-month`."
+  [from-month to-month]
+  (let [ym   (fn [s] (java.time.YearMonth/parse s))
+        stop (ym to-month)]
+    (loop [cur (ym from-month) acc []]
+      (if (pos? (compare cur stop))
+        acc
+        (recur (.plusMonths cur 1) (conj acc (str cur)))))))
+
+(defn missing-months
+  "Pure: months in [from-month..to-month] absent from `present-months`.
+   `present-months` is any seq/set of \"YYYY-MM\". Returns a sorted vector."
+  [present-months from-month to-month]
+  (let [present (set present-months)]
+    (vec (remove present (month-seq from-month to-month)))))
+
+(defn- finance-present-months
+  "Set of \"YYYY-MM\" that have ≥1 finance row for `mp` in [from..to], keyed by
+   the row's EVENT month (COALESCE(event_date, date_from))."
+  [mp from to]
+  (->> (db/query
+         ["SELECT DISTINCT substr(COALESCE(event_date, date_from),1,7) AS m
+           FROM finance
+           WHERE marketplace = ?
+             AND COALESCE(event_date, date_from) >= ? AND COALESCE(event_date, date_from) <= ?"
+          (name mp) from to])
+       (keep :m)
+       set))
+
+(defn detect-finance-gaps
+  "For each marketplace, months in the last `lookback-days` (ending `as-of`, an
+   ISO date string) that have zero finance rows. Returns
+   [{:marketplace :wb :month \"2026-05\" :from \"2026-05-01\" :to \"2026-05-31\"} …].
+   The current (partial) month is never flagged — it is legitimately incomplete."
+  [as-of lookback-days]
+  (let [as-of-d    (java.time.LocalDate/parse as-of)
+        from-d     (.minusDays as-of-d lookback-days)
+        cur-month  (str (java.time.YearMonth/from as-of-d))
+        from-month (str (java.time.YearMonth/from from-d))
+        to-month   (str (java.time.YearMonth/from as-of-d))]
+    (for [mp    [:wb :ozon :ym]
+          month (missing-months (finance-present-months mp (str from-d) as-of)
+                                 from-month to-month)
+          :when (not= month cur-month)]      ; partial current month isn't a "gap"
+      (let [ym  (java.time.YearMonth/parse month)]
+        {:marketplace mp
+         :month       month
+         :from        (str (.atDay ym 1))
+         :to          (str (.atEndOfMonth ym))}))))
+
+(defn backfill-gaps!
+  "Detect finance coverage gaps and re-ingest+materialize exactly those months.
+   Idempotent (sync DELETE+INSERT); failure-isolated per gap so one bad month
+   never aborts the scheduled run. Returns the detected gaps.
+
+   `start-sync!` is injected to avoid the circular ns dependency (same lazy
+   resolve `fire!` uses)."
+  [start-sync! as-of lookback-days]
+  (let [gaps (detect-finance-gaps as-of lookback-days)]
+    (when (seq gaps)
+      (mu/log ::coverage-gaps-detected :count (count gaps) :gaps gaps)
+      (println (str "[SCHEDULER] finance coverage gaps: "
+                    (mapv (juxt :marketplace :month) gaps))))
+    (doseq [{:keys [marketplace from to month]} gaps]
+      (try
+        (start-sync! :finance :marketplace marketplace :period [from to])
+        (mu/log ::coverage-gap-backfill :marketplace marketplace :month month)
+        (catch Exception e
+          (mu/log ::coverage-gap-backfill-failed
+                  :marketplace marketplace :month month :error (.getMessage e)))))
+    gaps))
+
+;; ---------------------------------------------------------------------------
 ;; Timer / scheduler internals
 ;; ---------------------------------------------------------------------------
 
@@ -121,7 +208,16 @@
             (when-let [run-id (:run-id result)]
               (db/execute!
                ["UPDATE sync_schedule SET last_run_id = ?, updated_at = ? WHERE id = 1"
-                run-id (now-iso)])))))
+                run-id (now-iso)]))
+            ;; Self-heal historical finance holes the last-7-days run can't
+            ;; reach (audit P0-2). Non-fatal: never breaks the scheduled run.
+            (try
+              (backfill-gaps! start-sync!
+                              (.format (java.time.LocalDate/now)
+                                       java.time.format.DateTimeFormatter/ISO_LOCAL_DATE)
+                              90)
+              (catch Exception e
+                (mu/log ::coverage-backfill-error :error (.getMessage e)))))))
       (catch Exception e
         (println (str "[SCHEDULER] fire! error: " (.getMessage e)))
         (mu/log ::scheduler-error :error-message (.getMessage e))))
