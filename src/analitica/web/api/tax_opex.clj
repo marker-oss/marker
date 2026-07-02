@@ -24,10 +24,13 @@
   (let [b (:body req)]
     (if (map? b) b (or (:params req) {}))))
 
-(defn- parse-id [req]
-  (some-> (or (get-in req [:params :id])
-              (get-in req [:route-params :id]))
-          (Long/parseLong)))
+(defn- parse-id
+  "Route/query :id as a Long, or nil when absent or non-numeric
+   (nil lets handlers answer 4xx instead of a parseLong 500)."
+  [req]
+  (when-let [raw (or (get-in req [:params :id])
+                     (get-in req [:route-params :id]))]
+    (try (Long/parseLong raw) (catch NumberFormatException _ nil))))
 
 (defn- ->long [x]
   (cond
@@ -113,7 +116,12 @@
   [req]
   (let [period (get-in req [:params :period])
         mp     (->keyword (get-in req [:params :marketplace]))]
-    (if (nil? period)
+    (if-not (and (string? period)
+                 (re-matches #"\d{4}-(0[1-9]|1[0-2])" period))
+      ;; Strict YYYY-MM guard BEFORE materialize-rules!: this GET performs a
+      ;; write (read-path rule materialization, contract §2b) and a garbage
+      ;; period used to insert orphan opex_rows that no read window would
+      ;; ever match (audit 2026-07-02 H2).
       {:status 422 :body {:ok false :error "period is required (YYYY-MM)"}}
       (do
         ;; Read-path materialization (idempotent, override-safe).

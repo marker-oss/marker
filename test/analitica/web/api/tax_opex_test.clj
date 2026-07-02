@@ -407,3 +407,22 @@
     (let [resp (api/delete-opex {:params {}})]
       (is (= 400 (:status resp)))
       (is (false? (get-in resp [:body :ok]))))))
+
+;; ---------------------------------------------------------------------------
+;; Audit 2026-07-02 H2/M1 — GET /opex period guard + non-numeric id → 4xx
+;; ---------------------------------------------------------------------------
+
+(deftest get-opex-rejects-malformed-period
+  (testing "garbage period → 422 and NO rule materialization write"
+    (doseq [bad ["garbage" "2026-13" "2026-5" "2026-05-01" ""]]
+      (let [resp (api/get-opex {:params {:period bad}})]
+        (is (= 422 (:status resp)) (str "period=" (pr-str bad)))))
+    (is (zero? (:n (first (db/query ["SELECT COUNT(*) AS n FROM opex_rows"]))))
+        "malformed periods must not insert orphan opex_rows"))
+  (testing "valid period still 200"
+    (is (= 200 (:status (api/get-opex {:params {:period "2026-05"}}))))))
+
+(deftest delete-opex-non-numeric-id
+  (testing "DELETE with non-numeric id → 4xx, not NumberFormatException 500"
+    (let [resp (api/delete-opex {:params {:id "abc"}})]
+      (is (contains? #{400 422} (:status resp))))))
